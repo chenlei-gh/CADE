@@ -1,0 +1,24 @@
+// COPYRIGHT DASSAULT SYSTEMES YYYY
+// FrameworkName.CATRsc
+//
+// Resource file for FrameworkName
+// Defines command IDs and resource bindings
+
+ResourceCatalog FrameworkName
+{
+    // --- Command IDs ---
+    CMD_CommandName1 = 1001;
+    CMD_CommandName2 = 1002;
+    CMD_CommandName3 = 1003;
+
+    // --- Toolbar IDs ---
+    TLB_ToolbarName  = 2001;
+
+    // --- Menu IDs ---
+    MNU_MenuName     = 3001;
+
+    // --- Icon bindings ---
+    // Bind resource names to files
+    BindResource("Icons/CommandName1.bmp", "Icon_CommandName1");
+    BindResource("Icons/CommandName2.bmp", "Icon_CommandName2");
+}

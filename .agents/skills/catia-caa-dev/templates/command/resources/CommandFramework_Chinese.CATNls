@@ -1,0 +1,22 @@
+// COPYRIGHT DASSAULT SYSTEMES 2026
+// Resource file for <CommandClassName> (Chinese)
+// File: <FrameworkName>.CATNls
+
+// 命令标题（工具栏提示）
+<CommandHeaderName>.Title = "<命令标题>";
+<CommandHeaderName>.ShortHelp = "<简短帮助>";
+<CommandHeaderName>.LongHelp = "<详细帮助 - 显示在状态栏>";
+<CommandHeaderName>.Help = "<帮助主题ID>";
+
+// 命令提示（交互过程中显示）
+<CommandClassName>.State1.Prompt = "选择第一个元素";
+<CommandClassName>.State2.Prompt = "选择第二个元素";
+<CommandClassName>.State3.Prompt = "正在处理...";
+
+// 错误消息
+<CommandClassName>.ErrorNoSelection = "未选择元素";
+<CommandClassName>.ErrorInvalidSelection = "元素类型无效";
+<CommandClassName>.ErrorProcessing = "处理失败";
+
+// 成功消息
+<CommandClassName>.Success = "操作成功完成";

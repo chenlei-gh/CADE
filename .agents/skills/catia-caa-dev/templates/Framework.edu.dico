@@ -1,0 +1,12 @@
+# COPYRIGHT DASSAULT SYSTEMES YYYY
+
+#===========================================================================
+# Dictionary for FrameworkName.edu
+#===========================================================================
+
+# ComponentName Component
+# Format: ClassName  libModuleName  ClassName
+# CATICreateInstance line enables CATInstantiateComponent() (recommended)
+#===========================================================================
+ComponentName    libModuleName         ComponentName
+ComponentName    CATICreateInstance    libModuleName

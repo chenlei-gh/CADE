@@ -1,0 +1,22 @@
+// COPYRIGHT DASSAULT SYSTEMES 2026
+// Resource file for <CommandClassName> (English)
+// File: <FrameworkName>.CATNls
+
+// Command title (shown in toolbar tooltip)
+<CommandHeaderName>.Title = "<Command Title>";
+<CommandHeaderName>.ShortHelp = "<Short help text>";
+<CommandHeaderName>.LongHelp = "<Detailed help text - shown in status bar>";
+<CommandHeaderName>.Help = "<Help topic ID>";
+
+// Command prompts (shown during interaction)
+<CommandClassName>.State1.Prompt = "Select first element";
+<CommandClassName>.State2.Prompt = "Select second element";
+<CommandClassName>.State3.Prompt = "Processing...";
+
+// Error messages
+<CommandClassName>.ErrorNoSelection = "No element selected";
+<CommandClassName>.ErrorInvalidSelection = "Invalid element type";
+<CommandClassName>.ErrorProcessing = "Processing failed";
+
+// Success messages
+<CommandClassName>.Success = "Operation completed successfully";

@@ -1,0 +1,156 @@
+// ============================================================================
+// NLS Resources for Feature
+// ============================================================================
+// This file contains user-visible strings for the feature
+// File naming: {PREFIX}{FEATURE_NAME}.CATNls
+// Location: <Framework>.m/CNext/resources/msgcatalog/
+
+// ============================================================================
+// FEATURE DISPLAY NAME
+// ============================================================================
+// Used in specification tree and user interface
+{PREFIX}{FEATURE_NAME}.Title = "Custom Feature";
+{PREFIX}{FEATURE_NAME}.ShortHelp = "Custom mechanical feature";
+{PREFIX}{FEATURE_NAME}.LongHelp = "Creates a custom geometric feature based on input specifications and parameters.";
+
+// Alternative naming (if using catalog key)
+{STARTUP_NAME}.Title = "Custom Feature";
+{STARTUP_NAME}.ShortHelp = "Custom mechanical feature";
+
+// ============================================================================
+// ATTRIBUTE DISPLAY NAMES
+// ============================================================================
+// Display names for feature attributes shown in Properties dialog
+
+// Input specifications
+{PREFIX}{FEATURE_NAME}.InputSpec1 = "First Input";
+{PREFIX}{FEATURE_NAME}.InputSpec1.ShortHelp = "Primary input specification";
+{PREFIX}{FEATURE_NAME}.InputSpec1.LongHelp = "Select the primary geometric element to use as input for this feature.";
+
+{PREFIX}{FEATURE_NAME}.InputSpec2 = "Second Input";
+{PREFIX}{FEATURE_NAME}.InputSpec2.ShortHelp = "Secondary input specification (optional)";
+{PREFIX}{FEATURE_NAME}.InputSpec2.LongHelp = "Select an optional secondary geometric element.";
+
+// Parameters
+{PREFIX}{FEATURE_NAME}.Length = "Length";
+{PREFIX}{FEATURE_NAME}.Length.ShortHelp = "Length parameter";
+{PREFIX}{FEATURE_NAME}.Length.LongHelp = "Specify the length value in millimeters.";
+
+{PREFIX}{FEATURE_NAME}.Radius = "Radius";
+{PREFIX}{FEATURE_NAME}.Radius.ShortHelp = "Radius parameter";
+{PREFIX}{FEATURE_NAME}.Radius.LongHelp = "Specify the radius value in millimeters.";
+
+{PREFIX}{FEATURE_NAME}.Option = "Option";
+{PREFIX}{FEATURE_NAME}.Option.ShortHelp = "Operation option";
+{PREFIX}{FEATURE_NAME}.Option.LongHelp = "Select the operation mode:\n  0 - Mode A\n  1 - Mode B\n  2 - Mode C";
+
+{PREFIX}{FEATURE_NAME}.Description = "Description";
+{PREFIX}{FEATURE_NAME}.Description.ShortHelp = "Feature description";
+{PREFIX}{FEATURE_NAME}.Description.LongHelp = "Enter a description for this feature instance.";
+
+// ============================================================================
+// COMMAND NAMES (if creating commands)
+// ============================================================================
+Create{FEATURE_NAME}Cmd.Title = "Create Custom Feature";
+Create{FEATURE_NAME}Cmd.ShortHelp = "Create a new custom feature";
+Create{FEATURE_NAME}Cmd.LongHelp = "Creates a new instance of the custom feature.\n\nSteps:\n1. Select the first input\n2. Select the second input (optional)\n3. Specify parameters\n4. Click OK to create";
+
+Edit{FEATURE_NAME}Cmd.Title = "Edit Custom Feature";
+Edit{FEATURE_NAME}Cmd.ShortHelp = "Edit feature parameters";
+Edit{FEATURE_NAME}Cmd.LongHelp = "Modify the parameters of an existing custom feature.";
+
+// ============================================================================
+// TOOLBAR AND MENU ITEMS
+// ============================================================================
+{FEATURE_NAME}Toolbar.Title = "Custom Features";
+{FEATURE_NAME}Menu.Title = "Custom Feature";
+
+// ============================================================================
+// ERROR MESSAGES
+// ============================================================================
+// Error messages for validation and build failures
+{PREFIX}{FEATURE_NAME}.Error.NoInput = "No input specification provided. Please select a valid geometric element.";
+{PREFIX}{FEATURE_NAME}.Error.InvalidInput = "Invalid input specification. Please select a compatible geometric element.";
+{PREFIX}{FEATURE_NAME}.Error.InvalidParameter = "Invalid parameter value. Please check the parameter values.";
+{PREFIX}{FEATURE_NAME}.Error.BuildFailed = "Feature build failed. Check inputs and parameters.";
+{PREFIX}{FEATURE_NAME}.Error.NegativeValue = "Parameter value cannot be negative.";
+{PREFIX}{FEATURE_NAME}.Error.ZeroValue = "Parameter value cannot be zero.";
+
+// ============================================================================
+// WARNING MESSAGES
+// ============================================================================
+{PREFIX}{FEATURE_NAME}.Warning.NoSecondInput = "Second input not specified. Feature will be created with single input.";
+{PREFIX}{FEATURE_NAME}.Warning.LargeValue = "Parameter value is unusually large. This may affect performance.";
+
+// ============================================================================
+// STATUS MESSAGES
+// ============================================================================
+{PREFIX}{FEATURE_NAME}.Status.Creating = "Creating feature...";
+{PREFIX}{FEATURE_NAME}.Status.Building = "Building geometry...";
+{PREFIX}{FEATURE_NAME}.Status.Updating = "Updating feature...";
+{PREFIX}{FEATURE_NAME}.Status.Success = "Feature created successfully.";
+
+// ============================================================================
+// PROPERTY PAGE (if implementing custom property page)
+// ============================================================================
+{PREFIX}{FEATURE_NAME}PropPage.Title = "Custom Feature Properties";
+{PREFIX}{FEATURE_NAME}PropPage.InputsFrame.Title = "Inputs";
+{PREFIX}{FEATURE_NAME}PropPage.ParametersFrame.Title = "Parameters";
+{PREFIX}{FEATURE_NAME}PropPage.OptionsFrame.Title = "Options";
+
+// ============================================================================
+// CONTEXT MENU ITEMS
+// ============================================================================
+{PREFIX}{FEATURE_NAME}.ContextMenu.Edit = "Edit Feature...";
+{PREFIX}{FEATURE_NAME}.ContextMenu.Delete = "Delete Feature";
+{PREFIX}{FEATURE_NAME}.ContextMenu.Deactivate = "Deactivate";
+{PREFIX}{FEATURE_NAME}.ContextMenu.Reorder = "Reorder Feature";
+
+// ============================================================================
+// UNITS (if needed)
+// ============================================================================
+{PREFIX}{FEATURE_NAME}.Length.Unit = "mm";
+{PREFIX}{FEATURE_NAME}.Radius.Unit = "mm";
+{PREFIX}{FEATURE_NAME}.Angle.Unit = "deg";
+
+// ============================================================================
+// OPTION VALUES (for enumerated options)
+// ============================================================================
+{PREFIX}{FEATURE_NAME}.Option.Mode0 = "Standard Mode";
+{PREFIX}{FEATURE_NAME}.Option.Mode1 = "Advanced Mode";
+{PREFIX}{FEATURE_NAME}.Option.Mode2 = "Expert Mode";
+
+// ============================================================================
+// LOCALIZATION NOTES
+// ============================================================================
+// To support multiple languages:
+// 1. Create language-specific files: {PREFIX}{FEATURE_NAME}.CATNls (English)
+// 2. Create: {PREFIX}{FEATURE_NAME}_French.CATNls (French)
+// 3. Create: {PREFIX}{FEATURE_NAME}_German.CATNls (German)
+// 4. Create: {PREFIX}{FEATURE_NAME}_Japanese.CATNls (Japanese)
+// etc.
+//
+// CATIA automatically loads the correct file based on:
+// - User's language settings
+// - LANG environment variable
+// - System locale
+//
+// Fallback order: Specific language -> English -> Internal defaults
+
+// ============================================================================
+// USAGE IN CODE
+// ============================================================================
+// Resources are accessed automatically by CATIA framework:
+//
+// 1. Feature name in tree:
+//    Uses: {PREFIX}{FEATURE_NAME}.Title
+//
+// 2. Property dialog:
+//    Uses: {PREFIX}{FEATURE_NAME}.AttributeName
+//
+// 3. Error messages:
+//    CATError* pError = new CATError("{PREFIX}{FEATURE_NAME}.Error.NoInput");
+//
+// 4. Programmatic access:
+//    CATUnicodeString message;
+//    CATMsgCatalog::BuildMessage("{PREFIX}{FEATURE_NAME}", "Title", message);

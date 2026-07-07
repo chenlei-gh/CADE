@@ -1,0 +1,215 @@
+// COPYRIGHT DASSAULT SYSTEMES 2026
+// StartUp Catalog Definition Example
+// File: <FrameworkName>.CATfct
+//
+// This file documents the structure of a Feature StartUp Catalog.
+// In practice, catalogs are created programmatically using CATICreateInstance
+// or through the CATIA Feature Dictionary Editor.
+
+//=============================================================================
+// Catalog Structure
+//=============================================================================
+
+// Document Header
+document `<CatalogName>.CATfct` {
+    container `RootContainer` #root {
+
+        // StartUp Definition
+        feature `<StartUpName>` #startup {
+
+            // Input Specifications (references to other features/bodies)
+            feature `Input1` #in specin CATISpecObject {
+                role = "Input geometry or feature"
+            }
+
+            feature `Input2` #in specin CATISpecObject {
+                role = "Second input (optional)"
+            }
+
+            // Parameters (double, length, angle, etc.)
+            parameter `Length` #in specin CATICkeReal {
+                default = 10.0
+                role = "Length parameter"
+            }
+
+            parameter `Angle` #in specin CATICkeReal {
+                default = 0.0
+                role = "Angle parameter in degrees"
+            }
+
+            // String Attributes
+            string `Name` #in {
+                default = "MyFeature"
+                role = "Feature display name"
+            }
+
+            // Integer Attributes
+            int `Type` #in {
+                default = 1
+                role = "Feature type identifier"
+            }
+
+            // Boolean Attributes
+            bool `IsActive` #in {
+                default = true
+                role = "Feature activation state"
+            }
+
+            // Result (output body)
+            feature `Result` #out specout CATISpecObject {
+                role = "Result geometry"
+            }
+        }
+    }
+}
+
+//=============================================================================
+// Attribute Definitions
+//=============================================================================
+
+// Attribute Types:
+// - feature    : Reference to another feature (CATISpecObject)
+// - parameter  : Real number parameter (CATICkeReal, CATICkeLength, etc.)
+// - string     : Text string
+// - int        : Integer number
+// - bool       : Boolean (true/false)
+// - list       : List of values
+
+// Attribute Modifiers:
+// - #in        : Input attribute (user provides)
+// - #out       : Output attribute (feature computes)
+// - #neutral   : Neither input nor output
+// - specin     : Input specification (for features/bodies)
+// - specout    : Output specification (for result)
+
+//=============================================================================
+// Programmatic Creation (Preferred Method)
+//=============================================================================
+
+/*
+// C++ code to create this catalog programmatically:
+
+#include "CATIContainer.h"
+#include "CATICatalog.h"
+#include "CATISpecObject.h"
+
+// 1. Create catalog
+CATICatalog* pCatalog = NULL;
+hr = CreateCatalog("<CatalogName>", pCatalog);
+
+// 2. Create StartUp
+CATISpecObject* pStartUp = NULL;
+hr = pCatalog->CreateSU(&pStartUp, "<StartUpName>", "Feature");
+
+// 3. Add input attributes
+CATICkeParm* pLengthParam = NULL;
+hr = pStartUp->AddAttribute("Length", pLengthParam, CATCkeReal);
+pLengthParam->Valuate(10.0);
+
+// 4. Add string attributes
+CATUnicodeString name = "MyFeature";
+hr = pStartUp->AddAttribute("Name", name);
+
+// 5. Save catalog
+hr = pCatalog->SaveAs("<CatalogName>.CATfct");
+*/
+
+//=============================================================================
+// Usage in Feature Implementation
+//=============================================================================
+
+/*
+// Loading the catalog and instantiating features:
+
+// 1. Load catalog
+CATICatalog* pCatalog = NULL;
+hr = ::CATLoadCatalog("<CatalogName>.CATfct", pCatalog);
+
+// 2. Get StartUp
+CATISpecObject* pStartUp = NULL;
+hr = pCatalog->RetrieveSU(&pStartUp, "<StartUpName>");
+
+// 3. Instantiate feature
+CATISpecObject* pFeatureInstance = NULL;
+hr = pStartUp->Instanciate(IID_CATISpecObject, (void**)&pFeatureInstance);
+
+// 4. Set input values
+CATICkeParm* pLength = NULL;
+hr = pFeatureInstance->GetAttribute("Length", pLength);
+pLength->Valuate(20.0);
+
+// 5. Build feature (calls CATIBuild::Build)
+hr = pFeatureInstance->Update();
+*/
+
+//=============================================================================
+// Notes
+//=============================================================================
+
+// 1. Catalog Location:
+//    - Runtime: <workspace>/CNext/resources/graphic/
+//    - Catalog files (.CATfct) should be accessible at runtime
+//
+// 2. StartUp Names:
+//    - Should be unique within catalog
+//    - Convention: Use framework prefix (e.g., "MyFwk_MyFeature")
+//
+// 3. Attribute Names:
+//    - Must be valid C++ identifiers
+//    - Case-sensitive
+//    - No spaces or special characters
+//
+// 4. Specification Attributes:
+//    - Use "specin" for input bodies/features
+//    - Use "specout" for result bodies
+//    - Implement CATIBuild to create output from inputs
+//
+// 5. Parameters:
+//    - CATICkeReal - dimensionless real
+//    - CATICkeLength - length with units
+//    - CATICkeAngle - angle with units
+//    - CATICkeBoolean - boolean parameter
+//
+// 6. Update Mechanism:
+//    - When input changes, CATIReplace::ReplaceAdvise is called
+//    - Return S_OK to accept, E_FAIL to reject
+//    - Feature automatically rebuilds via CATIBuild::Build
+
+//=============================================================================
+// Example: Simple Extrusion Feature
+//=============================================================================
+
+/*
+document `ExtrusionCatalog.CATfct` {
+    container `RootContainer` #root {
+        feature `Extrusion` #startup {
+            // Input profile
+            feature `Profile` #in specin CATISpecObject
+
+            // Extrusion length
+            parameter `Length` #in specin CATICkeLength {
+                default = 100.0
+            }
+
+            // Direction (1=normal, -1=reverse)
+            int `Direction` #in {
+                default = 1
+            }
+
+            // Result solid
+            feature `Result` #out specout CATISpecObject
+        }
+    }
+}
+*/
+
+//=============================================================================
+// See Also
+//=============================================================================
+
+// - CATIA Feature Modeler documentation
+// - CATISpecObject interface
+// - CATICatalog interface
+// - CATIBuild interface (Build method)
+// - CATIReplace interface (ReplaceAdvise method)
+// - StartUpCatalog.cpp (programmatic creation example)

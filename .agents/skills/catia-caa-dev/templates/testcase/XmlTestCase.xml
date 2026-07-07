@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- COPYRIGHT DASSAULT SYSTEMES YYYY -->
+
+<TestSuite name="TestCaseName">
+    <Description>
+        Unit tests for [ComponentName]
+    </Description>
+
+    <TestCase name="TestMethod1">
+        <Description>Test basic arithmetic operations</Description>
+        <ExpectedResult>PASS</ExpectedResult>
+    </TestCase>
+
+    <TestCase name="TestMethod2">
+        <Description>Test string operations</Description>
+        <ExpectedResult>PASS</ExpectedResult>
+    </TestCase>
+
+    <TestCase name="TestMethod3">
+        <Description>Test exception handling</Description>
+        <ExpectedResult>PASS</ExpectedResult>
+    </TestCase>
+</TestSuite>

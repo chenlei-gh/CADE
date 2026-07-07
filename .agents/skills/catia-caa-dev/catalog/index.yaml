@@ -1,0 +1,56 @@
+# CADE Knowledge Catalog
+
+元数据索引——AI 通过关键词秒定位，不全文搜索。
+
+## 统一 Schema
+
+所有 knowledge/pattern/example 文件使用一致的 YAML frontmatter:
+
+```yaml
+---
+id: part.fillet                    # 全局唯一 ID
+title: Edge Fillet                 # 显示名称
+category: knowledge                # knowledge | pattern | example
+domain: part                       # CAA 域
+keywords: [fillet, radius, blend]  # 检索关键词
+apis: [CATIFillet]                 # 涉及 API
+requires: [CATISpecObject]         # 前置知识 ID
+patterns: [geometry_analyzer]      # 关联 Pattern ID
+examples: [fillet_checker]         # 关联 Example ID
+release: [R19, R28]                # 适用 CATIA 版本
+tags: [geometry, feature]          # 标签
+---
+```
+
+## 索引
+
+### Knowledge 索引
+
+| ID | 文件 | 关键词 | API | 版本 |
+|----|------|--------|-----|------|
+| mecmod.feature | knowledge/mecmod/feature.md | feature, tree, IsATypeOf, spec object | CATISpecObject, CATIPrtPart | R19+ |
+| mecmod.topology | knowledge/mecmod/topology.md | topology, body, face, edge, vertex | CATBody, CATFace, CATEdge, CATVertex | R19+ |
+| part.fillet | knowledge/part/fillet.md | fillet, radius, blend | CATIFillet | R19+ |
+| part.hole | knowledge/part/hole.md | hole, diameter, depth, counterbore | CATIHole | R19+ |
+| part.chamfer | knowledge/part/chamfer.md | chamfer, bevel, angle | CATIChamfer | R19+ |
+| product.assembly | knowledge/product/assembly.md | assembly, product, component, constraint | CATIProduct, CATIPrtContainer | R19+ |
+| ui.dialog | knowledge/ui/dialog.md | dialog, CATDlgDialog, listview, button | CATDlgDialog, CATDlgList | R19+ |
+| ui.toolbar | knowledge/ui/toolbar.md | toolbar, command header, catalog, workbench | CATCommandHeader, CATCmdContainer | R19+ |
+| infra.selection | knowledge/infrastructure/selection.md | selection, highlight, reframe, locate | CATISelection, CATPathElement | R19+ |
+
+### Pattern 索引
+
+| ID | 文件 | 适用场景 | 关联 Knowledge |
+|----|------|---------|---------------|
+| analyzer.geometry | patterns/analyzer/geometry_analyzer.md | 几何特征遍历检查 | mecmod.feature, part.fillet |
+| analyzer.rule | patterns/analyzer/rule_checker.md | 企业规范逐条检查 | part.fillet, part.hole |
+| ui.result_dialog | patterns/ui/result_dialog.md | 结果列表+双击定位 | ui.dialog, infra.selection |
+| workflow.batch | patterns/workflow/batch_process.md | 批量处理+进度条 | mecmod.feature |
+| block.visitor | patterns/blocks/feature_visitor.md | 递归遍历 Feature 树 | mecmod.feature |
+| block.locator | patterns/blocks/locator.md | 双击定位到 Feature | infra.selection |
+
+### Example 索引
+
+| ID | 文件 | 难度 | 涉及 |
+|----|------|------|------|
+| geo.fillet_checker | examples/geometry/fillet_checker/ | 中级 | part.fillet, ui.dialog, analyzer.geometry |

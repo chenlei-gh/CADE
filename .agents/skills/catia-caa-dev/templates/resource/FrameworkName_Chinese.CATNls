@@ -1,0 +1,30 @@
+// Chinese NLS file for FrameworkName
+// COPYRIGHT DASSAULT SYSTEMES YYYY
+//
+// Language: Chinese (简体中文)
+// Encoding: UTF-8
+
+// --- 命令名称 ---
+CommandName1.Title  = "命令 1";
+CommandName1.Tip    = "执行命令 1";
+CommandName1.Help   = "这是命令 1 的帮助信息";
+
+CommandName2.Title  = "命令 2";
+CommandName2.Tip    = "执行命令 2";
+CommandName2.Help   = "这是命令 2 的帮助信息";
+
+// --- 对话框字符串 ---
+DialogName.Title         = "对话框标题";
+DialogName.OKButton      = "确定";
+DialogName.CancelButton  = "取消";
+DialogName.ApplyButton   = "应用";
+
+// --- 状态消息 ---
+Status.OperationComplete    = "操作成功完成。";
+Status.OperationFailed      = "操作失败。";
+Status.OperationInProgress  = "操作进行中...";
+
+// --- 错误消息 ---
+Error.InvalidInput      = "无效的输入参数。";
+Error.OutOfMemory       = "内存不足。";
+Error.FileNotFound      = "找不到文件。";

@@ -1,0 +1,36 @@
+// CATNls file for FrameworkName
+// COPYRIGHT DASSAULT SYSTEMES YYYY
+//
+// Language: English (default)
+// Encoding: UTF-8
+//
+// NLS Format:
+//   Key = "Value";
+//
+// Usage:
+//   CATString msg = CATMsgCatalog::GetMessage("Key");
+
+// --- Command Names ---
+CommandName1.Title  = "Command 1";
+CommandName1.Tip    = "Execute Command 1";
+CommandName1.Help   = "This is the help for Command 1";
+
+CommandName2.Title  = "Command 2";
+CommandName2.Tip    = "Execute Command 2";
+CommandName2.Help   = "This is the help for Command 2";
+
+// --- Dialog Strings ---
+DialogName.Title         = "Dialog Title";
+DialogName.OKButton      = "OK";
+DialogName.CancelButton  = "Cancel";
+DialogName.ApplyButton   = "Apply";
+
+// --- Status Messages ---
+Status.OperationComplete    = "Operation completed successfully.";
+Status.OperationFailed      = "Operation failed.";
+Status.OperationInProgress  = "Operation in progress...";
+
+// --- Error Messages ---
+Error.InvalidInput      = "Invalid input parameter.";
+Error.OutOfMemory       = "Out of memory.";
+Error.FileNotFound      = "File not found.";

@@ -1,0 +1,101 @@
+// COPYRIGHT DASSAULT SYSTEMES {{YEAR}}
+//===================================================================
+// {{PREFIX}}Workbench.CATRsc
+// Resource file - Toolbar and menu layout definitions
+//===================================================================
+// This file defines the visual layout and structure of toolbars/menus
+// Syntax uses a hierarchical structure with containment relationships
+
+//-------------------------------------------------------------------
+// Toolbar Container Hierarchy
+//-------------------------------------------------------------------
+// Top-level toolbar starter contains all toolbars
+{{PREFIX}}TlbStarter
+{
+    // Main toolbar definition
+    {{PREFIX}}MainTlb
+    {
+        // Command order defines button layout (left to right)
+        // Example command sequence:
+        // {{PREFIX}}SampleHdr;      // First button
+        // Separator;                // Visual separator
+        // {{PREFIX}}AnotherHdr;     // Second button
+
+        // TODO: Add your command headers here
+        // Syntax: CommandHeaderID;
+    }
+
+    // Additional toolbars (if needed)
+    // {{PREFIX}}SecondTlb
+    // {
+    //     {{PREFIX}}CommandHdr1;
+    //     {{PREFIX}}CommandHdr2;
+    // }
+}
+
+//-------------------------------------------------------------------
+// Addin Toolbar Hierarchy
+//-------------------------------------------------------------------
+// Addin toolbar starter for integration into existing workbenches
+{{PREFIX}}AddinTlbStarter
+{
+    {{PREFIX}}AddinTlb
+    {
+        // Addin commands
+        // Example:
+        // {{PREFIX}}AddinCmdHdr;
+
+        // TODO: Add your addin command headers here
+    }
+}
+
+//-------------------------------------------------------------------
+// Menu Hierarchy (optional)
+//-------------------------------------------------------------------
+// Define menu structure if CreateMenus() is implemented
+// {{PREFIX}}MenuStarter
+// {
+//     {{PREFIX}}MainMenu
+//     {
+//         // Menu items
+//         {{PREFIX}}SampleHdr;
+//         Separator;
+//         {{PREFIX}}AnotherHdr;
+//     }
+// }
+
+//-------------------------------------------------------------------
+// Workbench Access Configuration (optional)
+//-------------------------------------------------------------------
+// Define how the workbench appears in CATIA UI
+// {{PREFIX}}Wks
+// {
+//     // Workbench icon and category
+//     Icon = "{{PREFIX}}WorkbenchIcon";
+//     Category = "Custom";
+//
+//     // Available toolbars
+//     Toolbars = ({{PREFIX}}MainTlb, {{PREFIX}}SecondTlb);
+// }
+
+//-------------------------------------------------------------------
+// Icon Definitions
+//-------------------------------------------------------------------
+// Map command header IDs to icon files
+// Icons should be placed in CNext/resources/graphic/icons/normal/
+// Supported formats: PNG (recommended), BMP, ICO
+// Recommended size: 24x24 or 32x32 pixels
+
+// Example icon mapping:
+// {{PREFIX}}SampleHdr.Icon.Normal = "{{PREFIX}}SampleIcon.png";
+// {{PREFIX}}SampleHdr.Icon.Pressed = "{{PREFIX}}SampleIcon_Pressed.png";
+// {{PREFIX}}SampleHdr.Icon.Focused = "{{PREFIX}}SampleIcon_Focused.png";
+
+//-------------------------------------------------------------------
+// Notes:
+//-------------------------------------------------------------------
+// 1. Command header IDs must match those in CreateCommands()
+// 2. Toolbar/menu IDs must match those in CreateToolbars()/CreateMenus()
+// 3. Use Separator; for visual grouping
+// 4. NLS files (.CATNls) provide localized strings for these IDs
+// 5. Icons are optional but recommended for professional appearance

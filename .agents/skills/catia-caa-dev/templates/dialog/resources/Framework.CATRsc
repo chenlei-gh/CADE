@@ -1,0 +1,20 @@
+// COPYRIGHT DASSAULT SYSTEMES 2026
+// Style resource file for <DialogClassName>
+// File: <FrameworkName>.CATRsc
+//
+// This file defines visual appearance (icons, colors, sizes)
+// Currently using default styles
+
+// Dialog window size
+<DialogClassName>.Width = 400;
+<DialogClassName>.Height = 300;
+
+// Button icons (optional, use standard CATIA icons)
+// <DialogClassName>.OKButton.Icon = "I_OK";
+// <DialogClassName>.CancelButton.Icon = "I_Cancel";
+
+// Editor width (characters)
+<DialogClassName>.InputEditor.Width = 30;
+
+// Combo width
+<DialogClassName>.TypeCombo.Width = 20;

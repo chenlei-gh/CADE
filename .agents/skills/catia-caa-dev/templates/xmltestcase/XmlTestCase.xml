@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- COPYRIGHT DASSAULT SYSTEMES YYYY -->
+<TestSuite name="XmlTestCaseName">
+    <Description>XML data-driven test suite for [ComponentName]</Description>
+
+    <TestCase name="TestScenario1">
+        <Description>Valid input scenario</Description>
+        <Input>
+            <Parameter name="param1" value="10"/>
+            <Parameter name="param2" value="20"/>
+        </Input>
+        <ExpectedOutput>
+            <Result value="30"/>
+            <Status value="S_OK"/>
+        </ExpectedOutput>
+    </TestCase>
+
+    <TestCase name="TestScenario2">
+        <Description>Invalid input scenario</Description>
+        <Input>
+            <Parameter name="param1" value="-1"/>
+            <Parameter name="param2" value="0"/>
+        </Input>
+        <ExpectedOutput>
+            <Status value="E_INVALIDARG"/>
+        </ExpectedOutput>
+    </TestCase>
+
+    <TestCase name="TestScenario3">
+        <Description>Edge case scenario</Description>
+        <Input>
+            <Parameter name="param1" value="2147483647"/>
+            <Parameter name="param2" value="1"/>
+        </Input>
+        <ExpectedOutput>
+            <Status value="E_FAIL"/>
+            <Description>Overflow expected</Description>
+        </ExpectedOutput>
+    </TestCase>
+</TestSuite>

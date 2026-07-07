@@ -1,0 +1,32 @@
+# Machine-specific environment configuration
+caa_env_config.txt
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Temporary files
+*.tmp
+nul
+*.bak
+*~
+
+# OS files
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# Editor files
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Test outputs
+test_output/
+*.log
+
+# Cache and logs
+cache/
+logs/

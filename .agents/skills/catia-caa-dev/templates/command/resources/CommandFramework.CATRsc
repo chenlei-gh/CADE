@@ -1,0 +1,15 @@
+// COPYRIGHT DASSAULT SYSTEMES 2026
+// Icon resource file for <CommandClassName>
+// File: <FrameworkName>.CATRsc
+
+// Command icon
+// Icon file should be in: CNext/resources/graphic/icons/normal/
+// Icon naming: I_<IconName>.png (24x24), I_<IconName>P.png (48x48)
+<CommandHeaderName>.Icon.Normal = "I_<CommandIconName>";
+
+// Alternative states (optional)
+// <CommandHeaderName>.Icon.Pressed = "I_<CommandIconName>P";
+// <CommandHeaderName>.Icon.Focused = "I_<CommandIconName>F";
+
+// Icon categories (for toolbar customization)
+<CommandHeaderName>.Category = "MfgToolsCommands";

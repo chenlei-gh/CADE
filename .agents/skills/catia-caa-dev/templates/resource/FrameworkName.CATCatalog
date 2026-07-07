@@ -1,0 +1,36 @@
+// COPYRIGHT DASSAULT SYSTEMES YYYY
+// Catalog File for FrameworkName
+//
+// Purpose:
+//   Registers components with CATIA's component catalog.
+//   Required for CATIA to discover and load custom components.
+//
+// Format:
+//   ComponentName  InterfaceName  LibraryName
+//
+// One line for each Interface-Component binding.
+
+// === Module: ModuleName ===
+
+// Interface implementations
+ComponentName1  IInterfaceName1  libModuleName
+ComponentName2  IInterfaceName2  libModuleName
+
+// Adapter implementations
+AdapterName1    IAdaptedInterface1  libModuleName
+
+// === Commands ===
+
+// Command headers
+CommandHeaderName1  CATCommandHeader  libModuleName
+CommandHeaderName2  CATCommandHeader  libModuleName
+
+// === Workbench ===
+
+// Workbench addins
+AddinName  CATAWorkbenchAddin  libModuleName
+
+// === Object Modeler ===
+
+// Object Modeler extensions
+ObjectModelerName  CATISpecObject  libModuleName

@@ -1,0 +1,59 @@
+// COPYRIGHT DASSAULT SYSTEMES {{YEAR}}
+//===================================================================
+// {{PREFIX}}Workbench.CATNls
+// English resource file - Workbench UI strings
+//===================================================================
+
+//-------------------------------------------------------------------
+// Workbench Definition
+//-------------------------------------------------------------------
+{{PREFIX}}Workbench.Title = "{{DESCRIPTION}} Workbench";
+{{PREFIX}}Workbench.ShortHelp = "Custom workbench for {{DESCRIPTION}}";
+{{PREFIX}}Workbench.LongHelp = "This workbench provides specialized commands for {{DESCRIPTION}}.";
+{{PREFIX}}Workbench.Category = "Custom Tools";
+
+//-------------------------------------------------------------------
+// Toolbar Definitions
+//-------------------------------------------------------------------
+{{PREFIX}}MainTlb.Title = "{{PREFIX}} Main Toolbar";
+{{PREFIX}}MainTlb.ShortHelp = "Main toolbar for {{PREFIX}} commands";
+
+// Additional toolbars (if created)
+// {{PREFIX}}SecondTlb.Title = "{{PREFIX}} Secondary Toolbar";
+// {{PREFIX}}SecondTlb.ShortHelp = "Additional {{PREFIX}} commands";
+
+//-------------------------------------------------------------------
+// Addin Toolbar Definitions
+//-------------------------------------------------------------------
+{{PREFIX}}AddinTlb.Title = "{{PREFIX}} Tools";
+{{PREFIX}}AddinTlb.ShortHelp = "{{PREFIX}} extension toolbar";
+{{PREFIX}}AddinTlb.LongHelp = "Custom commands integrated into existing workbench";
+
+//-------------------------------------------------------------------
+// Command Headers - Titles and Help
+//-------------------------------------------------------------------
+// Example command definition:
+// {{PREFIX}}SampleHdr.Title = "Sample Command";
+// {{PREFIX}}SampleHdr.ShortHelp = "Execute sample operation";
+// {{PREFIX}}SampleHdr.LongHelp = "Detailed description of sample command functionality.\nProvides step-by-step guidance.";
+// {{PREFIX}}SampleHdr.Icon.Normal = "{{PREFIX}}SampleIcon";
+
+// Add your command resource strings here
+// Pattern:
+// CommandHeaderID.Title = "Display Name";
+// CommandHeaderID.ShortHelp = "Tooltip text";
+// CommandHeaderID.LongHelp = "Status bar help text";
+// CommandHeaderID.Icon.Normal = "IconFileName";
+
+//-------------------------------------------------------------------
+// Menu Definitions (if using CreateMenus)
+//-------------------------------------------------------------------
+// {{PREFIX}}MainMenu.Title = "{{PREFIX}} Menu";
+
+//-------------------------------------------------------------------
+// Messages and Prompts
+//-------------------------------------------------------------------
+// Define user-facing messages for dialogs and prompts
+// Example:
+// {{PREFIX}}.SuccessMsg = "Operation completed successfully";
+// {{PREFIX}}.ErrorMsg = "An error occurred: ";

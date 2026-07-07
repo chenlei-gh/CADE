@@ -1,0 +1,25 @@
+; COPYRIGHT DASSAULT SYSTEMES YYYY
+; Icon Resource Configuration for FrameworkName
+;
+; This file maps logical icon names to bitmap files.
+; Icons should be placed in: CNext/resources/graphic/icons/
+
+[Icons]
+
+; Command Icons (16x16, 24x24 recommended)
+Icon_CommandName1     = Icons/CommandName1.bmp
+Icon_CommandName2     = Icons/CommandName2.bmp
+Icon_CommandName3     = Icons/CommandName3.bmp
+
+; Toolbar Icons
+Icon_ToolbarName      = Icons/ToolbarName.bmp
+
+; Workbench Icon
+Icon_WorkbenchName    = Icons/WorkbenchName.bmp
+
+; Application Icons
+Icon_ApplicationName  = Icons/ApplicationIcon.bmp
+
+; Note: Replace placeholder .bmp files with actual icon images
+; Supported formats: .bmp (recommended), .ico
+; Icon naming convention: [Name][Normal|Disabled|Hot].bmp

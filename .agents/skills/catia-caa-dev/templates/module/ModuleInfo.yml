@@ -1,0 +1,8 @@
+# ModuleName Module
+# COPYRIGHT DASSAULT SYSTEMES YYYY
+
+# Module information
+ModuleName:
+  Description: "Module description"
+  Type: Library
+  Output: ModuleName.dll
