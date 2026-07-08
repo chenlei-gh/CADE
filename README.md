@@ -42,7 +42,7 @@ git clone https://github.com/chenlei-gh/CADE.git
 cp -r cade/.agents /path/to/your/caa/project/
 ```
 
-3. Open the project in Zed. Done.
+3. Open the project in your editor. Done.
 
 ```
 your_project/
@@ -53,6 +53,46 @@ your_project/
 ```
 
 First use auto-detects CATIA. Zero manual configuration.
+
+### 🚀 MCP Auto-Setup
+
+CADE comes with an auto-setup tool that detects your editors and configures MCP automatically:
+
+```bash
+# One-click — auto-detects and configures all editors
+python .agents/skills/catia-caa-dev/tools/setup_mcp.py
+
+# Or configure a specific editor
+python .agents/skills/catia-caa-dev/tools/setup_mcp.py --editor cursor
+
+# Preview changes without writing
+python .agents/skills/catia-caa-dev/tools/setup_mcp.py --dry-run
+```
+
+> 🟢 **Zed users**: Nothing to do — SKILL.md is auto-detected.  
+> 🟡 **Claude Desktop / Cursor / VS Code / Windsurf**: Run the setup script above.
+
+<details>
+<summary>📋 Manual MCP config (click to expand)</summary>
+
+```json
+{
+  "mcpServers": {
+    "cade": {
+      "command": "python",
+      "args": ["skills/mcp_server.py"],
+      "cwd": ".agents/skills/catia-caa-dev"
+    }
+  }
+}
+```
+
+Config templates: `config/editors/`
+- `claude_desktop.json` → `%APPDATA%/Claude/claude_desktop_config.json`
+- `cursor.json` → `.cursor/mcp.json`
+- `vscode.json` → `.vscode/mcp.json`
+- `windsurf.json` → `.windsurf/mcp.json`
+</details>
 
 ### Core Features
 
@@ -112,19 +152,7 @@ cade version                      # CATIA + CADE version info
 cade test --quick                 # Run test suite
 ```
 
-**MCP Server** — 32 tools for Claude Desktop / Cursor
-
-```json
-{
-  "mcpServers": {
-    "cade": {
-      "command": "python",
-      "args": ["skills/mcp_server.py"],
-      "cwd": ".agents/skills/catia-caa-dev"
-    }
-  }
-}
-```
+**MCP Server** — 32 tools for all AI editors
 
 Tools: `analyze_workspace`, `create_executable_command`, `diagnose_and_fix`, `rename_command`, `incremental_build`, `start_catia`, `stop_catia`, `rollback`, `workspace_snapshot`, and 23 more.
 
@@ -196,7 +224,7 @@ git clone https://github.com/chenlei-gh/CADE.git
 cp -r cade/.agents /你的/CAA/项目/路径/
 ```
 
-3. 用 Zed 打开项目。完成。
+3. 用编辑器打开项目。完成。
 
 ```
 你的项目/
@@ -207,6 +235,46 @@ cp -r cade/.agents /你的/CAA/项目/路径/
 ```
 
 首次使用自动检测 CATIA。零手动配置。
+
+### 🚀 MCP 自动配置
+
+CADE 自带自动配置工具，检测你的编辑器并自动配置 MCP：
+
+```bash
+# 一键配置 — 自动检测并配置所有编辑器
+python .agents/skills/catia-caa-dev/tools/setup_mcp.py
+
+# 或指定编辑器
+python .agents/skills/catia-caa-dev/tools/setup_mcp.py --editor cursor
+
+# 预览变更（不写入文件）
+python .agents/skills/catia-caa-dev/tools/setup_mcp.py --dry-run
+```
+
+> 🟢 **Zed 用户**：无需操作 — SKILL.md 自动识别。  
+> 🟡 **Claude Desktop / Cursor / VS Code / Windsurf**：运行上述配置脚本即可。
+
+<details>
+<summary>📋 手动配置（点击展开）</summary>
+
+```json
+{
+  "mcpServers": {
+    "cade": {
+      "command": "python",
+      "args": ["skills/mcp_server.py"],
+      "cwd": ".agents/skills/catia-caa-dev"
+    }
+  }
+}
+```
+
+配置模板：`config/editors/`
+- `claude_desktop.json` → `%APPDATA%/Claude/claude_desktop_config.json`
+- `cursor.json` → `.cursor/mcp.json`
+- `vscode.json` → `.vscode/mcp.json`
+- `windsurf.json` → `.windsurf/mcp.json`
+</details>
 
 ### 核心功能
 
@@ -266,19 +334,7 @@ cade version                      # CATIA + CADE 版本信息
 cade test --quick                 # 运行测试套件
 ```
 
-**MCP Server** — 32 个工具，支持 Claude Desktop / Cursor
-
-```json
-{
-  "mcpServers": {
-    "cade": {
-      "command": "python",
-      "args": ["skills/mcp_server.py"],
-      "cwd": ".agents/skills/catia-caa-dev"
-    }
-  }
-}
-```
+**MCP Server** — 32 个工具，支持所有 AI 编辑器
 
 工具列表：`analyze_workspace`、`create_executable_command`、`diagnose_and_fix`、`rename_command`、`incremental_build`、`start_catia`、`stop_catia`、`rollback`、`workspace_snapshot` 等 23 个。
 
