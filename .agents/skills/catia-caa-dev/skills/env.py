@@ -70,26 +70,28 @@ class CAAEnvironment:
             return False
 
     def _auto_detect(self) -> bool:
-        """Auto-detect CATIA installation and write config"""
+        """Auto-detect CATIA installation and write config using new detector"""
         import os as _os
 
-        # Scan for CATIA in standard locations
-        search_paths = []
-        for drive in ["C:\\", "D:\\"]:
-            for base in ["Program Files", "Program Files (x86)"]:
-                ds_dir = _os.path.join(drive, base, "Dassault Systemes")
-                if _os.path.isdir(ds_dir):
-                    for entry in _os.listdir(ds_dir):
-                        full = _os.path.join(ds_dir, entry)
-                        if _os.path.isdir(full) and entry.startswith("B"):
-                            search_paths.append(full)
+        # Use new CATIA detector (no hardcoded paths)
+        try:
+            from ..tools.catia_detector import detect_catia_installations
+        except ImportError:
+            try:
+                sys.path.insert(0, str(self.skill_root / "tools"))
+                from catia_detector import detect_catia_installations
+            except ImportError:
+                # Fallback: return False if detector not available
+                return False
 
-        if not search_paths:
+        installations = detect_catia_installations(verbose=False)
+        if not installations:
             return False
 
-        # Use the first found
-        catia_install = search_paths[0]
-        catia_version = _os.path.basename(catia_install)
+        # Use the newest version (first in sorted list)
+        selected = installations[0]
+        catia_install = str(selected.root_path)
+        catia_version = selected.version
 
         # Detect architecture
         arch = "win_b64"
@@ -322,7 +324,11 @@ class CAAEnvironment:
                 if env.upper().startswith("CATIA") and "RADE" not in env.upper():
                     return env
             return envs[0]
-        version = self.config.get("CATIA_VERSION", "B28")
+
+        # No .edu found, use detected version from config (auto-detect uses newest)
+        version = self.config.get(
+            "CATIA_VERSION", "B30"
+        )  # Default to B30 instead of B28
         return f"CATIA_P3.V5-6R2018.{version}"
 
     def get_info(self) -> Dict[str, str]:

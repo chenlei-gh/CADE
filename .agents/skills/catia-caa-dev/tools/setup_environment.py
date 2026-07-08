@@ -12,70 +12,108 @@ Note: This configures workspace ENVIRONMENT (CATIA paths), not framework PREREQU
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
+
+# Import CATIA detector
+try:
+    from .catia_detector import CATIAInstallation, detect_catia_installations
+except ImportError:
+    from catia_detector import CATIAInstallation, detect_catia_installations
+
+
+def detect_catia_installations_interactive(
+    verbose: bool = True,
+) -> List[CATIAInstallation]:
+    """
+    Detect all CATIA installations and return them.
+    Uses the new dynamic CATIA detector (no hardcoded paths).
+
+    Args:
+        verbose: Print progress messages
+
+    Returns:
+        List of CATIAInstallation objects, sorted by version (newest first)
+    """
+    installations = detect_catia_installations(verbose=verbose)
+    return installations
+
+
+def select_catia_installation(
+    installations: List[CATIAInstallation], auto_select: bool = False
+) -> Optional[CATIAInstallation]:
+    """
+    Let user select from detected CATIA installations.
+
+    Args:
+        installations: List of detected installations
+        auto_select: If True and only one installation found, select it automatically
+
+    Returns:
+        Selected CATIAInstallation or None if cancelled
+    """
+    if not installations:
+        return None
+
+    if len(installations) == 1 and auto_select:
+        return installations[0]
+
+    # Display options
+    print("\n📋 Detected CATIA installations:")
+    for i, inst in enumerate(installations, 1):
+        code_bin = inst.get_code_bin_path()
+        print(f"  [{i}] {inst.version} - {inst.root_path}")
+        if code_bin:
+            print(f"      (Code/Bin: {code_bin})")
+
+    # User selection
+    while True:
+        try:
+            choice = input(
+                f"\nSelect CATIA version [1-{len(installations)}] (default: 1): "
+            ).strip()
+            if not choice:
+                choice = "1"
+
+            idx = int(choice) - 1
+            if 0 <= idx < len(installations):
+                return installations[idx]
+            else:
+                print(
+                    f"❌ Invalid choice. Please enter a number between 1 and {len(installations)}."
+                )
+        except ValueError:
+            print("❌ Invalid input. Please enter a number.")
+        except KeyboardInterrupt:
+            print("\n❌ Cancelled by user")
+            return None
 
 
 def detect_catia_root() -> Optional[Path]:
     """
-    Auto-detect CATIA installation path.
+    Auto-detect CATIA installation path (legacy function for compatibility).
+    Now uses the new dynamic detector.
 
     Search order:
     1. Environment variable CATIA_ROOT
-    2. Registry (Windows)
-    3. Common installation paths
+    2. Dynamic detection across all drives
     """
-    # Check environment variable
+    # Check environment variable first
     if "CATIA_ROOT" in os.environ:
         p = Path(os.environ["CATIA_ROOT"])
         if validate_catia_root(p):
             return p
 
-    # Check common paths
-    common_paths = [
-        r"C:\Program Files\Dassault Systemes\B28",
-        r"C:\Program Files\Dassault Systemes\B29",
-        r"C:\Program Files\Dassault Systemes\B30",
-        r"C:\Program Files (x86)\Dassault Systemes\B28",
-        r"D:\CATIA\B28",
-        r"D:\CATIA\B29",
-        r"E:\CATIA\B28",
-    ]
-
-    for path_str in common_paths:
-        p = Path(path_str)
-        if validate_catia_root(p):
-            return p
-
-    # Try registry (Windows only)
-    if sys.platform == "win32":
-        try:
-            import winreg
-
-            key = winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Dassault Systemes\CATIA"
-            )
-            i = 0
-            while True:
-                try:
-                    subkey_name = winreg.EnumKey(key, i)
-                    subkey = winreg.OpenKey(key, subkey_name)
-                    try:
-                        install_dir, _ = winreg.QueryValueEx(subkey, "InstallDir")
-                        p = Path(install_dir)
-                        if validate_catia_root(p):
-                            return p
-                    except:
-                        pass
-                    i += 1
-                except OSError:
-                    break
-        except:
-            pass
+    # Use new detector
+    installations = detect_catia_installations(verbose=False)
+    if installations:
+        # Return the newest version (first in sorted list)
+        return installations[0].root_path
 
     return None
 
@@ -111,6 +149,8 @@ def find_cnext_exe(catia_root: Path) -> Optional[Path]:
 def setup_workspace_environment(
     workspace: Path,
     catia_root: Optional[Path] = None,
+    catia_version: Optional[str] = None,
+    interactive: bool = True,
     copy_prereq: bool = False,
     target_dir: Optional[Path] = None,
 ) -> dict:
@@ -123,6 +163,8 @@ def setup_workspace_environment(
     Args:
         workspace: Workspace root directory
         catia_root: CATIA installation path (auto-detected if None)
+        catia_version: Specific CATIA version to use (e.g., "B30")
+        interactive: Allow user to select from multiple installations
         copy_prereq: Copy prerequisite files locally
         target_dir: Target directory for copied prerequisites
 
@@ -136,28 +178,71 @@ def setup_workspace_environment(
 
     # Auto-detect CATIA if not provided
     if catia_root is None:
-        catia_root = detect_catia_root()
-        if catia_root is None:
+        # Detect all installations
+        installations = detect_catia_installations_interactive(verbose=interactive)
+
+        if not installations:
             return {
                 "status": "error",
-                "message": "CATIA installation not found. Please specify catia_root manually.",
+                "message": "CATIA installation not found. Please install CATIA or specify catia_root manually.",
             }
 
-    catia_root = Path(catia_root).resolve()
+        # Filter by version if specified
+        if catia_version:
+            installations = [
+                inst for inst in installations if inst.version == catia_version
+            ]
+            if not installations:
+                return {
+                    "status": "error",
+                    "message": f"CATIA version {catia_version} not found.",
+                }
 
-    if not validate_catia_root(catia_root):
-        return {"status": "error", "message": f"Invalid CATIA root: {catia_root}"}
+        # Select installation
+        if interactive:
+            selected = select_catia_installation(
+                installations, auto_select=(len(installations) == 1)
+            )
+            if selected is None:
+                return {"status": "error", "message": "No CATIA version selected."}
+        else:
+            selected = installations[0]  # Use newest
+
+        catia_root = selected.root_path
+        catia_version = selected.version
+    else:
+        catia_root = Path(catia_root).resolve()
+
+        if not validate_catia_root(catia_root):
+            return {"status": "error", "message": f"Invalid CATIA root: {catia_root}"}
+
+        # Extract version from path if not provided
+        if not catia_version:
+            import re
+
+            match = re.search(r"[BR]\d{2,3}", catia_root.name)
+            catia_version = match.group(0) if match else "Unknown"
 
     # Find CNEXT.exe
     cnext_exe = find_cnext_exe(catia_root)
     if cnext_exe is None:
         return {"status": "error", "message": f"CNEXT.exe not found in {catia_root}"}
 
+    # Get code/bin path for AddPrereqComponent
+    code_bin_path = None
+    for arch in ["intel_a", "win_b64", "win64", "amd64_win64"]:
+        candidate = catia_root / arch / "code" / "bin"
+        if candidate.exists():
+            code_bin_path = candidate
+            break
+
     # Prepare configuration
     config = {
         "workspace": str(workspace),
         "catia_root": str(catia_root),
+        "catia_version": catia_version,
         "cnext_exe": str(cnext_exe),
+        "code_bin_path": str(code_bin_path) if code_bin_path else None,
         "copy_prereq": copy_prereq,
     }
 
@@ -170,7 +255,7 @@ def setup_workspace_environment(
 
         return {
             "status": "ok",
-            "message": f"Workspace environment configured successfully",
+            "message": f"Workspace environment configured with CATIA {catia_version}",
             "config": config,
         }
     except Exception as e:
@@ -183,10 +268,8 @@ def write_workspace_config(workspace: Path, config: dict) -> None:
 
     Creates:
     1. .cade_workspace.json - CADE-specific config
-    2. Environment variables setup (optional)
+    2. setup_env.bat - Environment variables setup (Windows)
     """
-    import json
-
     # Write CADE config
     config_file = workspace / ".cade_workspace.json"
     with open(config_file, "w", encoding="utf-8") as f:
@@ -198,15 +281,18 @@ def write_workspace_config(workspace: Path, config: dict) -> None:
         with open(env_script, "w", encoding="utf-8") as f:
             f.write("@echo off\n")
             f.write(f'set "CATIA_ROOT={config["catia_root"]}"\n')
+            f.write(f'set "CATIA_VERSION={config.get("catia_version", "Unknown")}"\n')
             f.write(f'set "CNEXT_EXE={config["cnext_exe"]}"\n')
             f.write(f'set "WORKSPACE={config["workspace"]}"\n')
-            f.write(f"echo Workspace environment configured.\n")
+            if config.get("code_bin_path"):
+                f.write(f'set "CATIA_CODE_BIN={config["code_bin_path"]}"\n')
+            f.write(
+                f"echo Workspace environment configured for CATIA {config.get('catia_version', 'Unknown')}.\n"
+            )
 
 
 def get_workspace_config(workspace: Path) -> Optional[dict]:
     """Read workspace configuration."""
-    import json
-
     config_file = workspace / ".cade_workspace.json"
     if not config_file.exists():
         return None
@@ -264,22 +350,30 @@ def main():
 
     # Detect only
     if args.detect:
-        catia_root = detect_catia_root()
-        if catia_root:
-            print(f"✅ CATIA detected: {catia_root}")
-            cnext = find_cnext_exe(catia_root)
-            if cnext:
-                print(f"✅ CNEXT.exe: {cnext}")
+        installations = detect_catia_installations_interactive(verbose=True)
+        if installations:
+            print(f"\n✅ Found {len(installations)} CATIA installation(s)")
+            for inst in installations:
+                print(f"\n{inst.version}:")
+                print(f"  Path: {inst.root_path}")
+                print(f"  Release: {inst.release}")
+                cnext = find_cnext_exe(inst.root_path)
+                if cnext:
+                    print(f"  CNEXT.exe: {cnext}")
+                code_bin = inst.get_code_bin_path()
+                if code_bin:
+                    print(f"  Code/Bin: {code_bin}")
         else:
-            print("❌ CATIA not detected")
+            print("❌ No CATIA installations detected")
         return
 
     # Configure workspace
     print(f"Configuring workspace: {workspace}")
 
-    result = setup_workspace_prerequisites(
+    result = setup_workspace_environment(
         workspace=workspace,
         catia_root=args.catia_root,
+        interactive=True,
         copy_prereq=args.copy_prereq,
         target_dir=args.target_dir,
     )

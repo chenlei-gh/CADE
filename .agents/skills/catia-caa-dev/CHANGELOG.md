@@ -7,6 +7,72 @@
 
 ---
 
+## [2.1.0] - 2026-07-08
+
+### 🚀 重大改进
+
+- **动态 CATIA 检测系统** - 完全消除硬编码路径和版本号
+  - 新增 `tools/catia_detector.py` - 核心检测引擎
+    - `CATIAInstallation` 类 - 表示检测到的 CATIA 安装
+    - `CATIADetector` 类 - 扫描所有驱动器和路径
+  - 动态扫描 C-Z 所有可用驱动器（不再硬编码 C:, D:, E:）
+  - 支持任意安装路径（不再限制特定目录结构）
+  - 支持所有版本：B20-B99+, R2018+ 及未来版本
+  - 智能版本排序（B30 > B28，B 版本优先于 R 版本）
+  - 多版本支持：用户可选择使用的 CATIA 版本
+  - 新增文档：`docs/CATIA_DETECTION.md`
+
+### ✨ 增强功能
+
+- **setup_environment.py 重构**
+  - 集成动态检测器，移除所有硬编码路径
+  - 新增 `detect_catia_installations_interactive()` - 交互式检测
+  - 新增 `select_catia_installation()` - 多版本选择
+  - 增强 `setup_workspace_environment()`：
+    - 支持 `catia_version` 参数（指定版本）
+    - 支持 `interactive` 参数（交互式选择）
+    - 自动检测 `code_bin_path`（用于 AddPrereqComponent）
+  - 配置文件增强：
+    - `.cade_workspace.json` 新增 `catia_version` 和 `code_bin_path` 字段
+    - `setup_env.bat` 新增 `CATIA_VERSION` 和 `CATIA_CODE_BIN` 变量
+
+- **env.py 重构**
+  - `_auto_detect()` 使用新检测器（移除硬编码驱动器扫描）
+  - `get_default_env()` 默认版本从 B28 改为 B30（跟随检测结果）
+
+- **cade CLI 增强**
+  - `cade setup --detect` 显示所有检测到的 CATIA 版本详情
+  - `cade setup` 支持交互式版本选择（多版本时）
+
+### 🐛 修复
+
+- 修复硬编码路径导致的跨机器不兼容问题
+- 修复只扫描 C: 和 D: 盘导致无法检测其他盘符 CATIA 的问题
+- 修复版本号硬编码导致新版本 CATIA 无法使用的问题
+
+### 📚 文档
+
+- 新增 `docs/CATIA_DETECTION.md` - 动态检测系统完整文档
+  - 架构说明
+  - 使用指南（CLI + Python API）
+  - 与 Prerequisites Manager 集成
+  - 故障排查
+
+### 🔧 技术细节
+
+- **检测策略**：
+  - 6 种常见路径模式（Program Files, CATIA, DS, 等）
+  - 正则表达式版本识别：`^([BR])(\d{2,3})$`
+  - 4 种架构支持：intel_a, win_b64, win64, amd64_win64
+  - CATIA 结构验证（CNext/, code/bin/ 等）
+
+- **性能**：
+  - 典型扫描时间：1-3 秒（2-3 个驱动器）
+  - 安全处理权限错误
+  - 配置缓存（避免重复扫描）
+
+---
+
 ## [2.0.1] - 2026-07-08
 
 ### ✨ 新增
