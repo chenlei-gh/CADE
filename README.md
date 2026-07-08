@@ -13,19 +13,11 @@
   CATIA CAA Development Engine
 ```
 
-<div align="center">
-
 [![Tests](https://img.shields.io/badge/tests-150%2B-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.7%2B-blue)]()
 [![CATIA](https://img.shields.io/badge/CATIA-V5%20%7C%20V6-orange)]()
 
-</div>
-
-<div align="center">
-
 🌐 [English](#english) | [中文](#chinese)
-
-</div>
 
 </div>
 
@@ -47,7 +39,7 @@
 
 ```bash
 git clone https://github.com/chenlei-gh/CADE.git
-cp -r CADE/.agents /path/to/your/caa/project/
+cp -r cade/.agents /path/to/your/caa/project/
 ```
 
 3. Open the project in Zed. Done.
@@ -201,7 +193,7 @@ python tests/test_master.py --quick   # 20s, all suites
 
 ```bash
 git clone https://github.com/chenlei-gh/CADE.git
-cp -r CADE/.agents /你的/CAA/项目/路径/
+cp -r cade/.agents /你的/CAA/项目/路径/
 ```
 
 3. 用 Zed 打开项目。完成。
@@ -329,7 +321,7 @@ Knowledge System (按需加载 — Catalog 索引)
 
 **核心理念**：系统能力增长通过沉淀知识资产实现，而非修改代码。
 
-### 快速测试
+### Quick Test
 
 ```bash
 python tests/test_master.py --quick   # 20 秒，全部套件
@@ -341,12 +333,12 @@ python tests/test_master.py --quick   # 20 秒，全部套件
 
 ## 📜 License
 
-MIT — see [LICENSE](LICENSE)
+MIT — see [LICENSE](.agents/skills/catia-caa-dev/LICENSE)
 
 ---
 
 <div align="center">
 
-**[文档](docs/) · [架构](docs/references/ARCHITECTURE.md) · [更新日志](CHANGELOG.md)**
+**[文档](.agents/skills/catia-caa-dev/docs/) · [架构](.agents/skills/catia-caa-dev/docs/references/ARCHITECTURE.md) · [更新日志](.agents/skills/catia-caa-dev/CHANGELOG.md)**
 
 </div>
