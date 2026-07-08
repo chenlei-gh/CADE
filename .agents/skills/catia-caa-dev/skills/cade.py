@@ -34,6 +34,10 @@ Usage:
   cade refactor rename <old> <new> --module <m>
   cade refactor move <cmd> --from <m1> --to <m2>
 
+  cade setup [workspace]           # Setup workspace prerequisites
+  cade setup --detect              # Detect CATIA installation
+  cade setup --show                # Show current configuration
+
   cade version                     # Show version info
   cade test [--quick]              # Run test suite
 """
@@ -85,6 +89,8 @@ def main():
         cmd_suggest(args)
     elif cmd == "prereq":
         cmd_prereq(args)
+    elif cmd == "setup":
+        cmd_setup(args)
     elif cmd == "version":
         cmd_version()
     elif cmd == "test":
@@ -407,6 +413,24 @@ def cmd_prereq(args):
     target = args[0] if args else ""
     result = get_prerequisite(Path(ws), target=target)
     _print_result(result)
+
+
+def cmd_setup(args):
+    """Setup workspace prerequisites."""
+    import subprocess
+    import sys
+
+    # Get script path
+    script = SKILL_ROOT.parent / "tools" / "setup_prerequisites.py"
+
+    # Forward all arguments to the script
+    cmd = [sys.executable, str(script)] + args
+
+    try:
+        result = subprocess.run(cmd, check=True)
+        sys.exit(result.returncode)
+    except subprocess.CalledProcessError as e:
+        sys.exit(e.returncode)
 
 
 def cmd_snapshot(args):

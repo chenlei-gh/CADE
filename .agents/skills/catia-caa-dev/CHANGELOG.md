@@ -7,6 +7,42 @@
 
 ---
 
+## [2.0.1] - 2026-07-08
+
+### ✨ 新增
+
+- **Workspace Prerequisites 自动配置** - 自动检测 CATIA 安装并配置 workspace prerequisites
+  - 新增 `tools/setup_prerequisites.py` - Prerequisites 配置工具
+  - 新增 `tools/setup_prerequisites.bat` - Windows 批处理包装
+  - 新增 CLI 命令：`cade setup [--detect|--show]`
+  - 新增 MCP 工具：`setup_workspace_prerequisites`
+  - 自动检测：环境变量、注册表、常用路径
+  - 生成配置文件：`.cade_workspace.json` + `setup_env.bat`
+  - 替代手动 CATIA "Manage prerequisites" 对话框操作
+
+- **MCP 编辑器自动配置** - 支持 5 种编辑器一键配置
+  - 新增 `tools/setup_mcp.py` - MCP 自动配置工具
+  - 新增 `tools/setup_mcp.bat` - Windows 批处理包装
+  - 新增编辑器配置模板：`config/editors/`
+    - `claude_desktop.json`
+    - `cursor.json`
+    - `vscode.json`
+    - `windsurf.json`
+  - 支持编辑器：Zed、Claude Desktop、Cursor、VS Code、Windsurf
+
+### 📝 文档
+
+- 新增 `docs/PREREQUISITES_SETUP.md` - Prerequisites 配置完整指南
+- 更新 README.md - 添加 MCP 自动配置说明和 Prerequisites 流程
+
+### 🔧 改进
+
+- 更新 `skills/cade.py` - 添加 `cmd_setup()` 命令处理
+- 更新 `skills/mcp_server.py` - 添加 Prerequisites MCP 工具（33 个工具）
+- 更新 README - 使用折叠区显示手动配置
+
+---
+
 ## [2.0.0] - 2026-07-08
 
 ### 🎓 Knowledge System（知识系统）— 核心架构升级

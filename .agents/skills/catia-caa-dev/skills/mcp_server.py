@@ -334,6 +334,18 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "setup_workspace_prerequisites",
+        "description": "Setup workspace prerequisites (auto-detect CATIA and configure)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workspace": {"type": "string"},
+                "catia_root": {"type": "string"},
+                "detect_only": {"type": "boolean"},
+            },
+        },
+    },
 ]
 
 
@@ -545,6 +557,26 @@ def handle_tool(name: str, args: dict) -> dict:
                     "diff": ctx.history.diff_last_two(),
                 }
             return {"snapshot": snap.to_dict(), "history": ctx.history.summary()}
+
+        if name == "setup_workspace_prerequisites":
+            sys.path.insert(0, str(SKILL_ROOT.parent / "tools"))
+            from setup_prerequisites import (
+                detect_catia_root,
+                setup_workspace_prerequisites,
+            )
+
+            if args.get("detect_only"):
+                catia_root = detect_catia_root()
+                if catia_root:
+                    return {"status": "ok", "catia_root": str(catia_root)}
+                else:
+                    return {"status": "error", "message": "CATIA not detected"}
+
+            result = setup_workspace_prerequisites(
+                workspace=Path(ws),
+                catia_root=args.get("catia_root"),
+            )
+            return result
 
         return {"status": "error", "message": f"Unknown tool: {name}"}
     except Exception as e:
