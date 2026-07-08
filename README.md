@@ -13,11 +13,19 @@
   CATIA CAA Development Engine
 ```
 
+<div align="center">
+
 [![Tests](https://img.shields.io/badge/tests-150%2B-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.7%2B-blue)]()
 [![CATIA](https://img.shields.io/badge/CATIA-V5%20%7C%20V6-orange)]()
 
+</div>
+
+<div align="center">
+
 🌐 [English](#english) | [中文](#chinese)
+
+</div>
 
 </div>
 
