@@ -205,18 +205,117 @@ your_project/
 cade create command 我的命令 我的模块 --dialog --wb 我的工作台
 ```
 
-### 核心理念
+### ⚡ 快速开始
 
-能力增长靠沉淀知识资产，不靠修改代码。
+```bash
+git clone https://github.com/chenlei-gh/CADE.git
+cp -r cade/.agents /你的/CAA/项目/路径/
+# 用编辑器打开项目。CADE 自动检测 CATIA，零配置。
+```
 
-| 功能 | |
-|------|---|
-| 🏗 **一键创建** | 一次调用生成 8 个文件 |
-| 🔍 **诊断修复** | 自动发现并修复破损引用 |
-| ♻️ **安全重构** | 重命名/移动，自动更新所有引用 |
-| ⏪ **完整回滚** | 每步操作有备份，随时回退 |
-| 📊 **依赖图** | 9 种关系，Mermaid 可视化 |
-| 📚 **知识系统** | API 文档 + 模式 + 示例，AI 按需加载 |
+> [!TIP]
+> **Zed** — 开箱即用。
+> **Claude / Cursor / VS Code / Windsurf** — 运行 `python .agents/skills/catia-caa-dev/tools/setup_mcp.py`
+
+### 🔥 为什么选 CADE？
+
+| ❌ 没有 CADE | ✅ 有 CADE |
+|---|---|
+| 手动创建 8 个文件 | `cade create command 我的命令 我的模块` |
+| 操作 RADE 向导，多次点击 | 告诉 AI："创建一个带对话框的命令" |
+| `mkmk` → `mkCreateRuntimeView` → `CNEXT` | `cade build && cade run` |
+| 重构后猜测哪里坏了 | `cade diagnose && cade fix --apply` |
+| 误删了没法恢复 | `cade rollback --id latest` |
+
+### 🧰 能做什么
+
+**🏗 创建**
+```bash
+cade create command  我的命令 我的模块 --dialog --wb 我的工作台
+cade create feature  我的Feature 我的模块
+cade create extension 我的扩展 CATPart 我的模块
+```
+→ 一次调用生成 .cpp、.h、Header、Catalog、NLS、Icon、Dictionary、Imakefile
+
+**🔨 编译运行**
+```bash
+cade build                          # 增量编译
+cade build --full --threads 8       # 全量编译
+cade run                            # 启动 CATIA Runtime View
+cade run --stop                     # 停止 CATIA
+```
+
+**🔍 分析修复**
+```bash
+cade analyze --graph                # Mermaid 依赖图
+cade diagnose                       # 诊断问题
+cade fix --apply                    # 自动修复
+cade validate                       # 完整性检查
+```
+
+**♻️ 重构回滚**
+```bash
+cade refactor rename 旧命令 新命令 --module 我的模块
+cade snapshot                       # 快照
+cade rollback --id latest           # 撤销
+```
+
+**🤖 AI 辅助**
+```bash
+cade suggest                        # AI 推荐下一步
+cade docs                           # 自动生成文档
+cade test --quick                   # 运行 18 套件全测试
+```
+
+### 🏛 架构
+
+```
+AI / CLI / MCP
+     ↓
+Specification → Validation → Generator → ChangeSet → File System
+     ↓
+CodeModel（10 实体）+ DependencyGraph + Diagnostics + FixPlan
+     ↓
+Build Engine（35 命令）+ Runtime Engine（7 命令）+ Rollback
+     ↓
+Knowledge System（9 Knowledge + 6 Pattern + 1 Example）
+```
+
+> **核心理念**：系统能力增长靠沉淀知识资产，不靠修改代码。
+
+### 📊 数据
+
+| | |
+|---|---|
+| **测试套件** | 18（L1-L7 + Integration + Audit） |
+| **测试用例** | 700+ |
+| **通过率** | 100% |
+| **模板** | 25+ |
+| **API** | 15（Intent + Action） |
+| **CLI 命令** | 19 |
+| **MCP 工具** | 38 |
+| **Build 命令** | 35 |
+| **Spec 类型** | 8 |
+| **重构操作** | 3 |
+| **领域实体** | 10 |
+| **知识资产** | 16（9K + 6P + 1E） |
+
+### 📂 项目结构
+
+```
+你的项目/
+├── .agents/skills/catia-caa-dev/   ← CADE（直接放入即可）
+│   ├── skills/                     ← 引擎（22 模块）
+│   ├── templates/                  ← 25+ 代码模板
+│   ├── knowledge/                  ← CAA API 参考（9 领域）
+│   ├── patterns/                   ← 架构模式（6 类型）
+│   ├── examples/                   ← 真实 CAA 项目
+│   ├── tests/                      ← 18 套件，700+ 用例
+│   └── docs/                       ← 完整文档
+├── MyFramework.edu/
+├── MyModule.m/
+└── ...
+```
 
 ---
 
