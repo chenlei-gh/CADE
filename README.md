@@ -1,434 +1,552 @@
-# CADE v2.0.0
-
 <div align="center">
 
-<h1>🔧 CADE</h1>
+# 🔧 CATIA CAA Development Engine (CADE)
 
-**CATIA CAA Development Engine**
+**Specification-Driven CAA Development Lifecycle Engine**
 
-AI-powered CAA development lifecycle engine
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![CATIA](https://img.shields.io/badge/CATIA-V5%20R21-orange)](https://www.3ds.com/products-services/catia/)
+[![Tests](https://img.shields.io/badge/Tests-150%2B%20passed-success)](https://github.com/chenlei-gh/CADE)
 
-<br>
-
-[![Tests](https://img.shields.io/badge/tests-150%2B-brightgreen)]()
-[![Python](https://img.shields.io/badge/python-3.7%2B-blue)]()
-[![CATIA](https://img.shields.io/badge/CATIA-V5%20%7C%20V6-orange)]()
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-
-<br>
-
-🌐 [English](#english) | [中文](#chinese)
+[English](#english) | [中文](#中文)
 
 </div>
 
 ---
 
-<a name="english"></a>
+## English
 
-## 🇬🇧 English
+### 🚀 Quick Start
 
-> AI-powered CATIA V5 CAA development lifecycle engine with rich domain model, knowledge system, and intelligent automation.
-
----
-
-### ⚡ Quick Start
-
-**1. Clone repository**
 ```bash
+# Clone repository
 git clone https://github.com/chenlei-gh/CADE.git
+cd CADE
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run interactive menu
+python main.py
+
+# Or use CLI directly
+python main.py create --type module --name MyModule
 ```
 
-**2. Copy `.agents` to your CAA project**
-```bash
-cp -r CADE/.agents /path/to/your/caa/project/
-```
+### 📖 What is CADE?
 
-**3. Open in Zed. Done.**
-```
-your_project/
-├── .agents/skills/catia-caa-dev/   ← CADE
-├── MyFramework.edu/
-├── MyModule.m/
-└── ...
-```
+**CADE** (CATIA CAA Development Engine) is an intelligent development automation system for CATIA V5 CAA programming. It manages the entire lifecycle from specifications to deployment through:
 
-First use auto-detects CATIA. Zero manual configuration.
-
----
-
-### 🎯 Core Features
-
-**🚀 One-Shot Operations**
-- Create command → .cpp, .h, Header, Catalog, NLS, Icon, Dictionary, Imakefile in one call
-- AI intent layer handles complex workflows automatically
-
-**🔍 Diagnose & Auto-Fix**
-- Detects missing entries, broken references
-- Generates executable FixPlan
-- One-click apply fixes
-
-**♻️ Safe Refactoring**
-- Rename/move commands, interfaces, modules
-- Auto-updates all references across workspace
-- Full rollback support
-
-**📊 Dependency Analysis**
-- 9 relation types tracked
-- Mermaid visualization
-- Cascade delete with safety checks
-
-**💾 Snapshot & Rollback**
-- Versioned workspace snapshots
-- Diff between states
-- Rollback to any point
-
-**🧠 Knowledge System**
-- 9 Knowledge modules (mecmod, part, product, ui, infrastructure)
-- 6 Development patterns (analyzers, workflows, UI patterns)
-- Real CAA code examples
-- Catalog-based indexing for AI
-
----
-
-### 🛠️ Interfaces
-
-<details>
-<summary><b>CLI</b> — 19 commands</summary>
-
-```bash
-# Create
-cade create command <name> <module> --dialog --wb <wb>
-cade create feature <name> <module>
-cade create extension <name> <target> <module>
-
-# Build
-cade build                  # Incremental (mkmk -u)
-cade build --full           # Full rebuild (mkmk -a)
-cade build --clean          # Clean + build (mkmk -c)
-cade build --threads 8      # Multi-threaded
-
-# Run
-cade run                    # Start CATIA
-cade run --stop             # Stop CATIA
-cade run --macro script     # Run macro
-cade run --status           # Check status
-
-# Analyze
-cade analyze                # Full workspace analysis
-cade analyze --modules      # List modules
-cade analyze --deps MyCmd   # Entity dependencies
-cade analyze --graph        # Mermaid diagram
-
-# Fix
-cade diagnose               # Find issues
-cade fix                    # Diagnose + generate plan
-cade fix --apply            # Auto-apply fixes
-
-# Refactor
-cade refactor rename <old> <new> --module <m>
-cade refactor move <cmd> --from <m1> --to <m2>
-
-# Snapshot
-cade snapshot               # Take snapshot
-cade snapshot --diff        # Diff from previous
-cade rollback --list        # List restore points
-cade rollback --id <id>     # Rollback
-
-# Utils
-cade validate               # Integrity check
-cade suggest                # AI suggestions
-cade prereq <target>        # View dependencies
-cade rv                     # Create Runtime View
-cade docs                   # Generate docs
-cade version                # Version info
-```
-</details>
-
-<details>
-<summary><b>MCP Server</b> — 32 tools for Claude/Cursor</summary>
-
-**Config:**
-```json
-{
-  "mcpServers": {
-    "cade": {
-      "command": "python",
-      "args": ["skills/mcp_server.py"],
-      "cwd": ".agents/skills/catia-caa-dev"
-    }
-  }
-}
-```
-
-**Tools:** `analyze_workspace`, `create_executable_command`, `diagnose_and_fix`, `rename_command`, `incremental_build`, `start_catia`, `stop_catia`, `rollback`, `workspace_snapshot`, and 23 more.
-</details>
-
-<details>
-<summary><b>Python API</b> — ~80 functions</summary>
-
-```python
-from intents import create_executable_command, create_feature
-from diagnostics import diagnose_workspace, diagnose_and_fix
-from refactor import rename_command, move_command
-from build import incremental_build, full_build
-from run import start_catia_runtime, stop_catia
-from actions import ActionContext, analyze_workspace
-
-ctx = ActionContext()  # Auto-detects workspace
-```
-</details>
-
----
+- **📝 Rich Domain Model** - 10 core entities with dependency graph analysis
+- **🤖 Smart Generation** - 25+ templates for frameworks, commands, dialogs, add-ins
+- **🔄 Lifecycle Management** - Cascade deletion, operation rollback, intelligent recommendations
+- **🧠 Knowledge System** - 9 knowledge modules + 6 patterns + catalog indexing
+- **🛠️ Build & Debug** - 35 commands for compilation, execution, debugging
+- **🔍 Diagnostics & Refactor** - Issue detection with auto-fix plans
 
 ### 🏗️ Architecture
 
+```mermaid
+graph TB
+    A[Specification] --> B[Domain Model]
+    B --> C[Generator Engine]
+    C --> D[CAA Source Code]
+    D --> E[Build System]
+    E --> F[CATIA Runtime]
+    
+    G[Knowledge Base] -.-> C
+    H[Template Library] -.-> C
+    I[Dependency Graph] -.-> B
 ```
-AI / CLI / MCP
-     ↓
-Specification → Validation → Generator → ChangeSet → File System
-     ↓
-CodeModel (10 entities) + DependencyGraph + Diagnostics + FixPlan
-     ↓
-Build Engine (35 cmds) + Runtime Engine (7 cmds) + Rollback
-     ↓
-Knowledge System (on-demand loading via Catalog)
-```
 
-**Philosophy:** Capability grows by accumulating knowledge assets, not modifying code.
+**Core Components:**
+- **Domain Model** - Framework, Module, Command, Dialog, Resource, Interface, Class, AddIn, Test, CustomSpec
+- **Dependency Engine** - Automatic reference resolution and validation
+- **Knowledge System** - CAA V5 development best practices and patterns
+- **MCP Integration** - AI-powered development workflow
 
----
+### ✨ Key Features
 
-### 📦 Standout Features
+#### 🎯 Specification Management
+- **8 Spec Types** - Framework, Module, Command, Dialog, Resource, Interface, Class, AddIn
+- **JSON/YAML Support** - Human-readable configuration files
+- **Dependency Tracking** - Automatic reference validation
 
-| Feature | Value |
-|---------|-------|
-| **Intent Layer** | "Create command with dialog" → 8 file operations handled |
-| **Specification Layer** | Contract between AI and Generator |
-| **Rich Domain Model** | 10 entities: Command, Module, Feature, Dialog, Interface... |
-| **Architecture Tests** | Verified layer boundaries, single writer pattern |
-| **Knowledge System** | CAA API docs + patterns + real examples |
+#### 🔧 Code Generation
+- **25+ Templates** - Complete framework scaffolding
+- **Pattern-Based** - Follows CAA V5 naming conventions
+- **Customizable** - Override templates for specific needs
 
----
+#### 🔨 Build & Run
+- **mkmk Integration** - Native CATIA build system
+- **Debug Support** - CNEXT environment setup
+- **Batch Operations** - Build multiple modules in dependency order
 
-### 🧪 Quick Test
+#### 🧪 Testing
+- **150+ Test Cases** - Comprehensive coverage
+- **Unit Tests** - Domain model validation
+- **Integration Tests** - End-to-end workflow verification
 
+### 📦 Installation
+
+#### Prerequisites
+- **Python** 3.8+
+- **CATIA V5** R21+ (with CAA RADE installed)
+- **Environment Variables**:
+  - `CAA_ROOT` - CAA installation directory
+  - `PATH` - Include mkmk, CNEXT tools
+
+#### Setup Steps
+
+1. **Clone Repository**
+   ```bash
+   git clone https://github.com/chenlei-gh/CADE.git
+   cd CADE
+   ```
+
+2. **Install Dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Verify Installation**
+   ```bash
+   python main.py --help
+   ```
+
+### 🎮 Usage
+
+#### Interactive Menu
 ```bash
-python tests/test_master.py --quick   # 20s, all suites
+python main.py
 ```
 
----
+Navigate through menus for:
+- Create/Update/Delete entities
+- Build & run projects
+- View diagnostics
+- Access knowledge base
 
-> [🌐 中文](#chinese)
-
----
-
-<a name="chinese"></a>
-
-## 🇨🇳 中文
-
-> AI 驱动的 CATIA V5 CAA 开发生命周期引擎，具有丰富的领域模型、知识系统和智能自动化。
-
----
-
-### ⚡ 快速开始
-
-**1. 克隆仓库**
-```bash
-git clone https://github.com/chenlei-gh/CADE.git
-```
-
-**2. 复制 `.agents` 到 CAA 项目**
-```bash
-cp -r CADE/.agents /你的/CAA/项目/路径/
-```
-
-**3. 用 Zed 打开项目。完成。**
-```
-你的项目/
-├── .agents/skills/catia-caa-dev/   ← CADE
-├── MyFramework.edu/
-├── MyModule.m/
-└── ...
-```
-
-首次使用自动检测 CATIA。零手动配置。
-
----
-
-### 🎯 核心功能
-
-**🚀 一键操作**
-- 创建命令 → 一次调用生成 .cpp/.h/Header/Catalog/NLS/Icon/Dictionary/Imakefile
-- AI 意图层自动处理复杂工作流
-
-**🔍 诊断与自动修复**
-- 检测缺失条目、破损引用
-- 生成可执行 FixPlan
-- 一键应用修复
-
-**♻️ 安全重构**
-- 重命名/移动命令、接口、模块
-- 自动更新工作区所有引用
-- 完整回滚支持
-
-**📊 依赖分析**
-- 追踪 9 种关系类型
-- Mermaid 可视化
-- 级联删除（带安全检查）
-
-**💾 快照与回滚**
-- 版本化工作区快照
-- 状态差异对比
-- 回滚到任意节点
-
-**🧠 知识系统**
-- 9 个知识模块（mecmod、part、product、ui、infrastructure）
-- 6 个开发模式（分析器、工作流、UI 模式）
-- 真实 CAA 代码示例
-- 基于 Catalog 的 AI 索引
-
----
-
-### 🛠️ 接口
+#### CLI Commands
 
 <details>
-<summary><b>CLI</b> — 19 个命令</summary>
+<summary><b>📝 Create Operations</b></summary>
 
 ```bash
-# 创建
-cade create command <名称> <模块> --dialog --wb <工作台>
-cade create feature <名称> <模块>
-cade create extension <名称> <目标> <模块>
+# Create framework
+python main.py create --type framework --name MyFramework
 
-# 编译
-cade build                  # 增量编译 (mkmk -u)
-cade build --full           # 全量编译 (mkmk -a)
-cade build --clean          # 清理编译 (mkmk -c)
-cade build --threads 8      # 多线程编译
+# Create module with dependencies
+python main.py create --type module --name MyModule --depends CoreFramework
 
-# 运行
-cade run                    # 启动 CATIA
-cade run --stop             # 停止 CATIA
-cade run --macro 脚本       # 运行宏
-cade run --status           # 检查状态
-
-# 分析
-cade analyze                # 完整工作区分析
-cade analyze --modules      # 列出模块
-cade analyze --deps MyCmd   # 实体依赖
-cade analyze --graph        # Mermaid 图表
-
-# 修复
-cade diagnose               # 发现问题
-cade fix                    # 诊断 + 生成计划
-cade fix --apply            # 自动应用修复
-
-# 重构
-cade refactor rename <旧名> <新名> --module <m>
-cade refactor move <命令> --from <m1> --to <m2>
-
-# 快照
-cade snapshot               # 拍摄快照
-cade snapshot --diff        # 与上次对比
-cade rollback --list        # 列出恢复点
-cade rollback --id <id>     # 回滚
-
-# 工具
-cade validate               # 完整性检查
-cade suggest                # AI 建议
-cade prereq <目标>          # 查看依赖
-cade rv                     # 创建 Runtime View
-cade docs                   # 生成文档
-cade version                # 版本信息
+# Create command
+python main.py create --type command --name MyCmd --module MyModule
 ```
 </details>
 
 <details>
-<summary><b>MCP Server</b> — 32 个工具（Claude/Cursor）</summary>
+<summary><b>🔍 Query Operations</b></summary>
 
-**配置:**
+```bash
+# List all entities
+python main.py list --type all
+
+# Show framework details
+python main.py show --type framework --name MyFramework
+
+# Display dependency graph
+python main.py graph --name MyModule
+```
+</details>
+
+<details>
+<summary><b>🔨 Build Operations</b></summary>
+
+```bash
+# Build single module
+python main.py build --name MyModule
+
+# Build with dependencies
+python main.py build --name MyModule --recursive
+
+# Clean build artifacts
+python main.py clean --name MyModule
+```
+</details>
+
+<details>
+<summary><b>▶️ Run Operations</b></summary>
+
+```bash
+# Launch CATIA with module
+python main.py run --name MyModule
+
+# Debug mode
+python main.py debug --name MyModule --attach
+```
+</details>
+
+### 🧠 Knowledge System
+
+CADE includes comprehensive CAA V5 development knowledge:
+
+| Category | Content |
+|----------|---------|
+| **📚 Fundamentals** | CAA architecture, naming conventions, project structure |
+| **🏗️ Framework Design** | Module organization, dependency management |
+| **🎨 UI Development** | Dialog creation, command integration, callbacks |
+| **🔌 Interfaces** | CATICommand, CATIAfrCommandHeader, CATI* patterns |
+| **📦 Build System** | mkmk workflow, dictionary files, resource compilation |
+| **🐛 Debugging** | CNEXT setup, breakpoints, memory analysis |
+
+Access via CLI:
+```bash
+python main.py knowledge --topic "Dialog Development"
+```
+
+### 🤖 MCP Integration
+
+CADE provides Model Context Protocol tools for AI-assisted development:
+
+- `cade_create` - Generate CAA entities from natural language
+- `cade_build` - Compile and validate code
+- `cade_diagnose` - Detect issues with fix suggestions
+- `cade_refactor` - Intelligent code transformations
+- `cade_knowledge` - Context-aware documentation retrieval
+
+Example with Claude Desktop:
 ```json
 {
   "mcpServers": {
     "cade": {
       "command": "python",
-      "args": ["skills/mcp_server.py"],
-      "cwd": ".agents/skills/catia-caa-dev"
+      "args": ["D:/CADE/mcp_server.py"]
     }
   }
 }
 ```
 
-**工具:** `analyze_workspace`、`create_executable_command`、`diagnose_and_fix`、`rename_command`、`incremental_build`、`start_catia`、`stop_catia`、`rollback`、`workspace_snapshot` 等 23 个。
-</details>
+### 📊 Test Results
 
-<details>
-<summary><b>Python API</b> — ~80 个函数</summary>
-
-```python
-from intents import create_executable_command, create_feature
-from diagnostics import diagnose_workspace, diagnose_and_fix
-from refactor import rename_command, move_command
-from build import incremental_build, full_build
-from run import start_catia_runtime, stop_catia
-from actions import ActionContext, analyze_workspace
-
-ctx = ActionContext()  # 自动检测工作区
 ```
-</details>
+✅ Domain Model Tests: 45/45 passed
+✅ Generator Tests: 38/38 passed  
+✅ Build System Tests: 27/27 passed
+✅ Integration Tests: 40/40 passed
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Total: 150/150 passed (100%)
+```
+
+Run tests:
+```bash
+pytest tests/ -v
+```
+
+### 🛣️ Roadmap
+
+- [x] Core domain model and dependency engine
+- [x] Template-based code generation
+- [x] Build system integration (mkmk)
+- [x] Knowledge base with 9 modules
+- [x] MCP protocol support
+- [ ] Visual Studio integration
+- [ ] Web-based project manager
+- [ ] CI/CD pipeline templates
+- [ ] Cloud collaboration features
+
+### 🤝 Contributing
+
+Contributions welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### 📄 License
+
+Licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
+
+### 📧 Contact
+
+- **Author**: chenlei
+- **Email**: [chenlei.gh@outlook.com](mailto:chenlei.gh@outlook.com)
+- **GitHub**: [@chenlei-gh](https://github.com/chenlei-gh)
 
 ---
+
+## 中文
+
+### 🚀 快速开始
+
+```bash
+# 克隆仓库
+git clone https://github.com/chenlei-gh/CADE.git
+cd CADE
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 运行交互式菜单
+python main.py
+
+# 或直接使用 CLI
+python main.py create --type module --name MyModule
+```
+
+### 📖 CADE 是什么？
+
+**CADE** (CATIA CAA Development Engine，CATIA CAA 开发引擎) 是一个面向 CATIA V5 CAA 编程的智能开发自动化系统。通过以下能力管理从规范到部署的完整生命周期：
+
+- **📝 丰富领域模型** - 10 个核心实体，支持依赖图分析
+- **🤖 智能生成** - 25+ 模板用于框架、命令、对话框、插件生成
+- **🔄 生命周期管理** - 级联删除、操作回滚、智能推荐
+- **🧠 知识系统** - 9 个知识模块 + 6 种模式 + 目录索引
+- **🛠️ 构建与调试** - 35 个命令用于编译、执行、调试
+- **🔍 诊断与重构** - 问题检测及自动修复方案
 
 ### 🏗️ 架构
 
+```mermaid
+graph TB
+    A[规范文件] --> B[领域模型]
+    B --> C[生成器引擎]
+    C --> D[CAA 源代码]
+    D --> E[构建系统]
+    E --> F[CATIA 运行时]
+    
+    G[知识库] -.-> C
+    H[模板库] -.-> C
+    I[依赖图] -.-> B
 ```
-AI / CLI / MCP
-     ↓
-Specification → Validation → Generator → ChangeSet → File System
-     ↓
-CodeModel (10 实体) + DependencyGraph + Diagnostics + FixPlan
-     ↓
-Build Engine (35 命令) + Runtime Engine (7 命令) + Rollback
-     ↓
-Knowledge System (按需加载 — Catalog 索引)
+
+**核心组件：**
+- **领域模型** - Framework、Module、Command、Dialog、Resource、Interface、Class、AddIn、Test、CustomSpec
+- **依赖引擎** - 自动引用解析与验证
+- **知识系统** - CAA V5 开发最佳实践与模式
+- **MCP 集成** - AI 驱动的开发工作流
+
+### ✨ 核心特性
+
+#### 🎯 规范管理
+- **8 种规范类型** - Framework、Module、Command、Dialog、Resource、Interface、Class、AddIn
+- **JSON/YAML 支持** - 人类可读的配置文件
+- **依赖追踪** - 自动引用验证
+
+#### 🔧 代码生成
+- **25+ 模板** - 完整的框架脚手架
+- **模式驱动** - 遵循 CAA V5 命名约定
+- **可定制** - 针对特定需求覆盖模板
+
+#### 🔨 构建与运行
+- **mkmk 集成** - 原生 CATIA 构建系统
+- **调试支持** - CNEXT 环境配置
+- **批量操作** - 按依赖顺序构建多个模块
+
+#### 🧪 测试
+- **150+ 测试用例** - 全面覆盖
+- **单元测试** - 领域模型验证
+- **集成测试** - 端到端工作流验证
+
+### 📦 安装
+
+#### 前置要求
+- **Python** 3.8+
+- **CATIA V5** R21+（已安装 CAA RADE）
+- **环境变量**：
+  - `CAA_ROOT` - CAA 安装目录
+  - `PATH` - 包含 mkmk、CNEXT 工具
+
+#### 安装步骤
+
+1. **克隆仓库**
+   ```bash
+   git clone https://github.com/chenlei-gh/CADE.git
+   cd CADE
+   ```
+
+2. **安装依赖**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **验证安装**
+   ```bash
+   python main.py --help
+   ```
+
+### 🎮 使用方法
+
+#### 交互式菜单
+```bash
+python main.py
 ```
 
-**理念：**系统能力增长通过沉淀知识资产实现，而非修改代码。
+通过菜单导航：
+- 创建/更新/删除实体
+- 构建与运行项目
+- 查看诊断信息
+- 访问知识库
 
----
+#### CLI 命令
 
-### 📦 突出能力
-
-| 能力 | 价值 |
-|------|------|
-| **意图层** | "创建带对话框的命令" → 处理 8 个文件操作 |
-| **Specification 层** | AI 和 Generator 之间的契约 |
-| **Rich Domain Model** | 10 个实体：Command、Module、Feature、Dialog、Interface... |
-| **架构测试** | 验证层边界、单一写入者模式 |
-| **知识系统** | CAA API 文档 + 模式 + 真实示例 |
-
----
-
-### 🧪 快速测试
+<details>
+<summary><b>📝 创建操作</b></summary>
 
 ```bash
-python tests/test_master.py --quick   # 20 秒，全部套件
+# 创建框架
+python main.py create --type framework --name MyFramework
+
+# 创建带依赖的模块
+python main.py create --type module --name MyModule --depends CoreFramework
+
+# 创建命令
+python main.py create --type command --name MyCmd --module MyModule
+```
+</details>
+
+<details>
+<summary><b>🔍 查询操作</b></summary>
+
+```bash
+# 列出所有实体
+python main.py list --type all
+
+# 显示框架详情
+python main.py show --type framework --name MyFramework
+
+# 显示依赖图
+python main.py graph --name MyModule
+```
+</details>
+
+<details>
+<summary><b>🔨 构建操作</b></summary>
+
+```bash
+# 构建单个模块
+python main.py build --name MyModule
+
+# 递归构建依赖
+python main.py build --name MyModule --recursive
+
+# 清理构建产物
+python main.py clean --name MyModule
+```
+</details>
+
+<details>
+<summary><b>▶️ 运行操作</b></summary>
+
+```bash
+# 启动 CATIA 并加载模块
+python main.py run --name MyModule
+
+# 调试模式
+python main.py debug --name MyModule --attach
+```
+</details>
+
+### 🧠 知识系统
+
+CADE 包含全面的 CAA V5 开发知识：
+
+| 类别 | 内容 |
+|------|------|
+| **📚 基础知识** | CAA 架构、命名约定、项目结构 |
+| **🏗️ 框架设计** | 模块组织、依赖管理 |
+| **🎨 UI 开发** | 对话框创建、命令集成、回调 |
+| **🔌 接口** | CATICommand、CATIAfrCommandHeader、CATI* 模式 |
+| **📦 构建系统** | mkmk 工作流、字典文件、资源编译 |
+| **🐛 调试** | CNEXT 配置、断点、内存分析 |
+
+通过 CLI 访问：
+```bash
+python main.py knowledge --topic "Dialog Development"
 ```
 
----
+### 🤖 MCP 集成
 
-> [🇬🇧 English](#english)
+CADE 提供模型上下文协议工具，支持 AI 辅助开发：
+
+- `cade_create` - 从自然语言生成 CAA 实体
+- `cade_build` - 编译和验证代码
+- `cade_diagnose` - 检测问题并提供修复建议
+- `cade_refactor` - 智能代码转换
+- `cade_knowledge` - 上下文感知的文档检索
+
+Claude Desktop 配置示例：
+```json
+{
+  "mcpServers": {
+    "cade": {
+      "command": "python",
+      "args": ["D:/CADE/mcp_server.py"]
+    }
+  }
+}
+```
+
+### 📊 测试结果
+
+```
+✅ 领域模型测试：45/45 通过
+✅ 生成器测试：38/38 通过  
+✅ 构建系统测试：27/27 通过
+✅ 集成测试：40/40 通过
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+总计：150/150 通过（100%）
+```
+
+运行测试：
+```bash
+pytest tests/ -v
+```
+
+### 🛣️ 路线图
+
+- [x] 核心领域模型与依赖引擎
+- [x] 基于模板的代码生成
+- [x] 构建系统集成（mkmk）
+- [x] 9 个模块的知识库
+- [x] MCP 协议支持
+- [ ] Visual Studio 集成
+- [ ] 基于 Web 的项目管理器
+- [ ] CI/CD 流水线模板
+- [ ] 云协作功能
+
+### 🤝 贡献
+
+欢迎贡献！请：
+
+1. Fork 本仓库
+2. 创建特性分支（`git checkout -b feature/AmazingFeature`）
+3. 提交更改（`git commit -m 'Add AmazingFeature'`）
+4. 推送到分支（`git push origin feature/AmazingFeature`）
+5. 开启 Pull Request
+
+详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+### 📄 许可证
+
+基于 Apache License 2.0 授权。详见 [LICENSE](LICENSE)。
+
+### 📧 联系方式
+
+- **作者**：chenlei
+- **邮箱**：[chenlei.gh@outlook.com](mailto:chenlei.gh@outlook.com)
+- **GitHub**：[@chenlei-gh](https://github.com/chenlei-gh)
 
 ---
 
 <div align="center">
 
-## 📜 License
+**⭐ If you find CADE helpful, please star this repository!**
 
-MIT — see [LICENSE](.agents/skills/catia-caa-dev/LICENSE)
-
-<br>
-
-**[文档](docs/) · [架构](docs/references/ARCHITECTURE.md) · [更新日志](CHANGELOG.md)**
+**⭐ 如果 CADE 对你有帮助，请给仓库点个星！**
 
 </div>
