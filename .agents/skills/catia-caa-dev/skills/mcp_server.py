@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CADE MCP Server — 31 tools exposing full CADE capability to AI clients."""
+"""CADE MCP Server — 37 tools exposing full CADE capability to AI clients."""
 
 from __future__ import annotations
 
@@ -335,14 +335,62 @@ TOOLS = [
         },
     },
     {
-        "name": "setup_workspace_prerequisites",
-        "description": "Setup workspace prerequisites (auto-detect CATIA and configure)",
+        "name": "setup_workspace_environment",
+        "description": "Setup workspace environment (auto-detect CATIA paths and configure)",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "workspace": {"type": "string"},
                 "catia_root": {"type": "string"},
                 "detect_only": {"type": "boolean"},
+            },
+        },
+    },
+    {
+        "name": "prereq_add",
+        "description": "Add prerequisite to framework (AddPrereqComponent)",
+        "inputSchema": {
+            "type": "object",
+            "required": ["framework", "component"],
+            "properties": {
+                "framework": {"type": "string"},
+                "component": {"type": "string"},
+                "visibility": {
+                    "type": "string",
+                    "enum": ["Public", "Private", "Protected"],
+                },
+            },
+        },
+    },
+    {
+        "name": "prereq_list",
+        "description": "List framework prerequisites",
+        "inputSchema": {
+            "type": "object",
+            "required": ["framework"],
+            "properties": {
+                "framework": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "prereq_validate",
+        "description": "Validate workspace prerequisites (detect circular dependencies)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workspace": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "prereq_suggest",
+        "description": "Suggest prerequisites based on code analysis",
+        "inputSchema": {
+            "type": "object",
+            "required": ["module"],
+            "properties": {
+                "module": {"type": "string"},
             },
         },
     },
@@ -558,11 +606,11 @@ def handle_tool(name: str, args: dict) -> dict:
                 }
             return {"snapshot": snap.to_dict(), "history": ctx.history.summary()}
 
-        if name == "setup_workspace_prerequisites":
+        if name == "setup_workspace_environment":
             sys.path.insert(0, str(SKILL_ROOT.parent / "tools"))
-            from setup_prerequisites import (
+            from setup_environment import (
                 detect_catia_root,
-                setup_workspace_prerequisites,
+                setup_workspace_environment,
             )
 
             if args.get("detect_only"):
@@ -572,10 +620,43 @@ def handle_tool(name: str, args: dict) -> dict:
                 else:
                     return {"status": "error", "message": "CATIA not detected"}
 
-            result = setup_workspace_prerequisites(
+            result = setup_workspace_environment(
                 workspace=Path(ws),
                 catia_root=args.get("catia_root"),
             )
+            return result
+
+        # Prerequisites Management
+        if name == "prereq_add":
+            sys.path.insert(0, str(SKILL_ROOT.parent / "tools"))
+            from prerequisites_manager import add_prerequisite
+
+            result = add_prerequisite(
+                framework_path=Path(args["framework"]),
+                component=args["component"],
+                visibility=args.get("visibility", "Public"),
+            )
+            return result
+
+        if name == "prereq_list":
+            sys.path.insert(0, str(SKILL_ROOT.parent / "tools"))
+            from prerequisites_manager import list_prerequisites
+
+            result = list_prerequisites(Path(args["framework"]))
+            return result
+
+        if name == "prereq_validate":
+            sys.path.insert(0, str(SKILL_ROOT.parent / "tools"))
+            from prerequisites_manager import validate_prerequisites
+
+            result = validate_prerequisites(Path(ws))
+            return result
+
+        if name == "prereq_suggest":
+            sys.path.insert(0, str(SKILL_ROOT.parent / "tools"))
+            from prerequisites_manager import suggest_prerequisites
+
+            result = suggest_prerequisites(Path(args["module"]))
             return result
 
         return {"status": "error", "message": f"Unknown tool: {name}"}

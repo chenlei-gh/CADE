@@ -34,9 +34,16 @@ Usage:
   cade refactor rename <old> <new> --module <m>
   cade refactor move <cmd> --from <m1> --to <m2>
 
-  cade setup [workspace]           # Setup workspace prerequisites
+  cade setup [workspace]           # Setup workspace environment
   cade setup --detect              # Detect CATIA installation
   cade setup --show                # Show current configuration
+
+  cade prereq add <fw> <component> [--visibility Public]
+  cade prereq remove <fw> <component>
+  cade prereq list <framework>     # List prerequisites
+  cade prereq validate [workspace] # Validate dependencies
+  cade prereq suggest <module>     # Suggest prerequisites
+  cade prereq init <framework>     # Add default prerequisites
 
   cade version                     # Show version info
   cade test [--quick]              # Run test suite
@@ -88,7 +95,7 @@ def main():
     elif cmd == "suggest":
         cmd_suggest(args)
     elif cmd == "prereq":
-        cmd_prereq(args)
+        cmd_prereq_manager(args)
     elif cmd == "setup":
         cmd_setup(args)
     elif cmd == "version":
@@ -406,7 +413,26 @@ def cmd_suggest(args):
     _print_result(result)
 
 
-def cmd_prereq(args):
+def cmd_prereq_manager(args):
+    """Manage framework prerequisites (AddPrereqComponent)."""
+    import subprocess
+    import sys
+
+    # Get script path
+    script = SKILL_ROOT.parent / "tools" / "prerequisites_manager.py"
+
+    # Forward all arguments to the script
+    cmd = [sys.executable, str(script)] + args
+
+    try:
+        result = subprocess.run(cmd, check=True)
+        sys.exit(result.returncode)
+    except subprocess.CalledProcessError as e:
+        sys.exit(e.returncode)
+
+
+def cmd_get_prereq(args):
+    """Get prerequisite info (mkGetPreq wrapper)."""
     from build import get_prerequisite
 
     ws = _get_ws(args)
@@ -416,12 +442,12 @@ def cmd_prereq(args):
 
 
 def cmd_setup(args):
-    """Setup workspace prerequisites."""
+    """Setup workspace environment."""
     import subprocess
     import sys
 
     # Get script path
-    script = SKILL_ROOT.parent / "tools" / "setup_prerequisites.py"
+    script = SKILL_ROOT.parent / "tools" / "setup_environment.py"
 
     # Forward all arguments to the script
     cmd = [sys.executable, str(script)] + args

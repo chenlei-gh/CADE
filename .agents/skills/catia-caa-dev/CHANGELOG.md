@@ -11,14 +11,35 @@
 
 ### ✨ 新增
 
-- **Workspace Prerequisites 自动配置** - 自动检测 CATIA 安装并配置 workspace prerequisites
-  - 新增 `tools/setup_prerequisites.py` - Prerequisites 配置工具
-  - 新增 `tools/setup_prerequisites.bat` - Windows 批处理包装
+- **Workspace Environment 自动配置** - 自动检测 CATIA 安装并配置 workspace 环境
+  - 新增 `tools/setup_environment.py` - 环境配置工具（原 setup_prerequisites.py）
+  - 新增 `tools/setup_environment.bat` - Windows 批处理包装
   - 新增 CLI 命令：`cade setup [--detect|--show]`
-  - 新增 MCP 工具：`setup_workspace_prerequisites`
+  - 新增 MCP 工具：`setup_workspace_environment`
   - 自动检测：环境变量、注册表、常用路径
   - 生成配置文件：`.cade_workspace.json` + `setup_env.bat`
   - 替代手动 CATIA "Manage prerequisites" 对话框操作
+
+- **Framework Prerequisites 管理系统**（⭐ 核心新功能）- 管理框架依赖（AddPrereqComponent）
+  - 新增 `tools/prerequisites_manager.py` - Prerequisites 完整管理工具
+  - 新增 CLI 命令：
+    - `cade prereq add <fw> <component> [--visibility]` - 添加依赖
+    - `cade prereq remove <fw> <component>` - 移除依赖
+    - `cade prereq list <framework>` - 列出依赖
+    - `cade prereq validate [workspace]` - 验证依赖（检测循环依赖）
+    - `cade prereq suggest <module>` - 基于代码分析推荐依赖
+    - `cade prereq init <framework>` - 添加默认依赖
+  - 新增 MCP 工具（4个）：
+    - `prereq_add` - 添加框架依赖
+    - `prereq_list` - 列出依赖
+    - `prereq_validate` - 验证依赖图
+    - `prereq_suggest` - 智能推荐
+  - 功能特性：
+    - ✅ 自动解析和修改 `IdentityCard.h`
+    - ✅ 循环依赖检测（DFS 算法）
+    - ✅ 缺失依赖检测
+    - ✅ 基于 API 使用的智能推荐（30+ API → Framework 映射）
+    - ✅ 默认依赖一键初始化（System + ObjectModelerBase + Visualization）
 
 - **MCP 编辑器自动配置** - 支持 5 种编辑器一键配置
   - 新增 `tools/setup_mcp.py` - MCP 自动配置工具
@@ -32,14 +53,36 @@
 
 ### 📝 文档
 
-- 新增 `docs/PREREQUISITES_SETUP.md` - Prerequisites 配置完整指南
-- 更新 README.md - 添加 MCP 自动配置说明和 Prerequisites 流程
+- 新增 `docs/PREREQUISITES_SETUP.md` - Prerequisites 完整指南（已废弃，改为环境配置）
+- 新增 `docs/PREREQUISITES_MANAGER.md` - Prerequisites 管理完整文档（待创建）
+- 更新 README.md - 添加 MCP 自动配置说明
 
 ### 🔧 改进
 
-- 更新 `skills/cade.py` - 添加 `cmd_setup()` 命令处理
-- 更新 `skills/mcp_server.py` - 添加 Prerequisites MCP 工具（33 个工具）
-- 更新 README - 使用折叠区显示手动配置
+- 重命名 `setup_prerequisites.py` → `setup_environment.py` - 更准确的命名
+- 更新 `skills/cade.py` - 添加 `cmd_setup()` 和 `cmd_prereq_manager()` 命令处理
+- 更新 `skills/mcp_server.py` - 新增 5 个 MCP 工具（总计 37 个工具）
+- 分离职责：
+  - `setup_environment.py` - 环境配置（CATIA 路径）
+  - `prerequisites_manager.py` - 依赖管理（AddPrereqComponent）
+
+### 🏗️ 架构
+
+**两层 Prerequisites 系统：**
+
+```
+Layer 1: Environment Setup (环境层)
+  - CATIA 路径检测
+  - Workspace 配置
+  - 工具: setup_environment.py
+  - 命令: cade setup
+
+Layer 2: Dependencies Management (依赖层)
+  - Framework 依赖关系
+  - AddPrereqComponent 管理
+  - 工具: prerequisites_manager.py
+  - 命令: cade prereq
+```
 
 ---
 
