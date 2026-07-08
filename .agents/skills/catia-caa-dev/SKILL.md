@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: CATIA CAA V5 Development Engine (CADE) - Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。CAA 知识系统（9 Knowledge + 6 Pattern + 1 Example + Catalog 索引）。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、150+ 测试项。
+description: CATIA CAA V5 Development Engine (CADE) v2.1.0 - Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理（循环依赖检测、智能推荐）。CAA 知识系统（9 Knowledge + 6 Pattern + 1 Example + Catalog 索引）。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、147+ 测试项。
 triggers:
   - CAA component
   - CATIA component
@@ -102,6 +102,22 @@ triggers:
   - 修复方案
   - 重命名
   - 重构
+  - setup environment
+  - setup workspace
+  - detect CATIA
+  - configure workspace
+  - CATIA detection
+  - manage prerequisites
+  - add prerequisite
+  - remove prerequisite
+  - validate prerequisites
+  - circular dependency
+  - prerequisite manager
+  - 环境配置
+  - 检测CATIA
+  - 配置工作区
+  - 依赖管理
+  - 循环依赖
   - get dependencies
   - check dependencies
   - visualize dependencies
@@ -160,9 +176,9 @@ triggers:
 
 ## 🎯 核心特性
 
-**版本**: 2.0.0  
+**版本**: 2.1.0  
 **状态**: ✅ 生产就绪  
-**测试覆盖率**: 100% (140+ 测试项全部通过)
+**测试覆盖率**: 100% (147+ 测试项全部通过)
 
 这是一个**智能的 CAA 开发助手**，专注于将复杂的 CATIA CAA V5 开发流程简化为直观的意图表达。
 

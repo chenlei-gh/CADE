@@ -62,12 +62,25 @@ docs/
 
 项目根目录的核心文档：
 
+- **[CATIA_DETECTION.md](CATIA_DETECTION.md)** - 动态 CATIA 检测系统（v2.1.0）
+- **[PREREQUISITES_MANAGER.md](PREREQUISITES_MANAGER.md)** - Framework 依赖管理系统（v2.0.1）
 - **[KNOWLEDGE_SYSTEM_ARCHITECTURE.md](KNOWLEDGE_SYSTEM_ARCHITECTURE.md)** - 知识系统架构（v2.0.0）
+- **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - v2.1.0 技术实施总结
+- **[COMPLETION_REPORT.md](COMPLETION_REPORT.md)** - v2.1.0 完成报告
 - **[HARDCODE_CHECK_REPORT.md](HARDCODE_CHECK_REPORT.md)** - 硬编码检查报告
 
 ---
 
 ## 🚀 快速导航
+
+### 我要配置环境
+1. 阅读 [CATIA_DETECTION.md](CATIA_DETECTION.md)
+2. 运行 `cade setup --detect`
+3. 查看 [GETTING_STARTED.md](guides/GETTING_STARTED.md)
+
+### 我要管理依赖
+1. 阅读 [PREREQUISITES_MANAGER.md](PREREQUISITES_MANAGER.md)
+2. 运行 `cade prereq --help`
 
 ### 我是新手
 1. 先阅读 [GETTING_STARTED.md](guides/GETTING_STARTED.md)
@@ -101,5 +114,5 @@ docs/
 
 ---
 
-**最后更新**: 2026-07-07  
+**最后更新**: 2026-07-08  
 **维护者**: Kiro AI Agent
