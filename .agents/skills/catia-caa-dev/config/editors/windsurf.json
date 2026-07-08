@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cade": {
+      "command": "python",
+      "args": ["skills/mcp_server.py"],
+      "cwd": ".agents/skills/catia-caa-dev"
+    }
+  }
+}
