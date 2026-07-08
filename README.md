@@ -1,4 +1,4 @@
-# CADE v2.0.0
+# CADE v2.1.0
 
 <div align="center">
 
@@ -13,7 +13,7 @@
   CATIA CAA Development Engine
 ```
 
-[![Tests](https://img.shields.io/badge/tests-150%2B-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-147%2B-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.7%2B-blue)]()
 [![CATIA](https://img.shields.io/badge/CATIA-V5%20%7C%20V6-orange)]()
 
