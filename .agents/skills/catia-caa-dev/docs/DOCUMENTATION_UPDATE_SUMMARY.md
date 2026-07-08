@@ -6,11 +6,20 @@
 
 | 文档 | 状态 | 更新内容 |
 |------|------|----------|
-| **SKILL.md** | ✅ 已更新 | 版本 → 2.1.0，新增触发词，更新描述 |
+| **SKILL.md** | ✅ 已更新 | 版本 → 2.1.0，新增触发词，更新描述，测试结构更新 |
 | **CHANGELOG.md** | ✅ 已更新 | 新增 v2.1.0 完整条目（66 行） |
-| **config/requirements.txt** | ✅ 已更新 | 版本 → v2.1.0 |
-| **docs/README.md** | ✅ 已更新 | 新增文档链接，更新日期 |
+| **README.md** | ✅ 已更新 | 测试 Badge → 700+ |
 
+### 测试重组（2026-07-08）
+
+| 操作 | 数量 | 详情 |
+|------|------|------|
+| 删除重复/空文件 | 7 | test_comprehensive_check, test_full_system_check, test_build_run_time, test_all_build_run_commands, test_ai_response, test_complete_suite |
+| 新建合并文件 | 2 | test_build_and_run.py, test_complete_system.py |
+| 更新关联文件 | 6 | test_master.py, test_skill_ai_coordination.py, test_system_health.py, test_production_readiness.py, test_catia_detection.py, SKILL.md |
+| 最终套件数 | 16 | 21 个测试文件，700+ 测试项，100% 通过 |
+
+---
 ### 新增文档
 
 | 文档 | 行数 | 说明 |

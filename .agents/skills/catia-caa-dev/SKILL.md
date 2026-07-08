@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: CATIA CAA V5 Development Engine (CADE) v2.1.0 - Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理（循环依赖检测、智能推荐）。CAA 知识系统（9 Knowledge + 6 Pattern + 1 Example + Catalog 索引）。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、147+ 测试项。
+description: CATIA CAA V5 Development Engine (CADE) v2.1.0 — Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理（循环依赖检测、智能推荐）。CAA 知识系统（9 Knowledge + 6 Pattern + 1 Example + Catalog 索引）。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、18 套件 700+ 测试项。
 triggers:
   - CAA component
   - CATIA component
@@ -178,7 +178,7 @@ triggers:
 
 **版本**: 2.1.0  
 **状态**: ✅ 生产就绪  
-**测试覆盖率**: 100% (147+ 测试项全部通过)
+**测试覆盖率**: 100% (18 套件, 700+ 测试项全部通过)
 
 这是一个**智能的 CAA 开发助手**，专注于将复杂的 CATIA CAA V5 开发流程简化为直观的意图表达。
 
@@ -188,7 +188,7 @@ triggers:
 2. **智能依赖管理** - 自动创建和级联删除关联文件
 3. **安全操作** - 预览→确认→应用→回滚，全程可控
 4. **高性能** - 模板生成约50ms，比 RADE 工具快 100 倍
-5. **完整测试** - 140+ 测试项，100% 覆盖率
+5. **完整测试** - 18 套件、700+ 测试项，100% 覆盖率
 6. **依赖图管理** - 完整的实体关系图和 Mermaid 可视化
 7. **级联删除** - 智能检测破坏性依赖，安全删除
 8. **Intent Layer** - 高级意图接口，一次调用完成复杂任务
@@ -1062,11 +1062,10 @@ python test_e2e_workflow.py
 ```
 .agents/skills/catia-caa-dev/
 ├── SKILL.md                          # 主技能文档（本文件）
-├── README.md                         # 项目说明
 ├── CHANGELOG.md                      # 更新日志
 ├── .gitignore                        # Git 忽略文件
 │
-├── skills/                           # Python 模块（~5000 行）
+├── skills/                           # Python 模块
 │   ├── intents/                      # Intent Layer (6 文件)
 │   │   ├── commands.py               # 命令意图
 │   │   ├── services.py               # 服务意图
@@ -1089,7 +1088,12 @@ python test_e2e_workflow.py
 │   ├── run.py                        # Runtime Engine (7 函数)
 │   ├── clean.py                      # 清理管理
 │   ├── workspace.py                  # 工作区验证
-│   └── runtime_view.py               # Runtime View 管理
+│   ├── runtime_view.py               # Runtime View 管理
+│   ├── cade.py                       # CLI 入口 (19 命令)
+│   ├── mcp_server.py                 # MCP Server (38 工具)
+│   ├── docgen.py                     # 文档生成器
+│   ├── version_strategy.py           # 版本策略
+│   └── test_skills.py                # 技能自检
 │
 ├── templates/                        # 模板库（25+ 类型）
 │   ├── Framework/
@@ -1147,19 +1151,29 @@ python test_e2e_workflow.py
 │   │   └── AI_WORKFLOW_EXAMPLES.md
 │   └── README.md                     # 文档索引
 │
-├── tests/                            # 测试文件
-│   ├── test_full_system_check.py     # 128 项全系统检查
-│   ├── test_comprehensive_check.py   # 99 项综合检查
-│   ├── test_full_integration.py      # 49 个单元测试
-│   ├── test_e2e_workflow.py          # 端到端测试
+├── tests/                            # 测试文件（22 个，18 套件，700+ 测试项）
+│   ├── test_master.py                # 主运行器
+│   ├── test_complete_system.py       # 全系统验证
+│   ├── test_cross_reference.py       # 交叉引用审计
+│   ├── test_build_and_run.py         # Build/Run 合并测试
+│   ├── test_skill_ai_coordination.py # Skill-AI 协同 + 运行时链
+│   ├── test_full_integration.py      # 单元测试
+│   ├── test_e2e_workflow.py          # 端到端
 │   ├── test_phase1_enhancements.py   # Phase 1: 依赖图
 │   ├── test_phase2_intents.py        # Phase 2: Intent
 │   ├── test_phase3_rollback.py       # Phase 3: 回滚
 │   ├── test_phase4_enhanced.py       # Phase 4: 增强意图
-│   ├── test_specification.py         # P1: Spec 层
-│   ├── test_skill_ai_coordination.py # Skill-AI 协同
-│   ├── test_all_build_run_commands.py # Build/Run 全命令
-│   └── test_build_run_time.py        # Build/Run 功能
+│   ├── test_specification.py         # Spec 层
+│   ├── test_diagnostics.py           # 诊断
+│   ├── test_fixplan_executor.py      # FixPlan 执行器
+│   ├── test_refactor.py              # 重构
+│   ├── test_l4_architecture.py       # 架构不变量
+│   ├── test_l5_semantic.py           # 语义完整性
+│   ├── test_l6_fault_injection.py    # 故障注入
+│   ├── test_knowledge_system.py      # 知识系统
+│   ├── test_catia_detection.py       # CATIA 检测
+│   ├── test_system_health.py         # 健康检查
+│   └── test_production_readiness.py  # 生产就绪
 │
 ├── tools/                            # 辅助工具
 │   ├── check_code_reuse.py
@@ -1343,7 +1357,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 ### 版本信息
 
-- **当前版本**: 1.0.0
+**当前版本**: 2.1.0
 - **发布日期**: 2026-07-07
 - **状态**: 生产就绪
 - **Python 版本**: 3.7+

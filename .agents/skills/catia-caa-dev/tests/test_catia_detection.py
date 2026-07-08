@@ -263,13 +263,16 @@ def test_detection_sorting():
 
 
 def test_no_hardcoded_paths():
-    """Verify no hardcoded paths remain in code"""
+    """Verify no hardcoded paths remain in source code"""
     import re
 
-    files_to_check = [
-        SKILL_ROOT / "tools" / "setup_environment.py",
-        SKILL_ROOT / "skills" / "env.py",
-    ]
+    # Expand coverage: all skill modules + tools
+    files_to_check = []
+    for py_file in (SKILL_ROOT / "skills").rglob("*.py"):
+        files_to_check.append(py_file)
+    for ext in ("*.py", "*.bat", "*.ps1"):
+        for f in (SKILL_ROOT / "tools").rglob(ext):
+            files_to_check.append(f)
 
     # Patterns that indicate hardcoding (only in actual code, not comments)
     bad_patterns = [

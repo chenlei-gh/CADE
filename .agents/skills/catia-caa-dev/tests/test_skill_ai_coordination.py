@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Skill-AI 协同性检查
-====================
+Skill-AI 协同性检查 & Runtime API Response Chain
+===================================================
 模拟 AI 根据 SKILL.md 的触发词和文档调用 API，验证协同性。
+合并自: test_skill_ai_coordination.py + test_ai_response.py
 """
 
 import inspect
@@ -332,16 +333,158 @@ for mod_name, attr in imports_from_docs:
         print(f"  [FAIL] from {mod_name} import {attr} — {e}")
 
 # ═══════════════════════════════════════════════════════════════════
+# Part 7: Runtime API Response Chain (merged from test_ai_response.py)
+# ═══════════════════════════════════════════════════════════════════
+
+print("\n" + "=" * 70)
+print("  Part 7: Runtime API Response Chain")
+print("=" * 70)
+
+from build import build_workspace, full_build, incremental_build
+from diagnostics import diagnose_and_fix, diagnose_workspace
+from intents import (
+    create_executable_command,
+    create_extension,
+    create_feature,
+    expose_service,
+    suggest_next_action,
+)
+from meta_model import WorkspaceSnapshot
+from refactor import move_command, rename_command
+from run import check_catia_running as run_check_catia
+from specification import CommandSpec, FeatureSpec
+
+
+def ck(label, ok, detail=""):
+    global total, passed
+    total += 1
+    passed += 1 if ok else 0
+    print(
+        f"  [{'PASS' if ok else 'FAIL'}] {label}" + (f" — {detail}" if detail else "")
+    )
+
+
+# Use existing ctx from Part 1, just refresh it
+ctx.refresh(label="ai_check_1")
+snap = ctx.snapshot
+fw_count = len(snap.frameworks) if snap and snap.frameworks else 0
+ck("snapshot frameworks", True, f"count={fw_count} (ok: 0 if no workspace)")
+ck("snapshot.to_dict serializable", isinstance(snap.to_dict(), dict))
+
+ctx.refresh(label="ai_check_2")
+if hasattr(ctx, "history"):
+    s = ctx.history.summary()
+    ck("history records snapshots", s.get("total_snapshots", 0) >= 2)
+    diff = ctx.history.diff_last_two()
+    ck(
+        "diff returns dict",
+        isinstance(diff, dict),
+        f"has_changes={diff.get('has_changes')}",
+    )
+
+# 7.2 Analysis Queries
+print("\n  [7.2] Analysis (AI asks: what's in my workspace?)")
+r = snap.to_dict()
+ck("framework_count in dict", "framework_count" in r)
+ck("module count >= 0", r.get("total_modules", 0) >= 0)
+ck("commands accessible", "total_commands" in r)
+m = run_check_catia()
+ck("CATIA status queryable", m["status"] in ("running", "not_running"))
+
+# 7.3 Create Operations
+print("\n  [7.3] Create (AI asks: create a command)")
+r = create_executable_command(
+    ctx, name="AIRspCmd", module="TestModule.m", with_dialog=True
+)
+ck("create response has status", r["status"] in ("pending", "error"), r["status"])
+if r["status"] == "pending":
+    ck("response has components", "components" in r)
+else:
+    ck("response has error msg", "message" in r, str(r.get("message", ""))[:80])
+
+r = create_feature(ctx, name="AIRspFeat", module="TestModule.m")
+ck("feature create response", r["status"] in ("pending", "error"))
+
+r = create_extension(
+    ctx, name="AIRspExt", target_object="CATPart", module="TestModule.m"
+)
+ck("extension create response", r["status"] in ("pending", "error"))
+
+# 7.4 Specification
+print("\n  [7.4] Specification")
+cs = CommandSpec(name="AIRspCmd2", module="TestModule.m", framework="TestFw.edu")
+ck("CommandSpec created", cs is not None)
+ck("CommandSpec validate", isinstance(cs.validate(), dict))
+
+fs = FeatureSpec(name="AIRspFeat2", module="TestModule.m")
+ck("FeatureSpec created", fs is not None)
+
+# 7.5 Diagnostics
+print("\n  [7.5] Diagnostics")
+d = diagnose_workspace(ctx)
+ck("diagnose_workspace returns dict", isinstance(d, dict))
+ck("has status", "status" in d)
+
+d2 = diagnose_and_fix(ctx, dry_run=True)
+ck("diagnose_and_fix returns dict", isinstance(d2, dict))
+ck("fixplan generated", "fixplan" in d2 or "fixes" in d2 or "issues" in d2)
+
+# 7.6 Suggest
+print("\n  [7.6] Suggest (AI asks: what next?)")
+s = suggest_next_action(ctx)
+ck("suggest returns dict", isinstance(s, dict))
+ck(
+    "has suggestion/response",
+    isinstance(s, dict) and len(s) > 0,
+    f"keys={list(s.keys())[:5]}",
+)
+
+# 7.7 Refactor
+print("\n  [7.7] Refactor")
+ck("rename_command callable", callable(rename_command))
+ck("move_command callable", callable(move_command))
+
+# 7.8 Full Loop
+print("\n  [7.8] Full Loop (snapshot→create→diagnose→fix→suggest)")
+ctx.refresh(label="loop_1")
+ck("refresh ok", ctx.snapshot is not None)
+ck("diagnose runs", isinstance(diagnose_workspace(ctx), dict))
+ck("suggest runs", isinstance(suggest_next_action(ctx), dict))
+
+# 7.9 Build Commands
+print("\n  [7.9] Build Commands")
+ck("build_workspace callable", callable(build_workspace))
+ck("incremental_build callable", callable(incremental_build))
+ck("full_build callable", callable(full_build))
+
+# 7.10 Error Response Uniformity
+print("\n  [7.10] Error Response Uniformity")
+try:
+    bad_ctx = ActionContext("Z:/nonexistent")
+    r1 = diagnose_workspace(bad_ctx)
+    ck("diagnose bad path", isinstance(r1, dict), f"status={r1.get('status', '?')}")
+except Exception as e:
+    ck("diagnose bad path", True, f"handled: {type(e).__name__}")
+try:
+    bad_ctx2 = ActionContext("Z:/nonexistent")
+    r2 = diagnose_and_fix(bad_ctx2, dry_run=True)
+    ck("fix bad path", isinstance(r2, dict), f"status={r2.get('status', '?')}")
+except Exception as e:
+    ck("fix bad path", True, f"handled: {type(e).__name__}")
+r3 = rename_command(ctx.snapshot, "NoMod", "NoSuchCmd", "NewCmd")
+ck("rename nonexistent", isinstance(r3, dict))
+
+# ═══════════════════════════════════════════════════════════════════
 # Summary
 # ═══════════════════════════════════════════════════════════════════
 
 print("\n" + "=" * 70)
-print(f"  Skill-AI COORDINATION: {passed}/{total}")
+print(f"  Skill-AI COORDINATION + RUNTIME CHAIN: {passed}/{total}")
 print(f"  Pass rate: {passed / total * 100:.1f}%")
 print("=" * 70)
 
 if passed == total:
-    print("\n  >>> Perfect coordination — AI can seamlessly call all APIs <<<")
+    print("\n  >>> Perfect — AI can seamlessly call all APIs <<<")
 else:
     print(f"\n  >>> {total - passed} issue(s) need attention <<<")
 

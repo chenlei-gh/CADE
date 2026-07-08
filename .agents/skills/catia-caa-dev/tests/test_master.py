@@ -35,14 +35,15 @@ SUITES = {
     # ── L7: Knowledge System ──
     "L7-1 Knowledge (16)": "test_knowledge_system.py",
     # ── Integration & Coordination ──
-    "Int-1 Build/Run (38)": "test_build_run_time.py",
-    "Int-2 Build Cmds (31)": "test_all_build_run_commands.py",
-    "Int-3 Skill-AI (104)": "test_skill_ai_coordination.py",
-    "Int-4 Comprehensive (99)": "test_comprehensive_check.py",
-    "Int-5 Full System (131)": "test_full_system_check.py",
+    "Int-1 Build & Run": "test_build_and_run.py",
+    "Int-2 Skill-AI": "test_skill_ai_coordination.py",
+    # ── Full System ──
+    "Full System": "test_complete_system.py",
+    # ── Audit ──
+    "Cross-Ref Audit": "test_cross_reference.py",
 }
 
-SKIP_SLOW = {"Int-2 Build Cmds (31)"}  # Skips CATIA start/stop in quick mode
+SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
 
 VERIFY_STRINGS = {
     "test_full_integration.py": "ALL TESTS PASSED",
@@ -59,11 +60,10 @@ VERIFY_STRINGS = {
     "test_l5_semantic.py": "100%",
     "test_l6_fault_injection.py": "100%",
     "test_knowledge_system.py": "ALL CHECKS PASSED",
-    "test_build_run_time.py": "All Build/Run Time functions working correctly",
-    "test_all_build_run_commands.py": "All Build Time & Run Time commands working",
-    "test_skill_ai_coordination.py": "Perfect coordination",
-    "test_comprehensive_check.py": "ALL CHECKS PASSED",
-    "test_full_system_check.py": "ALL CHECKS PASSED",
+    "test_build_and_run.py": "All Build Time & Run Time commands working",
+    "test_skill_ai_coordination.py": "Perfect —",
+    "test_complete_system.py": "ALL TESTS PASSED",
+    "test_cross_reference.py": "ALL CROSS-REFERENCES CONSISTENT",
 }
 
 

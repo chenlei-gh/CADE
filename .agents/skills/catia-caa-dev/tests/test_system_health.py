@@ -130,11 +130,10 @@ class SystemHealthCheck:
             "test_l5_semantic.py",
             "test_l6_fault_injection.py",
             "test_knowledge_system.py",
-            "test_build_run_time.py",
-            "test_all_build_run_commands.py",
+            "test_build_and_run.py",
             "test_skill_ai_coordination.py",
-            "test_comprehensive_check.py",
-            "test_full_system_check.py",
+            "test_complete_system.py",
+            "test_cross_reference.py",
         ]
 
         for test in required_tests:

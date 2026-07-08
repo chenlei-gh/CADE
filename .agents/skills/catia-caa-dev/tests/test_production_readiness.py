@@ -110,12 +110,14 @@ class ProductionReadinessCheck:
         """2. 文档完整性"""
         print("\n[2/10] Documentation Check...")
 
-        # 核心文档
+        # 核心文档（README.md is at CADE root, 3 levels up）
+        root_parent = self.root.parent.parent.parent
         core_docs = ["README.md", "SKILL.md", "CHANGELOG.md", "LICENSE"]
         for doc in core_docs:
+            doc_path = root_parent if doc == "README.md" else self.root
             self.check_item(
                 f"Core doc: {doc}",
-                (self.root / doc).exists(),
+                (doc_path / doc).exists(),
                 error_msg=f"Missing {doc}",
             )
 
@@ -132,8 +134,9 @@ class ProductionReadinessCheck:
             error_msg="Missing patterns/README.md",
         )
 
-        # 检查 README 是否有 v2.0.0 相关内容
-        with open(self.root / "README.md", "r", encoding="utf-8") as f:
+        # Read README from CADE root (3 levels up)
+        readme_path = self.root.parent.parent.parent / "README.md"
+        with open(readme_path, "r", encoding="utf-8") as f:
             readme = f.read()
         self.check_item(
             "README mentions Knowledge System",
@@ -255,8 +258,9 @@ class ProductionReadinessCheck:
             warning_msg="No requirements.txt",
         )
 
-        # 检查是否有安装说明
-        with open(self.root / "README.md", "r", encoding="utf-8") as f:
+        # 检查是否有安装说明（README.md is at CADE root）
+        readme_path = self.root.parent.parent.parent / "README.md"
+        with open(readme_path, "r", encoding="utf-8") as f:
             readme = f.read()
         self.check_item(
             "README has installation instructions",
@@ -271,9 +275,9 @@ class ProductionReadinessCheck:
         # 检查 CHANGELOG 是否记录了 breaking changes
         with open(self.root / "CHANGELOG.md", "r", encoding="utf-8") as f:
             changelog = f.read()
-        has_v2 = "2.0.0" in changelog
+        has_v2 = "2.1.0" in changelog or "2.0.0" in changelog
         self.check_item(
-            "CHANGELOG documents v2.0.0", has_v2, error_msg="v2.0.0 not documented"
+            "CHANGELOG documents v2.x", has_v2, error_msg="no version 2.x documented"
         )
 
         # 检查是否保留了旧 API（如果有的话）
@@ -307,11 +311,12 @@ class ProductionReadinessCheck:
         """10. 版本管理"""
         print("\n[10/10] Versioning Check...")
 
-        # 检查版本号一致性
+        # 检查版本号一致性（README.md is at CADE root）
+        readme_path = self.root.parent.parent.parent / "README.md"
         files_to_check = [
-            (self.root / "README.md", "2.0.0"),
-            (self.root / "SKILL.md", "2.0.0"),
-            (self.root / "CHANGELOG.md", "2.0.0"),
+            (readme_path, "2.1.0"),
+            (self.root / "SKILL.md", "2.1.0"),
+            (self.root / "CHANGELOG.md", "2.1.0"),
         ]
 
         for file_path, expected_version in files_to_check:
