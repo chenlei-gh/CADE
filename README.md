@@ -333,12 +333,12 @@ python tests/test_master.py --quick   # 20 秒，全部套件
 
 ## 📜 License
 
-MIT — see [LICENSE](LICENSE)
+MIT — see [LICENSE](.agents/skills/catia-caa-dev/LICENSE)
 
 ---
 
 <div align="center">
 
-**[文档](docs/) · [架构](docs/references/ARCHITECTURE.md) · [更新日志](CHANGELOG.md)**
+**[文档](.agents/skills/catia-caa-dev/docs/) · [架构](.agents/skills/catia-caa-dev/docs/references/ARCHITECTURE.md) · [更新日志](.agents/skills/catia-caa-dev/CHANGELOG.md)**
 
 </div>
