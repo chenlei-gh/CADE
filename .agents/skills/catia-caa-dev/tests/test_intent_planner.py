@@ -15,8 +15,8 @@ SKILL_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL_ROOT / "skills"))
 
 from intent import (
-    Intent, IntentType, Severity, DevelopmentPlan, ActionStep,
-    Planner, plan, plan_batch, merge_plans,
+    Intent, IntentType, ImpactReport, Severity, DevelopmentPlan, ActionStep,
+    Planner, plan, plan_batch, merge_plans, analyze, analyze_batch,
 )
 
 total = passed = 0
@@ -178,6 +178,52 @@ check("to_dict has step_count", "step_count" in d)
 import json as _json
 j = _json.dumps(d, ensure_ascii=False)
 check("JSON serializable", isinstance(j, str) and len(j) > 100)
+
+
+# ═══════════════════════════════════════════════════════════
+# 6. Impact Analysis (P1)
+# ═══════════════════════════════════════════════════════════
+print("\n" + "=" * 70)
+print("  6. Impact Analysis")
+print("=" * 70)
+
+# Standalone analysis (no context)
+r = analyze("MyCmd", entity_type="command", operation="rename")
+check("Impact report created", isinstance(r, ImpactReport))
+check("Entity name", r.entity == "MyCmd")
+check("Severity LOW for rename", r.severity == Severity.LOW)
+check("Affected files not empty", len(r.affected_files) > 0)
+check("Recommendations present", len(r.recommendations) >= 1, r.recommendations[0][:40])
+
+# Interface deletion → CRITICAL
+r2 = analyze("IMyInterface", entity_type="interface", operation="delete")
+check("Interface delete → CRITICAL", r2.severity == Severity.CRITICAL)
+check("Snapshot recommendation", any("snapshot" in rec.lower() for rec in r2.recommendations))
+
+# Module deletion → CRITICAL
+r3 = analyze("MyModule", entity_type="module", operation="delete")
+check("Module delete → CRITICAL", r3.severity == Severity.CRITICAL)
+
+# Create → NONE
+r4 = analyze("NewCmd", entity_type="command", operation="create")
+check("Create → NONE", r4.severity == Severity.NONE)
+check("Create has recommendations", len(r4.recommendations) > 0)
+
+# Batch analysis
+changes = [
+    {"name": "OldCmd", "type": "command", "operation": "rename"},
+    {"name": "IOldInterface", "type": "interface", "operation": "delete"},
+    {"name": "OldModule", "type": "module", "operation": "delete"},
+]
+reports = analyze_batch(changes)
+check("Batch: 3 reports", len(reports) == 3)
+check("Batch: severities differ", len(set(r.severity for r in reports)) > 1)
+
+# to_dict round-trip
+rd = r.to_dict()
+check("ImpactReport to_dict has severity", rd["severity"] == "low")
+check("ImpactReport to_dict has entity", rd["entity"] == "MyCmd")
+check("ImpactReport to_dict has affected_files_count", "affected_files_count" in rd)
 
 
 # ═══════════════════════════════════════════════════════════

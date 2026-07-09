@@ -1099,6 +1099,7 @@ python test_e2e_workflow.py
 │   ├── intent/                       # Intent Engine (P0 Planner)
 │   │   ├── models.py                 # Intent / Plan 数据模型
 │   │   ├── planner.py                # 意图→计划转换
+│   │   ├── impact.py                 # 影响分析 (P1)
 │   │   └── templates/                # Task Templates
 │
 ├── templates/                        # 模板库（25+ 类型）
