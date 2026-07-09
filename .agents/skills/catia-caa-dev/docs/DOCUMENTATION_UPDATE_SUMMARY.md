@@ -17,7 +17,7 @@
 | 删除重复/空文件 | 7 | test_comprehensive_check, test_full_system_check, test_build_run_time, test_all_build_run_commands, test_ai_response, test_complete_suite |
 | 新建合并文件 | 2 | test_build_and_run.py, test_complete_system.py |
 | 更新关联文件 | 6 | test_master.py, test_skill_ai_coordination.py, test_system_health.py, test_production_readiness.py, test_catia_detection.py, SKILL.md |
-| 最终套件数 | 16 | 21 个测试文件，700+ 测试项，100% 通过 |
+| 最终套件数 | 21 | 23 个测试文件，700+ 测试项，100% 通过 |
 
 ---
 ### 新增文档
@@ -44,7 +44,7 @@
 
 # 现在
 版本: 2.1.0
-测试覆盖率: 100% (147+ 测试项全部通过)
+测试覆盖率: 100% (700+ 测试项全部通过)
 ```
 
 ### 2. Description 更新
@@ -52,7 +52,7 @@
 # 新增内容
 - 动态 CATIA 检测（零硬编码，支持任意版本/路径）
 - Prerequisites 管理（循环依赖检测、智能推荐）
-- 147+ 测试项（从 150+ 修正为实际数字）
+- 700+ 测试项（从 150+ 修正为实际数字）
 ```
 
 ### 3. 新增触发词（15 个）
@@ -129,7 +129,7 @@ Update documentation for v2.1.0
 - Update SKILL.md version to 2.1.0
 - Add new triggers: setup, detect CATIA, prerequisites
 - Update description with new features
-- Update test count: 147+ tests
+Update test count: 700+ tests (21 suites)
 - Update docs/README.md with new documentation links
 - Update config/requirements.txt version
 ```
@@ -175,7 +175,7 @@ Update documentation for v2.1.0
 
 ### 准确性
 - ✅ 版本号一致（v2.1.0）
-- ✅ 测试数量准确（147+）
+- ✅ 测试数量准确（700+，21 套件）
 - ✅ 日期正确（2026-07-08）
 - ✅ 功能描述与代码一致
 
