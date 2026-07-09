@@ -1199,7 +1199,7 @@ python test_e2e_workflow.py
 |------|------|
 | 🚫 **不重复造轮** | 有成熟模板直接用，不要手写 CAA 样板代码 |
 | 🚫 **不瞎猜** | 遇到未知错误，第一时间查帮助文档，不要凭经验猜测 |
-| 🚫 **不跳过帮助** | knowledge/ patterns/ examples/ 里有答案的，先查再写 |
+| 🚫 **不跳过帮助** | knowledge/ patterns/ examples/ **docs/ 帮助文档** 里有答案的，先查再写 |
 
 ```python
 # ❌ 错误：遇到编译错误直接猜原因
@@ -1207,11 +1207,12 @@ python test_e2e_workflow.py
 # "试一下加个 CATBaseUnknown"
 
 # ✅ 正确：先查帮助系统
-# 1. 查 knowledge/part/ 或 knowledge/infrastructure/ 获取正确 API
-# 2. 查 patterns/workflow/ 看正确的流程
-# 3. 查 examples/ 找真实示例代码
-# 4. 用 cade diagnose 让引擎帮你找问题
-# 5. 用 cade fix --apply 让引擎自动修复
+# 1. 查 docs/FAQ.md、docs/guides/ 找已知解决方案
+# 2. 查 knowledge/part/ 或 knowledge/infrastructure/ 获取正确 API
+# 3. 查 patterns/workflow/ 看正确的流程
+# 4. 查 examples/ 找真实示例代码
+# 5. 用 cade diagnose 让引擎帮你找问题
+# 6. 用 cade fix --apply 让引擎自动修复
 ```
 
 ### 1. 始终先查询
@@ -1282,20 +1283,19 @@ result = delete_command(ctx, name="MyCmd", module="TestModule.m")
 ```
 未知错误发生
     ↓
-① cade diagnose              ← 让引擎帮你分析
+① 查 docs/FAQ.md / docs/guides/  ← 先查帮助文档，找已知方案
     ↓
-② knowledge/ 查 API 参考     ← 查正确用法
+② cade diagnose                  ← 让引擎帮你分析
     ↓
-③ patterns/ 查架构模式       ← 查正确流程
+③ knowledge/ 查 API 参考         ← 查正确用法
     ↓
-④ examples/ 查实战代码       ← 查真实案例
+④ patterns/ 查架构模式           ← 查正确流程
     ↓
-⑤ cade fix --apply           ← 让引擎自动修复
+⑤ examples/ 查实战代码           ← 查真实案例
     ↓
-⑥ docs/FAQ.md 查常见问题     ← 查已知方案
-```
+⑥ cade fix --apply               ← 让引擎自动修复
 
-> ⚠️ **不要**跳过前三步直接写代码。90% 的问题在 knowledge/patterns/examples 里已经有答案。
+> ⚠️ **不要**跳过前两步直接写代码。docs/ 帮助文档和 knowledge/patterns/examples 里 90% 的问题已有答案。
 
 ### 常见问题
 
