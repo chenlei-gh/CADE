@@ -72,16 +72,19 @@ def _extract_level1(d: dict) -> dict:
     # Category breakdown (diagnostics)
     if "diagnostics" in d:
         diags = d["diagnostics"]
-        cats = {}
-        for di in diags:
-            c = di.get("category", di.get("type", "other"))
-            cats[c] = cats.get(c, 0) + 1
-        sevs = {}
-        for di in diags:
-            s = di.get("severity", "?")
-            sevs[s] = sevs.get(s, 0) + 1
-        summary["categories"] = cats
-        summary["severity"] = sevs
+        if isinstance(diags, list) and diags and isinstance(diags[0], dict):
+            cats = {}
+            for di in diags:
+                c = di.get("category", di.get("type", "other"))
+                cats[c] = cats.get(c, 0) + 1
+            sevs = {}
+            for di in diags:
+                s = di.get("severity", "?")
+                sevs[s] = sevs.get(s, 0) + 1
+            summary["categories"] = cats
+            summary["severity"] = sevs
+        else:
+            summary["diagnostics_count"] = len(diags)
 
     # Snapshot stats
     for k in ("frameworks", "framework_count", "modules", "module_count",
@@ -120,7 +123,8 @@ def _extract_level2(d: dict) -> dict:
     # Diagnostics
     if "diagnostics" in d:
         diags = d["diagnostics"]
-        err_diags = [di for di in diags if di.get("severity") == "ERROR"]
+        if isinstance(diags, list) and diags and isinstance(diags[0], dict):
+            err_diags = [di for di in diags if di.get("severity") == "ERROR"]
         if err_diags:
             detail["errors"] = detail.get("errors", []) + [
                 _keep_actionable(di) for di in err_diags[:10]
