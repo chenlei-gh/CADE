@@ -22,7 +22,7 @@
 
 ---
 
-# CADE — CATIA CAA Development Engine
+# CADE v2.1.0 — CATIA CAA Development Engine
 
 <div align="center">
 
@@ -126,6 +126,12 @@ cade test --quick                 # run all 18 test suites (~8s)
 ```
 
 > 🔌 Also available as **MCP Server** (38 tools) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
+
+### Quick Test
+
+```bash
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # ~8s, 19 suites
+```
 
 ---
 

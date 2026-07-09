@@ -11,6 +11,7 @@ SKILL_ROOT = Path(__file__).parent
 sys.path.insert(0, str(SKILL_ROOT))
 
 from actions import ActionContext
+from token_optimizer import optimize
 
 
 def _get_default_workspace():
@@ -693,6 +694,8 @@ def run_stdio():
                 result = handle_tool(
                     params.get("name", ""), params.get("arguments", {})
                 )
+                # Auto-optimize for AI: summary if ok, detail if errors
+                result = optimize(result, mode="auto")
                 resp = {
                     "jsonrpc": "2.0",
                     "id": req.get("id"),

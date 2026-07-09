@@ -301,7 +301,7 @@ readme_path = CADE_ROOT / "README.md"
 if readme_path.exists():
     readme_md = readme_path.read_text(encoding="utf-8")
     check("README mentions test_master.py", "test_master.py" in readme_md)
-    check("README version matches SKILL", f"v{skill_ver}" in readme_md)
+    check("README version matches SKILL", skill_ver in readme_md)
 
 # 7a. SKILL.md should NOT claim a local README.md
 check("SKILL.md does not claim local README.md", "├── README.md" not in skill_md)

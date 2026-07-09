@@ -41,7 +41,8 @@ SUITES = {
     "Full System": "test_complete_system.py",
     # ── Audit ──
     "Cross-Ref Audit": "test_cross_reference.py",
-}
+        "Token Optimizer": "test_token_optimizer.py",
+    }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
 
@@ -64,7 +65,8 @@ VERIFY_STRINGS = {
     "test_skill_ai_coordination.py": "Perfect —",
     "test_complete_system.py": "ALL TESTS PASSED",
     "test_cross_reference.py": "ALL CROSS-REFERENCES CONSISTENT",
-}
+        "test_token_optimizer.py": "All token optimizer tests passed",
+    }
 
 
 def run(quick: bool = False):
