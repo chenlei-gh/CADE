@@ -26,15 +26,13 @@
 
 ## scripts/
 
-| 脚本 | 用途 |
-|------|------|
-| `build.py` | 增量编译 (`mkmk -u`) |
-| `clean.py` | 清理编译 (`mkmk -c`) |
-| `full_build.py` | 全量编译 (`mkmk -a`) |
-| `package.py` | 打包为可部署文件 |
-| `install.py` | 安装到目标 CATIA |
-| `run_test.py` | 启动 CATIA 运行 FunctionTests |
+不需要。build/run/test 直接用 CADE CLI：
 
-**规则**：
-- 脚本可独立运行，不依赖 CADE
-- 每个脚本有 `--help` 或 `--dry-run`
+```bash
+cade build              # 等价 build.py
+cade build --clean      # 等价 clean.py
+cade build --full       # 等价 full_build.py
+cade run                # 等价 run_test.py
+```
+
+## examples/

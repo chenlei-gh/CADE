@@ -1202,12 +1202,12 @@ python test_e2e_workflow.py
 | `docs/Design/` | 设计说明 | 架构图、流程图、技术决策 |
 | `docs/Images/` | 图片资源 | PNG 截图，不放源文件 |
 | `examples/` | 测试数据 | 示例 CATPart/CATProduct，大文件用 LFS |
-| `scripts/` | 自动化脚本 | build/clean/package/install/run_test |
 
 **原则**：
 - 不放 Obsidian 知识库内容（TODO/Meeting/Knowledge）
 - 文档面向开发者（clone 项目的人直接可读）
 - 和 CAA 标准目录（IdentityCard/CNext/FunctionTests）互不冲突
+- build/run/test 直接用 CADE CLI，不放脚本
 
 ---
 
@@ -1410,7 +1410,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 - ✅ 快速原型开发
 - ✅ 大规模项目开发
 - ✅ AI 辅助开发
-- ✅ 自动化脚本
+- ✅ CADE CLI 替代所有脚本
 
 ---
 
