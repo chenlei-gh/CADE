@@ -252,6 +252,7 @@ class TemplateGenerator:
             "IIDLInterfaceName": name,
             "FrameworkName": fw,
             "FRAMEWORKNAME": fw.upper(),
+            "FrameworkBareName": fw.replace(".edu", ""),
             "ModuleName": mod,
             "MODULENAME": mod.upper(),
             "TestCaseName": name,

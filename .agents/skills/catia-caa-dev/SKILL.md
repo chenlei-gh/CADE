@@ -1189,6 +1189,28 @@ python test_e2e_workflow.py
 
 ---
 
+## 📁 项目文档规范
+
+每个 CADE 生成的 Framework 自动包含以下文档结构：
+
+| 文件/目录 | 用途 | 规则 |
+|----------|------|------|
+| `README.md` | 项目入口 | 一句话定位 + 快速开始 + 模块表 |
+| `ARCHITECTURE.md` | 架构说明 | 模块依赖图 + 接口/命令清单 |
+| `CHANGELOG.md` | 版本记录 | 按 Added/Changed/Fixed 分类 |
+| `docs/API/` | API 参考 | 接口文档、类图、调用示例 |
+| `docs/Design/` | 设计说明 | 架构图、流程图、技术决策 |
+| `docs/Images/` | 图片资源 | PNG 截图，不放源文件 |
+| `examples/` | 测试数据 | 示例 CATPart/CATProduct，大文件用 LFS |
+| `scripts/` | 自动化脚本 | build/clean/package/install/run_test |
+
+**原则**：
+- 不放 Obsidian 知识库内容（TODO/Meeting/Knowledge）
+- 文档面向开发者（clone 项目的人直接可读）
+- 和 CAA 标准目录（IdentityCard/CNext/FunctionTests）互不冲突
+
+---
+
 ## 🎓 最佳实践
 
 ### 0. 三不原则（最高优先级）
