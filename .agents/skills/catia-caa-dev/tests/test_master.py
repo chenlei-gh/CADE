@@ -41,11 +41,12 @@ SUITES = {
     "Full System": "test_complete_system.py",
     # ── Audit ──
     "Cross-Ref Audit": "test_cross_reference.py",
-        "Token Optimizer": "test_token_optimizer.py",
-            "CAA Structure": "test_caa_structure.py",
-                "Intent Planner": "test_intent_planner.py",
-                    "AI Integration": "test_ai_integration.py",
-                }
+    "Token Optimizer": "test_token_optimizer.py",
+    "CAA Structure": "test_caa_structure.py",
+    "Intent Planner": "test_intent_planner.py",
+    "AI Integration": "test_ai_integration.py",
+    "Token Audit": "test_token_audit.py",
+}
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
 
@@ -68,11 +69,11 @@ VERIFY_STRINGS = {
     "test_skill_ai_coordination.py": "Perfect —",
     "test_complete_system.py": "ALL TESTS PASSED",
     "test_cross_reference.py": "ALL CROSS-REFERENCES CONSISTENT",
-        "test_token_optimizer.py": "All token optimizer tests passed",
-            "test_caa_structure.py": "All CAA standard paths verified",
-                "test_intent_planner.py": "All Planner tests passed",
-                    "test_ai_integration.py": "AI can seamlessly use ALL CADE APIs",
-                }
+    "test_token_optimizer.py": "All token optimizer tests passed",
+    "test_caa_structure.py": "All CAA standard paths verified",
+    "test_intent_planner.py": "All Planner tests passed",
+    "test_ai_integration.py": "AI can seamlessly use ALL CADE APIs",
+}
 
 
 def run(quick: bool = False):

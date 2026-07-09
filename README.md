@@ -122,7 +122,7 @@ cade suggest                      # AI recommends next action
 cade docs                         # auto-generate documentation
 cade prereq MyModule              # view prerequisites
 cade rv                           # create Runtime View
-cade test --quick                 # run all 21 test suites (~8s)
+cade test --quick                 # run all 22 test suites (~8s)
 ```
 
 > 🔌 Also available as **MCP Server** (38 tools) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
@@ -130,7 +130,7 @@ cade test --quick                 # run all 21 test suites (~8s)
 ### Quick Test
 
 ```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # ~8s, 21 suites
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # ~8s, 23 suites
 ```
 
 ---
@@ -166,7 +166,7 @@ graph TD
 
 | | |
 |---|---|
-| **Test Suites** | 21 (L1-L7 + Integration + Audit) |
+| **Test Suites** | 22 (L1-L7 + Integration + Audit) |
 | **Test Cases** | 700+ |
 | **Pass Rate** | 100% |
 | **Templates** | 25+ |
@@ -191,7 +191,7 @@ your_project/
 │   ├── knowledge/                  ← CAA API reference (9 domains)
 │   ├── patterns/                   ← Architecture patterns (6 types)
 │   ├── examples/                   ← Real CAA projects
-│   ├── tests/                      ← 21 suites, 700+ cases
+│   ├── tests/                      ← 23 suites, 700+ cases
 │   ├── tools/                      ← Setup, validation, utilities
 │   ├── config/                     ← Editor MCP templates
 │   └── docs/                       ← Full documentation
@@ -271,7 +271,7 @@ cade rollback --id latest           # 撤销
 ```bash
 cade suggest                        # AI 推荐下一步
 cade docs                           # 自动生成文档
-cade test --quick                   # 运行 21 套件全测试
+cade test --quick                   # 运行 23 套件全测试
 ```
 
 ### 🏛 架构
@@ -296,7 +296,7 @@ Knowledge System（9 Knowledge + 6 Pattern + 1 Example）
 
 | | |
 |---|---|
-| **测试套件** | 21（L1-L7 + Integration + Audit） |
+| **测试套件** | 22（L1-L7 + Integration + Audit） |
 | **测试用例** | 700+ |
 | **通过率** | 100% |
 | **模板** | 25+ |
@@ -319,7 +319,7 @@ Knowledge System（9 Knowledge + 6 Pattern + 1 Example）
 │   ├── knowledge/                  ← CAA API 参考（9 领域）
 │   ├── patterns/                   ← 架构模式（6 类型）
 │   ├── examples/                   ← 真实 CAA 项目
-│   ├── tests/                      ← 21 套件，700+ 用例
+│   ├── tests/                      ← 23 套件，700+ 用例
 │   └── docs/                       ← 完整文档
 ├── MyFramework.edu/
 ├── MyModule.m/
