@@ -1100,6 +1100,7 @@ python test_e2e_workflow.py
 │   │   ├── models.py                 # Intent / Plan 数据模型
 │   │   ├── planner.py                # 意图→计划转换
 │   │   ├── impact.py                 # 影响分析 (P1)
+│   │   ├── optimizer.py              # 方案评分排序 (P2)
 │   │   └── templates/                # Task Templates
 │
 ├── templates/                        # 模板库（25+ 类型）

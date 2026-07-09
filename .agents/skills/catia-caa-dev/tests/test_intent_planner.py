@@ -17,6 +17,7 @@ sys.path.insert(0, str(SKILL_ROOT / "skills"))
 from intent import (
     Intent, IntentType, ImpactReport, Severity, DevelopmentPlan, ActionStep,
     Planner, plan, plan_batch, merge_plans, analyze, analyze_batch,
+    score_plan, optimize, recommend, compare,
 )
 
 total = passed = 0
@@ -225,6 +226,61 @@ check("ImpactReport to_dict has severity", rd["severity"] == "low")
 check("ImpactReport to_dict has entity", rd["entity"] == "MyCmd")
 check("ImpactReport to_dict has affected_files_count", "affected_files_count" in rd)
 
+
+# ═══════════════════════════════════════════════════════════
+# 7. Optimizer (P2)
+# ═══════════════════════════════════════════════════════════
+print("\n" + "=" * 70)
+print("  7. Optimizer")
+print("=" * 70)
+
+# Create different alternative plans
+from intent import plan as p_plan
+
+i1 = Intent(type=IntentType.CREATE_COMMAND_WITH_DIALOG, name="CmdA", module="M1.m")
+i2 = Intent(type=IntentType.CREATE_FEATURE_WITH_FACTORY, name="FeatB", module="M2.m")
+i3 = Intent(type=IntentType.CREATE_FRAMEWORK, name="BigFw")
+
+p1 = p_plan(i1)
+p2 = p_plan(i2)
+p3 = p_plan(i3)
+
+# Score single plan
+s = score_plan(p1)
+check("Score is dict", isinstance(s, dict))
+check("Score has total", "total" in s)
+check("Score 0-100", 0 <= s["total"] <= 100, f"total={s['total']}")
+check("Has all factors", all(k in s for k in ["impact", "risk", "simplicity", "reuse"]))
+
+# Feature plan should score differently from command plan
+s2 = score_plan(p2)
+check("Different plans, different scores", s["total"] != s2["total"])
+
+# Optimize multiple plans
+ranked = optimize([p1, p2, p3])
+check("3 plans ranked", len(ranked) == 3)
+check("First has rank=1", ranked[0]["rank"] == 1)
+check("Sorted by score", ranked[0]["scores"]["total"] >= ranked[1]["scores"]["total"])
+
+# Recommend best
+rec = recommend([p1, p2, p3])
+check("Recommend returns dict", rec is not None and isinstance(rec, dict))
+check("Recommend has plan", "plan" in rec)
+check("Recommend has reason", "reason" in rec)
+check("Recommend has alternatives_count", "alternatives_count" in rec)
+
+# Compare table
+comp = compare([p1, p2, p3])
+check("Compare is string", isinstance(comp, str))
+check("Compare has table format", "Rank" in comp and "Score" in comp)
+
+# Single plan optimize
+single = optimize([p1])
+check("Single plan rank=1", single[0]["rank"] == 1)
+
+# Empty plans
+check("Empty optimize", optimize([]) == [])
+check("Empty recommend", recommend([]) is None)
 
 # ═══════════════════════════════════════════════════════════
 # Summary

@@ -14,3 +14,4 @@ Layers:
 from intent.models import ActionStep, DevelopmentPlan, ImpactReport, Intent, IntentType, Severity
 from intent.planner import Planner, merge_plans, plan, plan_batch
 from intent.impact import analyze, analyze_batch
+from intent.optimizer import compare, optimize, recommend, score_plan
