@@ -1,0 +1,103 @@
+{
+  "CreateCommandWithDialog": {
+    "description": "Create a CAA command with UI dialog",
+    "risk": "low",
+    "steps": [
+      {"action": "ensure_module",    "params": {"name": "$module", "framework": "$framework"}},
+      {"action": "ensure_framework", "params": {"name": "$framework"}},
+      {"action": "create_command",   "params": {"name": "$name", "module": "$module", "stateful": true}},
+      {"action": "create_dialog",    "params": {"name": "$name", "module": "$module"}},
+      {"action": "create_command_header", "params": {"name": "$name", "module": "$module", "stateful": true}},
+      {"action": "register_catalog", "params": {"name": "$name", "framework": "$framework"}},
+      {"action": "register_nls",     "params": {"name": "$name", "framework": "$framework"}},
+      {"action": "update_imakefile", "params": {"module": "$module"}}
+    ],
+    "rollback": ["delete_command", "delete_dialog"]
+  },
+
+  "CreateCommand": {
+    "description": "Create a simple CAA command (no dialog)",
+    "risk": "low",
+    "steps": [
+      {"action": "ensure_module",    "params": {"name": "$module", "framework": "$framework"}},
+      {"action": "create_command",   "params": {"name": "$name", "module": "$module", "stateful": false}},
+      {"action": "create_command_header", "params": {"name": "$name", "module": "$module"}},
+      {"action": "register_catalog", "params": {"name": "$name", "framework": "$framework"}},
+      {"action": "register_nls",     "params": {"name": "$name", "framework": "$framework"}},
+      {"action": "update_imakefile", "params": {"module": "$module"}}
+    ]
+  },
+
+  "CreateFeatureWithFactory": {
+    "description": "Create a Feature with Factory and Catalog",
+    "risk": "medium",
+    "steps": [
+      {"action": "ensure_module",       "params": {"name": "$module", "framework": "$framework"}},
+      {"action": "create_interface",    "params": {"name": "$interface_name", "module": "$module"}},
+      {"action": "create_feature",      "params": {"name": "$name", "interface": "$interface_name", "module": "$module"}},
+      {"action": "create_factory",      "params": {"name": "$name", "feature": "$name", "module": "$module"}},
+      {"action": "register_catalog",    "params": {"name": "$name", "framework": "$framework"}},
+      {"action": "update_imakefile",    "params": {"module": "$module"}}
+    ]
+  },
+
+  "CreateExtension": {
+    "description": "Create a data extension on a CATIA object",
+    "risk": "medium",
+    "steps": [
+      {"action": "ensure_module",       "params": {"name": "$module", "framework": "$framework"}},
+      {"action": "create_extension",    "params": {"name": "$name", "target_object": "$target", "module": "$module"}},
+      {"action": "register_catalog",    "params": {"name": "$name", "framework": "$framework"}},
+      {"action": "update_imakefile",    "params": {"module": "$module"}}
+    ]
+  },
+
+  "CreateWorkbench": {
+    "description": "Create a Workbench with Addin",
+    "risk": "medium",
+    "steps": [
+      {"action": "ensure_module",      "params": {"name": "$module", "framework": "$framework"}},
+      {"action": "create_workbench",   "params": {"name": "$name", "module": "$module"}},
+      {"action": "create_addin",       "params": {"name": "$name", "module": "$module", "workbench": "$name"}},
+      {"action": "register_catalog",   "params": {"name": "$name", "framework": "$framework"}},
+      {"action": "update_imakefile",   "params": {"module": "$module"}}
+    ]
+  },
+
+  "CreateModule": {
+    "description": "Create a new CAA module",
+    "risk": "low",
+    "steps": [
+      {"action": "ensure_framework",   "params": {"name": "$framework"}},
+      {"action": "create_module",      "params": {"name": "$name", "framework": "$framework"}},
+      {"action": "create_imakefile",   "params": {"name": "$name", "module": "$name"}}
+    ]
+  },
+
+  "CreateFramework": {
+    "description": "Create a new CAA framework with documentation",
+    "risk": "low",
+    "steps": [
+      {"action": "create_framework",        "params": {"name": "$name"}},
+      {"action": "create_identity_card",    "params": {"framework": "$name"}},
+      {"action": "create_dictionary",       "params": {"framework": "$name"}},
+      {"action": "create_nls_catalog",      "params": {"framework": "$name"}},
+      {"action": "create_readme",           "params": {"framework": "$name"}},
+      {"action": "create_architecture_doc", "params": {"framework": "$name"}},
+      {"action": "create_changelog",        "params": {"framework": "$name"}},
+      {"action": "create_docs_structure",   "params": {"framework": "$name"}},
+      {"action": "create_examples_dir",     "params": {"framework": "$name"}}
+    ]
+  },
+
+  "BatchCreateCommands": {
+    "description": "Create multiple commands in the same module (batch)",
+    "risk": "low",
+    "steps": [
+      {"action": "ensure_module",    "params": {"name": "$module", "framework": "$framework"}},
+      {"action": "batch_create_commands", "params": {"module": "$module"}},
+      {"action": "batch_register_catalog", "params": {"framework": "$framework"}},
+      {"action": "update_imakefile", "params": {"module": "$module"}}
+    ]
+  }
+}

@@ -105,7 +105,7 @@ if claimed_suites:
 
 # 2c. Skills modules listed in SKILL.md tree must exist
 # Look for lines like: │   ├── module_name.py  (but NOT test_*.py from tests section)
-tree_modules = re.findall(r"│   ├── (\w+)\.py\s+#", skill_md)
+tree_modules = re.findall(r"^│   ├── (\w+)\.py\s+#", skill_md, re.MULTILINE)
 tree_modules = [m for m in tree_modules if not m.startswith("test_")]
 for mod in tree_modules:
     # Skip modules under intents/ sub-tree (indented deeper)
@@ -116,10 +116,10 @@ for mod in tree_modules:
 
 # 2d. All .py files in skills/ should be in the tree (or intentional omissions)
 SKIP_TREE = {
-    "__init__",
-    "test_skills",
-    "intents",
-}  # intents is a package dir, not a file
+        "__init__",
+        "test_skills",
+        "intents",
+    }  # intents/intent are package dirs
 actual_modules = sorted(f.stem for f in SKILLS_DIR.glob("*.py"))
 for mod in actual_modules:
     if mod in SKIP_TREE:
