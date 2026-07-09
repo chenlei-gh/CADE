@@ -23,16 +23,3 @@
 **规则**：
 - 二进制文件用 Git LFS 或 `.gitignore` + 网盘链接
 - 必须包含 README.md 说明每个示例的用途
-
-## scripts/
-
-不需要。build/run/test 直接用 CADE CLI：
-
-```bash
-cade build              # 等价 build.py
-cade build --clean      # 等价 clean.py
-cade build --full       # 等价 full_build.py
-cade run                # 等价 run_test.py
-```
-
-## examples/
