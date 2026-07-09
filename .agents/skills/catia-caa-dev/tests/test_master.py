@@ -42,7 +42,8 @@ SUITES = {
     # ── Audit ──
     "Cross-Ref Audit": "test_cross_reference.py",
         "Token Optimizer": "test_token_optimizer.py",
-    }
+            "CAA Structure": "test_caa_structure.py",
+        }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
 
@@ -66,7 +67,8 @@ VERIFY_STRINGS = {
     "test_complete_system.py": "ALL TESTS PASSED",
     "test_cross_reference.py": "ALL CROSS-REFERENCES CONSISTENT",
         "test_token_optimizer.py": "All token optimizer tests passed",
-    }
+            "test_caa_structure.py": "All CAA standard paths verified",
+        }
 
 
 def run(quick: bool = False):

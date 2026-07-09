@@ -108,6 +108,7 @@ class Framework(Entity):
     nls_files: List[Path] = field(default_factory=list)
     icon_resources: List[Path] = field(default_factory=list)
     rsc_files: List[Path] = field(default_factory=list)
+    function_tests: Optional[Path] = None
 
     # ── Domain Methods ──────────────────────────────────────────
 
@@ -133,6 +134,20 @@ class Framework(Entity):
     def identitycard_path(self) -> Path:
         """IdentityCard/IdentityCard.h"""
         return self.path / "IdentityCard" / "IdentityCard.h"
+
+    def rsc_path(self) -> Path:
+        """CNext/resources/resources/{bare_name}.CATRsc"""
+        return (
+            self.path
+            / "CNext"
+            / "resources"
+            / "resources"
+            / f"{self.bare_name}.CATRsc"
+        )
+
+    def function_tests_path(self) -> Path:
+        """FunctionTests/ directory"""
+        return self.path / "FunctionTests"
 
     def cnext_dir(self) -> Path:
         return self.path / "CNext"
@@ -166,6 +181,8 @@ class Framework(Entity):
                 "module_count": len(self.modules),
                 "has_dictionary": self.dictionary is not None,
                 "has_catalog": self.catalog is not None,
+                "has_function_tests": self.function_tests is not None,
+                "has_rsc": len(self.rsc_files) > 0,
             }
         )
         return d

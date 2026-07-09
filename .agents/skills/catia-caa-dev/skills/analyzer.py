@@ -123,6 +123,17 @@ class WorkspaceAnalyzer:
             if dico_files:
                 fw.dictionary = dico_files[0]
 
+        # CATRsc resource files
+        rsc_path = path / "CNext" / "resources" / "resources"
+        if rsc_path.exists():
+            rsc_files = list(rsc_path.glob("*.CATRsc"))
+            fw.rsc_files = rsc_files
+
+        # FunctionTests
+        ft = path / "FunctionTests"
+        if ft.is_dir():
+            fw.function_tests = ft
+
     # ─── Phase 2: Modules ───────────────────────────────────
 
     def _discover_modules(self, fw: Framework):
