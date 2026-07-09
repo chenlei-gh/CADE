@@ -1191,14 +1191,39 @@ python test_e2e_workflow.py
 
 ## 🎓 最佳实践
 
+### 0. 三不原则（最高优先级）
+
+> **不重复造轮，不瞎猜，不跳过帮助**
+
+| 规则 | 说明 |
+|------|------|
+| 🚫 **不重复造轮** | 有成熟模板直接用，不要手写 CAA 样板代码 |
+| 🚫 **不瞎猜** | 遇到未知错误，第一时间查帮助文档，不要凭经验猜测 |
+| 🚫 **不跳过帮助** | knowledge/ patterns/ examples/ 里有答案的，先查再写 |
+
+```python
+# ❌ 错误：遇到编译错误直接猜原因
+# "可能是少了某个 include"
+# "试一下加个 CATBaseUnknown"
+
+# ✅ 正确：先查帮助系统
+# 1. 查 knowledge/part/ 或 knowledge/infrastructure/ 获取正确 API
+# 2. 查 patterns/workflow/ 看正确的流程
+# 3. 查 examples/ 找真实示例代码
+# 4. 用 cade diagnose 让引擎帮你找问题
+# 5. 用 cade fix --apply 让引擎自动修复
+```
+
 ### 1. 始终先查询
 ```python
 # ❌ 错误：直接创建
 create_command(ctx, name="MyCmd", module="TestModule.m")
 
-# ✅ 正确：先查询可用模块
+# ✅ 正确：先查询可用的模块、接口、工作台
 modules = list_modules(ctx)
-# 然后选择现有模块
+interfaces = list_interfaces(ctx, module="TestModule.m")
+workbenches = list_workbenches(ctx)
+# 然后基于现有结构创建
 create_command(ctx, name="MyCmd", module=modules[0]["name"])
 ```
 
@@ -1251,6 +1276,26 @@ result = delete_command(ctx, name="MyCmd", module="TestModule.m")
 ---
 
 ## 🔍 故障排查
+
+### 🔴 核心法则：遇到未知错误，先查帮助，不猜
+
+```
+未知错误发生
+    ↓
+① cade diagnose              ← 让引擎帮你分析
+    ↓
+② knowledge/ 查 API 参考     ← 查正确用法
+    ↓
+③ patterns/ 查架构模式       ← 查正确流程
+    ↓
+④ examples/ 查实战代码       ← 查真实案例
+    ↓
+⑤ cade fix --apply           ← 让引擎自动修复
+    ↓
+⑥ docs/FAQ.md 查常见问题     ← 查已知方案
+```
+
+> ⚠️ **不要**跳过前三步直接写代码。90% 的问题在 knowledge/patterns/examples 里已经有答案。
 
 ### 常见问题
 
