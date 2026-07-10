@@ -286,23 +286,25 @@ User Intent
 
 ```mermaid
 graph TD
-    A[AI / CLI / MCP] --> P[Intent Engine<br/>Planner + Impact + Optimizer]
-    P --> B[Specification]
-    B --> C[Validation]
-    C --> D[Generator]
-    D --> E[ChangeSet]
-    E --> F[File System]
+    U[AI / User] -->|3 Modes| K[Kernel<br/>develop / analyze / repair]
+    K --> R[Requirement<br/>Clarifier]
+    R --> I[Planner +<br/>Impact + Optimizer]
+    I --> S[Specification]
+    S --> G[Generator<br/>25+ Templates]
+    G --> V[Verifier]
+    V -->|fail| P[Repair Loop<br/>3 retries]
+    P --> V
+    V -->|pass| O[Output]
 
-    A --> G[CodeModel<br/>10 Entities]
-    G --> H[DependencyGraph<br/>9 Relation Types]
-    G --> I[Diagnostics + FixPlan]
-    G --> J[Refactor Engine]
+    K --> Q[Knowledge<br/>5-Layer Retrieval]
+    Q --> I
 
-    A --> K[Build Engine<br/>35 Commands]
-    A --> L[Runtime Engine<br/>7 Commands]
-    A --> M[Rollback System]
+    K --> B[Build Engine<br/>35 Commands]
+    K --> X[Runtime Engine<br/>7 Commands]
+    K --> Z[Diagnostics +<br/>FixPlan + Refactor]
 
-    N[5-Layer Knowledge<br/>204 Assets] --> G
+    L[Learning] -.->|feedback| Q
+    P -.->|patterns| L
 ```
 
 > **Philosophy**: Capability grows by accumulating knowledge assets, not by modifying code.
@@ -325,7 +327,7 @@ graph TD
 | **Spec Types** | 8 |
 | **Refactor Operations** | 3 |
 | **Domain Entities** | 10 |
-| **Knowledge Assets** | 204 (29K + 13P + 13C + 6PB + 149FW + 1E) + 6 tutorial examples |
+| **Knowledge Assets** | 234 (29K + 13P + 13C + 6PB + 149FW + 1E + 6PH + 3FP) |
 
 ---
 
@@ -504,7 +506,7 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 | **Spec 类型** | 8 |
 | **重构操作** | 3 |
 | **领域实体** | 10 |
-| **知识资产** | 204（29K + 13P + 13C + 6PB + 149FW + 1E）
+| **知识资产** | 234（29K + 13P + 13C + 6PB + 149FW + 1E + 6PH + 3FP）
 
 ### 📂 项目结构
 
