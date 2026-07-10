@@ -49,7 +49,7 @@ tags: [geometry, feature]          # 标签
 | ui.context_menu | knowledge/ui/context_menu.md | context menu, right click, CATIContextualMenu, CATCmdStarter | CATIContextualMenu, CATExtIContextualMenu | R19+ |
 | ui.toolbar | knowledge/ui/toolbar.md | toolbar, command header, catalog, workbench | CATCommandHeader, CATCmdContainer | R19+ |
 | ui.workbench_patterns | knowledge/ui/workbench_patterns.md | workbench, addin, toolbar, menu, visibility | CATIPrtWksAddin, CATCmdContainer | R19+ |
-| infra.selection | knowledge/infrastructure/selection.md | selection, highlight, reframe, locate | CATISelection, CATPathElement | R19+ |
+| infra.selection | knowledge/infrastructure/selection.md | | selection, highlight, reframe, locate | CATISelection, CATPathElement | R19+ |
 | infra.code_style | knowledge/infrastructure/code_style.md | code style, organization, module layout | CATDeclareClass | R19+ |
 | infra.error_handling | knowledge/infrastructure/error_handling.md | error, HRESULT, CHECK_ARGS, IF_FAILED_RETURN | HRESULT, CATError | R19+ |
 | infra.imakefile_advanced | knowledge/infrastructure/imakefile_advanced.md | imakefile, LINK_WITH, BUILT_OBJECT_TYPE | | R19+ |

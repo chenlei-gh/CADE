@@ -238,7 +238,7 @@ triggers:
 | ⚡ **先 diagnose 再 fix** | 遇到问题先 `cade diagnose`，让引擎分析。不要猜测原因。 |
 | 📸 **大操作前 snapshot** | 重构/删除前创建快照，出问题可以 `cade rollback`。 |
 | 📚 **CADE knowledge/ 优先** | knowledge/ patterns/ examples/ 有答案，先查再写。覆盖 9 领域。|
-| 📖 **知识不足查 CAADoc/** | CADE knowledge/ 没有答案时，查 CATIA 自带官方文档（`CAADoc/Doc/online/` 使用案例、`CAADoc/Doc/docs/api/` API 参考）。 |
+| 📖 **知识不足查 CAADoc/** | CADE knowledge/ 没有答案时，查 CATIA 自带官方文档（`<CATIA_INSTALL>/CAADoc/Doc/online/` 使用案例、`<CATIA_INSTALL>/CAADoc/Doc/docs/api/` API 参考）。 |
 | 📝 **从 CAADoc 学到的必须沉淀** | ⚠️ **强制规则**：用 CAADoc 解决后，**必须**创建对应的 CADE knowledge/ 文件（含 YAML frontmatter）。结束后在 CHANGELOG 的 `### 📝 知识沉淀` 下记录文件名和来源。不得仅口头回答。违者下次还会遇到同样问题。 |
 
 ### ✨ 核心优势
@@ -1439,7 +1439,7 @@ result = delete_command(ctx, name="MyCmd", module="TestModule.m")
     ↓
 ⑤ examples/ 查实战代码           ← 查真实案例
     ↓
-⑥ CAADoc/ 查官方文档             ← knowledge/ 没有时查 CATIA 自带文档
+⑥ `<CATIA_INSTALL>/CAADoc/` 查官方文档 ← knowledge/ 没有时查 CATIA 自带文档
     ↓
 ⑦ cade fix --apply               ← 让引擎自动修复
 

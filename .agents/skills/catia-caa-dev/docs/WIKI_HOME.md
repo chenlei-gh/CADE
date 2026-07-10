@@ -191,9 +191,13 @@ Unknown Error
     ↓
 ③ Check knowledge/ (8 domains)      ← API reference
     ↓
-④ Check patterns/ (12 patterns)     ← Architecture patterns
+④ Check patterns/ (13 patterns)     ← Architecture patterns
     ↓
 ⑤ Check examples/                   ← Real code examples
+    ↓
+⑥ <CATIA_INSTALL>/CAADoc/           ← CATIA official docs (fallback)
+    ↓
+⑦ cade fix --apply                  ← Auto-fix
     ↓
 ⑥ cade fix --apply                  ← Auto-fix
 ```
