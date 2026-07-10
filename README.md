@@ -262,7 +262,8 @@ graph TD
 | | |
 |---|---|
 | **Test Suites** | 24 (L1-L7 + Integration + Audit) |
-| **Test Cases** | 700+ |
+| **Test Files** | 27 (24 suites + 3 standalone) |
+| **Checks** | ~600 |
 | **Pass Rate** | 100% |
 | **Templates** | 25+ |
 | **APIs** | 15 (Intent + Action) |
@@ -286,7 +287,7 @@ your_project/
 │   ├── knowledge/                  ← CAA API reference (8 domains)
 │   ├── patterns/                   ← Architecture patterns (7 types)
 │   ├── examples/                   ← Real CAA projects
-│   ├── tests/                      ← 24 suites, 700+ cases
+│   ├── tests/                      ← 24 suites, ~600 checks
 │   ├── tools/                      ← Setup, validation, utilities
 │   ├── config/                     ← Editor MCP templates
 │   └── docs/                       ← Full documentation
@@ -301,7 +302,7 @@ your_project/
 
 ### ❓ 是什么？
 
-**CADE** 是 CATIA CAA V5/V6 的 AI 驱动开发引擎。用自然语言告诉 AI "创建一个带对话框的命令"，引擎自动生成 8 个文件。一句命令替代 RADE 向导的多次点击。
+**CADE** 是 CATIA CAA V5 的 AI 驱动开发引擎。用自然语言告诉 AI "创建一个带对话框的命令"，引擎自动生成 8 个文件。一句命令替代 RADE 向导的多次点击。
 
 ```bash
 cade create command 我的命令 我的模块 --dialog --wb 我的工作台
@@ -319,6 +320,32 @@ cp -r cade/.agents /你的/CAA/项目/路径/
 > **Zed** — 开箱即用。
 > **Claude / Cursor / VS Code / Windsurf** — 运行 `python .agents/skills/catia-caa-dev/tools/setup_mcp.py`
 
+### 🧠 最新更新
+
+**📉 Token 优化器** — MCP 响应自动压缩，平均节省 50% token。AI 调用不浪费上下文。
+
+**🧩 Intent Engine** — 复杂任务自动分解为可执行步骤。Planner（意图→计划）+ Impact Analyzer（影响分析）+ Optimizer（方案排序）。
+
+**🎨 高级 UI 布局** — 9 个知识文件覆盖 CAA UI 每个角落：
+
+| 模式 | 场景 |
+|------|------|
+| GridConstraints | 7 种锚定、跨行跨列、伸缩策略 |
+| 多层嵌套 | 3-5 层 Frame 层级结构 |
+| 列表-详情 | 选择器 + 属性面板（BOM 编辑器） |
+| 动态表单 | Combo 切换 → 面板显示/隐藏 |
+| 树形导航 | CATDlgTree + Tab 内容区 |
+| 向导 | 状态机驱动的 Back/Next 多步骤 |
+| 反模式 | 10 种常见错误 → 正确做法 |
+
+**📐 三大新领域** — 6 个知识文件 + 3 个开发模式：
+
+| 领域 | 知识 | 模式 | 用途 |
+|------|------|------|------|
+| **工程图** | 视图、标注、BOM表 | 批量出图 | 自动生成图纸 |
+| **曲面/GSD** | 拉伸/扫掠/展平/缝合 | 曲面分析 | 表皮展平 |
+| **FTA 3D标注** | 标注集/尺寸/公差 | 自动标注 | 3D PMI |
+
 ### 🔥 为什么选 CADE？
 
 | ❌ 没有 CADE | ✅ 有 CADE |
@@ -328,6 +355,8 @@ cp -r cade/.agents /你的/CAA/项目/路径/
 | `mkmk` → `mkCreateRuntimeView` → `CNEXT` | `cade build && cade run` |
 | 重构后猜测哪里坏了 | `cade diagnose && cade fix --apply` |
 | 误删了没法恢复 | `cade rollback --id latest` |
+| AI 上下文被冗长输出浪费 | Token 优化器自动节省 50% token |
+| 重构前拍脑袋猜影响范围 | `cade impact IMyInterface delete` |
 
 ### 🧰 能做什么
 
@@ -353,20 +382,35 @@ cade analyze --graph                # Mermaid 依赖图
 cade diagnose                       # 诊断问题
 cade fix --apply                    # 自动修复
 cade validate                       # 完整性检查
+cade impact IMyInterface delete     # 影响分析
 ```
 
 **♻️ 重构回滚**
 ```bash
 cade refactor rename 旧命令 新命令 --module 我的模块
 cade snapshot                       # 快照
-cade rollback --id latest           # 撤销
+cade rollback --id latest           # 撤销任意操作
 ```
 
 **🤖 AI 辅助**
 ```bash
 cade suggest                        # AI 推荐下一步
 cade docs                           # 自动生成文档
-cade test --quick                   # 运行 24 套件全测试
+cade test --quick                   # 23 套件快速测试 (~8s)
+cade test                           # 24 套件全量测试 (~60s)
+```
+
+### ⚡ 测试结果
+
+```text
+L1 单元(49) ✅  L2 依赖图 ✅   L2 Intent ✅  L2 回滚 ✅
+L2 增强 ✅     L2 Spec ✅     L2 诊断 ✅    L2 FixPlan ✅
+L2 重构 ✅     L3 E2E ✅      L4 架构(29) ✅  L5 语义(40) ✅
+L6 故障(16) ✅  L7 知识(16) ✅  Int1 构建 ✅   Int2 协同 ✅
+全系统 ✅      交叉引用 ✅      Token ✅       CAA结构 ✅
+Intent ✅      AI集成 ✅       Token审计 ✅   深度审计 ✅
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+24/24 套件 (100%) · 27 文件 · ~600 检查 · 2026-07-10
 ```
 
 ### 🏛 架构
@@ -392,7 +436,8 @@ Knowledge System（28 Knowledge + 12 Pattern + 1 Example）
 | | |
 |---|---|
 | **测试套件** | 24（L1-L7 + Integration + Audit） |
-| **测试用例** | 700+ |
+| **测试文件** | 27（24 套件 + 3 独立） |
+| **检查项** | ~600 |
 | **通过率** | 100% |
 | **模板** | 25+ |
 | **API** | 15（Intent + Action） |
@@ -412,9 +457,12 @@ Knowledge System（28 Knowledge + 12 Pattern + 1 Example）
 │   ├── skills/                     ← 引擎（23 模块）
 │   ├── templates/                  ← 25+ 代码模板
 │   ├── knowledge/                  ← CAA API 参考（8 领域）
-│   ├── patterns/                   ← 架构模式（12 模式）
-│   ├── examples/                   ← 真实 CAA 项目
-│   ├── tests/                      ← 24 套件，700+ 用例
+│   │   ├── ui/                     ← 9 个 UI 知识文件
+│   │   ├── drawing/                ← 工程图
+│   │   ├── surface/                ← 曲面/GSD
+│   │   └── fta/                    ← 3D 标注
+│   ├── patterns/                   ← 12 个开发模式
+│   ├── tests/                      ← 27 测试文件，~600 检查
 │   └── docs/                       ← 完整文档
 ├── MyFramework.edu/
 ├── MyModule.m/
