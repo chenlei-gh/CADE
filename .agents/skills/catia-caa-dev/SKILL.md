@@ -439,6 +439,42 @@ result = delete_command(
 
 ---
 
+## 🔌 三接口协作
+
+CADE 提供三种接口，各有定位，互补不重叠：
+
+| 接口 | 谁用 | 何时用 | Token | 示例 |
+|------|------|--------|-------|------|
+| **MCP Server** | 🤖 AI Agent | **首选**。每次调用自动优化响应 | 🟢 低 | `analyze_workspace(ws)` |
+| **CLI (cade.py)** | 👤 开发者 / CI | 终端操作、脚本、流水线 | 🟡 中 | `cade build --full` |
+| **Python API** | 🛠 高级脚本 | 自定义自动化、批量处理 | 🔴 高 | `from build import full_build` |
+
+### 调用优先级
+
+```
+AI Agent 有需求
+    ↓
+① MCP Server — 首选（自动 Token 优化 + 错误格式化）
+    ↓ (如果没有 MCP)
+② CLI — 使用 --json 输出
+    ↓ (如果需要自定义逻辑)
+③ Python API — 直接调用
+```
+
+### 互补关系
+
+| 场景 | 用这个 | 不用那个 | 原因 |
+|------|--------|---------|------|
+| AI 创建命令 | MCP | CLI | MCP 响应已优化，CLI 输出冗长 |
+| CI/CD 编译 | CLI `--json` | Python API | CLI 一行搞定，不用写脚本 |
+| 批量生成 50 个命令 | Python API | MCP | 循环调 MCP 太慢，import 直接循环 |
+| 调试一个错误 | CLI | MCP | 开发者需要看完整输出 |
+| 重构影响分析 | Python `intent.impact` | MCP | 需要编程式评估结果 |
+
+> ⚠️ **AI Agent 永远优先用 MCP**。CLI 和 Python API 是给人类和脚本用的。
+
+---
+
 ## 🏗️ 架构设计
 
 ### 架构层次
