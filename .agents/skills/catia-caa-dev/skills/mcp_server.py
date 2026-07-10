@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CADE MCP Server — 37 tools exposing full CADE capability to AI clients."""
+"""CADE MCP Server — 41 tools exposing full CADE capability to AI clients."""
 
 from __future__ import annotations
 
@@ -162,6 +162,43 @@ TOOLS = [
         "name": "suggest_next",
         "description": "Suggest next action",
         "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "plan_intent",
+        "description": "Generate development plan from intent (type: CreateCommandWithDialog, CreateFeatureWithFactory, etc.)",
+        "inputSchema": {
+            "type": "object",
+            "required": ["intent_type", "name", "module"],
+            "properties": {
+                "intent_type": {"type": "string"},
+                "name": {"type": "string"},
+                "module": {"type": "string"},
+                "framework": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "analyze_impact",
+        "description": "Analyze impact of renaming/deleting/moving an entity",
+        "inputSchema": {
+            "type": "object",
+            "required": ["entity_name", "entity_type", "operation"],
+            "properties": {
+                "entity_name": {"type": "string"},
+                "entity_type": {"type": "string"},
+                "operation": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "recommend_plan",
+        "description": "Score and recommend best development plan from alternatives",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "plans": {"type": "array"},
+            },
+        },
     },
     {
         "name": "incremental_build",
@@ -493,6 +530,33 @@ def handle_tool(name: str, args: dict) -> dict:
             from intents import suggest_next_action
 
             return suggest_next_action(ctx)
+
+        # Intent Engine
+        if name == "plan_intent":
+            from intent import Intent, IntentType, plan
+
+            i = Intent(
+                type=IntentType(args["intent_type"]),
+                name=args["name"],
+                module=args.get("module", ""),
+                framework=args.get("framework", "MyFramework"),
+            )
+            result = plan(i)
+            return result.to_dict()
+
+        if name == "analyze_impact":
+            from intent import analyze
+
+            return analyze(
+                entity_name=args["entity_name"],
+                entity_type=args["entity_type"],
+                operation=args["operation"],
+            ).to_dict()
+
+        if name == "recommend_plan":
+            from intent import recommend
+
+            return recommend(args.get("plans", []))
 
         # Build
         if name == "incremental_build":

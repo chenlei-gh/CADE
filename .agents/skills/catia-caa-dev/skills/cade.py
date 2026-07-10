@@ -47,6 +47,11 @@ Usage:
 
   cade version                     # Show version info
   cade test [--quick]              # Run test suite
+
+  cade plan <type> <name> <module> [--fw framework]
+                                   # Generate development plan
+  cade impact <entity> <type> <op>  # Analyze change impact
+  cade optimize [plans...]          # Recommend best plan
 """
 
 from __future__ import annotations
@@ -94,6 +99,12 @@ def main():
         cmd_expose(args)
     elif cmd == "suggest":
         cmd_suggest(args)
+    elif cmd == "plan":
+        cmd_plan(args)
+    elif cmd == "impact":
+        cmd_impact(args)
+    elif cmd == "optimize":
+        cmd_optimize(args)
     elif cmd == "prereq":
         cmd_prereq_manager(args)
     elif cmd == "setup":
@@ -413,6 +424,39 @@ def cmd_suggest(args):
     _print_result(result)
 
 
+def cmd_plan(args):
+    """Generate a development plan from intent."""
+    if len(args) < 3:
+        print("Usage: cade plan <type> <name> <module> [--fw framework]")
+        return
+    from intent import Intent, IntentType, plan
+    i = Intent(
+        type=IntentType(args[0]),
+        name=args[1],
+        module=args[2],
+        framework=_get_flag(args, "--fw") or "MyFramework",
+    )
+    result = plan(i)
+    _print_result(result.to_dict())
+
+
+def cmd_impact(args):
+    """Analyze impact of a change."""
+    if len(args) < 3:
+        print("Usage: cade impact <entity_name> <type> <operation>")
+        return
+    from intent import analyze
+    result = analyze(entity_name=args[0], entity_type=args[1], operation=args[2])
+    _print_result(result.to_dict())
+
+
+def cmd_optimize(args):
+    """Recommend best plan from alternatives."""
+    from intent import recommend
+    result = recommend([])
+    print(result or "No plans to optimize.")
+
+
 def cmd_prereq_manager(args):
     """Manage framework prerequisites (AddPrereqComponent)."""
     import subprocess
@@ -486,7 +530,7 @@ def cmd_version():
     env = CAAEnvironment()
     env.load_config()
     info = env.get_info()
-    print(f"CADE v2.0.0 — CATIA CAA Development Engine")
+    print(f"CADE v2.1.0 — CATIA CAA Development Engine")
     print(f"  CATIA: {info.get('catia_version', 'unknown')}")
     print(f"  Install: {info.get('catia_install', 'unknown')}")
     print(f"  Architecture: {info.get('caa_platform', 'unknown')}")
