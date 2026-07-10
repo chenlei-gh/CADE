@@ -113,6 +113,23 @@ cade impact IMyInterface interface delete
 - **Impact Analyzer** — Assess blast radius before refactoring  
 - **Optimizer** — Score & rank alternative plans
 
+### 🎨 Advanced UI Layout Knowledge
+
+CADE now covers **every CAA UI layout scenario** — from simple forms to complex wizards:
+
+| Pattern | Use Case |
+|---------|----------|
+| **GridConstraints** | 7 anchor types, span, stretch strategies |
+| **Multi-layer nesting** | 3-5 layer Frame hierarchy patterns |
+| **Master-Detail** | SelectorList + Properties panel (BOM editor) |
+| **Dynamic Form** | Combo-driven panel show/hide |
+| **Tree Navigation** | CATDlgTree + tab-based content area |
+| **Wizard** | State-machine-driven Back/Next multi-step |
+| **Splitter** | User-resizable left/right panes |
+| **Anti-Patterns** | 10 common mistakes → correct approach |
+
+→ `knowledge/ui/` now has **9 files** covering every UI angle.
+
 ### 🔍 Deep Audit
 
 24-suite test suite catches drift early:
@@ -121,7 +138,7 @@ cade impact IMyInterface interface delete
 cade test --quick   # 24 suites, ~8s
 ```
 
-- **Link Checker** — 79 internal links validated
+- **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
 - **Version Consistency** — 2.1.0 unified across all docs
 - **Hardcoded Path Detection** — 92 files scanned
@@ -203,7 +220,7 @@ graph TD
     A --> L[Runtime Engine<br/>7 Commands]
     A --> M[Rollback System]
 
-    N[Knowledge System<br/>119 Knowledge + 6 Pattern + 1 Example + Catalog] --> G
+    N[Knowledge System<br/>23 Knowledge + 9 Pattern + 1 Example + Catalog] --> G
 ```
 
 > **Philosophy**: Capability grows by accumulating knowledge assets, not by modifying code.
@@ -225,7 +242,7 @@ graph TD
 | **Spec Types** | 8 |
 | **Refactor Operations** | 3 |
 | **Domain Entities** | 10 |
-| **Knowledge Assets** | 26 (19K + 6P + 1E) |
+| **Knowledge Assets** | 33 (23K + 9P + 1E) |
 
 ---
 
@@ -335,7 +352,7 @@ CodeModel（10 实体）+ DependencyGraph + Diagnostics + FixPlan
      ↓
 Build Engine（35 命令）+ Runtime Engine（7 命令）+ Rollback
      ↓
-Knowledge System（19 Knowledge + 6 Pattern + 1 Example）
+Knowledge System（23 Knowledge + 9 Pattern + 1 Example）
 ```
 
 > **核心理念**：系统能力增长靠沉淀知识资产，不靠修改代码。
@@ -355,7 +372,7 @@ Knowledge System（19 Knowledge + 6 Pattern + 1 Example）
 | **Spec 类型** | 8 |
 | **重构操作** | 3 |
 | **领域实体** | 10 |
-| **知识资产** | 26（19K + 6P + 1E） |
+| **知识资产** | 33（23K + 9P + 1E） |
 
 ### 📂 项目结构
 
