@@ -102,6 +102,11 @@
     - 新增 knowledge/ui/context_menu.md — 来源: CAADoc/CATIContextualMenu
     - 新增 patterns/ui/context_menu.md — 来源: CAADoc/CATIContextualMenu
     - 新增 CAADoc→CADE 沉淀规范 (knowledge/README.md)
+    - 新增 5 层知识体系架构 (Capability→Playbook→Knowledge→Framework→CAADoc)
+    - 新增 10 个 Capability 文件 (capabilities/)
+    - 新增 2 个 Playbook 文件 (playbooks/)
+    - 新增 149 个 Framework 导航文件 (knowledge/frameworks/)
+    - 新增 tools/scan_frameworks.py 自动扫描工具
 
   ---
 

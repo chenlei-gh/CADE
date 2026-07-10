@@ -142,7 +142,21 @@ Three new CAA domains unlocked — powered by 6 knowledge files + 3 patterns:
 | **Surface/GSD** | Extrude, sweep, flatten, join | Surface analysis automation | Surface flattening |
 | **FTA / 3D PMI** | Capture, annotation, tolerance | Auto-annotation generation | 3D PMI |
 
-→ **43 knowledge assets** (29K + 13P + 10 Capability + 2 Playbook + 149 Framework + 1E) across **8 domains**, all with YAML frontmatter.
+### 🧠 5-Layer Knowledge Architecture
+
+CADE now organizes knowledge in **5 layers** — AI finds answers 10x faster:
+
+```
+🎯 Capability (10)  → "What can CATIA do?"        AI entry point
+📋 Playbook   (2)   → "How to accomplish this?"    Battle-tested recipes
+📚 Knowledge  (29)  → "How to use this API?"       Code reference
+🗂 Framework  (149) → "Which framework?"           CAADoc navigation
+📖 CAADoc          → "What's the exact API?"      Official docs
+```
+
+Retrieval path: **Capability → Playbook → Knowledge → Framework → CAADoc**
+
+→ **204 total knowledge assets** (29K + 13P + 10C + 2PB + 149FW + 1E)
 
 ### 🔍 Deep Audit
 
@@ -273,7 +287,7 @@ graph TD
 | **Spec Types** | 8 |
 | **Refactor Operations** | 3 |
 | **Domain Entities** | 10 |
-| **Knowledge Assets** | 41 (29K + 13P + 10 Capability + 2 Playbook + 149 Framework + 1E) + 6 tutorial examples in docs/ |
+| **Knowledge Assets** | 204 (29K + 13P + 10C + 2PB + 149FW + 1E) + 6 tutorial examples |
 
 ---
 
@@ -284,8 +298,10 @@ your_project/
 ├── .agents/skills/catia-caa-dev/   ← CADE (drop-in)
 │   ├── skills/                     ← Engine (23 modules)
 │   ├── templates/                  ← 25+ code templates
-│   ├── knowledge/                  ← CAA API reference (8 domains)
-│   ├── patterns/                   ← Architecture patterns (7 types)
+│   ├── capabilities/               ← 10 core CAA capabilities
+│   ├── playbooks/                  ← Solution playbooks
+│   ├── knowledge/                  ← CAA API reference (8 domains + 149 frameworks)
+│   ├── patterns/                   ← Architecture patterns (13 patterns)
 │   ├── examples/                   ← Real CAA projects
 │   ├── tests/                      ← 24 suites, ~600 checks
 │   ├── tools/                      ← Setup, validation, utilities
@@ -447,7 +463,7 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 | **Spec 类型** | 8 |
 | **重构操作** | 3 |
 | **领域实体** | 10 |
-| **知识资产** | 41（29K + 13P + 10 Capability + 2 Playbook + 149 Framework + 1E）+ 6 教程示例 |
+| **知识资产** | 204（29K + 13P + 10C + 2PB + 149FW + 1E）
 
 ### 📂 项目结构
 
@@ -456,12 +472,10 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 ├── .agents/skills/catia-caa-dev/   ← CADE（直接放入即可）
 │   ├── skills/                     ← 引擎（23 模块）
 │   ├── templates/                  ← 25+ 代码模板
-│   ├── knowledge/                  ← CAA API 参考（8 领域）
-│   │   ├── ui/                     ← 9 个 UI 知识文件
-│   │   ├── drawing/                ← 工程图
-│   │   ├── surface/                ← 曲面/GSD
-│   │   └── fta/                    ← 3D 标注
-│   ├── patterns/                   ← 12 个开发模式
+│   ├── capabilities/               ← 10 个核心能力
+│   ├── playbooks/                  ← 解决方案
+│   ├── knowledge/                  ← CAA API 参考（8 领域 + 149 框架）
+│   ├── patterns/                   ← 13 个开发模式
 │   ├── tests/                      ← 27 测试文件，~600 检查
 │   └── docs/                       ← 完整文档
 ├── MyFramework.edu/

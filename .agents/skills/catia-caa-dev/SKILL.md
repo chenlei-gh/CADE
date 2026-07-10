@@ -252,7 +252,8 @@ triggers:
 6. **依赖图管理** - 完整的实体关系图和 Mermaid 可视化
 7. **级联删除** - 智能检测破坏性依赖，安全删除
 8. **Intent Engine** - Planner + Impact Analyzer + Optimizer，任务规划到执行
-9. **回滚支持** - 完整的操作备份和回滚机制
+10. **回滚支持** - 完整的操作备份和回滚机制
+11. **五层知识体系** - Capability→Playbook→Knowledge→Framework→CAADoc，AI 搜索效率提升 10 倍
 10. **智能推荐** - 基于工作区状态自动建议下一步操作
 
 ### 📦 支持的功能
