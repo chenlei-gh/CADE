@@ -1189,12 +1189,25 @@ python test_e2e_workflow.py
 │   ├── mecmod/                       # MecMod: Feature 模型、拓扑
 │   ├── part/                         # Part Design: 圆角、孔、倒角
 │   ├── product/                      # Assembly: 装配、约束
-│   ├── ui/                           # GUI: Dialog、Toolbar
+│   ├── ui/                           # GUI: Dialog、布局、事件、Toolbar
+│   │   ├── dialog.md                 # Dialog 基础
+│   │   ├── dialog_layout.md          # 布局模式 + GridConstraints
+│   │   ├── dialog_patterns.md        # 控件模式 + 决策索引
+│   │   ├── dialog_dataflow.md        # 数据流、持久化、NLS
+│   │   ├── event_patterns.md         # 事件回调模式
+│   │   ├── toolbar.md                # 工具栏/CommandHeader
+│   │   ├── workbench_patterns.md     # Workbench/Addin
+│   │   ├── layout_advanced.md        # 高级布局（列表-详情/动态/树/向导）
+│   │   └── layout_anti_patterns.md   # 布局反模式/常见错误
 │   └── infrastructure/               # 基础设施: Selection
 │
 ├── patterns/                          # 开发模式库 (Coarse + Block)
 │   ├── analyzer/                     # 粗模式: 几何分析、规则检查
-│   ├── ui/                           # 粗模式: 结果对话框
+│   ├── ui/                           # 粗模式: 结果对话框、Master-Detail、Wizard
+│   │   ├── result_dialog.md
+│   │   ├── master_detail.md          # 列表-详情模式
+│   │   ├── dynamic_form.md           # 动态表单模式
+│   │   └── wizard.md                 # 多步骤向导模式
 │   ├── workflow/                     # 粗模式: 批量处理
 │   └── blocks/                       # 积木: Visitor、Locator
 │
@@ -1265,7 +1278,6 @@ python test_e2e_workflow.py
 └── config/                           # 配置文件
     ├── caa_env_config.txt
     ├── requirements.txt
-    └── initialize_caa_env.bat
 ```
 
 ---

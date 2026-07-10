@@ -1,5 +1,30 @@
 # CAA Dialog Widget Patterns
 
+## 决策索引
+
+根据需求特征，快速定位正确的实现模式：
+
+| 需求特征 | 推荐模式 | 跳转 |
+|---------|---------|------|
+| 简单参数输入（名称/数值） | 双列标签-输入 | [dialog_layout.md §2](dialog_layout.md) |
+| 多类别配置 | Tab 页 | [dialog_layout.md §3](dialog_layout.md) |
+| 相关选项分组 | GroupBox | [dialog_layout.md §4](dialog_layout.md) |
+| 选择特征→执行操作 | Agent + Dialog | [event_patterns.md §选择事件](event_patterns.md) |
+| 批量处理带进度 | ProgressBar + 循环 | [dialog_layout.md §Progress](dialog_layout.md) |
+| 按钮触发动作 | OnApply 回调 | [event_patterns.md §Dialog按钮](event_patterns.md) |
+| 下拉切换模式 | Combo + OnModeChanged | [event_patterns.md §Combo](event_patterns.md) |
+| 文件选择 | CATDlgFile | [dialog_layout.md §File](dialog_layout.md) |
+| 多步骤向导 | 状态机切换 Panel | [wizard.md](../../patterns/ui/wizard.md) |
+| 实时预览 | 双面板（参数+预览） | 下方 §实时预览模式 |
+| 记住上次设置 | 持久化偏好 | [dialog_dataflow.md](dialog_dataflow.md) §持久化 |
+| 📋 列表-详情（选择+编辑） | Master-Detail 布局 | [master_detail.md](../../patterns/ui/master_detail.md) |
+| 🎛 模式切换显示不同控件 | 动态表单 | [dynamic_form.md](../../patterns/ui/dynamic_form.md) |
+| 🌳 分类导航（树+内容） | 树形导航 | [layout_advanced.md §3](layout_advanced.md) |
+| 📐 可拖拽分栏 | Splitter | [layout_advanced.md §5](layout_advanced.md) |
+| ⚠️ 常见布局错误 | 反模式参考 | [layout_anti_patterns.md](layout_anti_patterns.md) |
+| 🔧 多层嵌套布局 | 3-4 层 Frame 嵌套 | [dialog_layout.md §多层嵌套](dialog_layout.md) |
+| 📏 布局伸缩/锚定 | GridConstraints 参数 | [dialog_layout.md §GridConstraints](dialog_layout.md) |
+
 ## 基本结构
 
 ```cpp
@@ -129,6 +154,36 @@ CATStatusChangeRC MyCmd::OnApply(void *iData, CATNotification *iNotif,
     // 执行操作...
     return CATStatusChangeContinue;
 }
+
+## 实时预览模式
+
+左边参数面板 + 右边预览面板，参数变化即时反映。
+
+```cpp
+void MyDlg::Build() {
+    CATDlgFrame *pMain = new CATDlgFrame(this, "Main", CATDlgFraNoFrame);
+    CATDlgFrame *pLeft = new CATDlgFrame(pMain, "Left",
+        CATDlgFraNoFrame | CATDlgGridLayout);
+    _pNameEditor = new CATDlgEditor(pLeft, "Name");
+    _pWidthSpinner = new CATDlgSpinner(pLeft, "Width");
+    CATDlgFrame *pRight = new CATDlgFrame(pMain, "Right",
+        CATDlgFraSunkenFrame);
+    _pPreviewLabel = new CATDlgLabel(pRight, "Preview", "");
+    AddAnalyseNotificationCB(this,
+        _pNameEditor->GetEditorNotification(),
+        (CATCommandMethod)&MyDlg::OnPreviewUpdate, NULL);
+}
+
+CATStatusChangeRC MyDlg::OnPreviewUpdate(void *iData, CATNotification *iNotif,
+                                           CATCommandClientInfo *iInfo) {
+    CATUnicodeString name = _pNameEditor->GetText();
+    int width = _pWidthSpinner->GetValue();
+    CATUnicodeString preview;
+    preview.BuildFromNum(width);
+    preview = name + " (" + preview + "mm)";
+    _pPreviewLabel->SetTitle(preview);
+    return CATStatusChangeContinue;
+}
 ```
 
 ## AI 生成规则
@@ -136,6 +191,15 @@ CATStatusChangeRC MyCmd::OnApply(void *iData, CATNotification *iNotif,
 - [ ] 继承 `CATDlgDialog`
 - [ ] 实现 `Build()` 方法
 - [ ] 控件用 GridLayout 排列（最灵活）
+- [ ] 每个控件创建后立即调用 `SetGridConstraints`
 - [ ] 提供 Getter 方法供 Command 读取
 - [ ] 不在 Dialog 里写业务逻辑
 - [ ] Dialog 构造函数接收 `CATCommand *iParent`
+- [ ] 嵌套不超过 4 层，超过用 GroupBox/Tab/Splitter
+- [ ] 禁止硬编码 `SetRectDimensions` 代替 `SetGridConstraints`
+- [ ] 同 Frame 内控件 ID 必须唯一
+- [ ] 必须设默认按钮 `SetDefaultPushButton`
+- [ ] Frame 风格必须显式指定（`CATDlgFraNoFrame` 等）
+- [ ] Desactivate 必须清理 Dialog 和 Agent
+- [ ] 复杂布局先查 [决策索引](#决策索引) 匹配模式
+- [ ] 不确定时查 [layout_anti_patterns.md](layout_anti_patterns.md) 排除错误做法

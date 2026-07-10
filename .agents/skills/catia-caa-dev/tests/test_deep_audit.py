@@ -127,7 +127,7 @@ print("  3. SKILL.md file tree accuracy")
 print("=" * 70)
 
 skill_text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-tree_files = re.findall(r'├── (\S+)', skill_text)
+tree_files = re.findall(r'[├└]──\s+(\S+)', skill_text)
 known_dirs = {"intents/", "docs/", "guides/", "references/", "examples/",
               "knowledge/", "patterns/", "templates/", "tests/", "tools/", "config/",
               "API/", "Design/", "Images/", "Framework/", "Module/", "Command/",
@@ -141,7 +141,8 @@ for tf in tree_files:
         continue
     # Nested files: look in subdirs
     candidates = [SKILL_ROOT / name]
-    for d in ["skills", "tests", "docs", "templates", "tools", "config"]:
+    for d in ["skills", "tests", "docs", "templates", "tools", "config",
+              "knowledge", "patterns", "catalog"]:
         for sub in SKILL_ROOT.glob(f"{d}/**/{name}"):
             candidates.append(sub)
     found = any(c.exists() for c in candidates if c.exists())
