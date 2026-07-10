@@ -1,3 +1,17 @@
+---
+id: ui.layout_advanced
+title: Advanced Layout Patterns
+category: knowledge
+domain: ui
+keywords: [master-detail, dynamic form, tree nav, wizard, splitter, advanced layout]
+apis: [CATDlgDialog, CATDlgTree, CATStateCommand, CATDlgSplitter, CATDlgTabContainer]
+requires: [ui.dialog, ui.dialog_layout]
+patterns: [ui.master_detail, ui.dynamic_form, ui.wizard]
+examples: []
+release: [R19, R28]
+tags: [ui, advanced, layout]
+---
+
 # CAA Advanced Layout Patterns
 
 高级布局模式：列表-详情、动态表单、树形导航、向导。

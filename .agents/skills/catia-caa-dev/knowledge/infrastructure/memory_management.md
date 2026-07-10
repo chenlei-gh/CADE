@@ -1,3 +1,17 @@
+---
+id: infra.memory
+title: Memory Management
+category: knowledge
+domain: infrastructure
+keywords: [memory, reference counting, AddRef, Release, smart pointer, leak, CATBaseUnknown]
+apis: [CATBaseUnknown, AddRef, Release, CompatibleCast]
+requires: []
+patterns: []
+examples: []
+release: [R19, R28]
+tags: [infrastructure, memory, reference]
+---
+
 # CAA Memory Management
 
 ## 黄金法则

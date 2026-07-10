@@ -1,3 +1,17 @@
+---
+id: infra.error_handling
+title: Error Handling
+category: knowledge
+domain: infrastructure
+keywords: [error, HRESULT, CHECK_ARGS, IF_FAILED_RETURN, exception, CATError]
+apis: [HRESULT, CATError, CATTry, CATCatch]
+requires: []
+patterns: []
+examples: []
+release: [R19, R28]
+tags: [infrastructure, error, debugging]
+---
+
 # CAA Error Handling
 
 ## 核心原则

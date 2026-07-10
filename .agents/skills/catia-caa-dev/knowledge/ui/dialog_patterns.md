@@ -1,3 +1,17 @@
+---
+id: ui.dialog_patterns
+title: Dialog Widget Patterns
+category: knowledge
+domain: ui
+keywords: [widget, build, controls, preview, decision, selector, combo, radio]
+apis: [CATDlgDialog, CATDlgEditor, CATDlgCombo, CATDlgRadioButton, CATDlgSpinner]
+requires: [ui.dialog]
+patterns: [ui.result_dialog, ui.master_detail, ui.dynamic_form, ui.wizard]
+examples: []
+release: [R19, R28]
+tags: [ui, widget, pattern]
+---
+
 # CAA Dialog Widget Patterns
 
 ## 决策索引

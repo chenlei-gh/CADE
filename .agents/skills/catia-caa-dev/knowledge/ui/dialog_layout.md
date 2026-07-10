@@ -1,3 +1,17 @@
+---
+id: ui.dialog_layout
+title: Dialog Layout & GridConstraints
+category: knowledge
+domain: ui
+keywords: [layout, grid, constraints, anchor, nesting, resize, frame, stretch]
+apis: [CATDlgGridConstraints, CATDlgFrame, CATDlgDialog]
+requires: [ui.dialog]
+patterns: [ui.master_detail]
+examples: []
+release: [R19, R28]
+tags: [ui, layout, grid]
+---
+
 # CAA Dialog Layout & Advanced Controls
 
 ## 布局模式速查

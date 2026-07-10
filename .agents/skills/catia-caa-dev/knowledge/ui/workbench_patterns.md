@@ -1,3 +1,17 @@
+---
+id: ui.workbench_patterns
+title: Workbench & Addin Patterns
+category: knowledge
+domain: ui
+keywords: [workbench, addin, toolbar, menu, visibility, CATIPrtWksAddin, CATCmdContainer]
+apis: [CATIPrtWksAddin, CATIGenericWksAddin, CATCmdContainer, CATCmdAccess, CATCmdMenu]
+requires: [ui.dialog]
+patterns: []
+examples: []
+release: [R19, R28]
+tags: [ui, workbench, addin]
+---
+
 # CAA Workbench & Addin Patterns
 
 ## 架构关系

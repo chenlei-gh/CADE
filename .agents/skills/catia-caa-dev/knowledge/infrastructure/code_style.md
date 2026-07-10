@@ -1,3 +1,17 @@
+---
+id: infra.code_style
+title: Code Style & Organization
+category: knowledge
+domain: infrastructure
+keywords: [code style, organization, module layout, file structure, include order, macro]
+apis: [CATDeclareClass, CATImplementClass]
+requires: []
+patterns: []
+examples: []
+release: [R19, R28]
+tags: [infrastructure, style, code]
+---
+
 # CAA Code Style & Organization
 
 ## 文件组织

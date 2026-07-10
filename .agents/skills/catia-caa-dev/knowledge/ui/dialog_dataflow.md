@@ -1,3 +1,17 @@
+---
+id: ui.dialog_dataflow
+title: Dialog Dataflow & Architecture
+category: knowledge
+domain: ui
+keywords: [dataflow, command-dialog, persistence, NLS, architecture, communication, preferences]
+apis: [CATDlgDialog, CATStateCommand, CATMsgCatalog, CATNotification]
+requires: [ui.dialog]
+patterns: [ui.master_detail, ui.dynamic_form]
+examples: []
+release: [R19, R28]
+tags: [ui, architecture, dataflow]
+---
+
 # CAA UI Architecture & Dataflow
 
 ## 整体架构

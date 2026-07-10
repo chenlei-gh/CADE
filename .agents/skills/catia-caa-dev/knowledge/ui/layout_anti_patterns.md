@@ -1,3 +1,17 @@
+---
+id: ui.layout_anti_patterns
+title: Layout Anti-Patterns
+category: knowledge
+domain: ui
+keywords: [anti-pattern, mistake, hardcode, nesting, common error, wrong way, correct way]
+apis: [CATDlgDialog, CATDlgFrame, CATDlgGridConstraints]
+requires: [ui.dialog, ui.dialog_layout]
+patterns: []
+examples: []
+release: [R19, R28]
+tags: [ui, anti-pattern, debugging]
+---
+
 # CAA Layout Anti-Patterns
 
 CAA 对话框布局的常见错误和正确做法。

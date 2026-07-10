@@ -1,3 +1,17 @@
+---
+id: mecmod.feature_patterns
+title: Feature & Attribute Patterns
+category: knowledge
+domain: mecmod
+keywords: [feature, attribute, CATISpecObject, StartUp, factory, object modeler, late type]
+apis: [CATISpecObject, CATIPrtPart, CATISpecAttribute, StartUp]
+requires: [mecmod.feature]
+patterns: []
+examples: []
+release: [R19, R28]
+tags: [mecmod, feature, attribute]
+---
+
 # CAA Feature & Attribute Patterns
 
 ## 什么是 CAA Feature

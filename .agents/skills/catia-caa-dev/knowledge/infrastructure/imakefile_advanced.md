@@ -1,3 +1,17 @@
+---
+id: infra.imakefile_advanced
+title: Imakefile Advanced
+category: knowledge
+domain: infrastructure
+keywords: [imakefile, LINK_WITH, BUILT_OBJECT_TYPE, SHARED LIBRARY, LOAD MODULE, prerequisite]
+apis: []
+requires: []
+patterns: []
+examples: []
+release: [R19, R28]
+tags: [infrastructure, build, makefile]
+---
+
 # CAA Imakefile Advanced Usage
 
 ## 基本结构

@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: CATIA CAA V5 Development Engine (CADE) v2.1.0 — Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理（循环依赖检测、智能推荐）。CAA 知识系统（23 Knowledge + 9 Pattern + 1 Example + Catalog 索引），含高级 UI 布局（多层嵌套/列表-详情/动态表单/向导/反模式）。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、24 套件 700+ 测试项。
+description: CATIA CAA V5 Development Engine (CADE) v2.1.0 — Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理（循环依赖检测、智能推荐）。CAA 知识系统（27 Knowledge + 12 Pattern + 1 Example + Catalog 索引），含高级 UI 布局（多层嵌套/列表-详情/动态表单/向导/反模式）、工程图（视图/标注/BOM）、GSD 曲面、FTA 3D 标注。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、24 套件 700+ 测试项。
 triggers:
   - CAA component
   - CATIA component
@@ -1199,7 +1199,14 @@ python test_e2e_workflow.py
 │   │   ├── workbench_patterns.md     # Workbench/Addin
 │   │   ├── layout_advanced.md        # 高级布局（列表-详情/动态/树/向导）
 │   │   └── layout_anti_patterns.md   # 布局反模式/常见错误
-│   └── infrastructure/               # 基础设施: Selection
+│   ├── drawing/                    # Drawing: 视图、标注、BOM表
+│   │   ├── drawing_basics.md
+│   │   └── drawing_annotations.md
+│   ├── surface/                    # GSD: 曲面、扫掠、展平
+│   │   └── surface_basics.md
+│   ├── fta/                        # FTA: 3D标注、公差
+│   │   └── fta_basics.md
+│   └── infrastructure/               # 基础设施: Selection、CodeStyle、Memory
 │
 ├── patterns/                          # 开发模式库 (Coarse + Block)
 │   ├── analyzer/                     # 粗模式: 几何分析、规则检查
@@ -1208,6 +1215,12 @@ python test_e2e_workflow.py
 │   │   ├── master_detail.md          # 列表-详情模式
 │   │   ├── dynamic_form.md           # 动态表单模式
 │   │   └── wizard.md                 # 多步骤向导模式
+│   ├── drawing/                    # Drawing: 批量工程图
+│   │   └── batch_drawing.md
+│   ├── surface/                    # Surface: 曲面分析/展平
+│   │   └── surface_analysis.md
+│   ├── fta/                        # FTA: 自动3D标注
+│   │   └── auto_annotate.md
 │   ├── workflow/                     # 粗模式: 批量处理
 │   └── blocks/                       # 积木: Visitor、Locator
 │

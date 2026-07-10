@@ -1,3 +1,17 @@
+---
+id: infra.state_commands
+title: State Command Guide
+category: knowledge
+domain: infrastructure
+keywords: [state command, CATStateCommand, BuildGraph, dialog state, agent, transition, wizard]
+apis: [CATStateCommand, CATDialogState, AddDialogState, AddTransition, CATFeatureImportAgent]
+requires: []
+patterns: [ui.wizard]
+examples: []
+release: [R19, R28]
+tags: [infrastructure, command, state]
+---
+
 # CAA State Command Guide
 
 ## 什么是 StateCommand

@@ -1,3 +1,17 @@
+---
+id: ui.event_patterns
+title: Event & Notification Patterns
+category: knowledge
+domain: ui
+keywords: [event, callback, notification, agent, cleanup, AddAnalyseNotificationCB, CSO]
+apis: [CATNotification, CATFeatureImportAgent, AddAnalyseNotificationCB, AddCSOClient]
+requires: [ui.dialog]
+patterns: [ui.dynamic_form]
+examples: []
+release: [R19, R28]
+tags: [ui, event, callback]
+---
+
 # CAA Event & Notification Patterns
 
 ## 事件绑定基本模式

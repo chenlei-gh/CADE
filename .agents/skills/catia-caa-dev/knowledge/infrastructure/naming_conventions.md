@@ -1,3 +1,17 @@
+---
+id: infra.naming
+title: Naming Conventions
+category: knowledge
+domain: infrastructure
+keywords: [naming, convention, prefix, suffix, framework, module, interface, class]
+apis: []
+requires: []
+patterns: []
+examples: []
+release: [R19, R28]
+tags: [infrastructure, naming, convention]
+---
+
 # CAA Naming Conventions
 
 ## Frameworks

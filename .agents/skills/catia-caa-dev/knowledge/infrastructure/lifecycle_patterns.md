@@ -1,3 +1,17 @@
+---
+id: infra.lifecycle
+title: Command Lifecycle
+category: knowledge
+domain: infrastructure
+keywords: [lifecycle, activate, desactivate, state, constructor, destructor, cleanup]
+apis: [CATStateCommand, CATStatusChangeRC]
+requires: []
+patterns: [ui.wizard]
+examples: []
+release: [R19, R28]
+tags: [infrastructure, lifecycle, command]
+---
+
 # CAA Command Lifecycle
 
 ## StateCommand Lifecycle

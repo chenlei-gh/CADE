@@ -30,10 +30,15 @@ tags: [geometry, feature]          # 标签
 |----|------|--------|-----|------|
 | mecmod.feature | knowledge/mecmod/feature.md | feature, tree, IsATypeOf, spec object | CATISpecObject, CATIPrtPart | R19+ |
 | mecmod.topology | knowledge/mecmod/topology.md | topology, body, face, edge, vertex | CATBody, CATFace, CATEdge, CATVertex | R19+ |
+| mecmod.feature_patterns | knowledge/mecmod/feature_patterns.md | feature, attribute, StartUp, factory | CATISpecObject, CATISpecAttribute | R19+ |
 | part.fillet | knowledge/part/fillet.md | fillet, radius, blend | CATIFillet | R19+ |
 | part.hole | knowledge/part/hole.md | hole, diameter, depth, counterbore | CATIHole | R19+ |
 | part.chamfer | knowledge/part/chamfer.md | chamfer, bevel, angle | CATIChamfer | R19+ |
 | product.assembly | knowledge/product/assembly.md | assembly, product, component, constraint | CATIProduct, CATIPrtContainer | R19+ |
+| drawing.basics | knowledge/drawing/drawing_basics.md | drawing, sheet, view, projection, section | CATIDrwView, CATIDrwSheet | R19+ |
+| drawing.annotations | knowledge/drawing/drawing_annotations.md | annotation, dimension, table, BOM, title block | CATIDrwDim, CATIDrwTable | R19+ |
+| surface.basics | knowledge/surface/surface_basics.md | surface, GSD, extrude, sweep, offset, join | CATIGSMFactory, CATIGSMSweep | R19+ |
+| fta.basics | knowledge/fta/fta_basics.md | FTA, 3D annotation, PMI, tolerance, capture | CATITPSView, CATITPSAnnotation | R19+ |
 | ui.dialog | knowledge/ui/dialog.md | dialog, CATDlgDialog, listview, button | CATDlgDialog, CATDlgList | R19+ |
 | ui.dialog_layout | knowledge/ui/dialog_layout.md | layout, grid, constraints, anchor, nesting | CATDlgGridConstraints, CATDlgFrame | R19+ |
 | ui.layout_advanced | knowledge/ui/layout_advanced.md | master-detail, dynamic, wizard, tree, splitter | CATDlgDialog, CATDlgTree, CATStateCommand | R19+ |
@@ -44,6 +49,14 @@ tags: [geometry, feature]          # 标签
 | ui.toolbar | knowledge/ui/toolbar.md | toolbar, command header, catalog, workbench | CATCommandHeader, CATCmdContainer | R19+ |
 | ui.workbench_patterns | knowledge/ui/workbench_patterns.md | workbench, addin, toolbar, menu, visibility | CATIPrtWksAddin, CATCmdContainer | R19+ |
 | infra.selection | knowledge/infrastructure/selection.md | selection, highlight, reframe, locate | CATISelection, CATPathElement | R19+ |
+| infra.code_style | knowledge/infrastructure/code_style.md | code style, organization, module layout | CATDeclareClass | R19+ |
+| infra.error_handling | knowledge/infrastructure/error_handling.md | error, HRESULT, CHECK_ARGS, IF_FAILED_RETURN | HRESULT, CATError | R19+ |
+| infra.imakefile_advanced | knowledge/infrastructure/imakefile_advanced.md | imakefile, LINK_WITH, BUILT_OBJECT_TYPE | | R19+ |
+| infra.lifecycle | knowledge/infrastructure/lifecycle_patterns.md | lifecycle, activate, desactivate, cleanup | CATStateCommand | R19+ |
+| infra.memory | knowledge/infrastructure/memory_management.md | memory, AddRef, Release, leak, smart pointer | CATBaseUnknown, AddRef | R19+ |
+| infra.naming | knowledge/infrastructure/naming_conventions.md | naming, convention, prefix, suffix | | R19+ |
+| infra.state_commands | knowledge/infrastructure/state_commands.md | state command, BuildGraph, transition, wizard | CATStateCommand, CATDialogState | R19+ |
+| mecmod.feature_patterns | knowledge/mecmod/feature_patterns.md | feature, attribute, StartUp, factory | CATISpecObject, CATISpecAttribute | R19+ |
 
 ### Pattern 索引
 
@@ -55,6 +68,9 @@ tags: [geometry, feature]          # 标签
 | ui.master_detail | patterns/ui/master_detail.md | 列表选择+详情编辑 | ui.dialog, ui.dialog_layout |
 | ui.dynamic_form | patterns/ui/dynamic_form.md | 模式切换动态显示控件 | ui.dialog, ui.event_patterns |
 | ui.wizard | patterns/ui/wizard.md | 多步骤向导 Back/Next | ui.dialog, infra.state_commands |
+| drawing.batch | patterns/drawing/batch_drawing.md | 批量工程图生成 | drawing.basics, drawing.annotations |
+| surface.analysis | patterns/surface/surface_analysis.md | 曲面分析/展平自动化 | surface.basics, mecmod.topology |
+| fta.auto_annotate | patterns/fta/auto_annotate.md | 自动3D标注生成 | fta.basics, mecmod.topology |
 | workflow.batch | patterns/workflow/batch_process.md | 批量处理+进度条 | mecmod.feature |
 | block.visitor | patterns/blocks/feature_visitor.md | 递归遍历 Feature 树 | mecmod.feature |
 | block.locator | patterns/blocks/locator.md | 双击定位到 Feature | infra.selection |

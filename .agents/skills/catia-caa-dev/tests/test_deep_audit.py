@@ -134,6 +134,7 @@ known_dirs = {"intents/", "docs/", "guides/", "references/", "examples/",
               "StateCommand/", "Dialog/", "Component/", "Interface/", "intent/",
               "analyzer/", "ui/", "workflow/", "blocks/", "mecmod/", "part/",
               "product/", "infrastructure/", "geometry/", "resources/",
+              "drawing/", "surface/", "fta/",
               "msgcatalog/", "dictionary/", "build/"}
 for tf in tree_files:
     name = tf.rstrip("/")
