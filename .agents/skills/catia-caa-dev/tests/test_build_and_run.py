@@ -122,7 +122,7 @@ check("3.2 error_count key", "error_count" in r)
 check("3.3 warning_count key", "warning_count" in r)
 check("3.4 error_count=0", r.get("error_count") == 0)
 
-sample_err = "ERROR: file.h(10): syntax\n1 error(s), 0 warning(s)"
+sample_err = "file.h(10): error C2143: syntax error\n1 error(s), 0 warning(s)"
 r2 = parse_mkmk_output(sample_err)
 check("3.5 parses errors", r2.get("error_count", 0) > 0)
 

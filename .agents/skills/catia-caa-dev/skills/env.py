@@ -121,6 +121,7 @@ class CAAEnvironment:
             "",
             f"CATIA_INSTALL={catia_install}",
             f"CATIA_VERSION={catia_version}",
+            f"CAA_INSTALL={catia_install}",
             f"WORKSPACE={workspace}",
             "",
             "# Build Tools",
