@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: CATIA CAA V5 Development Engine (CADE) v2.1.0 — Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理（循环依赖检测、智能推荐）。CAA 知识系统（9 Knowledge + 6 Pattern + 1 Example + Catalog 索引）。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、23 套件 700+ 测试项。
+description: CATIA CAA V5 Development Engine (CADE) v2.1.0 — Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理（循环依赖检测、智能推荐）。CAA 知识系统（9 Knowledge + 6 Pattern + 1 Example + Catalog 索引）。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、24 套件 700+ 测试项。
 triggers:
   - CAA component
   - CATIA component
@@ -178,7 +178,7 @@ triggers:
 
 **版本**: 2.1.0  
 **状态**: ✅ 生产就绪  
-**测试覆盖率**: 100% (23 套件, 700+ 测试项全部通过)
+**测试覆盖率**: 100% (24 套件, 700+ 测试项全部通过)
 
 这是一个**智能的 CAA 开发助手**，专注于将复杂的 CATIA CAA V5 开发流程简化为直观的意图表达。
 
@@ -201,7 +201,7 @@ triggers:
 2. **Token 优化** - MCP 响应自动压缩，平均节省 50% token，关键信息不丢
 3. **安全操作** - 预览→确认→应用→回滚，全程可控
 4. **高性能** - 模板生成约50ms，比 RADE 工具快 100 倍
-5. **完整测试** - 23 套件、700+ 测试项，100% 覆盖率
+5. **完整测试** - 24 套件、700+ 测试项，100% 覆盖率
 6. **依赖图管理** - 完整的实体关系图和 Mermaid 可视化
 7. **级联删除** - 智能检测破坏性依赖，安全删除
 8. **Intent Engine** - Planner + Impact Analyzer + Optimizer，任务规划到执行
@@ -1207,7 +1207,7 @@ python test_e2e_workflow.py
 │   │   └── AI_WORKFLOW_EXAMPLES.md
 │   └── README.md                     # 文档索引
 │
-├── tests/                            # 测试文件（23 个，23 套件，700+ 测试项）
+├── tests/                            # 测试文件（23 个，24 套件，700+ 测试项）
 │   ├── test_master.py                # 主运行器
 │   ├── test_complete_system.py       # 全系统验证
 │   ├── test_cross_reference.py       # 交叉引用审计

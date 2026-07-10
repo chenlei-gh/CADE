@@ -46,7 +46,8 @@ SUITES = {
     "Intent Planner": "test_intent_planner.py",
     "AI Integration": "test_ai_integration.py",
     "Token Audit": "test_token_audit.py",
-}
+    "Deep Audit": "test_deep_audit.py",
+    }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
 
@@ -73,7 +74,9 @@ VERIFY_STRINGS = {
     "test_caa_structure.py": "All CAA standard paths verified",
     "test_intent_planner.py": "All Planner tests passed",
     "test_ai_integration.py": "AI can seamlessly use ALL CADE APIs",
-}
+        "test_token_audit.py": "LOW (<500)",
+            "test_deep_audit.py": "ALL REFERENCES CONSISTENT",
+    }
 
 
 def run(quick: bool = False):

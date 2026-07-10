@@ -130,7 +130,7 @@ cade test --quick                 # run all 22 test suites (~8s)
 ### Quick Test
 
 ```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # ~8s, 23 suites
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # ~8s, 24 suites
 ```
 
 ---
@@ -191,7 +191,7 @@ your_project/
 │   ├── knowledge/                  ← CAA API reference (9 domains)
 │   ├── patterns/                   ← Architecture patterns (6 types)
 │   ├── examples/                   ← Real CAA projects
-│   ├── tests/                      ← 23 suites, 700+ cases
+│   ├── tests/                      ← 24 suites, 700+ cases
 │   ├── tools/                      ← Setup, validation, utilities
 │   ├── config/                     ← Editor MCP templates
 │   └── docs/                       ← Full documentation
@@ -271,7 +271,7 @@ cade rollback --id latest           # 撤销
 ```bash
 cade suggest                        # AI 推荐下一步
 cade docs                           # 自动生成文档
-cade test --quick                   # 运行 23 套件全测试
+cade test --quick                   # 运行 24 套件全测试
 ```
 
 ### 🏛 架构
@@ -319,7 +319,7 @@ Knowledge System（9 Knowledge + 6 Pattern + 1 Example）
 │   ├── knowledge/                  ← CAA API 参考（9 领域）
 │   ├── patterns/                   ← 架构模式（6 类型）
 │   ├── examples/                   ← 真实 CAA 项目
-│   ├── tests/                      ← 23 套件，700+ 用例
+│   ├── tests/                      ← 24 套件，700+ 用例
 │   └── docs/                       ← 完整文档
 ├── MyFramework.edu/
 ├── MyModule.m/
