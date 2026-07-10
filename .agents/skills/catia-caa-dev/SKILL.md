@@ -1338,13 +1338,13 @@ python test_e2e_workflow.py
 │   ├── test_l6_fault_injection.py    # 故障注入
 │   ├── test_knowledge_system.py      # 知识系统
 │   ├── test_catia_detection.py       # CATIA 检测
-│   ├── test_system_health.py         # 健康检查
-│   └── test_production_readiness.py  # 生产就绪
+│   └── test_system_health.py         # 健康检查
 │
 ├── tools/                            # 辅助工具
 │   ├── check_code_reuse.py
 │   ├── validate_component_ai.bat
-│   └── ...
+│   ├── scan_frameworks.py
+│   ├── production_readiness_check.py
 │
 └── config/                           # 配置文件
     ├── caa_env_config.txt
