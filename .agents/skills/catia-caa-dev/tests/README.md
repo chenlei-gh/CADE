@@ -70,7 +70,7 @@
 
 | 文件 | Master 标签 | 覆盖 |
 |------|------------|------|
-| `test_complete_system.py` | Full System | 15 类别全系统验证 |
+| `test_full_regression.py` | Full Regression | 15 类别全系统验证 |
 | `test_cross_reference.py` | Cross-Ref Audit | 文件引用/知识计数/README 对齐 |
 | `test_token_optimizer.py` | Token Optimizer | Token 压缩率/关键信息保留 |
 | `test_token_audit.py` | Token Audit | Token 消耗审计 |
@@ -88,7 +88,7 @@
 | 文件 | 用途 | 运行方式 |
 |------|------|---------|
 | `test_catia_detection.py` | CATIA 安装检测系统测试 | `python test_catia_detection.py` |
-| `test_production_readiness.py` | 生产就绪检查清单 | `python test_production_readiness.py` |
+| `→ tools/production_readiness_check.py` | 生产就绪检查清单 | `python → tools/production_readiness_check.py` |
 | `test_system_health.py` | 系统健康全面检查 | `python test_system_health.py` |
 
 ---

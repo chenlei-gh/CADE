@@ -160,13 +160,13 @@ for hf in health_files:
     check(f"system_health -> {fname}", exists)
 
 # ═══════════════════════════════════════════════════════════
-# 4. test_complete_system.py EXISTING_SUITES
+# 4. test_full_regression.py EXISTING_SUITES
 # ═══════════════════════════════════════════════════════════
 print("\n" + "=" * 70)
-print("  4. test_complete_system.py <-> Filesystem")
+print("  4. test_full_regression.py <-> Filesystem")
 print("=" * 70)
 
-complete = TESTS_DIR / "test_complete_system.py"
+complete = TESTS_DIR / "test_full_regression.py"
 if complete.exists():
     cs_src = complete.read_text(encoding="utf-8")
     # Find existing_suites list (handle both naming conventions)
@@ -177,21 +177,21 @@ if complete.exists():
         es_files = re.findall(r'"test_\w+\.py"', es_match.group(1))
         for ef in es_files:
             fname = ef.strip('"')
-            check(f"complete_system -> {fname}", (TESTS_DIR / fname).exists())
+            check(f"full_regression -> {fname}", (TESTS_DIR / fname).exists())
         check(
             "No self-reference in suites",
-            "test_complete_system.py" not in " ".join(es_files),
+            "test_full_regression.py" not in " ".join(es_files),
         )
         check("No master in suites", "test_master.py" not in " ".join(es_files))
 
 # ═══════════════════════════════════════════════════════════
-# 5. test_production_readiness.py
+# 5. ../tools/production_readiness_check.py
 # ═══════════════════════════════════════════════════════════
 print("\n" + "=" * 70)
-print("  5. test_production_readiness.py <-> Consistency")
+print("  5. ../tools/production_readiness_check.py <-> Consistency")
 print("=" * 70)
 
-prod = TESTS_DIR / "test_production_readiness.py"
+prod = TESTS_DIR / "../tools/production_readiness_check.py"
 if prod.exists():
     prod_src = prod.read_text(encoding="utf-8")
 

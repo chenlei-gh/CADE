@@ -38,7 +38,7 @@ SUITES = {
     "Int-1 Build & Run": "test_build_and_run.py",
     "Int-2 Skill-AI": "test_skill_ai_coordination.py",
     # ── Full System ──
-    "Full System": "test_complete_system.py",
+    "Full System": "test_full_regression.py",
     # ── Audit ──
     "Cross-Ref Audit": "test_cross_reference.py",
     "Token Optimizer": "test_token_optimizer.py",
@@ -68,7 +68,7 @@ VERIFY_STRINGS = {
     "test_knowledge_system.py": "ALL CHECKS PASSED",
     "test_build_and_run.py": "All Build Time & Run Time commands working",
     "test_skill_ai_coordination.py": "Perfect —",
-    "test_complete_system.py": "ALL TESTS PASSED",
+    "test_full_regression.py": "ALL TESTS PASSED",
     "test_cross_reference.py": "ALL CROSS-REFERENCES CONSISTENT",
     "test_token_optimizer.py": "All token optimizer tests passed",
     "test_caa_structure.py": "All CAA standard paths verified",

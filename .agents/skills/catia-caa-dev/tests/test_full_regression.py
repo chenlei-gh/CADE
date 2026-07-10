@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-CADE Complete System Verification — 244-Test Suite
-===================================================
+CADE Full Regression Suite — 244-Test Suite
+=============================================
+⚠️ 回归套件：与独立测试文件有内容重叠（Spec/Rollback/Backup等）。
+   独立测试失败时此处也会失败——这是设计意图，用于捕捉跨模块交互。
+
 Validates ALL modules, ALL APIs, ALL features.
 Also runs all existing test suites as subprocesses at the end.
 
@@ -1178,7 +1181,6 @@ EXISTING_SUITES = [
     "test_system_health.py",
     # Additional suites:
     "test_catia_detection.py",
-    "test_production_readiness.py",
 ]
 
 _suite_passed = 0

@@ -87,7 +87,7 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
 |------|------|------|
 | Int-1 Build & Run | `test_build_and_run.py` | 35 Build 命令 + 7 Run 命令 + 环境检测 |
 | Int-2 Skill-AI | `test_skill_ai_coordination.py` | Skill-AI 协同 + 运行时链 |
-| Full System | `test_complete_system.py` | 全系统 15 个类别验证 |
+| Full Regression | `test_full_regression.py` | 全系统 15 个类别验证 |
 | Cross-Ref Audit | `test_cross_reference.py` | 文件引用、知识计数、README 对齐 |
 | Token Optimizer | `test_token_optimizer.py` | Token 压缩率、关键信息保留 |
 | Token Audit | `test_token_audit.py` | Token 消耗审计 |
@@ -195,7 +195,7 @@ CADE 共有 **48 条功能链路**，分属 **9 大类**。24 个测试套件覆
 |---|------|--------|---------|------|
 | 1 | **创建** | 10 | L1 + L2-2 + L2-4 + L3 | ✅ |
 | 2 | **查询** | 10 | L2-1 + L2-5 + L4 + L5 | ✅ |
-| 3 | **构建** | 9 | Int-1 + Full System | ✅ |
+| 3 | **构建** | 9 | Int-1 + Full Regression | ✅ |
 | 4 | **运行** | 4 | Int-1 | ✅ |
 | 5 | **诊断修复** | 2 | L2-6 + L2-7 | ✅ |
 | 6 | **重构** | 3 | L2-8 | ✅ |
@@ -213,10 +213,10 @@ CADE 共有 **48 条功能链路**，分属 **9 大类**。24 个测试套件覆
 | 2 | `create_module` | L1 Unit | 单元测试 |
 | 3 | `create_command` | L1 + L2-2 Intent + L3 E2E | 单元+意图+端到端 |
 | 4 | `create_dialog` | L1 + L2-5 Spec | 单元+Spec 校验 |
-| 5 | `create_workbench` | L1 + Full System | 单元+全系统 |
+| 5 | `create_workbench` | L1 + Full Regression | 单元+全系统 |
 | 6 | `create_interface` | L1 + L2-5 Spec | 单元+Spec 校验 |
 | 7 | `create_component` | L1 + L2-5 Spec | 单元+Spec 校验 |
-| 8 | `add_command_to_workbench` | L1 + Full System | 单元+全系统 |
+| 8 | `add_command_to_workbench` | L1 + Full Regression | 单元+全系统 |
 | 9 | `create_feature` | L2-4 Enhanced Intents | 意图层集成 |
 | 10 | `create_extension` | L2-4 Enhanced Intents | 意图层集成 |
 
@@ -224,7 +224,7 @@ CADE 共有 **48 条功能链路**，分属 **9 大类**。24 个测试套件覆
 
 | # | 链路 | 测试套件 | 验证方式 |
 |---|------|---------|----------|
-| 11 | `analyze_workspace` | L1 + Full System | 单元+全系统 |
+| 11 | `analyze_workspace` | L1 + Full Regression | 单元+全系统 |
 | 12 | `list_modules` | L1 + Cross-Ref | 单元+交叉引用 |
 | 13 | `list_commands` | L1 | 单元测试 |
 | 14 | `list_workbenches` | L1 | 单元测试 |

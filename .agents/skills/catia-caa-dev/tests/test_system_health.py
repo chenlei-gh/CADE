@@ -132,7 +132,7 @@ class SystemHealthCheck:
             "test_knowledge_system.py",
             "test_build_and_run.py",
             "test_skill_ai_coordination.py",
-            "test_complete_system.py",
+            "test_full_regression.py",
                         "test_cross_reference.py",
                         "test_token_optimizer.py",
                         "test_caa_structure.py",
