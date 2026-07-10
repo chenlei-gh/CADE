@@ -205,8 +205,9 @@ Unknown Error
 | Metric | Value |
 | --- | --- |
 | Test Suites | **24** (L1-L7 + Integration + Audit) |
-| Test Cases | **700+** |
-| Pass Rate | **100%** |
+| Test Files | **27** (24 suites + 3 standalone) |
+| Checks | **~600** |
+| Pass Rate | **100%** (verified 2026-07-10) |
 | CLI Commands | **22** |
 | MCP Tools | **41** |
 | Python APIs | **~80** |

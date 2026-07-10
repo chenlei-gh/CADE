@@ -34,6 +34,8 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
+> 🟢 **CI Status**: `24/24 suites (100%)` | **27 test files** | **~600 checks** | *2026-07-10*
+
 ---
 
 ## ⚡ Quick Start
@@ -147,8 +149,11 @@ Three new CAA domains unlocked — powered by 6 knowledge files + 3 patterns:
 24-suite test suite catches drift early:
 
 ```bash
-cade test --quick   # 24 suites, ~8s
+cade test --quick   # 23 suites (~8s), quick mode skips CATIA tests
+cade test           # 24 suites (~60s), full including CATIA lifecycle
 ```
+
+> 🟢 **Verified**: 24/24 suites (100%) — last full run 2026-07-10
 
 - **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
@@ -199,15 +204,28 @@ cade suggest                      # AI recommends next action
 cade docs                         # auto-generate documentation
 cade prereq MyModule              # view prerequisites
 cade rv                           # create Runtime View
-cade test --quick                 # run all 22 test suites (~8s)
+cade test --quick                 # run all 23 suites (~8s)
+cade test                         # full: 24 suites (~60s)
 ```
 
 > 🔌 Also available as **MCP Server** (41 tools) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
 
-### ⚡ Quick Test
+### ⚡ Test Results
+
+```text
+L1 Unit(49) ✅  L2 DepGraph ✅  L2 Intent ✅  L2 Rollback ✅
+L2 Enhanced ✅  L2 Spec ✅     L2 Diag ✅    L2 FixPlan ✅
+L2 Refactor ✅  L3 E2E ✅      L4 Arch(29) ✅  L5 Sem(40) ✅
+L6 Fault(16) ✅  L7 Know(16) ✅  Int1 Build ✅  Int2 Skill ✅
+FullSys ✅     CrossRef ✅     Token ✅      CAA Struct ✅
+Intent ✅      AI Integ ✅     TokenAudit ✅  DeepAudit ✅
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+24/24 suites (100%) · 27 files · ~600 checks · 2026-07-10
+```
 
 ```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # ~8s, 24 suites
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 23 suites (~8s)
+python .agents/skills/catia-caa-dev/tests/test_master.py           # 24 suites (~60s)
 ```
 
 ---
