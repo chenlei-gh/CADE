@@ -72,15 +72,14 @@ cp -r CADE/.agents /path/to/your/caa/project/
 
 ## 🔥 Why CADE?
 
-| ❌ Without CADE | ✅ With CADE |
+| Without CADE | With CADE |
 |---|---|
-| Manually create 8 files per command | `cade create command MyCmd MyModule` |
-| Run RADE wizards, click through dialogs | Tell AI: "create a command with dialog" |
-| `mkmk -u` then `mkCreateRuntimeView` then `CNEXT` | `cade build && cade run` |
-| Guess what's broken after refactoring | `cade diagnose && cade fix --apply` |
-| No way to undo a mistaken delete | `cade rollback --id latest` |
-| Wasting AI context on verbose output | Token optimizer saves 50% tokens automatically |
-| Guess impact before refactoring | `cade impact IMyInterface interface rename` |
+| Create command manually (8 files) | One command: `cade create` |
+| Click through RADE wizards | Tell AI in natural language |
+| Multi-step build/run workflow | `cade build && cade run` |
+| Guess what broke | `cade diagnose && cade fix` |
+| No undo for mistakes | `cade rollback --id latest` |
+| Wasted AI context tokens | Auto 50% token savings |
 
 ---
 
@@ -245,17 +244,22 @@ cade test                         # full: 28 suites (~60s)
 
 ### ⚡ Test Results
 
-```text
-L1 Unit(49) ✅  L2 DepGraph ✅  L2 Intent ✅  L2 Rollback ✅
-L2 Enhanced ✅  L2 Spec ✅     L2 Diag ✅    L2 FixPlan ✅
-L2 Refactor ✅  L3 E2E ✅      L4 Arch(29) ✅  L5 Sem(40) ✅
-L6 Fault(16) ✅  L7 Know(16) ✅  L0 Kernel ✅   L0 Req ✅
-L0 Repair ✅   Int1 Build ✅   Int2 Skill ✅  FullSys ✅
-CrossRef ✅    Token ✅       CAA Struct ✅  Intent ✅
-AI Integ ✅    TokenAudit ✅  DeepAudit ✅
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-28/28 suites (100%) · 28 files · ~600 checks · 2026-07-11
-```
+<details>
+<summary>28/28 suites (100%) · 28 files · ~600 checks · 2026-07-11</summary>
+
+| | | |
+|---|---|---|
+| L1 Unit(49) ✅ | L2 DepGraph ✅ | L2 Intent ✅ |
+| L2 Rollback ✅ | L2 Enhanced ✅ | L2 Spec ✅ |
+| L2 Diag ✅ | L2 FixPlan ✅ | L2 Refactor ✅ |
+| L3 E2E ✅ | L4 Arch(29) ✅ | L5 Sem(40) ✅ |
+| L6 Fault(16) ✅ | L7 Know(16) ✅ | L0 Kernel ✅ |
+| L0 Req ✅ | L0 Repair ✅ | Int1 Build ✅ |
+| Int2 Skill ✅ | FullSys ✅ | CrossRef ✅ |
+| Token ✅ | CAA Struct ✅ | Intent ✅ |
+| AI Integ ✅ | TokenAudit ✅ | DeepAudit ✅ |
+
+</details>
 
 ```bash
 python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 27 suites (~8s)
@@ -315,19 +319,19 @@ graph TD
 
 | | |
 |---|---|
-| **Test Suites** | 28 (L1-L7 + Integration + Audit) |
-| **Test Files** | 28 (27 suites + 1 standalone) |
-| **Checks** | ~600 |
-| **Pass Rate** | 100% |
-| **Templates** | 25+ |
-| **APIs** | 15 (Intent + Action) |
-| **CLI Commands** | 22 |
-| **MCP Modes** | 3 |
-| **Build Commands** | 35 |
-| **Spec Types** | 8 |
-| **Refactor Operations** | 3 |
-| **Domain Entities** | 10 |
-| **Knowledge Assets** | 234 (29K + 13P + 13C + 6PB + 149FW + 1E + 6PH + 3FP) |
+| Suites | 28 (L1-L7 + Integration + Audit) |
+| Files | 28 (27 suites + 1 standalone) |
+| Checks | ~600 |
+| Pass Rate | 100% |
+| Templates | 25+ |
+| APIs | 15 (Intent + Action) |
+| CLI Commands | 22 |
+| MCP Modes | 3 |
+| Build Commands | 35 |
+| Spec Types | 8 |
+| Refactor Ops | 3 |
+| Domain Entities | 10 |
+| Knowledge Assets | 234 (29K + 13P + 13C + 6PB + 149FW + 1E + 6PH + 3FP) |
 
 ---
 
@@ -336,17 +340,17 @@ graph TD
 ```text
 your_project/
 ├── .agents/skills/catia-caa-dev/   ← CADE (drop-in)
-│   ├── skills/                     ← Engine (28 modules)
-│   ├── templates/                  ← 25+ code templates
-│   ├── capabilities/               ← 13 core CAA capabilities
-│   ├── playbooks/                  ← Solution playbooks
-│   ├── knowledge/                  ← CAA API reference (8 domains + 149 frameworks)
-│   ├── patterns/                   ← Architecture patterns (13 patterns)
-│   ├── examples/                   ← Real CAA projects
-│   ├── tests/                      ← 28 suites, ~600 checks
-│   ├── tools/                      ← Setup, validation, utilities
-│   ├── config/                     ← Editor MCP templates
-│   └── docs/                       ← Full documentation
+    ├── skills/                     ← Engine (28 modules)
+    ├── templates/                  ← 25+ code templates
+    ├── capabilities/               ← 13 core CAA capabilities
+    ├── playbooks/                  ← Solution playbooks
+    ├── knowledge/                  ← CAA API reference (8 domains + 149 frameworks)
+    ├── patterns/                   ← Architecture patterns (13 patterns)
+    ├── examples/                   ← Real CAA projects
+    ├── tests/                      ← 28 suites, ~600 checks
+    ├── tools/                      ← Setup, validation, utilities
+    ├── config/                     ← Editor MCP templates
+    └── docs/                       ← Full documentation
 ├── MyFramework.edu/
 ├── MyModule.m/
 └── ...
@@ -460,17 +464,22 @@ cade test                           # 28 套件全量测试 (~60s)
 
 ### ⚡ 测试结果
 
-```text
-L1 单元(49) ✅  L2 依赖图 ✅   L2 Intent ✅  L2 回滚 ✅
-L2 增强 ✅     L2 Spec ✅     L2 诊断 ✅    L2 FixPlan ✅
-L2 重构 ✅     L3 E2E ✅      L4 架构(29) ✅  L5 语义(40) ✅
-L6 故障(16) ✅  L7 知识(16) ✅  L0 核心 ✅    L0 Req ✅
-L0 修复 ✅     Int1 构建 ✅    Int2 协同 ✅   全系统 ✅
-CrossRef ✅    Token ✅       CAA结构 ✅    Intent ✅
-AI集成 ✅      Token审计 ✅    深度审计 ✅
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-28/28 套件 (100%) · 28 文件 · ~600 检查 · 2026-07-11
-```
+<details>
+<summary>28/28 套件 (100%) · 28 文件 · ~600 检查 · 2026-07-11</summary>
+
+| | | |
+|---|---|---|
+| L1 单元(49) ✅ | L2 依赖图 ✅ | L2 Intent ✅ |
+| L2 回滚 ✅ | L2 增强 ✅ | L2 Spec ✅ |
+| L2 诊断 ✅ | L2 FixPlan ✅ | L2 重构 ✅ |
+| L3 E2E ✅ | L4 架构(29) ✅ | L5 语义(40) ✅ |
+| L6 故障(16) ✅ | L7 知识(16) ✅ | L0 核心 ✅ |
+| L0 Req ✅ | L0 修复 ✅ | Int1 构建 ✅ |
+| Int2 协同 ✅ | 全系统 ✅ | CrossRef ✅ |
+| Token ✅ | CAA结构 ✅ | Intent ✅ |
+| AI集成 ✅ | Token审计 ✅ | 深度审计 ✅ |
+
+</details>
 
 ### 🏛 架构
 
@@ -513,14 +522,14 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 ```text
 你的项目/
 ├── .agents/skills/catia-caa-dev/   ← CADE（直接放入即可）
-│   ├── skills/                     ← 引擎（28 模块）
-│   ├── templates/                  ← 25+ 代码模板
-│   ├── capabilities/               ← 13 个核心能力
-│   ├── playbooks/                  ← 解决方案
-│   ├── knowledge/                  ← CAA API 参考（8 领域 + 149 框架）
-│   ├── patterns/                   ← 13 个开发模式
-│   ├── tests/                      ← 27 测试文件，~600 检查
-│   └── docs/                       ← 完整文档
+    ├── skills/                     ← 引擎（28 模块）
+    ├── templates/                  ← 25+ 代码模板
+    ├── capabilities/               ← 13 个核心能力
+    ├── playbooks/                  ← 解决方案
+    ├── knowledge/                  ← CAA API 参考（8 领域 + 149 框架）
+    ├── patterns/                   ← 13 个开发模式
+    ├── tests/                      ← 27 测试文件，~600 检查
+    └── docs/                       ← 完整文档
 ├── MyFramework.edu/
 ├── MyModule.m/
 └── ...
