@@ -80,3 +80,14 @@ tags: [geometry, feature]          # 标签
 | ID | 文件 | 难度 | 涉及 |
 |----|------|------|------|
 | geo.fillet_checker | examples/geometry/fillet_checker/ | 中级 | part.fillet, ui.dialog, analyzer.geometry |
+
+### 教程示例 (docs/examples/)
+
+| ID | 文件 | 类型 |
+|----|------|------|
+| tutorial.command | docs/examples/EXAMPLE_COMMAND.md | 命令开发教程 |
+| tutorial.dialog | docs/examples/EXAMPLE_DIALOG.md | 对话框开发教程 |
+| tutorial.extension | docs/examples/EXAMPLE_EXTENSION.md | 数据扩展教程 |
+| tutorial.multi_interface | docs/examples/EXAMPLE_MULTI_INTERFACE.md | 多接口教程 |
+| tutorial.calculator | docs/examples/EXAMPLE_CALCULATOR.md | 计算器完整示例 |
+| tutorial.ai_workflow | docs/examples/AI_WORKFLOW_EXAMPLES.md | AI 工作流示例

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/tests-700%2B-brightgreen?style=for-the-badge" />
+<img src="https://img.shields.io/badge/tests-600%2B-brightgreen?style=for-the-badge" />
 <img src="https://img.shields.io/badge/python-3.7%2B-blue?style=for-the-badge" />
 <img src="https://img.shields.io/badge/CATIA-V5-orange?style=for-the-badge" />
 <img src="https://img.shields.io/badge/license-MIT-lightgrey?style=for-the-badge" />
@@ -254,7 +254,7 @@ graph TD
 | **Spec Types** | 8 |
 | **Refactor Operations** | 3 |
 | **Domain Entities** | 10 |
-| **Knowledge Assets** | 41 (28K + 12P + 1E) |
+| **Knowledge Assets** | 41 (28K + 12P + 1E) + 6 tutorial examples in docs/ |
 
 ---
 
@@ -384,7 +384,7 @@ Knowledge System（28 Knowledge + 12 Pattern + 1 Example）
 | **Spec 类型** | 8 |
 | **重构操作** | 3 |
 | **领域实体** | 10 |
-| **知识资产** | 41（28K + 12P + 1E） |
+| **知识资产** | 41（28K + 12P + 1E）+ 6 教程示例 |
 
 ### 📂 项目结构
 
