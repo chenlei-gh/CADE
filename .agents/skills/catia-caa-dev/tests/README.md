@@ -1,14 +1,22 @@
 # Test Index
 
-测试目录包含 **24 个 master runner 套件**（含 3 个未注册独立测试）。共 **27 个文件**，~600 测试项，覆盖 48 条功能链路。
+测试目录包含 **26 个 master runner 套件**。共 **27 个文件**，~600 测试项，覆盖 48 条功能链路。
 
-知识资产：204 文件（29K + 13P + 10C + 2PB + 149FW + 1E）
+知识资产：234 文件（29K + 13P + 13C + 6PB + 149FW + 1E + 6PH + 3FP）
 
 ---
 
-## Master Runner 套件（24）
+## Master Runner 套件（26）
 
 在 `test_master.py` 中注册，可通过 `python test_master.py` 批量运行。
+
+### L0 — Kernel 契约测试（v3.0 新增）
+
+| 文件 | 测试项 | Master 标签 |
+|------|--------|------------|
+| `test_kernel_public_api.py` | 16 | L0-1 Kernel API |
+| `test_requirements.py` | 21 | L0-2 Requirements |
+| `test_repair_loop.py` | 20 | L0-3 Repair Loop |
 
 ### L1 — 单元测试
 
@@ -125,5 +133,5 @@ python test_system_health.py
 
 ---
 
-**最后更新**: 2026-07-10  
-**文件数**: 27（24 套件 + 3 独立）
+**最后更新**: 2026-07-11  
+**文件数**: 27（26 套件 + 1 独立）
