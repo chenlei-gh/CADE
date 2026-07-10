@@ -7,6 +7,51 @@
 
 ---
 
+---
+
+## [3.0.0] - 2026-07-11
+
+### 🧬 Development Kernel（架构升维）
+
+从 Tool Collection 升维为 Development Kernel。AI 可见接口从 41 个工具压缩为 3 个 Mode。
+
+- **Kernel** (`kernel.py`): 统一执行入口 + 状态机 + 3 种 Mode Policy
+- **Requirements Clarifier** (`requirements.py`): 领域检测 + 决策树 + 澄清问题
+- **Verifier** (`verifier.py`): 编译验证（mkmk 集成）
+- **Repair Loop** (`repair.py`): 诊断→修复→验证 闭环（3 次重试 + escalate）
+- **Learning** (`learning.py`): 反馈学习 + 模式检测
+- **MCP Server**: 41 tools → 3 modes（`develop`/`analyze`/`repair`）
+- **Intent Models**: +DecisionRecord, +6 IntentType, +decisions 字段
+
+### 🧠 知识体系扩展
+
+- **Philosophy 层** (新增): 6 个 CAA 底层哲学
+- **Playbook 层**: 2 → 6
+- **Capability 层**: 10 → 13
+- **Decision Trees** (新增): 3 个
+- **Failure Patterns** (新增): 3 个
+- **知识资产**: 204 → 234
+
+### 🧪 测试
+
+- 新增 L0 契约测试层（3 套件，57 测试项）
+- 测试套件: 24 → 26，全部 26/26 通过
+
+### 📖 文档
+
+- SKILL.md: AI 指南重写（3-mode 模型 + Kernel 架构图）
+- README.md: 全量数据更新
+- WIKI_HOME.md: 精简为跳转页
+- TEST_DOCUMENTATION.md: 新增 L0 层
+
+### ⚠️ 向后兼容性
+
+- 现有 `actions.py`、`generator.py` 等模块**完全不动**，降级为 Kernel 内部 Primitives
+- CLI (`cade.py`) 所有命令继续可用
+- 所有现有测试通过
+
+---
+
 ## [2.2.0] - 2026-07-10
 
 ### 🧠 五层知识体系

@@ -32,6 +32,14 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
 
 ## 套件清单
 
+### L0 — Kernel 契约测试（v3.0 新增）
+
+| 标签 | 文件 | 测试数 | 覆盖 |
+|------|------|--------|------|
+| L0-1 Kernel API | `test_kernel_public_api.py` | 16 | Kernel 3-mode 公共接口 |
+| L0-2 Requirements | `test_requirements.py` | 21 | Requirements Clarifier |
+| L0-3 Repair Loop | `test_repair_loop.py` | 20 | Repair Loop 状态机 |
+
 ### L1 — 单元测试
 
 | 标签 | 文件 | 测试数 | 覆盖 |
@@ -103,13 +111,13 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
 ### 快速检查（跳过 Build/Run）
 ```bash
 python tests/test_master.py --quick
-# ~8s, 23 套件（跳过 Int-1 Build & Run）
+# ~8s, 25 套件（跳过 Int-1 Build & Run）
 ```
 
 ### 全量检查
 ```bash
 python tests/test_master.py
-# ~60s, 24 套件（含 CATIA 启停）
+# ~60s, 26 套件（含 CATIA 启停）
 ```
 
 ### 单套件
@@ -134,8 +142,8 @@ python tests/test_master.py --audit
 
 | 指标 | 值 |
 |------|-----|
-| 套件总数 | **24** |
-| L1-L7 核心 | 15 |
+| 套件总数 | **26** |
+| L1-L7+L0 核心 | 18 |
 | 集成套件 | 2 |
 | 审计套件 | 7 |
 | 测试函数 | **56** |
@@ -305,7 +313,7 @@ CADE 共有 **48 条功能链路**，分属 **9 大类**。24 个测试套件覆
 | 链路总数 | **48** |
 | 自动测试覆盖 | **47** (98%) |
 | 规则+检测覆盖 | **1** (caadoc_fallback) |
-| 测试套件 | **24** |
+| 测试套件 | **26** |
 | 断言/检查 | **~600** |
 
 ### CAADoc Fallback 链路详解
@@ -331,8 +339,8 @@ test_knowledge_system.py: catalog ↔ files 对齐
 
 ### 验证日期
 
-**2026-07-10 23:22**: 全部 12 条链路验证通过，24/24 全量测试 100%（77s）。
-  知识资产: 204（29K + 13P + 10C + 2PB + 149FW + 1E）
+**2026-07-11 23:22**: 全部 12 条链路验证通过，26/26 全量测试 100%（77s）。
+  知识资产: 234（29K + 13P + 13C + 6PB + 149FW + 1E + 6PH + 3FP）
 
 ---
 
@@ -349,5 +357,5 @@ A: `python tests/test_master.py --quick` 已覆盖所有非环境依赖套件。
 
 ---
 
-**最后更新**: 2026-07-10  
+**最后更新**: 2026-07-11  
 **维护者**: Kiro AI Agent

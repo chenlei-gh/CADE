@@ -275,9 +275,13 @@ class ProductionReadinessCheck:
         # 检查 CHANGELOG 是否记录了 breaking changes
         with open(self.root / "CHANGELOG.md", "r", encoding="utf-8") as f:
             changelog = f.read()
-        has_v2 = "2.2.0" in changelog or "2.0.0" in changelog
+        has_v2 = "[2.2.0]" in changelog or "[2.0.0]" in changelog
+        has_v3 = "[3.0.0]" in changelog
         self.check_item(
             "CHANGELOG documents v2.x", has_v2, error_msg="no version 2.x documented"
+        )
+        self.check_item(
+            "CHANGELOG documents v3.x", has_v3, error_msg="no v3.0.0 documented"
         )
 
         # 检查是否保留了旧 API（如果有的话）
@@ -314,9 +318,9 @@ class ProductionReadinessCheck:
         # 检查版本号一致性（README.md is at CADE root）
         readme_path = self.root.parent.parent.parent / "README.md"
         files_to_check = [
-            (readme_path, "2.2.0"),
-            (self.root / "SKILL.md", "2.2.0"),
-            (self.root / "CHANGELOG.md", "2.2.0"),
+            (readme_path, "3.0.0"),
+            (self.root / "SKILL.md", "3.0.0"),
+            (self.root / "CHANGELOG.md", "3.0.0"),
         ]
 
         for file_path, expected_version in files_to_check:

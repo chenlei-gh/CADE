@@ -79,9 +79,9 @@ skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
 changelog_md = (SKILL_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
 # 2a. Version consistency
-versions_skill = re.findall(r"v?2\.\d+\.\d+", skill_md)
+versions_skill = re.findall(r"v?(\d+)\.(\d+)\.(\d+)", skill_md)
 versions_changelog = re.findall(r"\[(\d+\.\d+\.\d+)\]", changelog_md)
-skill_ver = versions_skill[0].lstrip("v") if versions_skill else "?"
+skill_ver = ".".join(versions_skill[0]) if versions_skill else "?"
 changelog_top = versions_changelog[0] if versions_changelog else "?"
 check(
     "SKILL.md version",

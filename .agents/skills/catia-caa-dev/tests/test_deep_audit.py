@@ -191,16 +191,16 @@ for md_file in main_files:
         continue
     vers = re.findall(r'v?(\d+\.\d+\.\d+)', content)
     for v in vers:
-        if v.count(".") == 2 and v[0] == "2":
+        if v.count(".") == 2 and v[0] in ("2", "3"):
             active_versions[v] = md_file.name
 
-if "2.2.0" in active_versions:
-    check(f"Active version 2.2.0 in {active_versions['2.2.0']}", True)
+if "3.0.0" in active_versions:
+    check(f"Active version 3.0.0 in {active_versions['3.0.0']}", True)
 else:
-    check("Active version 2.2.0 NOT in main docs", False)
+    check("Active version 3.0.0 NOT in main docs", False)
 
 for v, f in active_versions.items():
-    if v != "2.2.0":
+    if v != "3.0.0":
         check(f"Stale active version {v} in {f}", False)
 
 # ═══════════════════════════════════════════════════════════

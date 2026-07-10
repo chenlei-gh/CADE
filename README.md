@@ -190,7 +190,7 @@ cade test           # 26 suites (~60s), full including CATIA lifecycle
 
 - **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
-- **Version Consistency** — 2.2.0 unified across all docs
+- **Version Consistency** — 3.0.0 unified across all docs
 - **Hardcoded Path Detection** — 92 files scanned
 
 ---
