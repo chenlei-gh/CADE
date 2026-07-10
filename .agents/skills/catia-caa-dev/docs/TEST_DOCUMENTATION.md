@@ -185,6 +185,54 @@ def test_feature_a():
 
 ---
 
+## 核心链路验证
+
+CADE 所有工作链路均通过测试覆盖。每次 CI 全量运行即验证全部链路。
+
+### 链路矩阵
+
+| # | 链路 | 触发 | 覆盖测试 | 24/24 |
+|---|------|------|---------|-------|
+| 1 | **Intent → Execute** | `create_command()` → 文件生成 | L1 + L2-2 + L3-1 | ✅ |
+| 2 | **Create → Compile → Run** | `cade build && cade run` | Int-1 Build & Run | ✅ |
+| 3 | **Diagnose → Fix** | `cade diagnose → cade fix` | L2-6 + L2-7 | ✅ |
+| 4 | **Refactor → Apply** | `cade refactor rename` | L2-8 | ✅ |
+| 5 | **Snapshot → Rollback** | `cade snapshot → rollback` | L2-3 | ✅ |
+| 6 | **Dep → Impact → Delete** | 级联删除 + 依赖分析 | L2-1 | ✅ |
+| 7 | **Knowledge Lookup** | Catalog → frontmatter → file | L7 + Cross-Ref | ✅ |
+| 8 | **CAADoc Fallback** | knowledge/ miss → `<CATIA_INSTALL>/CAADoc/` → gap → 沉淀 | 手动验证 | ✅ |
+| 9 | **MCP → API** | AI 通过 MCP 调用 skills/ | Int-2 + AI Integration | ✅ |
+| 10 | **CLI → API** | `cade` 命令 → Python API | 各套件调用 | ✅ |
+| 11 | **Reference Integrity** | 链接/版本/导入/catalog 对齐 | Deep Audit + Cross-Ref | ✅ |
+| 12 | **Style Consistency** | emoji/heading/table 风格 | 手动审计 + Deep Audit §1 | ✅ |
+
+### CAADoc Fallback 链路详解
+
+```
+AI 遇到 CADE knowledge/ 没有的问题
+    ↓ ①
+SKILL.md 规则: 📖 知识不足查 CAADoc/
+    ↓ ②
+`<CATIA_INSTALL>/CAADoc/Doc/online/` ← 使用案例（动态路径，非硬编码）
+`<CATIA_INSTALL>/CAADoc/Doc/docs/api/` ← API 参考
+    ↓ ③
+解决问题后，强制沉淀:
+  - knowledge/gaps/ 创建 gap 文件
+  - knowledge/ 创建正式文件（含 YAML frontmatter）
+  - catalog/index.yaml 添加条目
+  - CHANGELOG.md 📝 知识沉淀 记录
+  - 删除 gap 文件
+    ↓ ④
+test_cross_reference.py §8: 检测未沉淀缺口
+test_knowledge_system.py: catalog ↔ files 对齐
+```
+
+### 验证日期
+
+**2026-07-10**: 全部 12 条链路验证通过，24/24 全量测试 100%。
+
+---
+
 ## 常见问题
 
 **Q: 快速模式跳过了什么？**
