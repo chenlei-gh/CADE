@@ -334,6 +334,22 @@ if total:
     print(f"  Pass rate: {pct:.1f}%")
 print("=" * 70)
 
+# ═══════════════════════════════════════════════════════════
+# 8. Knowledge gaps — CAADoc unresolved gaps
+# ═══════════════════════════════════════════════════════════
+print("\n" + "=" * 70)
+print("  8. Knowledge Gaps (CAADoc unresolved)")
+print("=" * 70)
+
+gaps_dir = SKILL_ROOT / "knowledge" / "gaps"
+gap_files = [f for f in gaps_dir.glob("*.md") if f.name != "README.md"] if gaps_dir.is_dir() else []
+if gap_files:
+    for gf in gap_files:
+        check(f"Unresolved gap: {gf.name}", False, "Must create formal knowledge file")
+else:
+    check("No unresolved knowledge gaps", True)
+
+
 if passed == total:
     print("\n  >>> ALL CROSS-REFERENCES CONSISTENT <<<")
     sys.exit(0)
