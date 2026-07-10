@@ -57,7 +57,10 @@ class KnowledgeSystemValidator:
         # 5. 验证文件路径规范
         self.validate_file_paths()
 
-        # 6. 统计
+        # 6. Catalog completeness
+        self.validate_catalog_completeness()
+
+        # 7. 统计
         self.print_summary()
 
         return len(self.errors) == 0
@@ -264,6 +267,47 @@ class KnowledgeSystemValidator:
                     )
 
         print(f"\n[OK] File paths validated")
+
+    def validate_catalog_completeness(self):
+        """验证 catalog 和实际文件的相互覆盖"""
+        print("\n" + "=" * 70)
+        print("  Validating Catalog Completeness")
+        print("=" * 70)
+
+        if not self.catalog_file.exists():
+            self.errors.append(f"Catalog not found: {self.catalog_file}")
+            return
+
+        catalog_text = self.catalog_file.read_text(encoding="utf-8")
+
+        # 1. 从 catalog 提取所有 ID
+        import re
+        catalog_ids = set()
+        for match in re.finditer(r'\|\s+([\w.]+)\s+\|\s+(knowledge|patterns|examples)/', catalog_text):
+            catalog_ids.add(match.group(1))
+
+        # 2. 从实际文件提取所有 ID
+        actual_ids = set(self.all_ids.keys())
+
+        # 3. 检查：catalog 有但文件没有（ghost entry）
+        ghost = catalog_ids - actual_ids
+        for gid in sorted(ghost):
+            self.errors.append(f"Catalog ghost entry: '{gid}' — file not found")
+
+        # 4. 检查：文件有但 catalog 没有（missing entry）
+        missing = actual_ids - catalog_ids
+        for mid in sorted(missing):
+            self.warnings.append(
+                f"Catalog missing entry: '{mid}' — file {self.all_ids[mid]['path'].name}"
+            )
+
+        if not ghost and not missing:
+            print(f"\n[OK] Catalog and files fully aligned ({len(actual_ids)} entries)")
+        else:
+            if ghost:
+                print(f"\n  Catalog ghosts: {len(ghost)}")
+            if missing:
+                print(f"  Missing from catalog: {len(missing)}")
 
     def print_summary(self):
         """打印汇总"""
