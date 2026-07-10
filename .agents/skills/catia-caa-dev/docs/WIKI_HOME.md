@@ -1,4 +1,4 @@
-# CADE Wiki — CATIA CAA Development Engine v2.1.0
+# CADE Wiki — CATIA CAA Development Engine v2.2.0
 
 ```
    ██████╗  █████╗ ██████╗ ███████╗
@@ -42,7 +42,7 @@ cp -r CADE/.agents /path/to/your/caa/project/
 
 ---
 
-## 🧠 What's New in v2.1.0
+## 🧠 What's New in v2.2.0
 
 ### 📉 Token Optimizer
 All MCP responses auto-optimized. Average **50% token savings**.

@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: CATIA CAA V5 Development Engine (CADE) v2.1.0 — Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理（循环依赖检测、智能推荐）。CAA 知识系统（29K + 13P + 10 Capability + 2 Playbook + 149 Framework + 1 Example + Catalog），含高级 UI 布局（多层嵌套/列表-详情/动态表单/向导/反模式）、工程图（视图/标注/BOM）、GSD 曲面、FTA 3D 标注。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、24 套件 ~600 测试项。
+description: CATIA CAA V5 Development Engine (CADE) v2.2.0 — Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理（循环依赖检测、智能推荐）。CAA 知识系统（29K + 13P + 10 Capability + 2 Playbook + 149 Framework + 1 Example + Catalog），含高级 UI 布局（多层嵌套/列表-详情/动态表单/向导/反模式）、工程图（视图/标注/BOM）、GSD 曲面、FTA 3D 标注。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、24 套件 ~600 测试项。
 triggers:
   - CAA component
   - CATIA component
@@ -220,7 +220,7 @@ triggers:
 
 ## 🎯 核心特性
 
-**版本**: 2.1.0  
+**版本**: 2.2.0  
 **状态**: ✅ 生产就绪  
 **测试覆盖率**: 100% (24 套件, ~600 测试项全部通过)
 
@@ -1593,7 +1593,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 ### 版本信息
 
-**当前版本**: 2.1.0
+**当前版本**: 2.2.0
 - **发布日期**: 2026-07-07
 - **状态**: 生产就绪
 - **Python 版本**: 3.7+

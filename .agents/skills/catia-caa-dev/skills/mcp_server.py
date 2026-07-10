@@ -744,7 +744,7 @@ def run_stdio():
                     "result": {
                         "protocolVersion": "2024-11-05",
                         "capabilities": {"tools": {}},
-                        "serverInfo": {"name": "cade-mcp-server", "version": "2.1.0"},
+                        "serverInfo": {"name": "cade-mcp-server", "version": "2.2.0"},
                     },
                 }
             elif method == "tools/list":

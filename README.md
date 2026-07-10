@@ -22,7 +22,7 @@
 
 ---
 
-# CADE v2.1.0 — CATIA CAA Development Engine
+# CADE v2.2.0 — CATIA CAA Development Engine
 
 <div align="center">
 
@@ -246,6 +246,24 @@ python .agents/skills/catia-caa-dev/tests/test_master.py           # 24 suites (
 
 ## 🏛 Architecture
 
+### Knowledge Retrieval (5-Layer)
+
+```
+User Intent
+    ↓
+🎯 Capability    "What can CATIA do?"    10 files
+    ↓
+📋 Playbook      "How to accomplish?"     2 files
+    ↓
+📚 Knowledge     "How to use this API?"  29 files
+    ↓
+🗂 Framework     "Which framework?"      149 files
+    ↓
+📖 CAADoc        "Exact API signature"   Official
+```
+
+### Engine Architecture
+
 ```mermaid
 graph TD
     A[AI / CLI / MCP] --> P[Intent Engine<br/>Planner + Impact + Optimizer]
@@ -264,7 +282,7 @@ graph TD
     A --> L[Runtime Engine<br/>7 Commands]
     A --> M[Rollback System]
 
-    N[Knowledge System<br/>29K + 13P + 10C + 2PB + 149FW + 1 Example + Catalog] --> G
+    N[5-Layer Knowledge<br/>204 Assets] --> G
 ```
 
 > **Philosophy**: Capability grows by accumulating knowledge assets, not by modifying code.

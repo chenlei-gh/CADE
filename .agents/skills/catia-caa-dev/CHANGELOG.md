@@ -7,6 +7,36 @@
 
 ---
 
+## [2.2.0] - 2026-07-10
+
+### 🧠 五层知识体系
+
+- **Capability 层**（10 文件）— AI 能力入口，回答"CATIA 能做什么"
+- **Playbook 层**（2 文件）— 成熟方案，回答"怎么完成这件事"
+- **Knowledge 层**（29 文件）— API 代码参考
+- **Framework 层**（149 文件）— CAADoc 导航索引（自动生成）
+- **CAADoc fallback** — Framework 定位 → 精准查官方文档
+
+### 🔗 链路强化
+
+- CAADoc fallback 集成 Framework 导航层（不再直接全文搜）
+- Capability→Playbook 检索路径前置到流程第 1 步
+- 知识沉淀规则精细化：只沉淀洞察，不沉淀 API 签名
+- 知识资产达 204 文件，catalog 100% frontmatter 覆盖
+
+### 🛠 工具
+
+- 新增 `tools/scan_frameworks.py` — CAADoc Framework 自动扫描
+
+### 🐛 修复
+
+- 修复 AI 提示中 Capability/Playbook 路径丢失
+- 修复 Framework→CAADoc 链路断层
+- 修复故障排查流程缺少 Capability/Playbook 步骤
+- 修复版本号长期未更新
+
+---
+
 ## [2.1.0] - 2026-07-08
 
 ### 🚀 重大改进

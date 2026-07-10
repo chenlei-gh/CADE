@@ -1,4 +1,4 @@
-# CADE v2.1.0 — Knowledge System Architecture
+# CADE v2.2.0 — Knowledge System Architecture
 
 ## 概述
 

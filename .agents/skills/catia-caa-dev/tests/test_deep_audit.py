@@ -194,13 +194,13 @@ for md_file in main_files:
         if v.count(".") == 2 and v[0] == "2":
             active_versions[v] = md_file.name
 
-if "2.1.0" in active_versions:
-    check(f"Active version 2.1.0 in {active_versions['2.1.0']}", True)
+if "2.2.0" in active_versions:
+    check(f"Active version 2.2.0 in {active_versions['2.2.0']}", True)
 else:
-    check("Active version 2.1.0 NOT in main docs", False)
+    check("Active version 2.2.0 NOT in main docs", False)
 
 for v, f in active_versions.items():
-    if v != "2.1.0":
+    if v != "2.2.0":
         check(f"Stale active version {v} in {f}", False)
 
 # ═══════════════════════════════════════════════════════════
