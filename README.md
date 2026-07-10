@@ -77,6 +77,54 @@ cp -r cade/.agents /path/to/your/caa/project/
 | `mkmk -u` then `mkCreateRuntimeView` then `CNEXT` | `cade build && cade run` |
 | Guess what's broken after refactoring | `cade diagnose && cade fix --apply` |
 | No way to undo a mistaken delete | `cade rollback --id latest` |
+| Wasting AI context on verbose output | Token optimizer saves 50% tokens automatically |
+| Guess impact before refactoring | `cade impact IMyInterface interface rename` |
+
+---
+
+## 🧠 What's New
+
+### 📉 Token Optimizer
+
+All MCP responses are **auto-optimized** for AI consumption. Key data preserved, noise removed.
+
+```
+API call       Raw     Optimized   Saved
+analyze        341 →   28         91%
+suggest_next   272 →   28         89%
+spec_to_dict   162 →   44         72%
+─────────────────────────────────────
+Total average: 50% savings
+```
+
+### 🧩 Intent Engine
+
+**Plan before execute.** Complex tasks become structured workflows.
+
+```bash
+cade plan CreateCommandWithDialog MyCmd MyModule
+# → 8 steps: ensure_module → create_command → ... → update_imakefile
+
+cade impact IMyInterface interface delete
+# → CRITICAL: 12 affected files, snapshot recommended
+```
+
+- **Planner** — Intent → DevelopmentPlan (task decomposition)
+- **Impact Analyzer** — Assess blast radius before refactoring  
+- **Optimizer** — Score & rank alternative plans
+
+### 🔍 Deep Audit
+
+24-suite test suite catches drift early:
+
+```bash
+cade test --quick   # 24 suites, ~8s
+```
+
+- **Link Checker** — 79 internal links validated
+- **Import Validator** — All Python imports resolvable
+- **Version Consistency** — 2.1.0 unified across all docs
+- **Hardcoded Path Detection** — 92 files scanned
 
 ---
 
@@ -166,7 +214,7 @@ graph TD
 
 | | |
 |---|---|
-| **Test Suites** | 23 (L1-L7 + Integration + Audit) |
+| **Test Suites** | 24 (L1-L7 + Integration + Audit) |
 | **Test Cases** | 700+ |
 | **Pass Rate** | 100% |
 | **Templates** | 25+ |
@@ -296,7 +344,7 @@ Knowledge System（9 Knowledge + 6 Pattern + 1 Example）
 
 | | |
 |---|---|
-| **测试套件** | 23（L1-L7 + Integration + Audit） |
+| **测试套件** | 24（L1-L7 + Integration + Audit） |
 | **测试用例** | 700+ |
 | **通过率** | 100% |
 | **模板** | 25+ |
