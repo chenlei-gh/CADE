@@ -187,24 +187,35 @@ def test_feature_a():
 
 ## 核心链路验证
 
-CADE 所有工作链路均通过测试覆盖。每次 CI 全量运行即验证全部链路。
+CADE 共有 **48 条功能链路**，分属 **9 大类**。24 个测试套件覆盖全部链路。每次 CI 全量运行即验证全部。
 
 ### 链路矩阵
 
-| # | 链路 | 触发 | 覆盖测试 | 24/24 |
-|---|------|------|---------|-------|
-| 1 | **Intent → Execute** | `create_command()` → 文件生成 | L1 + L2-2 + L3-1 | ✅ |
-| 2 | **Create → Compile → Run** | `cade build && cade run` | Int-1 Build & Run | ✅ |
-| 3 | **Diagnose → Fix** | `cade diagnose → cade fix` | L2-6 + L2-7 | ✅ |
-| 4 | **Refactor → Apply** | `cade refactor rename` | L2-8 | ✅ |
-| 5 | **Snapshot → Rollback** | `cade snapshot → rollback` | L2-3 | ✅ |
-| 6 | **Dep → Impact → Delete** | 级联删除 + 依赖分析 | L2-1 | ✅ |
-| 7 | **Knowledge Lookup** | Catalog → frontmatter → file | L7 + Cross-Ref | ✅ |
-| 8 | **CAADoc Fallback** | knowledge/ miss → `<CATIA_INSTALL>/CAADoc/` → gap → 沉淀 | 手动验证 | ✅ |
-| 9 | **MCP → API** | AI 通过 MCP 调用 skills/ | Int-2 + AI Integration | ✅ |
-| 10 | **CLI → API** | `cade` 命令 → Python API | 各套件调用 | ✅ |
-| 11 | **Reference Integrity** | 链接/版本/导入/catalog 对齐 | Deep Audit + Cross-Ref | ✅ |
-| 12 | **Style Consistency** | emoji/heading/table 风格 | 手动审计 + Deep Audit §1 | ✅ |
+| # | 类别 | 链路数 | 覆盖测试 | 状态 |
+|---|------|--------|---------|------|
+| 1 | **创建** | 10 | L1 + L2-2 + L2-4 + L3 | ✅ |
+| 2 | **查询** | 10 | L2-1 + L2-5 + L4 + L5 | ✅ |
+| 3 | **构建** | 9 | Int-1 + Full System | ✅ |
+| 4 | **运行** | 4 | Int-1 | ✅ |
+| 5 | **诊断修复** | 2 | L2-6 + L2-7 | ✅ |
+| 6 | **重构** | 3 | L2-8 | ✅ |
+| 7 | **回滚** | 4 | L2-3 | ✅ |
+| 8 | **知识** | 3 | L7 + Cross-Ref + DeepAudit | ✅ |
+| 9 | **交互** | 3 | Int-2 + AI Integration | ✅ |
+
+### 详细链路清单
+
+| 类别 | 链路 | 验证
+|------|------|------
+| 创建 | framework → module → command → dialog → workbench → interface → component → add_to_wb → feature → extension | L1+L2-2+L2-4+L3
+| 查询 | analyze → list_modules/commands/wb/interfaces → get_dep → get_dependents → visualize → validate → find_orphaned | L2-1+L4+L5
+| 构建 | incremental → full → clean → debug → threaded → runtime_view → workspace_info → prereq → identity_card | Int-1
+| 运行 | start_catia → run_macro → run_batch → stop_catia | Int-1
+| 诊断修复 | diagnose_workspace → fix_apply | L2-6+L2-7
+| 重构 | rename_command → rename_interface → move_command | L2-8
+| 回滚 | snapshot → rollback → list_backups → cleanup | L2-3
+| 知识 | catalog_lookup → caadoc_fallback → knowledge_precipitate | L7+DeepAudit
+| 交互 | mcp_call → cli_call → python_api | Int-2+AI
 
 ### CAADoc Fallback 链路详解
 
