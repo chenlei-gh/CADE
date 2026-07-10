@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CADE — CATIA CAA Development Engine CLI
+CADE — CATIA CAA Development Kernel CLI
 =========================================
 Unified command-line interface for all CADE tools.
 
