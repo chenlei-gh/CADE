@@ -92,12 +92,18 @@
 
   #### 🐛 修复 (2026-07-10)
 
-  - 修复 CAA_INSTALL 未自动写入配置
-  - 修复 test_build_and_run.py 测试样本格式
-  - 修复 test_deep_audit.py 嵌套文件树匹配
-  - 修复 KNOWLEDGE_SYSTEM_ARCHITECTURE.md 版本号过时
+    - 修复 CAA_INSTALL 未自动写入配置
+    - 修复 test_build_and_run.py 测试样本格式
+    - 修复 test_deep_audit.py 嵌套文件树匹配
+    - 修复 KNOWLEDGE_SYSTEM_ARCHITECTURE.md 版本号过时
 
----
+  #### 📝 知识沉淀 (2026-07-10)
+
+    - 新增 knowledge/ui/context_menu.md — 来源: CAADoc/CATIContextualMenu
+    - 新增 patterns/ui/context_menu.md — 来源: CAADoc/CATIContextualMenu
+    - 新增 CAADoc→CADE 沉淀规范 (knowledge/README.md)
+
+  ---
 
 ## [2.0.1] - 2026-07-08
 
