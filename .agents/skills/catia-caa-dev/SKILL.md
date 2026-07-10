@@ -1047,17 +1047,8 @@ result = run_catia_batch()
 ```
 
 ### 3. 清理工作区
-**输出**:
-```json
-{
-  "status": "started",
-  "message": "CATIA started successfully",
-  "pid": 12345,
-  "executable": "C:\\...\\CNEXT.exe"
-}
-```
 
-### 3. 清理工作区
+**输出**:
 
 ```bash
 python skills/clean.py [workspace_path] [options]
@@ -1146,7 +1137,7 @@ python test_e2e_workflow.py
 
 ## 📁 文件结构
 
-```
+```text
 .agents/skills/catia-caa-dev/
 ├── SKILL.md                          # 主技能文档（本文件）
 ├── CHANGELOG.md                      # 更新日志

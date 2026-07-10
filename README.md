@@ -2,7 +2,7 @@
 
 <img src="https://img.shields.io/badge/tests-700%2B-brightgreen?style=for-the-badge" />
 <img src="https://img.shields.io/badge/python-3.7%2B-blue?style=for-the-badge" />
-<img src="https://img.shields.io/badge/CATIA-V5%20%7C%20V6-orange?style=for-the-badge" />
+<img src="https://img.shields.io/badge/CATIA-V5-orange?style=for-the-badge" />
 <img src="https://img.shields.io/badge/license-MIT-lightgrey?style=for-the-badge" />
 
 </div>
@@ -159,7 +159,7 @@ cade test --quick   # 24 suites, ~8s
 
 ## 🧰 What It Can Do
 
-### 🏗 Create
+### 🏗️ Create
 ```bash
 cade create command MyCmd MyModule --dialog --wb MyWb
 cade create feature  MyFeature MyModule
@@ -204,7 +204,7 @@ cade test --quick                 # run all 22 test suites (~8s)
 
 > 🔌 Also available as **MCP Server** (41 tools) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
 
-### Quick Test
+### ⚡ Quick Test
 
 ```bash
 python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # ~8s, 24 suites
@@ -260,7 +260,7 @@ graph TD
 
 ## 📂 Project Structure
 
-```
+```text
 your_project/
 ├── .agents/skills/catia-caa-dev/   ← CADE (drop-in)
 │   ├── skills/                     ← Engine (23 modules)
@@ -281,7 +281,7 @@ your_project/
 
 ## 🇨🇳 中文
 
-### 是什么？
+### ❓ 是什么？
 
 **CADE** 是 CATIA CAA V5/V6 的 AI 驱动开发引擎。用自然语言告诉 AI "创建一个带对话框的命令"，引擎自动生成 8 个文件。一句命令替代 RADE 向导的多次点击。
 
@@ -313,7 +313,7 @@ cp -r cade/.agents /你的/CAA/项目/路径/
 
 ### 🧰 能做什么
 
-**🏗 创建**
+**🏗️ 创建**
 ```bash
 cade create command  我的命令 我的模块 --dialog --wb 我的工作台
 cade create feature  我的Feature 我的模块
@@ -388,7 +388,7 @@ Knowledge System（28 Knowledge + 12 Pattern + 1 Example）
 
 ### 📂 项目结构
 
-```
+```text
 你的项目/
 ├── .agents/skills/catia-caa-dev/   ← CADE（直接放入即可）
 │   ├── skills/                     ← 引擎（23 模块）
@@ -413,6 +413,6 @@ MIT © [chenlei-gh](https://github.com/chenlei-gh) · [LICENSE](.agents/skills/c
 
 <div align="center">
 
-**[📖 Documentation](.agents/skills/catia-caa-dev/docs/) · [🏗 Architecture](.agents/skills/catia-caa-dev/docs/references/ARCHITECTURE.md) · [📝 Changelog](.agents/skills/catia-caa-dev/CHANGELOG.md)**
+**[📖 Documentation](.agents/skills/catia-caa-dev/docs/) · [🏗️ Architecture](.agents/skills/catia-caa-dev/docs/references/ARCHITECTURE.md) · [📝 Changelog](.agents/skills/catia-caa-dev/CHANGELOG.md)**
 
 </div>

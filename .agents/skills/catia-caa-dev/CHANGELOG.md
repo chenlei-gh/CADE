@@ -50,7 +50,7 @@
 - 修复只扫描 C: 和 D: 盘导致无法检测其他盘符 CATIA 的问题
 - 修复版本号硬编码导致新版本 CATIA 无法使用的问题
 
-### 📚 文档
+### 📖 文档
 
 - 新增 `docs/CATIA_DETECTION.md` - 动态检测系统完整文档
   - 架构说明
@@ -71,7 +71,7 @@
   - 安全处理权限错误
   - 配置缓存（避免重复扫描）
 
-  ### 🎨 UI 布局知识强化 (2026-07-10)
+  #### 🎨 UI 布局知识强化 (2026-07-10)
 
   - **dialog_layout.md** 大幅增强：GridConstraints 完整参数（7 种锚定）、多层嵌套、伸缩策略
   - **新增 layout_advanced.md**：列表-详情/动态表单/树形导航/向导/Splitter
@@ -79,18 +79,18 @@
   - **新增 3 个 UI Patterns**：master_detail、dynamic_form、wizard
   - **dialog_patterns.md** 决策索引从 11→17 条
 
-  ### 🏗 新知识域 (2026-07-10)
+  #### 🏗️ 新知识域 (2026-07-10)
 
   - **Drawing（工程图）**：2 知识 + 1 Pattern（视图/标注/BOM/批量出图）
   - **Surface/GSD（曲面）**：1 知识 + 1 Pattern（拉伸/扫掠/展平/分析）
   - **FTA（3D 标注）**：1 知识 + 1 Pattern（标注集/尺寸/公差/自动标注）
 
-  ### 📋 Frontmatter 100% 覆盖 (2026-07-10)
+  #### 📋 Frontmatter 100% 覆盖 (2026-07-10)
 
   - 补全 15 个孤立知识文件的 YAML frontmatter
   - 知识系统 41 个文件全部可索引、可验证
 
-  ### 🐛 修复 (2026-07-10)
+  #### 🐛 修复 (2026-07-10)
 
   - 修复 CAA_INSTALL 未自动写入配置
   - 修复 test_build_and_run.py 测试样本格式
@@ -252,7 +252,7 @@ Layer 2: Dependencies Management (依赖层)
 - 19/19 suites (100%) — ALL PASSED
 - 新增 L7-1 Knowledge (16) 测试套件
 
-### 设计原则
+### 📐 设计原则
 
 - ✅ 零 Python 改动 — 所有新增都是数据文件
 - ✅ 零 Engine 增加 — 不破坏现有架构
@@ -292,7 +292,7 @@ Layer 2: Dependencies Management (依赖层)
 - **L6 Fault Injection** (16 项) — 故障注入：删除 IdentityCard/Dictionary 后检测
 - 总测试：150+ 项
 
-### 📚 文档更新
+### 📖 文档更新
 
 - SKILL.md — Diagnostics/Refactor API 文档
 - README.md — 特性更新
@@ -416,7 +416,7 @@ Phase 3 实现了完整的回滚机制，允许撤销任何操作。
   - 错误处理
   - 清单完整性
 
-### 📚 文档
+### 📖 文档
 
 - PHASE3_DESIGN.md - Phase 3 设计文档
 - SKILL.md - 添加回滚使用示例
@@ -498,7 +498,7 @@ Phase 2 实现了高级意图接口，将复杂的多步骤操作封装为单一
 - 总测试数: 119+ 项 (从 109 增加到 119+)
 - 测试覆盖率: 100%
 
-### 📚 文档
+### 📖 文档
 
 - INTENT_LAYER_DESIGN.md - Intent Layer 设计文档
 - SKILL.md - 添加 Intent Layer 使用示例
@@ -542,7 +542,7 @@ Phase 1 实现了核心的依赖图管理系统和增强查询功能。
 - 总测试数: 109+ 项 (从 91 增加到 109+)
 - 测试覆盖率: 100%
 
-### 📚 文档
+### 📖 文档
 - ARCHITECTURE_V2.md - 新架构设计文档
 - PHASE1_COMPLETION_REPORT.md - Phase 1 完成报告
 
