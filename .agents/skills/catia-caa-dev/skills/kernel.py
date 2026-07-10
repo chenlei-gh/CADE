@@ -214,13 +214,11 @@ class Kernel:
         ).to_dict()
 
     def _handle_analyze(self, request: str, policy: ModePolicy) -> dict:
-        """ANALYZE mode: Workspace analysis / diagnostics (read-only)"""
+        """ANALYZE mode: Knowledge search / diagnostics / workspace (read-only)"""
         self._state = KernelState.PLANNING
-
-        # Detect intent from request keywords
         request_lower = request.lower()
 
-        # Diagnose
+        # ── Path 1: Diagnostics ──
         if any(kw in request_lower for kw in ("diagnos", "check", "inspect", "validate", "verify")):
             try:
                 from diagnostics import diagnose_workspace
@@ -236,7 +234,39 @@ class Kernel:
             except ImportError:
                 pass
 
-        # Default: workspace analysis
+        # ── Path 2: Dependency / entity query (before knowledge — more specific) ──
+        if any(kw in request_lower for kw in ("depend", "impact", "graph", "visualiz")):
+            try:
+                from actions import ActionContext, get_dependencies, visualize_dependencies
+                import re
+                ctx = ActionContext(str(self.workspace_root))
+                entity_match = re.search(r'(?:of|for)\s+(\w+)', request)
+                entity = entity_match.group(1) if entity_match else None
+                if entity and "graph" in request_lower:
+                    dep_result = visualize_dependencies(ctx, entity)
+                else:
+                    dep_result = get_dependencies(ctx, entity or "", "command")
+                self._state = KernelState.COMPLETED
+                return KernelResult(
+                    status="ok", mode="analyze", state=self._state.value,
+                    message=f"Dependency analysis for {entity or 'workspace'}.",
+                    data=dep_result if isinstance(dep_result, dict) else {"result": str(dep_result)},
+                ).to_dict()
+            except ImportError:
+                pass
+
+        # ── Path 3: Knowledge / API query ──
+        if self._is_knowledge_query(request_lower):
+            result = self._lookup_knowledge(request_lower)
+            if result:
+                self._state = KernelState.COMPLETED
+                return KernelResult(
+                    status="ok", mode="analyze", state=self._state.value,
+                    message=f"Knowledge lookup: {result.get('summary', '')}",
+                    data=result,
+                ).to_dict()
+
+        # ── Path 4: Default — workspace analysis ──
         try:
             from actions import ActionContext, analyze_workspace
             ctx = ActionContext(str(self.workspace_root))
@@ -429,3 +459,76 @@ class Kernel:
             framework = m.group(1)
 
         return name, module, framework
+
+    # ─── Knowledge Lookup ──────────────────────────────────────
+
+    # Keywords that suggest knowledge/API query (not workspace operation)
+    _KNOWLEDGE_KW = (
+        "fillet", "hole", "chamfer", "pad", "pocket",
+        "product", "assembly", "constraint", "bom",
+        "dialog", "ui", "layout", "toolbar", "menu", "workbench",
+        "context menu", "右键", "undo", "redo", "update mechanism",
+        "selection", "viewer", "gsd", "surface", "drawing", "fta",
+        "annotation", "tolerance", "命名", "规范", "生命周期",
+        "api", "interface", "class", "method", "function",
+        "pattern", "example", "tutorial", "documentation", "reference",
+        "implement", "explain", "describe",
+    )
+    _KNOWLEDGE_QUESTION_WORDS = (
+        "how do", "how to", "how does", "what is", "what are", "what does",
+        "where is", "which ", "when ",
+    )
+
+    def _is_knowledge_query(self, request: str) -> bool:
+        """Detect if this is a knowledge/API question, not a workspace operation"""
+        return any(kw in request for kw in self._KNOWLEDGE_KW) or \
+               any(request.startswith(q) for q in self._KNOWLEDGE_QUESTION_WORDS)
+
+    def _lookup_knowledge(self, request: str) -> dict:
+        """
+        Search knowledge base for relevant information.
+
+        Uses catalog/index.yaml for fast keyword→file mapping,
+        then reads matched knowledge files for content.
+        """
+        skill_root = Path(__file__).parent.parent
+        catalog_file = skill_root / "catalog" / "index.yaml"
+
+        results = []
+        domain_hint = ""
+
+        # Step 1: Detect domain from request
+        try:
+            from requirements import RequirementsClarifier
+            clarifier = RequirementsClarifier()
+            domain_hint = clarifier._detect_domain(request)
+        except Exception:
+            pass
+
+        # Step 2: Search catalog index for keyword matches
+        if catalog_file.exists():
+            catalog_content = catalog_file.read_text(encoding="utf-8", errors="replace")
+            for line in catalog_content.split("\n"):
+                line_lower = line.lower()
+                if "|" not in line_lower:
+                    continue
+                # Match: check if any request keyword appears in this line
+                if any(kw in line_lower for kw in request.split() if len(kw) >= 3):
+                    results.append(line.strip())
+                    if len(results) >= 10:
+                        break
+
+        # Step 3: Build domain-aware response
+        summary_parts = []
+        if domain_hint and domain_hint != "general":
+            summary_parts.append(f"Domain: {domain_hint}")
+
+        if results:
+            summary_parts.append(f"Found {len(results)} references")
+
+        return {
+            "summary": "; ".join(summary_parts) if summary_parts else "Knowledge base searched",
+            "domain": domain_hint,
+            "references": results,
+            "hint": "For detailed API code, check knowledge/ files matched above. For official docs, see CAADoc via knowledge/frameworks/.",
+        }
