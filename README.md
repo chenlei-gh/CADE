@@ -22,7 +22,7 @@
 
 ---
 
-# CADE v2.2.0 — CATIA CAA Development Engine
+# CADE v3.0.0 — CATIA CAA Development Kernel
 
 <div align="center">
 
@@ -34,7 +34,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `24/24 suites (100%)` | **27 test files** | **~600 checks** | *2026-07-10*
+> 🟢 **CI Status**: `26/26 suites (100%)` | **27 test files** | **~600 checks** | *2026-07-11*
 
 ---
 
@@ -85,6 +85,25 @@ cp -r cade/.agents /path/to/your/caa/project/
 ---
 
 ## 🧠 What's New
+
+### 🧬 Development Kernel (v3.0)
+
+CADE evolves from a tool collection to a **Development Kernel** — AI knows only 3 modes:
+
+```
+develop()   — create/generate (Command, may modify)
+analyze()   — query/diagnose (Query, read-only)
+repair()    — fix/refactor  (Command, with recovery)
+```
+
+- **Kernel** — 3-mode unified entry, internal state machine + dynamic dispatch
+- **Requirement Clarifier** — vague intent → structured decisions (decision trees)
+- **Planner** — Intent + Requirements → optimal DevelopmentPlan
+- **Verifier** — auto compile-check via mkmk
+- **Repair Loop** — diagnose → fix → verify, up to 3 retries
+- **Learning** — feedback loop, pattern detection → auto-suggest Playbooks
+
+→ 41 MCP tools collapsed to **3 modes**. AI never needs to know internals.
 
 ### 📉 Token Optimizer
 
@@ -156,18 +175,18 @@ CADE now organizes knowledge in **5 layers** — AI finds answers 10x faster:
 
 Retrieval path: **Capability → Playbook → Knowledge → Framework → CAADoc**
 
-→ **204 total knowledge assets** (29K + 13P + 10C + 2PB + 149FW + 1E)
+→ **234 total knowledge assets** (29K + 13P + 13C + 6PB + 149FW + 1E + 6PH + 3FP)
 
 ### 🔍 Deep Audit
 
-24-suite test suite catches drift early:
+26-suite test suite catches drift early:
 
 ```bash
-cade test --quick   # 23 suites (~8s), quick mode skips CATIA tests
-cade test           # 24 suites (~60s), full including CATIA lifecycle
+cade test --quick   # 25 suites (~8s), quick mode skips CATIA tests
+cade test           # 26 suites (~60s), full including CATIA lifecycle
 ```
 
-> 🟢 **Verified**: 24/24 suites (100%) — last full run 2026-07-10
+> 🟢 **Verified**: 26/26 suites (100%) — last full run 2026-07-11
 
 - **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
@@ -218,11 +237,11 @@ cade suggest                      # AI recommends next action
 cade docs                         # auto-generate documentation
 cade prereq MyModule              # view prerequisites
 cade rv                           # create Runtime View
-cade test --quick                 # run all 23 suites (~8s)
-cade test                         # full: 24 suites (~60s)
+cade test --quick                 # run all 25 suites (~8s)
+cade test                         # full: 26 suites (~60s)
 ```
 
-> 🔌 Also available as **MCP Server** (41 tools) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
+> 🔌 Also available as **MCP Server** (3 modes) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
 
 ### ⚡ Test Results
 
@@ -230,16 +249,17 @@ cade test                         # full: 24 suites (~60s)
 L1 Unit(49) ✅  L2 DepGraph ✅  L2 Intent ✅  L2 Rollback ✅
 L2 Enhanced ✅  L2 Spec ✅     L2 Diag ✅    L2 FixPlan ✅
 L2 Refactor ✅  L3 E2E ✅      L4 Arch(29) ✅  L5 Sem(40) ✅
-L6 Fault(16) ✅  L7 Know(16) ✅  Int1 Build ✅  Int2 Skill ✅
-FullSys ✅     CrossRef ✅     Token ✅      CAA Struct ✅
-Intent ✅      AI Integ ✅     TokenAudit ✅  DeepAudit ✅
+L6 Fault(16) ✅  L7 Know(16) ✅  L0 Kernel ✅   L0 Req ✅
+L0 Repair ✅   Int1 Build ✅   Int2 Skill ✅  FullSys ✅
+CrossRef ✅    Token ✅       CAA Struct ✅  Intent ✅
+AI Integ ✅    TokenAudit ✅  DeepAudit ✅
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-24/24 suites (100%) · 27 files · ~600 checks · 2026-07-10
+26/26 suites (100%) · 27 files · ~600 checks · 2026-07-11
 ```
 
 ```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 23 suites (~8s)
-python .agents/skills/catia-caa-dev/tests/test_master.py           # 24 suites (~60s)
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 25 suites (~8s)
+python .agents/skills/catia-caa-dev/tests/test_master.py           # 26 suites (~60s)
 ```
 
 ---
@@ -251,9 +271,9 @@ python .agents/skills/catia-caa-dev/tests/test_master.py           # 24 suites (
 ```
 User Intent
     ↓
-🎯 Capability    "What can CATIA do?"    10 files
+🎯 Capability    "What can CATIA do?"    13 files
     ↓
-📋 Playbook      "How to accomplish?"     2 files
+📋 Playbook      "How to accomplish?"     6 files
     ↓
 📚 Knowledge     "How to use this API?"  29 files
     ↓
@@ -293,19 +313,19 @@ graph TD
 
 | | |
 |---|---|
-| **Test Suites** | 24 (L1-L7 + Integration + Audit) |
-| **Test Files** | 27 (24 suites + 3 standalone) |
+| **Test Suites** | 26 (L1-L7 + Integration + Audit) |
+| **Test Files** | 27 (26 suites + 1 standalone) |
 | **Checks** | ~600 |
 | **Pass Rate** | 100% |
 | **Templates** | 25+ |
 | **APIs** | 15 (Intent + Action) |
 | **CLI Commands** | 22 |
-| **MCP Tools** | 41 |
+| **MCP Modes** | 3 |
 | **Build Commands** | 35 |
 | **Spec Types** | 8 |
 | **Refactor Operations** | 3 |
 | **Domain Entities** | 10 |
-| **Knowledge Assets** | 204 (29K + 13P + 10C + 2PB + 149FW + 1E) + 6 tutorial examples |
+| **Knowledge Assets** | 204 (29K + 13P + 13C + 6PB + 149FW + 1E) + 6 tutorial examples |
 
 ---
 
@@ -314,14 +334,14 @@ graph TD
 ```text
 your_project/
 ├── .agents/skills/catia-caa-dev/   ← CADE (drop-in)
-│   ├── skills/                     ← Engine (23 modules)
+│   ├── skills/                     ← Engine (28 modules)
 │   ├── templates/                  ← 25+ code templates
-│   ├── capabilities/               ← 10 core CAA capabilities
+│   ├── capabilities/               ← 13 core CAA capabilities
 │   ├── playbooks/                  ← Solution playbooks
 │   ├── knowledge/                  ← CAA API reference (8 domains + 149 frameworks)
 │   ├── patterns/                   ← Architecture patterns (13 patterns)
 │   ├── examples/                   ← Real CAA projects
-│   ├── tests/                      ← 24 suites, ~600 checks
+│   ├── tests/                      ← 26 suites, ~600 checks
 │   ├── tools/                      ← Setup, validation, utilities
 │   ├── config/                     ← Editor MCP templates
 │   └── docs/                       ← Full documentation
@@ -430,8 +450,8 @@ cade rollback --id latest           # 撤销任意操作
 ```bash
 cade suggest                        # AI 推荐下一步
 cade docs                           # 自动生成文档
-cade test --quick                   # 23 套件快速测试 (~8s)
-cade test                           # 24 套件全量测试 (~60s)
+cade test --quick                   # 25 套件快速测试 (~8s)
+cade test                           # 26 套件全量测试 (~60s)
 ```
 
 ### ⚡ 测试结果
@@ -440,11 +460,12 @@ cade test                           # 24 套件全量测试 (~60s)
 L1 单元(49) ✅  L2 依赖图 ✅   L2 Intent ✅  L2 回滚 ✅
 L2 增强 ✅     L2 Spec ✅     L2 诊断 ✅    L2 FixPlan ✅
 L2 重构 ✅     L3 E2E ✅      L4 架构(29) ✅  L5 语义(40) ✅
-L6 故障(16) ✅  L7 知识(16) ✅  Int1 构建 ✅   Int2 协同 ✅
-全系统 ✅      交叉引用 ✅      Token ✅       CAA结构 ✅
-Intent ✅      AI集成 ✅       Token审计 ✅   深度审计 ✅
+L6 故障(16) ✅  L7 知识(16) ✅  L0 核心 ✅    L0 Req ✅
+L0 修复 ✅     Int1 构建 ✅    Int2 协同 ✅   全系统 ✅
+CrossRef ✅    Token ✅       CAA结构 ✅    Intent ✅
+AI集成 ✅      Token审计 ✅    深度审计 ✅
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-24/24 套件 (100%) · 27 文件 · ~600 检查 · 2026-07-10
+26/26 套件 (100%) · 27 文件 · ~600 检查 · 2026-07-11
 ```
 
 ### 🏛 架构
@@ -469,28 +490,28 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 
 | | |
 |---|---|
-| **测试套件** | 24（L1-L7 + Integration + Audit） |
-| **测试文件** | 27（24 套件 + 3 独立） |
+| **测试套件** | 26（L1-L7 + Integration + Audit） |
+| **测试文件** | 27（26 套件 + 1 独立） |
 | **检查项** | ~600 |
 | **通过率** | 100% |
 | **模板** | 25+ |
 | **API** | 15（Intent + Action） |
 | **CLI 命令** | 22 |
-| **MCP 工具** | 41 |
+| **MCP 模式** | 3 |
 | **Build 命令** | 35 |
 | **Spec 类型** | 8 |
 | **重构操作** | 3 |
 | **领域实体** | 10 |
-| **知识资产** | 204（29K + 13P + 10C + 2PB + 149FW + 1E）
+| **知识资产** | 204（29K + 13P + 13C + 6PB + 149FW + 1E）
 
 ### 📂 项目结构
 
 ```text
 你的项目/
 ├── .agents/skills/catia-caa-dev/   ← CADE（直接放入即可）
-│   ├── skills/                     ← 引擎（23 模块）
+│   ├── skills/                     ← 引擎（28 模块）
 │   ├── templates/                  ← 25+ 代码模板
-│   ├── capabilities/               ← 10 个核心能力
+│   ├── capabilities/               ← 13 个核心能力
 │   ├── playbooks/                  ← 解决方案
 │   ├── knowledge/                  ← CAA API 参考（8 领域 + 149 框架）
 │   ├── patterns/                   ← 13 个开发模式
