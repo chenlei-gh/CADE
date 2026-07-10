@@ -214,7 +214,7 @@ triggers:
 | 🧠 **复杂任务用 Intent Engine** | 多步骤工作流（如"创建带对话框的命令并集成到工作台"）调用 `plan()` 生成执行计划。 |
 | ⚡ **先 diagnose 再 fix** | 遇到问题先 `cade diagnose`，让引擎分析。不要猜测原因。 |
 | 📸 **大操作前 snapshot** | 重构/删除前创建快照，出问题可以 `cade rollback`。 |
-| 📚 **未知 API 查 knowledge/** | knowledge/ patterns/ examples/ 有答案，先查再写。 |
+| 📚 **未知 API 查 knowledge/** | knowledge/ patterns/ examples/ 有答案，先查再写。覆盖 8 领域：UI布局、Part、Drawing、Surface/GSD、FTA标注、Assembly、MecMod、Infra。 |
 
 ### ✨ 核心优势
 
