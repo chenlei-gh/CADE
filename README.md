@@ -134,11 +134,11 @@ CADE now covers **every CAA UI layout scenario** — from simple forms to comple
 
 Three new CAA domains unlocked — powered by 6 knowledge files + 3 patterns:
 
-| Domain | Knowledge | Pattern | For |
-|--------|-----------|---------|-----|
-| **Drawing** | 视图创建、标注、BOM表 | 批量工程图生成 | 自动出图 |
-| **Surface/GSD** | 拉伸/扫掠/展平/缝合 | 曲面分析自动化 | 表皮展平 |
-| **FTA 3D标注** | 标注集/尺寸/公差/基准 | 自动标注生成 | 3D PMI |
+| Domain | Knowledge | Pattern | Use Case |
+|--------|-----------|---------|----------|
+| **Drawing** | Views, annotations, BOM tables | Batch drawing generation | Auto-drawings |
+| **Surface/GSD** | Extrude, sweep, flatten, join | Surface analysis automation | Surface flattening |
+| **FTA / 3D PMI** | Capture, annotation, tolerance | Auto-annotation generation | 3D PMI |
 
 → **41 knowledge assets** (28K + 12P + 1E) across **8 domains**, all with YAML frontmatter.
 
@@ -265,8 +265,8 @@ your_project/
 ├── .agents/skills/catia-caa-dev/   ← CADE (drop-in)
 │   ├── skills/                     ← Engine (23 modules)
 │   ├── templates/                  ← 25+ code templates
-│   ├── knowledge/                  ← CAA API reference (9 domains)
-│   ├── patterns/                   ← Architecture patterns (6 types)
+│   ├── knowledge/                  ← CAA API reference (8 domains)
+│   ├── patterns/                   ← Architecture patterns (7 types)
 │   ├── examples/                   ← Real CAA projects
 │   ├── tests/                      ← 24 suites, 700+ cases
 │   ├── tools/                      ← Setup, validation, utilities
@@ -393,8 +393,8 @@ Knowledge System（28 Knowledge + 12 Pattern + 1 Example）
 ├── .agents/skills/catia-caa-dev/   ← CADE（直接放入即可）
 │   ├── skills/                     ← 引擎（23 模块）
 │   ├── templates/                  ← 25+ 代码模板
-│   ├── knowledge/                  ← CAA API 参考（9 领域）
-│   ├── patterns/                   ← 架构模式（6 类型）
+│   ├── knowledge/                  ← CAA API 参考（8 领域）
+│   ├── patterns/                   ← 架构模式（12 模式）
 │   ├── examples/                   ← 真实 CAA 项目
 │   ├── tests/                      ← 24 套件，700+ 用例
 │   └── docs/                       ← 完整文档
