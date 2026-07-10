@@ -330,7 +330,7 @@ Knowledge System（9 Knowledge + 6 Pattern + 1 Example）
 
 ## 📜 License
 
-MIT © [chenlei-gh](https://github.com/chenlei-gh)
+MIT © [chenlei-gh](https://github.com/chenlei-gh) · [LICENSE](.agents/skills/catia-caa-dev/LICENSE)
 
 ---
 
