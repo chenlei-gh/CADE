@@ -1097,6 +1097,8 @@ python skills/runtime_view.py [workspace_path]
 
 ## 📊 测试验证
 
+详细测试文档: [TEST_DOCUMENTATION.md](docs/TEST_DOCUMENTATION.md)
+
 ### 测试覆盖率: 100%
 
 **单元测试**: 49/49 通过 ✅

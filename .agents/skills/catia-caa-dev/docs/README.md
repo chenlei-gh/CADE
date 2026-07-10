@@ -62,6 +62,7 @@ docs/
 
 项目根目录的核心文档：
 
+- **[TEST_DOCUMENTATION.md](TEST_DOCUMENTATION.md)** - 测试体系文档（L1-L7 分层）
 - **[CATIA_DETECTION.md](CATIA_DETECTION.md)** - 动态 CATIA 检测系统（v2.1.0）
 - **[PREREQUISITES_MANAGER.md](PREREQUISITES_MANAGER.md)** - Framework 依赖管理系统（v2.0.1）
 - **[KNOWLEDGE_SYSTEM_ARCHITECTURE.md](KNOWLEDGE_SYSTEM_ARCHITECTURE.md)** - 知识系统架构（v2.1.0）
