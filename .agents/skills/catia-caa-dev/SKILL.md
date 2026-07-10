@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: CATIA CAA V5 Development Engine (CADE) v2.1.0 — Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理（循环依赖检测、智能推荐）。CAA 知识系统（27 Knowledge + 12 Pattern + 1 Example + Catalog 索引），含高级 UI 布局（多层嵌套/列表-详情/动态表单/向导/反模式）、工程图（视图/标注/BOM）、GSD 曲面、FTA 3D 标注。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、24 套件 700+ 测试项。
+description: CATIA CAA V5 Development Engine (CADE) v2.1.0 — Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理（循环依赖检测、智能推荐）。CAA 知识系统（28 Knowledge + 12 Pattern + 1 Example + Catalog 索引），含高级 UI 布局（多层嵌套/列表-详情/动态表单/向导/反模式）、工程图（视图/标注/BOM）、GSD 曲面、FTA 3D 标注。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、24 套件 700+ 测试项。
 triggers:
   - CAA component
   - CATIA component

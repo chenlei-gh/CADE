@@ -220,7 +220,7 @@ graph TD
     A --> L[Runtime Engine<br/>7 Commands]
     A --> M[Rollback System]
 
-    N[Knowledge System<br/>27 Knowledge + 12 Pattern + 1 Example + Catalog] --> G
+    N[Knowledge System<br/>28 Knowledge + 12 Pattern + 1 Example + Catalog] --> G
 ```
 
 > **Philosophy**: Capability grows by accumulating knowledge assets, not by modifying code.
@@ -242,7 +242,7 @@ graph TD
 | **Spec Types** | 8 |
 | **Refactor Operations** | 3 |
 | **Domain Entities** | 10 |
-| **Knowledge Assets** | 40 (27K + 12P + 1E) |
+| **Knowledge Assets** | 41 (28K + 12P + 1E) |
 
 ---
 
@@ -352,7 +352,7 @@ CodeModel（10 实体）+ DependencyGraph + Diagnostics + FixPlan
      ↓
 Build Engine（35 命令）+ Runtime Engine（7 命令）+ Rollback
      ↓
-Knowledge System（27 Knowledge + 12 Pattern + 1 Example）
+Knowledge System（28 Knowledge + 12 Pattern + 1 Example）
 ```
 
 > **核心理念**：系统能力增长靠沉淀知识资产，不靠修改代码。
@@ -372,7 +372,7 @@ Knowledge System（27 Knowledge + 12 Pattern + 1 Example）
 | **Spec 类型** | 8 |
 | **重构操作** | 3 |
 | **领域实体** | 10 |
-| **知识资产** | 40（27K + 12P + 1E） |
+| **知识资产** | 41（28K + 12P + 1E） |
 
 ### 📂 项目结构
 
