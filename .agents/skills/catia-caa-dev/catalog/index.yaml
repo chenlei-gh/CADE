@@ -39,6 +39,9 @@ tags: [geometry, feature]          # 标签
 | cap.surface_operations | capabilities/surface-operations.md | 曲面创建/编辑/展平 | CATGSMUseItf |
 | cap.annotation | capabilities/annotation.md | 3D标注/公差/基准 | CATAnalysisGPSInterfaces |
 | cap.powercopy | capabilities/powercopy.md | PowerCopy/UDF 创建和实例化 | ObjectModelerBase |
+| cap.undo_redo | capabilities/undo-redo.md | 命令撤销/重做 | ApplicationFrame |
+| cap.persistence | capabilities/persistence.md | 数据序列化/持久化 | System, JS0GROUP |
+| cap.update_mechanism | capabilities/update-mechanism.md | Update 触发/传播 | ObjectModelerBase |
 
 ### Playbook 索引
 
@@ -46,6 +49,10 @@ tags: [geometry, feature]          # 标签
 |----|------|------|----------------|
 | pb.auto_color | playbooks/pb_auto_color.md | 零件自动着色 | cap.visualization, cap.assembly_tree |
 | pb.export_bom | playbooks/pb_export_bom.md | 导出 BOM 物料清单 | cap.assembly_tree, cap.document_export |
+| pb.assembly_stats | playbooks/pb_assembly_stats.md | 装配统计（零件数/质量） | cap.assembly_tree, cap.parameter_system |
+| pb.create_context_menu | playbooks/pb_create_context_menu.md | 创建右键菜单命令 | cap.selection |
+| pb.batch_feature_check | playbooks/pb_batch_feature_check.md | 批量特征检查 | cap.feature_recognition, cap.parameter_system |
+| pb.custom_viewer | playbooks/pb_custom_viewer.md | 自定义 3D Viewer | cap.visualization, cap.selection |
 
 ### Framework 索引 (CAADoc)
 
@@ -53,6 +60,25 @@ tags: [geometry, feature]          # 标签
 |--------|---------|
 | 149 |  自动扫描 |
 
+
+### Philosophy 索引 (v3.0 新增)
+
+| ID | 文件 | 内容 |
+|----|------|------|
+| philo.updates | knowledge/philosophy/updates.md | CATIA Update 机制哲学 |
+| philo.late_types | knowledge/philosophy/late_types.md | Late Type 派生链 |
+| philo.ref_vs_instance | knowledge/philosophy/reference_vs_instance.md | Reference vs Instance |
+| philo.com_lifecycle | knowledge/philosophy/com_lifecycle.md | COM 生命周期管理 |
+| philo.caterror | knowledge/philosophy/caterror.md | CATError 异常处理 |
+| philo.undo_redo | knowledge/philosophy/undo_redo.md | Undo/Redo 命令模式 |
+
+### Failure Pattern 索引 (v3.0 新增)
+
+| ID | 文件 | 诊断 |
+|----|------|------|
+| fp.imakefile_link | knowledge/failure_patterns/fp_imakefile_link.md | Imakefile LINK_WITH 缺失 |
+| fp.missing_include | knowledge/failure_patterns/fp_missing_include.md | #include 缺失 |
+| fp.undeclared_class | knowledge/failure_patterns/fp_undeclared_class.md | 未声明的类 |
 
 ### Knowledge 索引
 

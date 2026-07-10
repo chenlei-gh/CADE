@@ -1,0 +1,72 @@
+---
+id: dt.geometry_check
+title: Geometry Check Decision Tree / 几何检查决策树
+category: decision_tree
+domain: part
+keywords: [check, geometry, fillet, hole, chamfer, wall, thickness, feature, analysis, rule]
+release: [R19, R28]
+---
+# Geometry Check Decision Tree
+
+```yaml
+id: dt.geometry_check
+root_question: "检查目标是什么？"
+decisions:
+  - id: check_target
+    question: "检查目标？"
+    options:
+      - value: fillet_radius
+        label: "圆角半径检查"
+        implications: "检查所有圆角半径是否在范围内。使用 CATIFillet。"
+      - value: hole_diameter
+        label: "孔径检查"
+        implications: "检查孔的直径、深度、沉头尺寸。使用 CATIHole。"
+      - value: chamfer_angle
+        label: "倒角角度检查"
+        implications: "检查倒角角度和长度。使用 CATIChamfer。"
+      - value: wall_thickness
+        label: "壁厚检查"
+        implications: "分析几何体壁厚分布。可能需要 CATGeoFactory。"
+      - value: feature_type
+        label: "特征类型统计"
+        implications: "遍历所有特征并分类统计。使用 CATISpecObject::IsATypeOf。"
+    default: feature_type
+
+  - id: report_format
+    question: "结果展示方式？"
+    options:
+      - value: result_dialog
+        label: "结果对话框（列表+双击定位）"
+        implications: "使用 result_dialog pattern。"
+      - value: color_highlight
+        label: "3D 着色高亮"
+        implications: "合格→绿色, 不合格→红色。使用 CATIVisProperties。"
+      - value: report_file
+        label: "报告文件"
+        implications: "导出为 HTML/CSV 报告。"
+    default: result_dialog
+
+  - id: batch_scope
+    question: "处理范围？"
+    options:
+      - value: active_part
+        label: "当前活动 Part"
+      - value: all_open
+        label: "所有打开文档"
+      - value: directory
+        label: "指定目录批量"
+    default: active_part
+
+  - id: rule_source
+    question: "规则来源？"
+    options:
+      - value: hardcoded
+        label: "硬编码规则"
+        implications: "规则写在代码中。简单直接。"
+      - value: config_file
+        label: "配置文件"
+        implications: "规则从 JSON/YAML 配置文件读取。灵活可配置。"
+      - value: knowledge_rule
+        label: "CATIA Knowledge Rules"
+        implications: "使用 CATIA 知识工程规则 (CATICkeParm)。"
+    default: hardcoded

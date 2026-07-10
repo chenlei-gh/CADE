@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 
 class IntentType(Enum):
+    # Create (existing)
     CREATE_COMMAND = "CreateCommand"
     CREATE_COMMAND_WITH_DIALOG = "CreateCommandWithDialog"
     CREATE_FEATURE = "CreateFeature"
@@ -23,10 +24,19 @@ class IntentType(Enum):
     CREATE_DIALOG = "CreateDialog"
     CREATE_MODULE = "CreateModule"
     CREATE_FRAMEWORK = "CreateFramework"
+    # Modify (existing)
     MODIFY_INTERFACE = "ModifyInterface"
     RENAME_COMMAND = "RenameCommand"
     MOVE_COMMAND = "MoveCommand"
     BATCH_CREATE = "BatchCreate"
+    # Analyze (v3.0 new)
+    ANALYZE_WORKSPACE = "AnalyzeWorkspace"
+    EXPORT_BOM = "ExportBOM"
+    CHECK_GEOMETRY = "CheckGeometry"
+    QUERY_PROPERTIES = "QueryProperties"
+    DIAGNOSE = "Diagnose"
+    # Repair (v3.0 new)
+    REPAIR_ISSUES = "RepairIssues"
 
 
 class Severity(Enum):
@@ -38,14 +48,30 @@ class Severity(Enum):
 
 
 @dataclass
+class DecisionRecord:
+    """A single decision made during requirements analysis"""
+    id: str
+    question: str
+    answer: str
+    options: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "question": self.question, "answer": self.answer}
+
+
+@dataclass
 class Intent:
-    """Structured development intent — what the user wants to create/modify."""
+    """Structured development intent — bridges RequirementDocument to Planner."""
     type: IntentType
     name: str
     module: str = ""
     framework: str = "MyFramework"
     params: Dict[str, Any] = field(default_factory=dict)
     constraints: List[str] = field(default_factory=list)
+
+    # v3.0: Requirements traceability
+    requirements: Optional[Dict[str, Any]] = None  # RequirementDocument as dict
+    decisions: Dict[str, str] = field(default_factory=dict)
 
     # For batch intents
     sub_intents: List[Intent] = field(default_factory=list)
@@ -60,6 +86,7 @@ class Intent:
             framework=d.get("framework", "MyFramework"),
             params=d.get("params", {}),
             constraints=d.get("constraints", []),
+            decisions=d.get("decisions", {}),
         )
 
     def to_dict(self) -> dict:
@@ -73,6 +100,8 @@ class Intent:
             d["params"] = self.params
         if self.constraints:
             d["constraints"] = self.constraints
+        if self.decisions:
+            d["decisions"] = self.decisions
         return d
 
 

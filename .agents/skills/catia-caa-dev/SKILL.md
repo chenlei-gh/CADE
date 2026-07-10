@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: CATIA CAA V5 Development Engine (CADE) v2.2.0 — Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理（循环依赖检测、智能推荐）。CAA 知识系统（29K + 13P + 10 Capability + 2 Playbook + 149 Framework + 1 Example + Catalog），含高级 UI 布局（多层嵌套/列表-详情/动态表单/向导/反模式）、工程图（视图/标注/BOM）、GSD 曲面、FTA 3D 标注。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、24 套件 ~600 测试项。
+description: CATIA CAA V5 Development Engine (CADE) v3.0.0 — Kernel 架构（3 Mode: develop/analyze/repair）、Requirement → Intent → Plan → Generate → Verify → Repair → Learn 全链路。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理。CAA 知识系统（29K + 13P + 10 Capability + 2 Playbook + 149 Framework），25+ 模板、15 API、35 Build/Run 命令、27 套件 ~600 测试项。
 triggers:
   - CAA component
   - CATIA component
@@ -220,11 +220,42 @@ triggers:
 
 ## 🎯 核心特性
 
-**版本**: 2.2.0  
+**版本**: 3.0.0  
 **状态**: ✅ 生产就绪  
-**测试覆盖率**: 100% (24 套件, ~600 测试项全部通过)
+**测试覆盖率**: 100% (27 套件, ~600 测试项全部通过)
 
-这是一个**智能的 CAA 开发助手**，专注于将复杂的 CATIA CAA V5 开发流程简化为直观的意图表达。
+这是一个**智能的 CAA 开发引擎（Development Kernel）**，将模糊的开发需求，经过需求分析、规划、知识推理和验证，稳定地转化为可执行实现。
+
+### 🏗️ Kernel 架构（v3.0）
+
+```text
+AI 只知道 3 个 Mode:
+
+  develop()   — 创建/生成 (Command — 可能修改文件)
+  analyze()   — 查询/诊断 (Query   — 只读)
+  repair()    — 修复/重构 (Command — 带安全网)
+         │
+         ▼
+  ┌──────────────────────────────┐
+  │       CADE Kernel             │
+  │   (AI 完全不可见的内部)         │
+  │                                │
+  │  Requirement → Intent → Plan   │
+  │       ↓           ↓       ↓    │
+  │  Decision     Intent   Planner │
+  │  Trees        Models  +Optimize│
+  │       │           │       │    │
+  │       └───────────┼───────┘    │
+  │                   ↓            │
+  │           Capability→Playbook  │
+  │                   ↓            │
+  │           Knowledge→Generator  │
+  │                   ↓            │
+  │           Verifier→Repair      │
+  │                   ↓            │
+  │               Learning         │
+  └──────────────────────────────┘
+```
 
 ### 🤖 给 AI 的提示（最高优先级）
 
@@ -232,13 +263,13 @@ triggers:
 
 | 规则 | 说明 |
 |------|------|
+| 🎯 **只有 3 个工具** | CADE v3.0 只有三个工具：`develop`（创建/生成）、`analyze`（查询/诊断）、`repair`（修复/重构）。永远不需要知道内部实现。 |
 | 🔌 **用 MCP 调用** | 所有 CADE 功能通过 MCP 工具调用，不要用 CLI。响应已自动 Token 优化。 |
 | 📊 **信 status 不信 output** | API 返回 `{"status": "ok", "error_count": 0}` 就够了，忽略 `output`/`stderr` 字段。 |
-| 🧠 **复杂任务用 Intent Engine** | 多步骤工作流（如"创建带对话框的命令并集成到工作台"）调用 `plan()` 生成执行计划。 |
-| ⚡ **先 diagnose 再 fix** | 遇到问题先 `cade diagnose`，让引擎分析。不要猜测原因。 |
-| 📸 **大操作前 snapshot** | 重构/删除前创建快照，出问题可以 `cade rollback`。 |
-| 🎯 **先查 Capability → Playbook** | 遇需求先匹配 `capabilities/` 找能力入口 → 再查 `playbooks/` 看有无成熟方案。这是最高效的两步。 |
-| 📚 **再查 Knowledge → Framework** | `knowledge/` `patterns/` `examples/` 提供具体 API 代码。`knowledge/frameworks/` 提供 149 个 CAADoc 框架导航索引。 |
+| 🆕 **模糊需求用 develop()** | 用户说"我想做一个..."、"能不能..."时直接调用 `develop()`。Kernel 自动做需求澄清 → 规划 → 生成 → 验证。如果返回 `needs_clarification`，把问题展示给用户。 |
+| 🔍 **只读操作用 analyze()** | 所有查询、诊断、分析用 `analyze()`。它永不会修改文件，无需确认。 |
+| 🔧 **修复用 repair()** | 修复诊断问题、重构、回滚用 `repair()`。Kernel 内部运行 diagnose → fix → verify 最多重试 3 次。 |
+| ⚡ **永远不需要判断"走哪个"** | 用户说"创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`。基于自然语言的动词分类，不需要思考。 |
 | 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架 → 再精准打开 `<CATIA_INSTALL>/CAADoc/` 对应页面。不要跳过 Framework 直接全文搜 CAADoc。 |
 | 📝 **CAADoc 洞察沉淀** | 用 CAADoc 学到**踩坑经验/跨 API 组合/非文档化的行为**时，创建 knowledge/ 文件沉淀。纯 API 签名查询不需要沉淀——下次用 Framework 索引秒查。 |
 
@@ -248,7 +279,7 @@ triggers:
 2. **Token 优化** - MCP 响应自动压缩，平均节省 50% token，关键信息不丢
 3. **安全操作** - 预览→确认→应用→回滚，全程可控
 4. **高性能** - 模板生成约50ms，比 RADE 工具快 100 倍
-5. **完整测试** - 24 套件、~600 测试项，100% 覆盖率
+5. **完整测试** - 27 套件、~600 测试项，100% 覆盖率
 6. **依赖图管理** - 完整的实体关系图和 Mermaid 可视化
 7. **级联删除** - 智能检测破坏性依赖，安全删除
 8. **Intent Engine** - Planner + Impact Analyzer + Optimizer，任务规划到执行
@@ -1201,7 +1232,12 @@ python test_e2e_workflow.py
 │   ├── workspace.py                  # 工作区验证
 │   ├── runtime_view.py               # Runtime View 管理
 │   ├── cade.py                       # CLI 入口 (22 命令)
-│   ├── mcp_server.py                 # MCP Server (41 工具)
+│   ├── mcp_server.py                 # MCP Server (3 Mode, v3.0)
+│   ├── kernel.py                     # Development Kernel (v3.0)
+│   ├── requirements.py               # Requirements Clarifier (v3.0)
+│   ├── verifier.py                   # Build Verifier (v3.0)
+│   ├── repair.py                     # Repair Loop (v3.0)
+│   ├── learning.py                   # Learning System (v3.0)
 │   ├── token_optimizer.py            # AI Token 优化器
 │   ├── docgen.py                     # 文档生成器
 │   ├── version_strategy.py           # 版本策略
@@ -1312,7 +1348,7 @@ python test_e2e_workflow.py
 │   │   └── AI_WORKFLOW_EXAMPLES.md
 │   └── README.md                     # 文档索引
 │
-├── tests/                            # 测试文件（23 个，24 套件，~600 测试项）
+├── tests/                            # 测试文件（26 个，27 套件，~600 测试项）
 │   ├── test_master.py                # 主运行器
 │   ├── test_full_regression.py       # 全系统验证
 │   ├── test_cross_reference.py       # 交叉引用审计

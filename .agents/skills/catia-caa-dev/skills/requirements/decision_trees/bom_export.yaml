@@ -1,0 +1,81 @@
+---
+id: dt.bom_export
+title: BOM Export Decision Tree / BOM导出决策树
+category: decision_tree
+domain: product
+keywords: [BOM, export, CSV, Excel, JSON, assembly, traverse, depth, instance, reference]
+release: [R19, R28]
+---
+# BOM Export Decision Tree
+
+```yaml
+id: dt.bom_export
+root_question: "BOM 导出的目标是什么？"
+decisions:
+  - id: output_format
+    question: "输出格式？"
+    options:
+      - value: csv
+        label: "CSV 文件"
+        implications: "简单文本输出，无需额外库依赖。文件可直接用 Excel 打开。"
+      - value: excel
+        label: "Excel 文件 (.xlsx)"
+        implications: "需要 CATIA COM Automation 或第三方库。支持格式化和公式。"
+      - value: json
+        label: "JSON 文件"
+        implications: "结构化输出，适合程序化消费。"
+    default: csv
+
+  - id: traversal_depth
+    question: "遍历深度？"
+    options:
+      - value: top_level
+        label: "仅顶层"
+        implications: "只统计根节点下第一级子装配/零件。"
+      - value: recursive
+        label: "递归展开所有子装配"
+        implications: "展开所有层级。注意大装配（>5000节点）性能。"
+      - value: leaf_only
+        label: "仅叶节点（零件）"
+        implications: "跳过中间子装配，只列出最终零件。"
+    default: recursive
+
+  - id: instance_handling
+    question: "实例处理方式？"
+    options:
+      - value: per_instance
+        label: "每个实例单独一行"
+        implications: "同一 Reference 的多个 Instance 分别列出。"
+      - value: per_reference
+        label: "同类型合并统计"
+        implications: "相同 Reference 汇总数量。需区分 Reference 和 Instance。"
+    default: per_instance
+    depends_on: traversal_depth != top_level
+
+  - id: export_trigger
+    question: "触发方式？"
+    options:
+      - value: state_command
+        label: "交互式命令（对话框选择导出）"
+        implications: "StateCommand + Dialog, 用户选择文件路径。"
+      - value: context_menu
+        label: "右键菜单触发"
+        implications: "CATIContextualMenu DataExtension, 对选定节点导出。"
+      - value: batch
+        label: "批处理模式"
+        implications: "CATBatch + CATIMacroEngine, 无UI交互。"
+    default: state_command
+
+  - id: include_attributes
+    question: "包含哪些属性？"
+    options:
+      - value: basic
+        label: "基础属性"
+        implications: "PartNumber, InstanceName, Nomenclature."
+      - value: extended
+        label: "扩展属性"
+        implications: "基础 + Material, Description, 自定义属性。"
+      - value: physical
+        label: "包含物理属性"
+        implications: "扩展 + Mass, Volume, SurfaceArea (via CATIMeasurable)。"
+    default: basic

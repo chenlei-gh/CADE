@@ -1,0 +1,65 @@
+---
+id: dt.assembly_tool
+title: Assembly Tool Decision Tree / 装配工具决策树
+category: decision_tree
+domain: product
+keywords: [assembly, statistics, tool, traverse, mass, attributes, report]
+release: [R19, R28]
+---
+# Assembly Tool Decision Tree
+
+```yaml
+id: dt.assembly_tool
+root_question: "装配工具的目标是什么？"
+decisions:
+  - id: tool_type
+    question: "工具类型？"
+    options:
+      - value: statistics
+        label: "统计工具"
+        implications: "汇总零件数、质量、体积等统计信息。"
+      - value: checker
+        label: "检查工具"
+        implications: "按规则检查装配体（如标准件检查、干涉检查）。"
+      - value: modifier
+        label: "修改工具"
+        implications: "批量修改属性、替换Reference、调整位置。"
+    default: statistics
+
+  - id: scope
+    question: "作用范围？"
+    options:
+      - value: active_document
+        label: "当前活动文档"
+      - value: selected_node
+        label: "当前选中节点"
+      - value: workspace
+        label: "整个工作区"
+        implications: "遍历所有打开的或指定目录的 Product。"
+    default: active_document
+
+  - id: report_output
+    question: "结果输出方式？"
+    options:
+      - value: dialog_list
+        label: "对话框列表显示"
+        implications: "CATDlgDialog + CATDlgList, 支持双击定位。"
+      - value: file_export
+        label: "导出文件"
+      - value: notification
+        label: "通知/提示"
+        implications: "在CATIA状态栏或弹窗显示结果。"
+    default: dialog_list
+
+  - id: performance_tier
+    question: "预期数据规模？"
+    options:
+      - value: small
+        label: "小型 (<100 零件)"
+      - value: medium
+        label: "中型 (100-1000 零件)"
+        implications: "需要进度条和增量更新。"
+      - value: large
+        label: "大型 (>1000 零件)"
+        implications: "需要分批处理、断点续传、内存优化。"
+    default: small
