@@ -2,7 +2,7 @@
 
 ## 概述
 
-CADE v2.1.0 的 **Knowledge System（知识系统）** 是引擎的核心能力层。
+CADE v2.2.0 的 **Knowledge System（知识系统）** 是引擎的核心能力层。
 
 **核心理念**：系统能力增长通过沉淀知识资产实现，而非修改代码。
 
@@ -297,7 +297,7 @@ Visitor + Locator + Rule → Full Checker
 
 ## 总结
 
-CADE v2.1.0 Knowledge System 的核心价值不在于增加了多少文件，而在于确立了一个原则：
+CADE v2.2.0 Knowledge System 的核心价值不在于增加了多少文件，而在于确立了一个原则：
 
 > **系统能力增长通过沉淀知识资产实现，而非修改代码。**
 
@@ -305,8 +305,8 @@ CADE v2.1.0 Knowledge System 的核心价值不在于增加了多少文件，而
 
 ---
 
-**版本**: v2.1.0  
+**版本**: v2.2.0  
 **日期**: 2026-07-10  
 **测试**: 23/23 suites (100%)
-**文件**: 43 个知识文件（29 Knowledge + 13 Pattern + 1 Example）
+**文件**: 204 个知识文件（29K + 13P + 10C + 2PB + 149FW + 1E）  
 **原则**: 零 Python 改动，零 Engine 增加
