@@ -80,6 +80,7 @@ config.local.yaml
 # Documentation build
 docs/_build/
 docs/.doctrees/
+CADE_Docs/
 
 # Jupyter Notebook
 .ipynb_checkpoints
