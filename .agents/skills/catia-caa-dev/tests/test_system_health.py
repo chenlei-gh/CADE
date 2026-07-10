@@ -160,8 +160,11 @@ class SystemHealthCheck:
             "docs/KNOWLEDGE_SYSTEM_ARCHITECTURE.md",
         ]
 
+        # README.md is at CADE root, not catia-caa-dev
+        cade_root = self.root.parent.parent.parent
         for doc in required_docs:
-            if not (self.root / doc).exists():
+            check_path = cade_root if doc == "README.md" else self.root
+            if not (check_path / doc).exists():
                 self.errors.append(f"Missing documentation: {doc}")
 
         self.stats["docs"] = len(required_docs)

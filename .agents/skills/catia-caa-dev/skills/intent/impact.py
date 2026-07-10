@@ -157,18 +157,18 @@ def _generate_recommendations(entity_type: str, operation: str,
     recs = []
 
     if report.breaking_changes:
-        recs.append("⚠ BREAKING: interfaces affected — update all implementations")
+        recs.append("!! BREAKING: interfaces affected - update all implementations")
 
     if report.severity in (Severity.HIGH, Severity.CRITICAL):
-        recs.append("📸 Create snapshot before proceeding (cade snapshot)")
+        recs.append("[!] Create snapshot before proceeding (cade snapshot)")
 
     if entity_type == "interface" and operation in ("modify_interface", "delete"):
-        recs.append("🔍 Run cade diagnose after changes to catch broken refs")
+        recs.append("[>] Run cade diagnose after changes to catch broken refs")
 
     if entity_type == "module" and operation == "delete":
-        recs.append("⚠ Deleting module — verify no other frameworks depend on it")
+        recs.append("!! Deleting module - verify no other frameworks depend on it")
 
     if not recs:
-        recs.append("✅ Low risk — proceed normally")
+        recs.append("OK Low risk - proceed normally")
 
     return recs

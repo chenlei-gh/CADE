@@ -114,17 +114,17 @@ print(f"  {'TOTAL':22s} {total_raw:>6d} {total_opt:>10d} {total_pct:>6d}%")
 print("=" * 80)
 
 # Severity classification
-print(f"\n  🔴 HIGH (>1000 raw tokens):")
+print(f"\n  HIGH (>1000 raw tokens):")
 for name, raw, _, _ in rows:
     if raw > 1000:
         print(f"     {name.strip()}  {raw} tokens")
 
-print(f"\n  🟡 MEDIUM (500-1000):")
+print(f"\n  MEDIUM (500-1000):")
 for name, raw, _, _ in rows:
     if 500 <= raw <= 1000:
         print(f"     {name.strip()}  {raw} tokens")
 
-print(f"\n  🟢 LOW (<500):")
+print(f"\n  LOW (<500):")
 for name, raw, _, _ in rows:
     if raw < 500:
         print(f"     {name.strip()}  {raw} tokens")
