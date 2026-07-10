@@ -1,0 +1,508 @@
+# CATIA V5 CAA 实现扩展对象右键菜单指南
+
+本文说明如何在 CATIA V5 CAA 中为指定类型对象的右键菜单追加一个或多个可执行菜单项。本文以“保留 CATIA 默认右键菜单，在末尾追加自定义命令”为主线，覆盖目标对象绑定、Command Header、菜单 DataExtension、interface dictionary、资源文件、构建依赖和运行时排错。
+
+![图片](https://mmbiz.qpic.cn/mmbiz_png/ZdEu6laTWOmd58pZUiciaWJibwwxIBIhAzicUOH2qOZkEM8B3ezUHc8t2dJeOjibBJpib89iasicSNPJ2n7preIDDUFFMpS8Whqe0AwQeS2yWneMyUI/640?wx_fmt=png&from=appmsg&watermark=1&tp=webp&wxfrom=5&wx_lazy=1#imgIndex=0)
+
+这里所说的“按钮”，在 Application Frame 中实际是一个 `CATCmdStarter`。它在右键菜单中表现为可点击的菜单项，通过 Command Header 找到并启动真正的 CAA 命令。
+
+## 1\. 完整调用链
+
+一次右键菜单命令的调用链可以表示为：
+
+```
+用户在 Select 命令下右键对象  -> CATIA 对被点击对象查询 CATIContextualMenu  -> interface dictionary 定位菜单 DataExtension  -> CATExtIContextualMenu 提供默认 CATCmdContainer  -> DataExtension 向容器追加 CATCmdStarter  -> CATCmdStarter 通过 Header ID 找到 CATCommandHeader  -> 用户点击菜单项  -> CATCommandHeader 加载命令 DLL  -> 创建并启动 CATCommand/CATStateCommand 派生类
+```
+
+这条链中有四个不同角色：
+
+| 层次 | 典型对象 | 职责 |
+| --- | --- | --- |
+| 目标业务对象 | `TargetLateType` | 用户在 3D 或规格树中右键的对象。 |
+| 菜单扩展 | `CATIContextualMenu`<br>、`CATExtIContextualMenu` | 取得默认菜单并向其中追加入口。 |
+| 菜单入口 | `CATCmdStarter` | 表示右键菜单中的一个可点击项目。 |
+| 命令入口和实现 | `CATCommandHeader`<br>、`CATCommand` | Header 保存 DLL 和命令类信息，命令类执行实际业务。 |
+
+最容易混淆的是 Starter ID 和 Header ID：
+
+```
+NewAccess(CATCmdStarter, pStarter, MyCompanyInspectContextualStr);SetAccessCommand(pStarter, "MyCompanyInspectHdr");
+```
+
+其中：
+
+| 标识符 | 来源 | 作用 |
+| --- | --- | --- |
+| `MyCompanyInspectContextualStr` | 菜单扩展自行定义 | Starter 的布局标识，要求稳定且尽量全局唯一。 |
+| `MyCompanyInspectHdr` | Command Header 创建处定义 | 决定点击菜单项后加载哪个 DLL、创建哪个命令类。 |
+
+## 2\. CATIContextualMenu 的职责和使用约束
+
+接口定义位于：
+
+```
+CATIAApplicationFrame/PublicInterfaces/CATIContextualMenu.h
+```
+
+核心方法为：
+
+```
+virtual HRESULT GetContextualMenu(CATCmdContainer *&oMenu)= 0;
+```
+
+`oMenu` 是与当前对象关联的上下文菜单容器。CATIA 在用户请求对象右键菜单时查询该接口。
+
+该接口在 B28 中标记为：
+
+```
+@CAA2Level L1@CAA2Usage U4 CATExtIContextualMenu
+```
+
+这意味着实现时必须遵守以下规则：
+
+1.  实现类继承官方适配器 `CATExtIContextualMenu`。
+
+2.  使用 `TIE_CATIContextualMenu` 暴露接口实现。
+
+3.  不能使用 BOA 实现这个接口。
+
+4.  通过 DataExtension 和 interface dictionary 把实现挂到目标 late type。
+
+
+`CATExtIContextualMenu` 提供的默认菜单通常包含 Cut、Copy、Paste、Delete、Properties、Selection Sets、Hide/Show 等标准命令。窗口还可能追加 Center Graph、Reframe On 等图形窗口命令，这部分独立于对象的接口实现。
+
+对于“在右键菜单添加按钮”这一需求，推荐取得并扩展默认菜单，而不是完全替换它。
+
+## 3\. 推荐的工程拆分
+
+一个可维护的实现通常至少涉及两个模块：
+
+```
+MyCompanyUI/  MyCompanyCommands.m/    LocalInterfaces/      MyCompanyInspectCmd.h      MyCompanyCommandHeader.h    src/      MyCompanyInspectCmd.cpp      MyCompanyWorkbenchAddin.cpp    Imakefile.mk  MyCompanyContextualMenu.m/    LocalInterfaces/      MyCompanyTargetContextualMenu.h    src/      MyCompanyTargetContextualMenu.cpp    Imakefile.mk  CNext/    code/      dictionary/        MyCompanyUI.dico    resources/      msgcatalog/        MyCompanyCommandHeader.CATNls        MyCompanyCommandHeader.CATRsc        Simplified_Chinese/          MyCompanyCommandHeader.CATNls      graphic/        I_MyCompanyInspect.bmp
+```
+
+模块职责建议如下：
+
+| 模块 | 职责 |
+| --- | --- |
+| `MyCompanyCommands.m` | 实现命令，并在目标 Workshop 或 Workshop Add-in 的 `CreateCommands()` 中创建 Header。 |
+| `MyCompanyContextualMenu.m` | 实现对象的 `CATIContextualMenu`，只负责菜单布局和 Header ID 绑定。 |
+
+不要在菜单 DataExtension 构造函数里创建 Command Header。菜单扩展可能随对象创建，而 Header 应由当前 Editor 对应的 Workshop 或 Add-in 统一创建和管理。
+
+## 4\. 先准备可复用的 Command Header
+
+菜单项只有绑定到已经存在的 Command Header 后才能正常显示和执行。Command Header 应在 Workshop、Workshop Add-in、Workbench 或 Workbench Add-in 的 `CreateCommands()` 中创建。
+
+对于对象右键菜单，最稳妥的位置是当前 Workshop 或当前 Workshop 的 Add-in。这样只要该类型文档被打开，Header 就会存在，不依赖某个具体 Workbench 是否已经加载。
+
+### 4.1 声明标准 Header 类
+
+```
+// MyCompanyCommandHeader.h#ifndef MyCompanyCommandHeader_h#define MyCompanyCommandHeader_h#include"CATCommandHeader.h"MacDeclareHeader(MyCompanyCommandHeader);#endif
+```
+
+### 4.2 在 CreateCommands 中创建 Header
+
+```
+#include"MyCompanyCommandHeader.h"voidMyCompanyWorkshopAddin::CreateCommands(){newMyCompanyCommandHeader("MyCompanyInspectHdr","MyCompanyCommands","MyCompanyInspectCmd",    (void *)NULL);}
+```
+
+四个参数分别表示：
+
+| 参数 | 示例 | 含义 |
+| --- | --- | --- |
+| Header ID | `MyCompanyInspectHdr` | 后续传给 `SetAccessCommand()` 的稳定标识。 |
+| Command library | `MyCompanyCommands` | 命令 DLL 名，不写 `lib` 前缀和平台扩展名。 |
+| Command class | `MyCompanyInspectCmd` | 实际创建的命令实现类名。 |
+| Command argument | `(void *)NULL` | 可选启动参数；传整数时应使用 64 位兼容转换宏。 |
+
+Command Header 由当前 `CATFrmEditor` 管理生命周期，不要在业务代码中删除它。
+
+### 4.3 复用已有 CATIA 命令
+
+如果要复用当前 Workshop 已有命令，可在 CATIA Power Input 中输入：
+
+```
+c: workshop exposition
+```
+
+也可以通过以下路径把 Workshop Exposition 命令放到工具栏：
+
+```
+Tools > Customize > Commands > XCAA2 > Workshop Exposition
+```
+
+运行后选择当前 Workshop 或其 Add-in，指定输出目录并单击 `Print`。生成的文本文件会包含：
+
+```
+Title = Parent/ChildrenId    = CATParentChildrenHdrDLL   = ...Cmd   = ...Arg   = ...
+```
+
+其中 `Id` 才是可以交给 `SetAccessCommand()` 的字符串。不要根据导出的 DLL、Cmd、Arg 自行重建 DS Header。
+
+复用 Header 时还要注意加载范围：
+
+-   Workshop 及其 Add-in 创建的 Header 可供当前 Workshop 下的右键菜单稳定使用。
+
+-   某个 Workbench 或其 Add-in 创建的 Header 只有在该 Workbench 已加载时才存在。
+
+-   右键菜单引用未加载 Workbench 的 Header 时，对应 Starter 可能不会显示。
+
+-   DS Header 只有在 CAA 文档明确公开允许复用时，才应作为稳定 API 使用。
+
+
+## 5\. 实现右键菜单 DataExtension
+
+下面的实现保留 CATIA 默认右键菜单，在末尾追加一个分隔符和一个 `Inspect Object` 菜单项。
+
+示例中的 `TargetLateType` 必须替换为真实目标对象的组件类型。
+
+### 5.1 头文件
+
+```
+// MyCompanyTargetContextualMenu.h#ifndef MyCompanyTargetContextualMenu_h#define MyCompanyTargetContextualMenu_h#include"CATExtIContextualMenu.h"classMyCompanyTargetContextualMenu : public CATExtIContextualMenu{  CATDeclareClass;public:MyCompanyTargetContextualMenu();virtual ~MyCompanyTargetContextualMenu();private:MyCompanyTargetContextualMenu(const MyCompanyTargetContextualMenu &iObjectToCopy);  MyCompanyTargetContextualMenu &operator=(const MyCompanyTargetContextualMenu &iObjectToCopy);};#endif
+```
+
+这里不需要重写 `GetContextualMenu()`。适配器已经实现该方法，并管理默认菜单容器的生命周期。
+
+### 5.2 实现文件
+
+```
+// MyCompanyTargetContextualMenu.cpp#include"MyCompanyTargetContextualMenu.h"#include"CATCreateWorkshop.h"CATImplementClass(  MyCompanyTargetContextualMenu,  DataExtension,  CATBaseUnknown,  TargetLateType);#include"TIE_CATIContextualMenu.h"TIE_CATIContextualMenu(MyCompanyTargetContextualMenu);MyCompanyTargetContextualMenu::MyCompanyTargetContextualMenu(){  CATCmdContainer *pMenu = NULL;  HRESULT hr = CATExtIContextualMenu::GetContextualMenu(pMenu);if (SUCCEEDED(hr) && NULL != pMenu)  {NewAccess(      CATCmdSeparator,      pSeparator,      MyCompanyContextualSeparator);NewAccess(      CATCmdStarter,      pInspectStarter,      MyCompanyInspectContextualStr);SetAccessCommand(      pInspectStarter,"MyCompanyInspectHdr");SetAccessNext(      pSeparator,      pInspectStarter);AddAccessChild(      pMenu,      pSeparator);  }}MyCompanyTargetContextualMenu::~MyCompanyTargetContextualMenu(){}
+```
+
+代码中各步骤的含义如下：
+
+| 代码 | 作用 |
+| --- | --- |
+| `CATExtIContextualMenu::GetContextualMenu(pMenu)` | 取得适配器创建的默认菜单。 |
+| `NewAccess(CATCmdSeparator, ...)` | 创建菜单分隔符。 |
+| `NewAccess(CATCmdStarter, ...)` | 创建可点击菜单项。 |
+| `SetAccessCommand(...)` | 通过 Header ID 把 Starter 绑定到命令。 |
+| `SetAccessNext(...)` | 连接本扩展创建的访问节点。 |
+| `AddAccessChild(pMenu, pSeparator)` | 把整条新链追加到默认菜单末尾。 |
+
+如果只追加一个菜单项且不需要分隔符，可以简化为：
+
+```
+NewAccess(  CATCmdStarter,  pInspectStarter,  MyCompanyInspectContextualStr);SetAccessCommand(  pInspectStarter,"MyCompanyInspectHdr");AddAccessChild(  pMenu,  pInspectStarter);
+```
+
+### 5.3 所有权和生命周期
+
+上述模式的所有权关系非常重要：
+
+-   `pMenu`
+
+     是从适配器取得的借用指针，不要对它调用 `Release()`。
+
+-   `CATExtIContextualMenu`
+
+     保存并释放菜单容器。
+
+-   接到菜单容器上的 Starter、Separator 会随容器一起销毁。
+
+-   不要在派生类析构函数中逐个释放已经接入菜单的访问节点。
+
+-   Command Header 由 Editor 管理，不要由菜单扩展释放。
+
+
+## 6\. 在 interface dictionary 中绑定目标对象
+
+菜单扩展不是通过界面文字查找目标对象，而是通过目标对象的 late type 和 interface dictionary 建立绑定。
+
+在 framework 的源资源目录中创建或更新：
+
+```
+MyCompanyUI/CNext/code/dictionary/MyCompanyUI.dico
+```
+
+加入：
+
+```
+TargetLateType CATIContextualMenu libMyCompanyContextualMenu
+```
+
+三列含义如下：
+
+| 列 | 示例 | 含义 |
+| --- | --- | --- |
+| 组件 late type | `TargetLateType` | 被右键的目标对象类型。 |
+| 接口 | `CATIContextualMenu` | CATIA 在请求右键菜单时查询的接口。 |
+| 实现库 | `libMyCompanyContextualMenu` | 承载 DataExtension 的共享库。 |
+
+必须保持以下三处一致：
+
+```
+CATImplementClass 第四个参数  = .dico 第一列  = 实际目标对象的 late type
+```
+
+构建运行时视图后，还要确认字典目录已经进入 `CATDictionaryPath`。不要手工修改 `LocalGenerated`、`win_b64` 等派生目录中的副本，framework 级 `CNext` 资源才是源文件。
+
+### 6.1 避免重复实现冲突
+
+在给 DS 原生对象或其他团队组件增加菜单前，应先确认目标类型是否已经实现 `CATIContextualMenu`。
+
+同一个 late type 对同一个接口不应随意注册多套实现。重复 dictionary 映射可能造成加载顺序相关行为，也可能覆盖已有对象菜单能力。如果目标产品已经提供专用 Context Menu Provider 或 UI Add-in 接口，应优先使用它公开的扩展点。
+
+## 7\. 配置 Imakefile.mk
+
+菜单 DataExtension 模块的最小构建文件可以参考：
+
+```
+BUILT_OBJECT_TYPE = SHARED LIBRARYLINK_WITH = CATIAApplicationFrame \            CATApplicationFrame  \            JS0GROUP
+```
+
+各依赖的主要用途：
+
+| 模块 | 用途 |
+| --- | --- |
+| `CATIAApplicationFrame` | `CATIContextualMenu`<br>、`CATExtIContextualMenu` 相关实现。 |
+| `CATApplicationFrame` | `CATCmdContainer`<br>、`CATCmdStarter`、布局宏和命令框架。 |
+| `JS0GROUP` | CAA 基础对象模型支持。 |
+
+如果构造菜单时还查询其他业务接口，应继续添加这些接口所属模块。不要仅靠间接链接碰巧通过编译。
+
+## 8\. 配置菜单标题、帮助和图标
+
+右键菜单项目显示的标题和图标来自 Command Header 资源，不来自 Starter ID。
+
+假设 Header 类为 `MyCompanyCommandHeader`，Header ID 为 `MyCompanyInspectHdr`，则英文资源文件为：
+
+```
+MyCompanyUI/CNext/resources/msgcatalog/MyCompanyCommandHeader.CATNls
+```
+
+内容示例：
+
+```
+MyCompanyCommandHeader.MyCompanyInspectHdr.Title     = "Inspect Object";MyCompanyCommandHeader.MyCompanyInspectHdr.ShortHelp = "Inspect the selected object";MyCompanyCommandHeader.MyCompanyInspectHdr.Help      = "Runs the company object inspection command";MyCompanyCommandHeader.MyCompanyInspectHdr.Category  = "MyCompany";
+```
+
+图标资源放在：
+
+```
+MyCompanyUI/CNext/resources/msgcatalog/MyCompanyCommandHeader.CATRsc
+```
+
+内容示例：
+
+```
+MyCompanyCommandHeader.MyCompanyInspectHdr.Icon.Normal = "I_MyCompanyInspect";
+```
+
+对应图标放在：
+
+```
+MyCompanyUI/CNext/resources/graphic/I_MyCompanyInspect.bmp
+```
+
+简体中文资源通常放在：
+
+```
+MyCompanyUI/CNext/resources/msgcatalog/Simplified_Chinese/MyCompanyCommandHeader.CATNls
+```
+
+内容示例：
+
+```
+MyCompanyCommandHeader.MyCompanyInspectHdr.Title     = "检查对象";MyCompanyCommandHeader.MyCompanyInspectHdr.ShortHelp = "检查选中的对象";MyCompanyCommandHeader.MyCompanyInspectHdr.Help      = "运行对象检查命令";MyCompanyCommandHeader.MyCompanyInspectHdr.Category  = "MyCompany";
+```
+
+在当前 Windows CATIA V5 环境中，`Simplified_Chinese/*.CATNls` 建议保存为 GBK/ANSI。UTF-8 资源可能在 CATIA 中显示乱码。
+
+## 9\. 一次追加多个菜单项
+
+多个菜单项只需要创建多个 Starter，并用 `SetAccessNext()` 串成一条链。`AddAccessChild()` 只调用一次，把链首接到默认菜单中。
+
+```
+NewAccess(  CATCmdSeparator,  pSeparator,  MyCompanyContextualSeparator);NewAccess(  CATCmdStarter,  pInspectStarter,  MyCompanyInspectContextualStr);NewAccess(  CATCmdStarter,  pExportStarter,  MyCompanyExportContextualStr);SetAccessCommand(  pInspectStarter,"MyCompanyInspectHdr");SetAccessCommand(  pExportStarter,"MyCompanyExportHdr");SetAccessNext(  pSeparator,  pInspectStarter);SetAccessNext(  pInspectStarter,  pExportStarter);AddAccessChild(  pMenu,  pSeparator);
+```
+
+最终结构为：
+
+```
+CATIA 默认右键菜单项目-------------------------Inspect ObjectExport Object
+```
+
+这里的相对顺序由 `SetAccessNext()` 决定。该标准扩展模式把新链追加到默认菜单末尾，不应依赖某个 DS 内部菜单项目的文字或未公开 ID 进行定位。
+
+## 10\. 需要动态菜单时怎么处理
+
+如果菜单结构固定，只在构造函数中创建一次即可。如果同一个 Starter 需要根据对象状态在两个命令之间切换，可以把 Starter 保存为成员，并重写 `GetContextualMenu()`，在每次显示菜单前更新其 Header ID。
+
+头文件增加：
+
+```
+classCATCmdStarter;classMyCompanyTargetContextualMenu : public CATExtIContextualMenu{  CATDeclareClass;public:MyCompanyTargetContextualMenu();virtual ~MyCompanyTargetContextualMenu();virtual HRESULT GetContextualMenu(CATCmdContainer *&oMenu);private:  CATCmdStarter *_pStateStarter;};
+```
+
+构造函数中保存 Starter：
+
+```
+MyCompanyTargetContextualMenu::MyCompanyTargetContextualMenu()  : _pStateStarter(NULL){  CATCmdContainer *pMenu = NULL;  HRESULT hr = CATExtIContextualMenu::GetContextualMenu(pMenu);if (SUCCEEDED(hr) && NULL != pMenu)  {NewAccess(      CATCmdStarter,      pStateStarter,      MyCompanyStateContextualStr);    _pStateStarter = pStateStarter;AddAccessChild(pMenu, pStateStarter);  }}
+```
+
+显示菜单前选择 Header：
+
+```
+HRESULT MyCompanyTargetContextualMenu::GetContextualMenu(  CATCmdContainer *&oMenu){if (NULL != _pStateStarter)  {if (IsCurrentObjectLocked())    {SetAccessCommand(        _pStateStarter,"MyCompanyUnlockHdr");    }else    {SetAccessCommand(        _pStateStarter,"MyCompanyLockHdr");    }  }return CATExtIContextualMenu::GetContextualMenu(oMenu);}
+```
+
+两个 Header 都必须由当前 Workshop 或其 Add-in 预先创建。不要在 `GetContextualMenu()` 中重复创建 Header。
+
+如果每次显示都要重建整个菜单，应先明确根容器和所有访问节点的所有权，再释放旧结构。对于大多数场景，固定菜单结构加动态切换 Header 更简单，也更不容易产生重复节点和生命周期错误。
+
+## 11\. 如何确定要扩展的目标 late type
+
+规格树显示名称不一定等于组件 late type。比如界面上看到的名称可能包含实例序号、NLS 文本或产品自定义名称，不能直接复制到 `.dico`。
+
+建议按以下顺序确定目标类型：
+
+1.  查目标模块的 CAA 接口文档和官方样例。
+
+2.  检查目标组件已有的 interface dictionary。
+
+3.  对选中对象查询 `CATISpecObject` 并查看 `GetType()`。
+
+4.  确认该类型允许客户扩展，并确认没有已有接口实现冲突。
+
+
+拿到对象指针后，可用以下代码辅助诊断：
+
+```
+#include"CATISpecObject.h"#include"CATUnicodeString.h"CATISpecObject_var spSpecObject(iObject);if (NULL_var != spSpecObject){  CATUnicodeString objectType = spSpecObject->GetType();// Trace objectType.ConvertToChar() in a development environment.}
+```
+
+`GetType()` 是重要线索，但并不自动保证返回字符串就是允许第三方扩展的公开组件。最终仍应以 CAA 文档、字典和目标框架的扩展约定为准。
+
+同一个对象接口菜单通常可用于 3D 对象和规格树节点。若两处行为不同，应检查右键时框架最终查询的是不是同一个路径叶对象。
+
+## 12\. 构建和运行验证
+
+一个完整验证闭环如下：
+
+推荐先把命令实现做成最小 one-shot 命令，例如打印 trace 或弹出简单对话框。先验证 dictionary、Header、Starter 和 DLL 链路，再接入复杂业务逻辑。
+
+## 13\. 分层诊断方法
+
+右键菜单问题最好按“接口加载、菜单构造、Header 存在、命令启动”四层排查。
+
+### 13.1 验证目标对象是否获得接口
+
+```
+#include"CATIContextualMenu.h"CATIContextualMenu *pContextualMenu = NULL;HRESULT hr = iObject->QueryInterface(  IID_CATIContextualMenu,  (void **)&pContextualMenu);if (SUCCEEDED(hr) && NULL != pContextualMenu){  pContextualMenu->Release();  pContextualMenu = NULL;}
+```
+
+如果查询失败，重点检查：
+
+-   `CATImplementClass`
+
+     第四个参数是否正确；
+
+-   `TIE_CATIContextualMenu`
+
+     是否存在；
+
+-   `.dico`
+
+     的三列是否正确；
+
+-   字典是否进入 `CATDictionaryPath`；
+
+-   实现 DLL 是否能被运行时找到和加载。
+
+
+### 13.2 验证 Header 是否存在
+
+```
+#include"CATAfrCommandHeaderServices.h"#include"CATCommandHeader.h"CATCommandHeader *pHeader = NULL;HRESULT hr = ::CATAfrGetCommandHeader(CATString("MyCompanyInspectHdr"),  pHeader);if (FAILED(hr) || NULL == pHeader){// Header ID is absent from the current editor.}
+```
+
+如果接口查询成功但菜单项不显示，Header 未加载是最常见原因之一。检查 Header 是否由当前 Workshop 或其 Add-in 创建，以及字符串大小写是否完全一致。
+
+### 13.3 验证命令是否能启动
+
+开发阶段可用以下服务验证 Header 到命令的链路：
+
+```
+#include"CATAfrCommandHeaderServices.h"CATCommand *pCommand = NULL;HRESULT hr = ::CATAfrStartCommand(CATString("MyCompanyInspectHdr"),  pCommand);
+```
+
+如果 Header 存在但启动失败，重点检查 Header 构造函数中的 DLL 名、命令类名、许可条件和命令实现的 `CATImplementClass`。
+
+## 14\. 常见问题
+
+| 现象 | 典型原因 | 处理建议 |
+| --- | --- | --- |
+| 右键菜单完全没有变化 | DataExtension 未加载或目标 late type 错误 | 先对目标对象 `QueryInterface(IID_CATIContextualMenu)`，再检查 `.dico`。 |
+| 3D 中出现，树上不出现 | 两处查询到的路径叶对象不是同一类型 | 打印路径叶对象的 `GetType()`，确认扩展目标。 |
+| 树上出现，3D 中不出现 | 3D 选择结果落在 Representation/BRep 对象上 | 沿 `CATPathElement` 找到业务对象，确认目标框架的选择机制。 |
+| 菜单项不显示 | Header ID 在当前 Editor 中不存在 | 使用 Workshop Exposition 或 `CATAfrGetCommandHeader()` 验证。 |
+| 切换到某个 Workbench 后才显示 | Header 创建在该 Workbench 或其 Add-in 中 | 把共享 Header 移到 Workshop Add-in。 |
+| 菜单显示内部 ID | Command Header `.CATNls` 缺失或 key 错误 | 检查 `HeaderClass.HeaderId.Title`。 |
+| 图标不显示 | `.CATRsc`<br>或 `CATGraphicPath` 配置错误 | 检查图标名、资源路径和 runtime view。 |
+| 点击菜单项无反应 | Header 的 DLL 名或命令类名错误 | 用 `CATAfrStartCommand()` 单独验证 Header。 |
+| 重复出现相同菜单项 | 每次调用都追加节点但未清理旧结构 | 固定结构只在构造函数创建一次。 |
+| 退出时崩溃 | 手工释放了适配器拥有的菜单或子节点 | 扩展默认菜单时让 `CATExtIContextualMenu` 管理生命周期。 |
+| 默认 Cut/Copy/Delete 消失 | 重写方法时返回了自己的空容器 | 对追加按钮场景，调用适配器取得默认菜单并扩展。 |
+| 中文标题乱码 | 简体中文 `.CATNls` 编码不兼容 | 在当前 B28 Windows 环境中使用 GBK/ANSI。 |
+| 注册后破坏原有对象菜单 | 目标类型已经有另一套接口实现 | 不要重复注册，查找目标产品公开的 Provider/Add-in 扩展点。 |
+
+## 15\. 推荐的工程规则
+
+为了让右键菜单扩展在大型项目中保持稳定，建议遵守以下规则：
+
+## 16\. B28 官方样例对应关系
+
+B28 自带的 `CAACafContextualMenu` 样例给 `CAASysEllipse` 对象追加 `Ellipse` 和 `Circle` 两个菜单项。
+
+它的关键注册关系是：
+
+```
+CAASysEllipse CATIContextualMenu libCAACafContextualMenu
+```
+
+关键实现关系是：
+
+```
+classCAAECafContextualMenuEllipse : public CATExtIContextualMenu
+```
+
+```
+CATImplementClass(  CAAECafContextualMenuEllipse,  DataExtension,  CATBaseUnknown,  CAASysEllipse);TIE_CATIContextualMenu(CAAECafContextualMenuEllipse);
+```
+
+构造函数先取得默认菜单，再追加自定义链：
+
+```
+CATExtIContextualMenu::GetContextualMenu(pMenu);NewAccess(CATCmdStarter, pStEllipse, CAACafContextualMenuEllipseStr);NewAccess(CATCmdStarter, pStCircle, CAACafContextualMenuCircleStr);NewAccess(CATCmdSeparator, pSep1, CAACafContextualMenuSep);SetAccessCommand(pStEllipse, "CAAAfrEllipseHdr");SetAccessCommand(pStCircle, "CAAAfrCircleHdr");SetAccessNext(pStEllipse, pStCircle);SetAccessNext(pStCircle, pSep1);AddAccessChild(pMenu, pStEllipse);
+```
+
+这就是扩展对象默认右键菜单的标准模式。
+
+## 17\. 本地参考资料
+
+以下文件均位于当前 B28 接口库：
+
+-   CATIContextualMenu.h：接口定义和使用级别。
+
+-   CATExtIContextualMenu.h：默认菜单适配器、两种实现模式和生命周期说明。
+
+-   CAAECafContextualMenuEllipse.h：官方 DataExtension 类声明。
+
+-   CAAECafContextualMenuEllipse.cpp：取得默认菜单并追加 Starter 的完整代码。
+
+-   CAAAfrSampleContextualMenu.htm：官方上下文菜单用例说明。
+
+-   CAAAfrCommandHeaders.htm：Command Header 创建、生命周期、Workshop Exposition 和复用规则。
+
+-   CATAfrCommandHeaderServices.h：Header 查询与命令启动服务。
+
+-   CAACATIAApplicationFrm.edu.dico：官方样例的 interface dictionary 注册。
+
+
+## 18\. 总结
+
+使用 `CATIContextualMenu` 添加右键菜单按钮的核心，是把菜单 DataExtension 注册到目标 late type，借助 `CATExtIContextualMenu` 取得默认 `CATCmdContainer`，再把绑定了有效 Command Header ID 的 `CATCmdStarter` 追加进去。目标对象由 dictionary 决定，菜单文字和图标由 Header 资源决定，点击后的行为由命令类决定；把这三层分开维护，右键菜单扩展才会稳定、可复用并且容易排错。

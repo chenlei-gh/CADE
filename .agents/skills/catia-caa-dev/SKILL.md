@@ -27,6 +27,12 @@ triggers:
   - 3D 标注
   - tolerance
   - 公差
+  - context menu
+  - 右键菜单
+  - right click
+  - CATIContextualMenu
+  - CATCmdStarter
+  - DataExtension
   - CAA command
   - CATIA command
   - CAA workbench
@@ -231,7 +237,8 @@ triggers:
 | 🧠 **复杂任务用 Intent Engine** | 多步骤工作流（如"创建带对话框的命令并集成到工作台"）调用 `plan()` 生成执行计划。 |
 | ⚡ **先 diagnose 再 fix** | 遇到问题先 `cade diagnose`，让引擎分析。不要猜测原因。 |
 | 📸 **大操作前 snapshot** | 重构/删除前创建快照，出问题可以 `cade rollback`。 |
-| 📚 **未知 API 查 knowledge/** | knowledge/ patterns/ examples/ 有答案，先查再写。覆盖 8 领域：UI布局、Part、Drawing、Surface/GSD、FTA标注、Assembly、MecMod、Infra。 |
+| 📚 **CADE knowledge/ 优先** | knowledge/ patterns/ examples/ 有答案，先查再写。覆盖 8 领域：UI布局、Part、Drawing、Surface/GSD、FTA标注、Assembly、MecMod、Infra。 |
+| 📖 **知识不足查 CAADoc/** | CADE knowledge/ 没有答案时，查 CATIA 自带官方文档（`CAADoc/Doc/online/` 使用案例、`CAADoc/Doc/docs/api/` API 参考）。查到后建议补充到 CADE knowledge/。 |
 
 ### ✨ 核心优势
 
@@ -1431,7 +1438,9 @@ result = delete_command(ctx, name="MyCmd", module="TestModule.m")
     ↓
 ⑤ examples/ 查实战代码           ← 查真实案例
     ↓
-⑥ cade fix --apply               ← 让引擎自动修复
+⑥ CAADoc/ 查官方文档             ← knowledge/ 没有时查 CATIA 自带文档
+    ↓
+⑦ cade fix --apply               ← 让引擎自动修复
 
 > ⚠️ **不要**跳过前两步直接写代码。docs/ 帮助文档和 knowledge/patterns/examples 里 90% 的问题已有答案。
 
