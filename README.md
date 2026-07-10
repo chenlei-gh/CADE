@@ -125,7 +125,7 @@ cade rv                           # create Runtime View
 cade test --quick                 # run all 22 test suites (~8s)
 ```
 
-> 🔌 Also available as **MCP Server** (38 tools) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
+> 🔌 Also available as **MCP Server** (41 tools) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
 
 ### Quick Test
 
@@ -166,13 +166,13 @@ graph TD
 
 | | |
 |---|---|
-| **Test Suites** | 22 (L1-L7 + Integration + Audit) |
+| **Test Suites** | 23 (L1-L7 + Integration + Audit) |
 | **Test Cases** | 700+ |
 | **Pass Rate** | 100% |
 | **Templates** | 25+ |
 | **APIs** | 15 (Intent + Action) |
-| **CLI Commands** | 19 |
-| **MCP Tools** | 38 |
+| **CLI Commands** | 22 |
+| **MCP Tools** | 41 |
 | **Build Commands** | 35 |
 | **Spec Types** | 8 |
 | **Refactor Operations** | 3 |
@@ -296,13 +296,13 @@ Knowledge System（9 Knowledge + 6 Pattern + 1 Example）
 
 | | |
 |---|---|
-| **测试套件** | 22（L1-L7 + Integration + Audit） |
+| **测试套件** | 23（L1-L7 + Integration + Audit） |
 | **测试用例** | 700+ |
 | **通过率** | 100% |
 | **模板** | 25+ |
 | **API** | 15（Intent + Action） |
-| **CLI 命令** | 19 |
-| **MCP 工具** | 38 |
+| **CLI 命令** | 22 |
+| **MCP 工具** | 41 |
 | **Build 命令** | 35 |
 | **Spec 类型** | 8 |
 | **重构操作** | 3 |

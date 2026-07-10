@@ -1138,8 +1138,8 @@ python test_e2e_workflow.py
 │   ├── clean.py                      # 清理管理
 │   ├── workspace.py                  # 工作区验证
 │   ├── runtime_view.py               # Runtime View 管理
-│   ├── cade.py                       # CLI 入口 (19 命令)
-│   ├── mcp_server.py                 # MCP Server (38 工具)
+│   ├── cade.py                       # CLI 入口 (22 命令)
+│   ├── mcp_server.py                 # MCP Server (41 工具)
 │   ├── token_optimizer.py            # AI Token 优化器
 │   ├── docgen.py                     # 文档生成器
 │   ├── version_strategy.py           # 版本策略
