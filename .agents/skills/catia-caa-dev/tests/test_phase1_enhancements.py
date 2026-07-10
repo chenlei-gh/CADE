@@ -34,7 +34,8 @@ from meta_model import (
 )
 
 # Test configuration
-WORKSPACE = "D:/test"
+import tempfile
+WORKSPACE = tempfile.mkdtemp(prefix="cade_phase1_")
 
 print("=" * 80)
 print("Phase 1 Enhancement Tests")

@@ -22,7 +22,8 @@ from actions import (
 )
 
 # 测试配置
-WORKSPACE = "D:/test"
+import tempfile
+WORKSPACE = tempfile.mkdtemp(prefix="cade_e2e_")
 FRAMEWORK = "TestFramework"
 MODULE = "TestModule.m"
 

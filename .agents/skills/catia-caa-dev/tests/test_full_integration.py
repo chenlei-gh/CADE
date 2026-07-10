@@ -561,11 +561,22 @@ def test_analyzer_detect_module():
 def test_analyzer_real_workspace():
     from analyzer import WorkspaceAnalyzer
 
-    analyzer = WorkspaceAnalyzer(Path("D:/test"))
-    snap = analyzer.analyze()
-    assert snap is not None
-    # Should find TestFramework.edu
-    assert len(snap.frameworks) >= 1
+    tmp = Path(tempfile.mkdtemp(prefix="cade_int_real_"))
+    try:
+        # Create expected workspace structure
+        fw = tmp / "TestFramework.edu"
+        fw.mkdir()
+        (fw / "IdentityCard").mkdir()
+        (fw / "IdentityCard" / "IdentityCard.h").write_text(
+            'AddPrereqComponent("System",Public);'
+        )
+
+        analyzer = WorkspaceAnalyzer(tmp)
+        snap = analyzer.analyze()
+        assert snap is not None
+        assert len(snap.frameworks) >= 1
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 report.test("Analyze empty workspace", test_analyzer_empty_workspace)
@@ -582,12 +593,23 @@ print("\n" + "=" * 70)
 print("GROUP 6: ATOMIC ACTIONS")
 print("=" * 70)
 
+# Setup shared temp workspace for action tests
+WS6 = Path(tempfile.mkdtemp(prefix="cade_int_act_"))
+fw6 = WS6 / "TestFw.edu"
+fw6.mkdir()
+(fw6 / "IdentityCard").mkdir()
+(fw6 / "IdentityCard" / "IdentityCard.h").write_text('AddPrereqComponent("System",Public);')
+mod6 = fw6 / "TestMod.m"
+mod6.mkdir()
+(mod6 / "src").mkdir(parents=True, exist_ok=True)
+(mod6 / "LocalInterfaces").mkdir(parents=True, exist_ok=True)
+(mod6 / "Imakefile.mk").write_text("MODULE=TestMod\nSOURCES = \\")
+
 
 def test_action_context():
     from actions import ActionContext
 
-    ctx = ActionContext("D:/test")
-    assert ctx.workspace_root.exists()
+    ctx = ActionContext(str(WS6))
     snap = ctx.snapshot
     assert snap is not None
 
@@ -595,7 +617,7 @@ def test_action_context():
 def test_action_analyze():
     from actions import ActionContext, analyze_workspace
 
-    ctx = ActionContext("D:/test")
+    ctx = ActionContext(str(WS6))
     result = analyze_workspace(ctx)
     assert result["status"] == "ok"
     assert "summary" in result
@@ -604,7 +626,7 @@ def test_action_analyze():
 def test_action_list_modules():
     from actions import ActionContext, list_modules
 
-    ctx = ActionContext("D:/test")
+    ctx = ActionContext(str(WS6))
     result = list_modules(ctx)
     assert result["status"] == "ok"
     assert "modules" in result
@@ -614,7 +636,7 @@ def test_action_list_modules():
 def test_action_list_commands():
     from actions import ActionContext, list_commands
 
-    ctx = ActionContext("D:/test")
+    ctx = ActionContext(str(WS6))
     result = list_commands(ctx)
     assert result["status"] == "ok"
     assert "commands" in result
@@ -623,7 +645,7 @@ def test_action_list_commands():
 def test_action_list_workbenches():
     from actions import ActionContext, list_workbenches
 
-    ctx = ActionContext("D:/test")
+    ctx = ActionContext(str(WS6))
     result = list_workbenches(ctx)
     assert result["status"] == "ok"
 
@@ -631,7 +653,7 @@ def test_action_list_workbenches():
 def test_action_list_interfaces():
     from actions import ActionContext, list_interfaces
 
-    ctx = ActionContext("D:/test")
+    ctx = ActionContext(str(WS6))
     result = list_interfaces(ctx)
     assert result["status"] == "ok"
 
