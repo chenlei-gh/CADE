@@ -43,7 +43,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 ```bash
 # 1. Clone into your CAA project
 git clone https://github.com/chenlei-gh/CADE.git
-cp -r cade/.agents /path/to/your/caa/project/
+cp -r CADE/.agents /path/to/your/caa/project/
 
 # 2. That's it. Open in your editor.
 #    CADE auto-detects CATIA. Zero config.
@@ -366,7 +366,7 @@ cade create command 我的命令 我的模块 --dialog --wb 我的工作台
 
 ```bash
 git clone https://github.com/chenlei-gh/CADE.git
-cp -r cade/.agents /你的/CAA/项目/路径/
+cp -r CADE/.agents /你的/CAA/项目/路径/
 # 用编辑器打开项目。CADE 自动检测 CATIA，零配置。
 ```
 
@@ -376,7 +376,9 @@ cp -r cade/.agents /你的/CAA/项目/路径/
 
 ### 🧠 最新更新
 
-**📉 Token 优化器** — MCP 响应自动压缩，平均节省 50% token。AI 调用不浪费上下文。
+**🧬 Development Kernel (v3.0)** — 从工具集合升级为开发内核。AI 只需知道 3 个 Mode：`develop`（创建/生成）、`analyze`（查询/诊断）、`repair`（修复/重构）。41 个 MCP 工具压缩为 3 个入口，Kernel 内部自动调度需求分析、规划、生成、验证和修复全链路。
+
+**📉 Token 优化器** — MCP 响应自动压缩，平均节省 50% token。
 
 **🧩 Intent Engine** — 复杂任务自动分解为可执行步骤。Planner（意图→计划）+ Impact Analyzer（影响分析）+ Optimizer（方案排序）。
 
