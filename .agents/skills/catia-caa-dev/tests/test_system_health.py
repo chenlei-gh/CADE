@@ -105,8 +105,8 @@ class SystemHealthCheck:
             f"  [OK] Knowledge: {len(knowledge_files)}, Patterns: {len(pattern_files)}, Examples: {len(example_files)}"
         )
 
-        if total != 16:
-            self.warnings.append(f"Expected 16 knowledge files, found {total}")
+        if total < 20:
+                    self.warnings.append(f"Expected 20+ knowledge files, found {total}")
 
     def check_tests(self):
         """检查测试文件"""
