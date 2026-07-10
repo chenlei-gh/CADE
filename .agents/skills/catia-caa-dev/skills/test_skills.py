@@ -325,7 +325,9 @@ def test_actions():
         print("  [OK] ChangeSet dry_run")
 
         # Test 4: ActionContext
-        ctx = ActionContext("D:/test")
+        import tempfile
+        tdir = tempfile.mkdtemp(prefix="cade_skill_test_")
+        ctx = ActionContext(tdir)
         snap = ctx.refresh()
         assert snap is not None
         assert len(snap.frameworks) >= 0
