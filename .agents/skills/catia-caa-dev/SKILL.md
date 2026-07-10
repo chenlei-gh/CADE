@@ -182,16 +182,29 @@ triggers:
 
 这是一个**智能的 CAA 开发助手**，专注于将复杂的 CATIA CAA V5 开发流程简化为直观的意图表达。
 
+### 🤖 给 AI 的提示（最高优先级）
+
+> **你是 CADE 的主要使用者。请遵循以下规则以获得最佳效果：**
+
+| 规则 | 说明 |
+|------|------|
+| 🔌 **用 MCP 调用** | 所有 CADE 功能通过 MCP 工具调用，不要用 CLI。响应已自动 Token 优化。 |
+| 📊 **信 status 不信 output** | API 返回 `{"status": "ok", "error_count": 0}` 就够了，忽略 `output`/`stderr` 字段。 |
+| 🧠 **复杂任务用 Intent Engine** | 多步骤工作流（如"创建带对话框的命令并集成到工作台"）调用 `plan()` 生成执行计划。 |
+| ⚡ **先 diagnose 再 fix** | 遇到问题先 `cade diagnose`，让引擎分析。不要猜测原因。 |
+| 📸 **大操作前 snapshot** | 重构/删除前创建快照，出问题可以 `cade rollback`。 |
+| 📚 **未知 API 查 knowledge/** | knowledge/ patterns/ examples/ 有答案，先查再写。 |
+
 ### ✨ 核心优势
 
-1. **意图驱动** - AI 只需表达意图，系统自动处理所有 CAA 细节
-2. **智能依赖管理** - 自动创建和级联删除关联文件
+1. **意图驱动** - AI 只需表达意图，Intent Engine 自动规划步骤
+2. **Token 优化** - MCP 响应自动压缩，平均节省 50% token，关键信息不丢
 3. **安全操作** - 预览→确认→应用→回滚，全程可控
 4. **高性能** - 模板生成约50ms，比 RADE 工具快 100 倍
 5. **完整测试** - 23 套件、700+ 测试项，100% 覆盖率
 6. **依赖图管理** - 完整的实体关系图和 Mermaid 可视化
 7. **级联删除** - 智能检测破坏性依赖，安全删除
-8. **Intent Layer** - 高级意图接口，一次调用完成复杂任务
+8. **Intent Engine** - Planner + Impact Analyzer + Optimizer，任务规划到执行
 9. **回滚支持** - 完整的操作备份和回滚机制
 10. **智能推荐** - 基于工作区状态自动建议下一步操作
 
@@ -1094,7 +1107,6 @@ python test_e2e_workflow.py
 │   ├── token_optimizer.py            # AI Token 优化器
 │   ├── docgen.py                     # 文档生成器
 │   ├── version_strategy.py           # 版本策略
-│   ├── token_optimizer.py            # AI Token 优化器
 │   ├── test_skills.py                # 技能自检
 │   ├── intent/                       # Intent Engine (P0 Planner)
 │   │   ├── models.py                 # Intent / Plan 数据模型
