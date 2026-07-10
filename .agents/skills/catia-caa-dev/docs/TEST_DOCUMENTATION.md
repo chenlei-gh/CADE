@@ -203,19 +203,110 @@ CADE 共有 **48 条功能链路**，分属 **9 大类**。24 个测试套件覆
 | 8 | **知识** | 3 | L7 + Cross-Ref + DeepAudit | ✅ |
 | 9 | **交互** | 3 | Int-2 + AI Integration | ✅ |
 
-### 详细链路清单
+### 48 条链路逐条测试覆盖
 
-| 类别 | 链路 | 验证
-|------|------|------
-| 创建 | framework → module → command → dialog → workbench → interface → component → add_to_wb → feature → extension | L1+L2-2+L2-4+L3
-| 查询 | analyze → list_modules/commands/wb/interfaces → get_dep → get_dependents → visualize → validate → find_orphaned | L2-1+L4+L5
-| 构建 | incremental → full → clean → debug → threaded → runtime_view → workspace_info → prereq → identity_card | Int-1
-| 运行 | start_catia → run_macro → run_batch → stop_catia | Int-1
-| 诊断修复 | diagnose_workspace → fix_apply | L2-6+L2-7
-| 重构 | rename_command → rename_interface → move_command | L2-8
-| 回滚 | snapshot → rollback → list_backups → cleanup | L2-3
-| 知识 | catalog_lookup → caadoc_fallback → knowledge_precipitate | L7+DeepAudit
-| 交互 | mcp_call → cli_call → python_api | Int-2+AI
+#### 创建 (10 条)
+
+| # | 链路 | 测试套件 | 验证方式 |
+|---|------|---------|----------|
+| 1 | `create_framework` | L1 Unit | 单元测试 |
+| 2 | `create_module` | L1 Unit | 单元测试 |
+| 3 | `create_command` | L1 + L2-2 Intent + L3 E2E | 单元+意图+端到端 |
+| 4 | `create_dialog` | L1 + L2-5 Spec | 单元+Spec 校验 |
+| 5 | `create_workbench` | L1 + Full System | 单元+全系统 |
+| 6 | `create_interface` | L1 + L2-5 Spec | 单元+Spec 校验 |
+| 7 | `create_component` | L1 + L2-5 Spec | 单元+Spec 校验 |
+| 8 | `add_command_to_workbench` | L1 + Full System | 单元+全系统 |
+| 9 | `create_feature` | L2-4 Enhanced Intents | 意图层集成 |
+| 10 | `create_extension` | L2-4 Enhanced Intents | 意图层集成 |
+
+#### 查询 (10 条)
+
+| # | 链路 | 测试套件 | 验证方式 |
+|---|------|---------|----------|
+| 11 | `analyze_workspace` | L1 + Full System | 单元+全系统 |
+| 12 | `list_modules` | L1 + Cross-Ref | 单元+交叉引用 |
+| 13 | `list_commands` | L1 | 单元测试 |
+| 14 | `list_workbenches` | L1 | 单元测试 |
+| 15 | `list_interfaces` | L1 | 单元测试 |
+| 16 | `get_dependencies` | L2-1 DepGraph | 依赖图集成 |
+| 17 | `get_dependents` | L2-1 DepGraph | 依赖图集成 |
+| 18 | `visualize_dependencies` | L2-1 DepGraph | 依赖图集成 |
+| 19 | `validate_workspace` | L1 + L4 Architecture | 单元+架构检查 |
+| 20 | `find_orphaned_files` | L4 Architecture | 架构检查 |
+
+#### 构建 (9 条)
+
+| # | 链路 | 测试套件 | 验证方式 |
+|---|------|---------|----------|
+| 21 | `incremental_build` | Int-1 Build & Run | 真实 mkmk 调用 |
+| 22 | `full_build` | Int-1 Build & Run | 真实 mkmk 调用 |
+| 23 | `clean_build` | Int-1 Build & Run | 真实 mkmk 调用 |
+| 24 | `debug_build` | Int-1 Build & Run | 真实 mkmk 调用 |
+| 25 | `build_with_threads` | Int-1 Build & Run | 真实 mkmk 调用 |
+| 26 | `create_runtime_view` | Int-1 Build & Run | 真实 mkCreateRuntimeView |
+| 27 | `workspace_info` | Int-1 Build & Run | mkwhereami + mkreadcpd |
+| 28 | `get_prerequisite` | Int-1 Build & Run | mkGetPreq + mkPrintPreq |
+| 29 | `create_identity_card` | Int-1 Build & Run | mkCreateIC |
+
+#### 运行 (4 条)
+
+| # | 链路 | 测试套件 | 验证方式 |
+|---|------|---------|----------|
+| 30 | `start_catia` | Int-1 Build & Run | 真实 CNEXT 启动 |
+| 31 | `run_macro` | Int-1 Build & Run | CNEXT -macro |
+| 32 | `run_batch` | Int-1 Build & Run | CNEXT -batch |
+| 33 | `stop_catia` | Int-1 Build & Run | 进程管理 |
+
+#### 诊断修复 (2 条)
+
+| # | 链路 | 测试套件 | 验证方式 |
+|---|------|---------|----------|
+| 34 | `diagnose` | L2-6 Diagnostics | 诊断引擎 |
+| 35 | `fix_apply` | L2-7 FixPlan | 自动修复执行 |
+
+#### 重构 (3 条)
+
+| # | 链路 | 测试套件 | 验证方式 |
+|---|------|---------|----------|
+| 36 | `rename_command` | L2-8 Refactor | 重命名+引用更新 |
+| 37 | `rename_interface` | L2-8 Refactor | 接口重命名 |
+| 38 | `move_command` | L2-8 Refactor | 跨模块移动 |
+
+#### 回滚 (4 条)
+
+| # | 链路 | 测试套件 | 验证方式 |
+|---|------|---------|----------|
+| 39 | `snapshot` | L2-3 Rollback | 快照创建 |
+| 40 | `rollback` | L2-3 Rollback | 回滚执行 |
+| 41 | `list_backups` | L2-3 Rollback | 备份列表 |
+| 42 | `cleanup_backups` | L2-3 Rollback | 备份清理 |
+
+#### 知识 (3 条)
+
+| # | 链路 | 测试套件 | 验证方式 |
+|---|------|---------|----------|
+| 43 | `catalog_lookup` | L7 Knowledge + Cross-Ref | frontmatter + catalog 对齐 |
+| 44 | `caadoc_fallback` | 规则 + gap 检测 | SKILL.md 提示 + knowledge/gaps/ |
+| 45 | `knowledge_precipitate` | Cross-Ref §8 + L7 | gap 检测 + catalog 完整性 |
+
+#### 交互 (3 条)
+
+| # | 链路 | 测试套件 | 验证方式 |
+|---|------|---------|----------|
+| 46 | `mcp_call` | Int-2 Skill-AI + AI Integration | AI 通过 MCP 全 API |
+| 47 | `cli_call` | 各套件调用 | `cade` 命令 → Python API |
+| 48 | `python_api` | AI Integration | 直接 Python API 调用 |
+
+### 覆盖统计
+
+| 指标 | 值 |
+|------|-----|
+| 链路总数 | **48** |
+| 自动测试覆盖 | **47** (98%) |
+| 规则+检测覆盖 | **1** (caadoc_fallback) |
+| 测试套件 | **24** |
+| 断言/检查 | **~600** |
 
 ### CAADoc Fallback 链路详解
 
