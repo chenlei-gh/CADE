@@ -27,6 +27,8 @@ class KnowledgeSystemValidator:
         self.knowledge_dir = self.root / "knowledge"
         self.patterns_dir = self.root / "patterns"
         self.examples_dir = self.root / "examples"
+        self.capabilities_dir = self.root / "capabilities"
+        self.playbooks_dir = self.root / "playbooks"
 
         self.all_ids = {}  # id -> file_path
         self.errors = []
@@ -72,7 +74,8 @@ class KnowledgeSystemValidator:
         print("=" * 70)
 
         count = 0
-        for category_dir in [self.knowledge_dir, self.patterns_dir, self.examples_dir]:
+        for category_dir in [self.knowledge_dir, self.patterns_dir, self.examples_dir,
+                              self.capabilities_dir, self.playbooks_dir]:
             if not category_dir.exists():
                 continue
 
@@ -174,7 +177,7 @@ class KnowledgeSystemValidator:
 
             # 检查 category 是否合法
             category = metadata.get("category")
-            if category not in ["knowledge", "pattern", "example"]:
+            if category not in ["knowledge", "pattern", "example", "capability", "playbook", "framework"]:
                 self.errors.append(f"Invalid category '{category}' in {file_id}")
 
             # 检查 keywords 是否是列表
@@ -258,9 +261,15 @@ class KnowledgeSystemValidator:
                 self.errors.append(f"Category 'pattern' but path is {file_path}")
             elif category == "example" and "examples" not in str(file_path):
                 self.errors.append(f"Category 'example' but path is {file_path}")
+            elif category == "capability" and "capabilities" not in str(file_path):
+                self.errors.append(f"Category 'capability' but path is {file_path}")
+            elif category == "playbook" and "playbooks" not in str(file_path):
+                self.errors.append(f"Category 'playbook' but path is {file_path}")
+            elif category == "framework" and "frameworks" not in str(file_path):
+                self.errors.append(f"Category 'framework' but path is {file_path}")
 
             # 验证 domain 和父目录匹配
-            if domain and category != "example":
+            if domain and category not in ["example", "framework", "capability", "playbook"]:
                 if domain not in str(file_path.parent):
                     self.warnings.append(
                         f"Domain '{domain}' but parent is {file_path.parent.name} in {file_id}"
@@ -283,11 +292,12 @@ class KnowledgeSystemValidator:
         # 1. 从 catalog 提取所有 ID
         import re
         catalog_ids = set()
-        for match in re.finditer(r'\|\s+([\w.]+)\s+\|\s+(knowledge|patterns|examples)/', catalog_text):
+        for match in re.finditer(r'\|\s+([\w.]+)\s+\|\s+(knowledge|patterns|examples|capabilities|playbooks)/', catalog_text):
             catalog_ids.add(match.group(1))
 
-        # 2. 从实际文件提取所有 ID
-        actual_ids = set(self.all_ids.keys())
+        # 2. 从实际文件提取所有 ID（排除 framework 文件，由 scan_frameworks.py 管理）
+        actual_ids = {k for k, v in self.all_ids.items()
+                       if v['metadata'].get('category') != 'framework'}
 
         # 3. 检查：catalog 有但文件没有（ghost entry）
         ghost = catalog_ids - actual_ids

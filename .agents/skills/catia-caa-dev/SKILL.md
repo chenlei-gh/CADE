@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: CATIA CAA V5 Development Engine (CADE) v2.1.0 — Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理（循环依赖检测、智能推荐）。CAA 知识系统（29 Knowledge + 13 Pattern + 1 Example + Catalog 索引），含高级 UI 布局（多层嵌套/列表-详情/动态表单/向导/反模式）、工程图（视图/标注/BOM）、GSD 曲面、FTA 3D 标注。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、24 套件 ~600 测试项。
+description: CATIA CAA V5 Development Engine (CADE) v2.1.0 — Specification 驱动的 CAA 开发生命周期引擎。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理（循环依赖检测、智能推荐）。CAA 知识系统（29K + 13P + 10 Capability + 2 Playbook + 149 Framework + 1 Example + Catalog），含高级 UI 布局（多层嵌套/列表-详情/动态表单/向导/反模式）、工程图（视图/标注/BOM）、GSD 曲面、FTA 3D 标注。25+ 模板、15 API、35 Build/Run 命令、8 Spec 类型、3 Refactor 操作、24 套件 ~600 测试项。
 triggers:
   - CAA component
   - CATIA component
@@ -237,7 +237,8 @@ triggers:
 | 🧠 **复杂任务用 Intent Engine** | 多步骤工作流（如"创建带对话框的命令并集成到工作台"）调用 `plan()` 生成执行计划。 |
 | ⚡ **先 diagnose 再 fix** | 遇到问题先 `cade diagnose`，让引擎分析。不要猜测原因。 |
 | 📸 **大操作前 snapshot** | 重构/删除前创建快照，出问题可以 `cade rollback`。 |
-| 📚 **CADE knowledge/ 优先** | knowledge/ patterns/ examples/ 有答案，先查再写。覆盖 9 领域。|
+| 🎯 **先查 Capability** | 遇到需求先匹配 ，找到对应的能力入口。再查  看有无成熟方案。这两个是最高效的检索入口。 |
+| 📚 **CADE knowledge/ 补全** |    提供具体 API 代码。覆盖 9 领域。 |
 | 📖 **知识不足查 CAADoc/** | CADE knowledge/ 没有答案时，查 CATIA 自带官方文档（`<CATIA_INSTALL>/CAADoc/Doc/online/` 使用案例、`<CATIA_INSTALL>/CAADoc/Doc/docs/api/` API 参考）。 |
 | 📝 **从 CAADoc 学到的必须沉淀** | ⚠️ **强制规则**：用 CAADoc 解决后，**必须**创建对应的 CADE knowledge/ 文件（含 YAML frontmatter）。结束后在 CHANGELOG 的 `### 📝 知识沉淀` 下记录文件名和来源。不得仅口头回答。违者下次还会遇到同样问题。 |
 
@@ -521,7 +522,28 @@ AI Agent 有需求
 
 ---
 
-## 🏗️ 架构设计
+### 🏗️ 架构设计
+
+### 五层知识体系
+
+```
+用户需求
+    │
+    ▼
+🎯 Capability (能力层)      ← AI 入口：识别"要做什么"
+    │
+    ▼
+📋 Playbook (方案层)         ← 成熟方案："怎么完成这件事"
+    │
+    ▼
+📚 Knowledge (知识层)        ← API 代码："具体怎么写"
+    │
+    ▼
+🗂 Framework (导航层)        ← CAADoc 定位："属于哪个框架"
+    │
+    ▼
+📖 CAADoc (官方文档)         ← 查缺补漏
+```
 
 ### 架构层次
 
@@ -1203,6 +1225,22 @@ python test_e2e_workflow.py
 ├── catalog/                           # 全局索引
 │   └── index.yaml                    # 关键词→ID→文件映射
 │
+├── capabilities/                     # 能力层: 10 个 CAA 核心能力
+│   ├── assembly-tree.md
+│   ├── geometry-query.md
+│   ├── feature-recognition.md
+│   ├── parameter-system.md
+│   ├── visualization.md
+│   ├── selection.md
+│   ├── document-export.md
+│   ├── surface-operations.md
+│   ├── annotation.md
+│   └── powercopy.md
+│
+├── playbooks/                          # 方案层: 业务目标驱动
+│   ├── pb_auto_color.md
+│   └── pb_export_bom.md
+│
 ├── knowledge/                         # CAA 知识库 (按 CAA 域组织)
 │   ├── mecmod/                       # MecMod: Feature 模型、拓扑
 │   ├── part/                         # Part Design: 圆角、孔、倒角
@@ -1224,6 +1262,7 @@ python test_e2e_workflow.py
 │   │   └── surface_basics.md
 │   ├── fta/                        # FTA: 3D标注、公差
 │   │   └── fta_basics.md
+│   ├── frameworks/                  # Framework 导航 (149 个 CAADoc Framework)
 │   └── infrastructure/               # 基础设施: Selection、CodeStyle、Memory
 │
 ├── patterns/                          # 开发模式库 (Coarse + Block)

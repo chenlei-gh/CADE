@@ -135,6 +135,7 @@ known_dirs = {"intents/", "docs/", "guides/", "references/", "examples/",
               "analyzer/", "ui/", "workflow/", "blocks/", "mecmod/", "part/",
               "product/", "infrastructure/", "geometry/", "resources/",
               "drawing/", "surface/", "fta/",
+              "capabilities/", "playbooks/", "frameworks/",
               "msgcatalog/", "dictionary/", "build/"}
 for tf in tree_files:
     name = tf.rstrip("/")
@@ -143,7 +144,7 @@ for tf in tree_files:
     # Nested files: look in subdirs
     candidates = [SKILL_ROOT / name]
     for d in ["skills", "tests", "docs", "templates", "tools", "config",
-              "knowledge", "patterns", "catalog"]:
+                  "knowledge", "patterns", "catalog", "capabilities", "playbooks"]:
         for sub in SKILL_ROOT.glob(f"{d}/**/{name}"):
             candidates.append(sub)
     found = any(c.exists() for c in candidates if c.exists())

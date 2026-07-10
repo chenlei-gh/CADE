@@ -24,6 +24,36 @@ tags: [geometry, feature]          # 标签
 
 ## 索引
 
+
+### Capability 索引
+
+| ID | 文件 | 能力 | 涉及 Framework |
+|----|------|------|---------------|
+| cap.assembly_tree | capabilities/assembly-tree.md | 装配树遍历、BOM 提取 | CATAssemblyInterfaces |
+| cap.geometry_query | capabilities/geometry-query.md | 几何体遍历、拓扑访问 | CATMecModUseItf |
+| cap.feature_recognition | capabilities/feature-recognition.md | 特征类型识别、IsATypeOf | ObjectModelerBase |
+| cap.parameter_system | capabilities/parameter-system.md | 参数/公式/关系读写 | KnowledgeInterfaces |
+| cap.visualization | capabilities/visualization.md | 颜色/材质/透明度 | CATGraphicProperties |
+| cap.selection | capabilities/selection.md | 3D选择、高亮、定位 | ApplicationFrame |
+| cap.document_export | capabilities/document-export.md | 文档导出 Excel/CSV/JSON | AutomationInterfaces |
+| cap.surface_operations | capabilities/surface-operations.md | 曲面创建/编辑/展平 | CATGSMUseItf |
+| cap.annotation | capabilities/annotation.md | 3D标注/公差/基准 | CATAnalysisGPSInterfaces |
+| cap.powercopy | capabilities/powercopy.md | PowerCopy/UDF 创建和实例化 | ObjectModelerBase |
+
+### Playbook 索引
+
+| ID | 文件 | 目标 | 涉及 Capability |
+|----|------|------|----------------|
+| pb.auto_color | playbooks/pb_auto_color.md | 零件自动着色 | cap.visualization, cap.assembly_tree |
+| pb.export_bom | playbooks/pb_export_bom.md | 导出 BOM 物料清单 | cap.assembly_tree, cap.document_export |
+
+### Framework 索引 (CAADoc)
+
+| 文件数 | 生成方式 |
+|--------|---------|
+| 149 |  自动扫描 |
+
+
 ### Knowledge 索引
 
 | ID | 文件 | 关键词 | API | 版本 |

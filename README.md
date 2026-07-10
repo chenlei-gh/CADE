@@ -142,7 +142,7 @@ Three new CAA domains unlocked — powered by 6 knowledge files + 3 patterns:
 | **Surface/GSD** | Extrude, sweep, flatten, join | Surface analysis automation | Surface flattening |
 | **FTA / 3D PMI** | Capture, annotation, tolerance | Auto-annotation generation | 3D PMI |
 
-→ **43 knowledge assets** (29K + 13P + 1E) across **8 domains**, all with YAML frontmatter.
+→ **43 knowledge assets** (29K + 13P + 10 Capability + 2 Playbook + 149 Framework + 1E) across **8 domains**, all with YAML frontmatter.
 
 ### 🔍 Deep Audit
 
@@ -250,7 +250,7 @@ graph TD
     A --> L[Runtime Engine<br/>7 Commands]
     A --> M[Rollback System]
 
-    N[Knowledge System<br/>29 Knowledge + 13 Pattern + 1 Example + Catalog] --> G
+    N[Knowledge System<br/>29K + 13P + 10C + 2PB + 149FW + 1 Example + Catalog] --> G
 ```
 
 > **Philosophy**: Capability grows by accumulating knowledge assets, not by modifying code.
@@ -273,7 +273,7 @@ graph TD
 | **Spec Types** | 8 |
 | **Refactor Operations** | 3 |
 | **Domain Entities** | 10 |
-| **Knowledge Assets** | 41 (29K + 13P + 1E) + 6 tutorial examples in docs/ |
+| **Knowledge Assets** | 41 (29K + 13P + 10 Capability + 2 Playbook + 149 Framework + 1E) + 6 tutorial examples in docs/ |
 
 ---
 
@@ -447,7 +447,7 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 | **Spec 类型** | 8 |
 | **重构操作** | 3 |
 | **领域实体** | 10 |
-| **知识资产** | 41（29K + 13P + 1E）+ 6 教程示例 |
+| **知识资产** | 41（29K + 13P + 10 Capability + 2 Playbook + 149 Framework + 1E）+ 6 教程示例 |
 
 ### 📂 项目结构
 

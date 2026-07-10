@@ -153,7 +153,7 @@ graph TD
     A --> L[Runtime Engine<br/>7 Commands]
     A --> M[Rollback System]
 
-    N[Knowledge System<br/>29K + 13P + 1E + Catalog] --> G
+    N[Knowledge System<br/>29K + 13P + 10C + 2PB + 149FW + Catalog] --> G
 ```
 
 **Philosophy**: Capability grows by accumulating knowledge, not by modifying code.
@@ -220,7 +220,7 @@ Unknown Error
 | Spec Types | **8** |
 | Refactor Operations | **3** |
 | Domain Entities | **10** |
-| Knowledge Assets | **41** (29K + 13P + 1E) |
+| Knowledge Assets | **41** (29K + 13P + 10C + 2PB + 149FW) |
 | Knowledge Domains | **8** (MecMod, Part, Product, UI, Drawing, Surface, FTA, Infra) |
 | Frontmatter Coverage | **100%** |
 
