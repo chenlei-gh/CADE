@@ -170,6 +170,27 @@ triggers:
   - CAA模式
   - 开发模式
   - 批量处理
+  - CAA naming convention
+  - CAA lifecycle
+  - CAA error handling
+  - CAA memory management
+  - CAA dialog layout
+  - CAA dialog widget
+  - CAA event handling
+  - CAA workbench pattern
+  - CAA state command
+  - CAA feature pattern
+  - CAA imakefile
+  - CAA code style
+  - CAA 命名规范
+  - CAA 生命周期
+  - CAA 错误处理
+  - CAA 内存管理
+  - CAA 对话框布局
+  - CAA 事件处理
+  - CAA 工作台
+  - CAA Feature 开发
+  - CAA 编译链接
 ---
 
 # CATIA CAA V5 智能开发助手
