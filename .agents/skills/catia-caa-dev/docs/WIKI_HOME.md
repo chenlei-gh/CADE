@@ -185,19 +185,21 @@ graph TD
 ```
 Unknown Error
     ↓
-① Check docs/FAQ.md, docs/guides/   ← Help docs first
+① Check capabilities/ → playbooks/  ← Capability entry + known solutions
     ↓
-② cade diagnose                     ← Let engine analyze
+② Check docs/FAQ.md, docs/guides/   ← Help docs first
     ↓
-③ Check knowledge/ (8 domains)      ← API reference
+③ cade diagnose                     ← Let engine analyze
     ↓
-④ Check patterns/ (13 patterns)     ← Architecture patterns
+④ Check knowledge/ (9 domains)      ← API reference
     ↓
-⑤ Check examples/                   ← Real code examples
+⑤ Check patterns/ (13 patterns)     ← Architecture patterns
     ↓
-⑥ <CATIA_INSTALL>/CAADoc/           ← CATIA official docs (fallback)
+⑥ Check examples/                   ← Real code examples
     ↓
-⑦ cade fix --apply                  ← Auto-fix
+⑦ knowledge/frameworks/ → CAADoc    ← Framework nav → precise official doc lookup
+    ↓
+⑧ cade fix --apply                  ← Auto-fix
     ↓
 ⑥ cade fix --apply                  ← Auto-fix
 ```

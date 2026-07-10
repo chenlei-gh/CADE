@@ -237,10 +237,10 @@ triggers:
 | 🧠 **复杂任务用 Intent Engine** | 多步骤工作流（如"创建带对话框的命令并集成到工作台"）调用 `plan()` 生成执行计划。 |
 | ⚡ **先 diagnose 再 fix** | 遇到问题先 `cade diagnose`，让引擎分析。不要猜测原因。 |
 | 📸 **大操作前 snapshot** | 重构/删除前创建快照，出问题可以 `cade rollback`。 |
-| 🎯 **先查 Capability** | 遇到需求先匹配 ，找到对应的能力入口。再查  看有无成熟方案。这两个是最高效的检索入口。 |
-| 📚 **CADE knowledge/ 补全** |    提供具体 API 代码。覆盖 9 领域。 |
-| 📖 **知识不足查 CAADoc/** | CADE knowledge/ 没有答案时，查 CATIA 自带官方文档（`<CATIA_INSTALL>/CAADoc/Doc/online/` 使用案例、`<CATIA_INSTALL>/CAADoc/Doc/docs/api/` API 参考）。 |
-| 📝 **从 CAADoc 学到的必须沉淀** | ⚠️ **强制规则**：用 CAADoc 解决后，**必须**创建对应的 CADE knowledge/ 文件（含 YAML frontmatter）。结束后在 CHANGELOG 的 `### 📝 知识沉淀` 下记录文件名和来源。不得仅口头回答。违者下次还会遇到同样问题。 |
+| 🎯 **先查 Capability → Playbook** | 遇需求先匹配 `capabilities/` 找能力入口 → 再查 `playbooks/` 看有无成熟方案。这是最高效的两步。 |
+| 📚 **再查 Knowledge → Framework** | `knowledge/` `patterns/` `examples/` 提供具体 API 代码。`knowledge/frameworks/` 提供 149 个 CAADoc 框架导航索引。 |
+| 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架 → 再精准打开 `<CATIA_INSTALL>/CAADoc/` 对应页面。不要跳过 Framework 直接全文搜 CAADoc。 |
+| 📝 **CAADoc 洞察沉淀** | 用 CAADoc 学到**踩坑经验/跨 API 组合/非文档化的行为**时，创建 knowledge/ 文件沉淀。纯 API 签名查询不需要沉淀——下次用 Framework 索引秒查。 |
 
 ### ✨ 核心优势
 
@@ -1384,7 +1384,7 @@ python test_e2e_workflow.py
 |------|------|
 | 🚫 **不重复造轮** | 有成熟模板直接用，不要手写 CAA 样板代码 |
 | 🚫 **不瞎猜** | 遇到未知错误，第一时间查帮助文档，不要凭经验猜测 |
-| 🚫 **不跳过帮助** | knowledge/ patterns/ examples/ **docs/ 帮助文档** 里有答案的，先查再写 |
+| 🚫 **不跳过帮助** | capabilities/ → playbooks/ → knowledge/ → patterns/ → examples/ → frameworks/ → CAADoc → docs/ 帮助文档 |
 
 ```python
 # ❌ 错误：遇到编译错误直接猜原因
@@ -1468,19 +1468,21 @@ result = delete_command(ctx, name="MyCmd", module="TestModule.m")
 ```
 未知错误发生
     ↓
-① 查 docs/FAQ.md / docs/guides/  ← 先查帮助文档，找已知方案
+① 查 capabilities/ → playbooks/     ← 能力入口 + 成熟方案
     ↓
-② cade diagnose                  ← 让引擎帮你分析
+② 查 docs/FAQ.md / docs/guides/     ← 先查帮助文档，找已知方案
     ↓
-③ knowledge/ 查 API 参考         ← 查正确用法
+③ cade diagnose                     ← 让引擎帮你分析
     ↓
-④ patterns/ 查架构模式           ← 查正确流程
+④ knowledge/ 查 API 参考             ← 查正确用法
     ↓
-⑤ examples/ 查实战代码           ← 查真实案例
+⑤ patterns/ 查架构模式               ← 查正确流程
     ↓
-⑥ `<CATIA_INSTALL>/CAADoc/` 查官方文档 ← knowledge/ 没有时查 CATIA 自带文档
+⑥ examples/ 查实战代码               ← 查真实案例
     ↓
-⑦ cade fix --apply               ← 让引擎自动修复
+⑦ knowledge/frameworks/ → CAADoc    ← Framework 导航定位 → 精准查官方文档
+    ↓
+⑧ cade fix --apply                  ← 让引擎自动修复
 
 > ⚠️ **不要**跳过前两步直接写代码。docs/ 帮助文档和 knowledge/patterns/examples 里 90% 的问题已有答案。
 
