@@ -34,7 +34,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `26/26 suites (100%)` | **27 test files** | **~600 checks** | *2026-07-11*
+> 🟢 **CI Status**: `28/28 suites (100%)` | **28 test files** | **~600 checks** | *2026-07-11*
 
 ---
 
@@ -182,11 +182,11 @@ Retrieval path: **Capability → Playbook → Knowledge → Framework → CAADoc
 26-suite test suite catches drift early:
 
 ```bash
-cade test --quick   # 25 suites (~8s), quick mode skips CATIA tests
-cade test           # 26 suites (~60s), full including CATIA lifecycle
+cade test --quick   # 27 suites (~8s), quick mode skips CATIA tests
+cade test           # 28 suites (~60s), full including CATIA lifecycle
 ```
 
-> 🟢 **Verified**: 26/26 suites (100%) — last full run 2026-07-11
+> 🟢 **Verified**: 28/28 suites (100%) — last full run 2026-07-11
 
 - **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
@@ -237,8 +237,8 @@ cade suggest                      # AI recommends next action
 cade docs                         # auto-generate documentation
 cade prereq MyModule              # view prerequisites
 cade rv                           # create Runtime View
-cade test --quick                 # run all 25 suites (~8s)
-cade test                         # full: 26 suites (~60s)
+cade test --quick                 # run all 27 suites (~8s)
+cade test                         # full: 28 suites (~60s)
 ```
 
 > 🔌 Also available as **MCP Server** (3 modes) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
@@ -254,12 +254,12 @@ L0 Repair ✅   Int1 Build ✅   Int2 Skill ✅  FullSys ✅
 CrossRef ✅    Token ✅       CAA Struct ✅  Intent ✅
 AI Integ ✅    TokenAudit ✅  DeepAudit ✅
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-26/26 suites (100%) · 27 files · ~600 checks · 2026-07-11
+28/28 suites (100%) · 28 files · ~600 checks · 2026-07-11
 ```
 
 ```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 25 suites (~8s)
-python .agents/skills/catia-caa-dev/tests/test_master.py           # 26 suites (~60s)
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 27 suites (~8s)
+python .agents/skills/catia-caa-dev/tests/test_master.py           # 28 suites (~60s)
 ```
 
 ---
@@ -313,8 +313,8 @@ graph TD
 
 | | |
 |---|---|
-| **Test Suites** | 26 (L1-L7 + Integration + Audit) |
-| **Test Files** | 27 (26 suites + 1 standalone) |
+| **Test Suites** | 28 (L1-L7 + Integration + Audit) |
+| **Test Files** | 28 (27 suites + 1 standalone) |
 | **Checks** | ~600 |
 | **Pass Rate** | 100% |
 | **Templates** | 25+ |
@@ -341,7 +341,7 @@ your_project/
 │   ├── knowledge/                  ← CAA API reference (8 domains + 149 frameworks)
 │   ├── patterns/                   ← Architecture patterns (13 patterns)
 │   ├── examples/                   ← Real CAA projects
-│   ├── tests/                      ← 26 suites, ~600 checks
+│   ├── tests/                      ← 28 suites, ~600 checks
 │   ├── tools/                      ← Setup, validation, utilities
 │   ├── config/                     ← Editor MCP templates
 │   └── docs/                       ← Full documentation
@@ -450,8 +450,8 @@ cade rollback --id latest           # 撤销任意操作
 ```bash
 cade suggest                        # AI 推荐下一步
 cade docs                           # 自动生成文档
-cade test --quick                   # 25 套件快速测试 (~8s)
-cade test                           # 26 套件全量测试 (~60s)
+cade test --quick                   # 27 套件快速测试 (~8s)
+cade test                           # 28 套件全量测试 (~60s)
 ```
 
 ### ⚡ 测试结果
@@ -465,7 +465,7 @@ L0 修复 ✅     Int1 构建 ✅    Int2 协同 ✅   全系统 ✅
 CrossRef ✅    Token ✅       CAA结构 ✅    Intent ✅
 AI集成 ✅      Token审计 ✅    深度审计 ✅
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-26/26 套件 (100%) · 27 文件 · ~600 检查 · 2026-07-11
+28/28 套件 (100%) · 28 文件 · ~600 检查 · 2026-07-11
 ```
 
 ### 🏛 架构
@@ -490,8 +490,8 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 
 | | |
 |---|---|
-| **测试套件** | 26（L1-L7 + Integration + Audit） |
-| **测试文件** | 27（26 套件 + 1 独立） |
+| **测试套件** | 28（L1-L7 + Integration + Audit） |
+| **测试文件** | 28（27 套件 + 1 独立） |
 | **检查项** | ~600 |
 | **通过率** | 100% |
 | **模板** | 25+ |

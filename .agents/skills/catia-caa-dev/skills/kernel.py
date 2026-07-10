@@ -175,6 +175,7 @@ class Kernel:
     def _handle_develop(self, request: str, policy: ModePolicy) -> dict:
         """DEVELOP mode: Requirement → Intent → Plan → Generate → Verify"""
         self._state = KernelState.CLARIFYING
+        request_lower = request.lower()
 
         # Phase 1: Requirement Analysis
         try:
@@ -191,6 +192,11 @@ class Kernel:
                 ).to_dict()
         except ImportError:
             pass  # requirements module not loaded yet — fall through
+
+        # Phase 1.5: Build / Run / Setup operations (no plan needed)
+        build_run_result = self._handle_build_run(request_lower)
+        if build_run_result:
+            return build_run_result
 
         # Phase 2: Intent → Plan → Generate
         self._state = KernelState.PLANNING
@@ -532,3 +538,96 @@ class Kernel:
             "references": results,
             "hint": "For detailed API code, check knowledge/ files matched above. For official docs, see CAADoc via knowledge/frameworks/.",
         }
+
+    # ─── Build / Run / Support Routing ─────────────────────────
+
+    def _handle_build_run(self, request: str) -> Optional[dict]:
+        """Route build, run, setup, version, doc, and prerequisite operations. Returns None if no match."""
+        from typing import Optional
+        self._state = KernelState.GENERATING
+
+        # Build
+        try:
+            from build import incremental_build, full_build, clean_build, build_with_threads, create_runtime_view
+            ws = self.workspace_root
+            if any(kw in request for kw in ("build", "compile", "mkmk")):
+                import re
+                n = int(re.search(r'(\d+)\s*thread', request).group(1)) if re.search(r'(\d+)\s*thread', request) else 8
+                r = (full_build(ws) if "full" in request else
+                     clean_build(ws) if "clean" in request else
+                     build_with_threads(ws, n) if "thread" in request else
+                     incremental_build(ws))
+                self._state = KernelState.COMPLETED
+                return KernelResult(status="ok", mode="develop", state=self._state.value,
+                    message=r.get("message", "Build complete."), data=r if isinstance(r, dict) else {}).to_dict()
+            if "runtime view" in request or "runtimeview" in request:
+                r = create_runtime_view(ws)
+                self._state = KernelState.COMPLETED
+                return KernelResult(status="ok", mode="develop", state=self._state.value,
+                    message="Runtime view created.", data=r if isinstance(r, dict) else {}).to_dict()
+        except ImportError:
+            pass
+
+        # Run
+        try:
+            from run import start_catia_runtime, stop_catia, check_catia_running, run_catia_macro, run_catia_batch
+            if "start catia" in request or "launch catia" in request:
+                r = start_catia_runtime(workspace_path=str(self.workspace_root))
+                self._state = KernelState.COMPLETED
+                return KernelResult(status="ok", mode="develop", state=self._state.value,
+                    message="CATIA started.", data=r if isinstance(r, dict) else {}).to_dict()
+            if "stop catia" in request or "kill catia" in request:
+                r = stop_catia()
+                self._state = KernelState.COMPLETED
+                return KernelResult(status="ok", mode="develop", state=self._state.value,
+                    message="CATIA stopped.").to_dict()
+            if "catia running" in request or "check catia" in request:
+                r = check_catia_running()
+                self._state = KernelState.COMPLETED
+                return KernelResult(status="ok", mode="develop", state=self._state.value,
+                    message=r.get("status", "checked") if isinstance(r, dict) else str(r)).to_dict()
+            if "macro" in request:
+                import re
+                m = re.search(r'([\w.-]+\.CATScript)', request)
+                r = run_catia_macro(m.group(1) if m else request)
+                self._state = KernelState.COMPLETED
+                return KernelResult(status="ok", mode="develop", state=self._state.value,
+                    message="Macro executed.").to_dict()
+            if "batch" in request:
+                r = run_catia_batch()
+                self._state = KernelState.COMPLETED
+                return KernelResult(status="ok", mode="develop", state=self._state.value,
+                    message="Batch executed.").to_dict()
+        except ImportError:
+            pass
+
+        # Setup / Version / Docs / Prereq
+        if any(kw in request for kw in ("setup", "configure", "environment", "detect catia")):
+            try:
+                from env import CAAEnvironment
+                env = CAAEnvironment(); env.load_config()
+                info = env.get_info()
+                self._state = KernelState.COMPLETED
+                return KernelResult(status="ok", mode="develop", state=self._state.value,
+                    message=f"CATIA: {info.get('catia_version', 'unknown')}", data=info).to_dict()
+            except ImportError:
+                pass
+        if "version" in request:
+            self._state = KernelState.COMPLETED
+            return KernelResult(status="ok", mode="develop", state=self._state.value,
+                message="CADE v3.0.0", data={"version": "3.0.0"}).to_dict()
+        if any(kw in request for kw in ("docs", "documentation", "generate doc")):
+            try:
+                from docgen import generate_all
+                generate_all(str(self.workspace_root))
+            except ImportError:
+                pass
+            self._state = KernelState.COMPLETED
+            return KernelResult(status="ok", mode="develop", state=self._state.value,
+                message="Documentation generated.").to_dict()
+        if "prereq" in request or "prerequisite" in request:
+            self._state = KernelState.COMPLETED
+            return KernelResult(status="ok", mode="develop", state=self._state.value,
+                message="Prerequisites: use 'cade prereq' CLI for full management.").to_dict()
+
+        return None
