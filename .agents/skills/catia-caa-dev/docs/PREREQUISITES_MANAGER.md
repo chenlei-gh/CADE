@@ -352,8 +352,7 @@ def detect_cycle(node, visited, rec_stack):
 
 ## 📚 参考
 
-- [CAA Framework Dependencies](./CAA_REFERENCE.md)
-- [IdentityCard Syntax](./IdentityCard_SYNTAX.md)
+- [CAA Framework Dependencies](./references/CAA_REFERENCE.md)
 - [Workspace Environment Setup](./PREREQUISITES_SETUP.md)
 
 ---
