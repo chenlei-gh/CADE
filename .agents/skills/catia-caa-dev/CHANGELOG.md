@@ -71,6 +71,32 @@
   - 安全处理权限错误
   - 配置缓存（避免重复扫描）
 
+  ### 🎨 UI 布局知识强化 (2026-07-10)
+
+  - **dialog_layout.md** 大幅增强：GridConstraints 完整参数（7 种锚定）、多层嵌套、伸缩策略
+  - **新增 layout_advanced.md**：列表-详情/动态表单/树形导航/向导/Splitter
+  - **新增 layout_anti_patterns.md**：10 种常见错误 + 正确做法对照
+  - **新增 3 个 UI Patterns**：master_detail、dynamic_form、wizard
+  - **dialog_patterns.md** 决策索引从 11→17 条
+
+  ### 🏗 新知识域 (2026-07-10)
+
+  - **Drawing（工程图）**：2 知识 + 1 Pattern（视图/标注/BOM/批量出图）
+  - **Surface/GSD（曲面）**：1 知识 + 1 Pattern（拉伸/扫掠/展平/分析）
+  - **FTA（3D 标注）**：1 知识 + 1 Pattern（标注集/尺寸/公差/自动标注）
+
+  ### 📋 Frontmatter 100% 覆盖 (2026-07-10)
+
+  - 补全 15 个孤立知识文件的 YAML frontmatter
+  - 知识系统 41 个文件全部可索引、可验证
+
+  ### 🐛 修复 (2026-07-10)
+
+  - 修复 CAA_INSTALL 未自动写入配置
+  - 修复 test_build_and_run.py 测试样本格式
+  - 修复 test_deep_audit.py 嵌套文件树匹配
+  - 修复 KNOWLEDGE_SYSTEM_ARCHITECTURE.md 版本号过时
+
 ---
 
 ## [2.0.1] - 2026-07-08

@@ -10,6 +10,23 @@ triggers:
   - CAA dialog
   - CATIA dialog
   - CATIA UI
+  - CAA drawing
+  - CATIA drawing
+  - engineering drawing
+  - 工程图
+  - 图纸
+  - CAA surface
+  - GSD
+  - Generative Shape Design
+  - surface flatten
+  - 曲面
+  - 展平
+  - FTA
+  - 3D annotation
+  - PMI
+  - 3D 标注
+  - tolerance
+  - 公差
   - CAA command
   - CATIA command
   - CAA workbench
