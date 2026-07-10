@@ -10,7 +10,7 @@
 
 这个 skill 已经部署在您的系统上了！
 
-**当前位置**: `D:\test\.agents\skills\catia-caa-dev\`
+**当前位置**: `CADE project directory\`
 
 ### 🆕 v5.0.0 新特性
 
@@ -28,7 +28,7 @@
 
 ```cmd
 # Windows CMD
-dir "D:\test\.agents\skills\catia-caa-dev"
+dir "CADE project directory"
 
 # 应该看到:
 # SKILL.md
@@ -42,7 +42,7 @@ dir "D:\test\.agents\skills\catia-caa-dev"
 
 **测试环境初始化工具**:
 ```cmd
-cd D:\test\.agents\skills\catia-caa-dev
+cd CADE project directory
 initialize_caa_env.bat
 
 # 预期输出 (机器可读格式):
@@ -94,7 +94,7 @@ AI 应该：
 
 ### 核心文档（18 个 Markdown 文件）
 ```
-D:\test\.agents\skills\catia-caa-dev\
+CADE project directory\
 ├── SKILL.md                          # 主参考文档
 ├── AI_GUIDE.md                       # AI 生成规则
 ├── README.md                         # 概述
@@ -112,7 +112,7 @@ D:\test\.agents\skills\catia-caa-dev\
 ├── EXAMPLE_CALCULATOR.md             # 计算器示例
 ├── EXAMPLE_MULTI_INTERFACE.md        # 多接口示例
 ├── EXAMPLE_EXTENSION.md              # 扩展模式示例
-└── FINAL_VERIFICATION_v2.4.1.md      # 验证报告
+└── FINAL_VERIFICATION_v2.1.0.md      # 验证报告
 ```
 
 ### 模板文件（7 个）
@@ -195,7 +195,7 @@ cd D:\your_caa_workspace
 
 ```cmd
 # 在命令行运行验证脚本
-cd "D:\test\.agents\skills\catia-caa-dev"
+cd "CADE project directory"
 validate_caa_component.bat "D:\your_workspace\YourFramework.edu"
 
 # 输出:
@@ -215,7 +215,7 @@ validate_caa_component.bat "D:\your_workspace\YourFramework.edu"
 
 ```cmd
 # 复制到 templates 目录
-copy "你的模板.cpp" "D:\test\.agents\skills\catia-caa-dev\templates\"
+copy "你的模板.cpp" "CADE project directory\templates\"
 ```
 
 ### 2. 自定义验证规则
@@ -321,7 +321,7 @@ copy "你的模板.cpp" "D:\test\.agents\skills\catia-caa-dev\templates\"
 **解决方案**:
 ```
 1. 确认 skill 位置正确:
-   D:\test\.agents\skills\catia-caa-dev\SKILL.md
+   CADE project directory\SKILL.md
 
 2. 重启 Zed 编辑器
 
@@ -338,11 +338,9 @@ copy "你的模板.cpp" "D:\test\.agents\skills\catia-caa-dev\templates\"
 **解决方案**:
 ```cmd
 # 验证文件版本
-findstr /C:"Version: 2.4.1" "D:\test\.agents\skills\catia-caa-dev\CHANGELOG.md"
+findstr /C:"2.1.0" "CHANGELOG.md"
 
-# 如果不是 2.4.1，重新部署:
-# (实际上文件已经是最新的，只是 AI 可能需要重启)
-重启 Zed
+# 如果不是最新版本，重新部署:
 ```
 
 ### 问题 3: 验证脚本找不到
@@ -352,11 +350,11 @@ findstr /C:"Version: 2.4.1" "D:\test\.agents\skills\catia-caa-dev\CHANGELOG.md"
 **解决方案**:
 ```cmd
 # 验证脚本存在
-dir "D:\test\.agents\skills\catia-caa-dev\validate_caa_component.bat"
+dir "CADE project directory\validate_caa_component.bat"
 
 # 如果存在，检查路径
 # 确保在 skill 目录运行，或使用完整路径:
-"D:\test\.agents\skills\catia-caa-dev\validate_caa_component.bat" "你的框架路径"
+"CADE project directory\validate_caa_component.bat" "你的框架路径"
 ```
 
 ---
@@ -370,7 +368,7 @@ dir "D:\test\.agents\skills\catia-caa-dev\validate_caa_component.bat"
 - [x] evolution 目录存在
 
 ### ✅ 内容正确性
-- [x] CHANGELOG.md 显示 v2.4.1
+- [x] CHANGELOG.md 显示 v2.1.0
 - [x] AI_GUIDE.md 有 Rule 0-11
 - [x] SKILL.md 有官方文档章节
 - [x] FAQ.md 有 52 个问题
@@ -389,7 +387,7 @@ dir "D:\test\.agents\skills\catia-caa-dev\validate_caa_component.bat"
 
 ```cmd
 # 定期检查是否有新的 bug 发现
-cat "D:\test\.agents\skills\catia-caa-dev\evolution\error_log.json"
+cat "CADE project directory\evolution\error_log.json"
 
 # 如果遇到新问题，添加到演进系统
 # 这样 skill 会自我改进
@@ -411,7 +409,7 @@ cat "D:\test\.agents\skills\catia-caa-dev\evolution\error_log.json"
 如果你的公司有特殊的 CAA 模式：
 
 ```markdown
-在 D:\test\.agents\skills\catia-caa-dev\ 创建
+在 CADE project directory\ 创建
 COMPANY_EXTENSIONS.md
 
 记录：
@@ -428,15 +426,15 @@ COMPANY_EXTENSIONS.md
 
 ```cmd
 # 1. 备份当前版本
-xcopy /E /I "D:\test\.agents\skills\catia-caa-dev" "D:\test\.agents\skills\catia-caa-dev.backup"
+xcopy /E /I "CADE project directory" "CADE project directory.backup"
 
 # 2. 复制新版本文件
-xcopy /E /I "新版本路径\*" "D:\test\.agents\skills\catia-caa-dev\"
+xcopy /E /I "新版本路径\*" "CADE project directory\"
 
 # 3. 重启 Zed
 
 # 4. 验证版本
-type "D:\test\.agents\skills\catia-caa-dev\CHANGELOG.md" | findstr "##"
+type "CADE project directory\CHANGELOG.md" | findstr "##"
 ```
 
 ---
@@ -460,7 +458,7 @@ type "D:\test\.agents\skills\catia-caa-dev\CHANGELOG.md" | findstr "##"
 
 ### Skill 已经部署并可用！
 
-**位置**: `D:\test\.agents\skills\catia-caa-dev\`
+**位置**: `CADE project directory\`
 
 **使用方式**: 
 1. 在 Zed 中打开 AI Assistant
@@ -477,7 +475,7 @@ validate_caa_component.bat "你的框架路径"
 - Skill 内部文档: 18 个 .md 文件
 - CAA 官方文档: CATIA 安装目录的 CAADoc/
 
-**版本**: v2.4.1 (生产就绪)
+**版本**: v2.1.0 (生产就绪)
 
 **特点**:
 - ✅ 基于真实 B28 编译验证

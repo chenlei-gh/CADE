@@ -757,7 +757,7 @@ Phase 1 实现了核心的依赖图管理系统和增强查询功能。
 
 ## 链接
 
-- [项目主页](README.md)
+- [项目主页](https://github.com/chenlei-gh/CADE)
 - [技能文档](SKILL.md)
 - [系统架构](docs/references/ARCHITECTURE.md)
 - [知识系统架构](docs/KNOWLEDGE_SYSTEM_ARCHITECTURE.md)
