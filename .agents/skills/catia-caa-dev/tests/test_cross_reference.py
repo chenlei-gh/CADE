@@ -141,8 +141,8 @@ example_count = (
     else 0
 )
 
-check(f"Knowledge >= 28 (actual={knowledge_count})", knowledge_count >= 28)
-check(f"Pattern >= 12 (actual={pattern_count})", pattern_count >= 12)
+check(f"Knowledge >= 29 (actual={knowledge_count})", knowledge_count >= 29)
+check(f"Pattern >= 13 (actual={pattern_count})", pattern_count >= 13)
 check(f"Example >= 1 (actual={example_count})", example_count >= 1)
 
 # ═══════════════════════════════════════════════════════════
