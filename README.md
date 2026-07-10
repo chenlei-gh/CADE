@@ -130,6 +130,18 @@ CADE now covers **every CAA UI layout scenario** — from simple forms to comple
 
 → `knowledge/ui/` now has **9 files** covering every UI angle.
 
+### 📐 New Knowledge Domains
+
+Three new CAA domains unlocked — powered by 6 knowledge files + 3 patterns:
+
+| Domain | Knowledge | Pattern | For |
+|--------|-----------|---------|-----|
+| **Drawing** | 视图创建、标注、BOM表 | 批量工程图生成 | 自动出图 |
+| **Surface/GSD** | 拉伸/扫掠/展平/缝合 | 曲面分析自动化 | 表皮展平 |
+| **FTA 3D标注** | 标注集/尺寸/公差/基准 | 自动标注生成 | 3D PMI |
+
+→ **41 knowledge assets** (28K + 12P + 1E) across **8 domains**, all with YAML frontmatter.
+
 ### 🔍 Deep Audit
 
 24-suite test suite catches drift early:
