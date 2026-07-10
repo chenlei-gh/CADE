@@ -6,7 +6,7 @@ domain: ui
 keywords: [context menu, right click, CATIContextualMenu, CATExtIContextualMenu, CATCmdStarter, CATCmdSeparator, NewAccess, SetAccessCommand]
 apis: [CATIContextualMenu, CATExtIContextualMenu, CATCmdStarter, CATCmdSeparator, CATCmdContainer]
 requires: [ui.dialog, ui.toolbar]
-patterns: [ui.context_menu]
+patterns: [ui.context_menu_pattern]
 examples: []
 release: [R19, R28]
 tags: [ui, context-menu, data-extension]

@@ -1,5 +1,5 @@
 ---
-id: ui.context_menu
+id: ui.context_menu_pattern
 title: Context Menu Pattern
 category: pattern
 domain: ui

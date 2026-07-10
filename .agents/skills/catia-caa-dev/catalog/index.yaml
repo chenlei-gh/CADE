@@ -68,7 +68,7 @@ tags: [geometry, feature]          # 标签
 | ui.result_dialog | patterns/ui/result_dialog.md | 结果列表+双击定位 | ui.dialog, infra.selection |
 | ui.master_detail | patterns/ui/master_detail.md | 列表选择+详情编辑 | ui.dialog, ui.dialog_layout |
 | ui.dynamic_form | patterns/ui/dynamic_form.md | 模式切换动态显示控件 | ui.dialog, ui.event_patterns |
-| ui.context_menu | patterns/ui/context_menu.md | 右键菜单 DataExtension + CATCmdStarter | ui.context_menu, ui.toolbar |
+| ui.context_menu_pattern | patterns/ui/context_menu.md | 右键菜单 DataExtension + CATCmdStarter | ui.context_menu, ui.toolbar |
 | ui.wizard | patterns/ui/wizard.md | 多步骤向导 Back/Next | ui.dialog, infra.state_commands |
 | drawing.batch | patterns/drawing/batch_drawing.md | 批量工程图生成 | drawing.basics, drawing.annotations |
 | surface.analysis | patterns/surface/surface_analysis.md | 曲面分析/展平自动化 | surface.basics, mecmod.topology |
