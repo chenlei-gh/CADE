@@ -860,7 +860,7 @@ print("  SECTION 14: CAA Knowledge System")
 print("=" * 70)
 
 knowledge_dir = SKILL_ROOT / "knowledge"
-domains = ["mecmod", "part", "product", "ui", "infrastructure"]
+domains = ["mecmod", "part", "product", "ui", "infrastructure", "drawing", "surface", "fta"]
 for i, d in enumerate(domains):
     dp = knowledge_dir / d
     check(
@@ -871,7 +871,7 @@ for i, d in enumerate(domains):
 
 # Patterns
 patterns_dir = SKILL_ROOT / "patterns"
-pattern_dirs = ["analyzer", "blocks", "ui", "workflow"]
+pattern_dirs = ["analyzer", "blocks", "ui", "workflow", "drawing", "surface", "fta"]
 for d in pattern_dirs:
     dp = patterns_dir / d
     check(f"14.{5 + pattern_dirs.index(d)} patterns/{d}/", dp.is_dir())
