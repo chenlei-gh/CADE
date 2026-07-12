@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: "CATIA CAA V5 Development Engine (CADE) v3.0.0 — Kernel 架构（3 Mode: develop/analyze/repair）、Requirement → Intent → Plan → Generate → Verify → Repair → Learn 全链路。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop、Refactor。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理。CAA 知识系统（29K + 13P + 10 Capability + 2 Playbook + 149 Framework），25+ 模板、15 API、35 Build/Run 命令、29 套件 ~600 测试项。"
+description: "CATIA CAA V5 Development Engine (CADE) v3.0.0 — Kernel 架构（3 Mode: develop/analyze/repair）、Requirement → Intent → Plan → Generate → Verify → Repair → Learn 全链路。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop、Refactor、静态代码验证。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理。CAA 知识系统（29K + 13P + 13 Capability + 6 Playbook + 149 Framework + 6 Philosophy + 3 Failure Pattern + 3 Decision Tree），25+ 模板、15 API、35 Build/Run 命令、29 套件 ~600 测试项。"
 triggers:
   - CAA component
   - CATIA component
@@ -275,19 +275,28 @@ AI 只知道 3 个 Mode:
 
 ### ✨ 核心优势
 
-1. **意图驱动** - AI 只需表达意图，Intent Engine 自动规划步骤
-2. **Token 优化** - MCP 响应自动压缩，平均节省 50% token，关键信息不丢
-3. **安全操作** - 预览→确认→应用→回滚，全程可控
-4. **高性能** - 模板生成约50ms，比 RADE 工具快 100 倍
-5. **完整测试** - 29 套件、~600 测试项，100% 覆盖率
-6. **依赖图管理** - 完整的实体关系图和 Mermaid 可视化
-7. **级联删除** - 智能检测破坏性依赖，安全删除
-8. **Intent Engine** - Planner + Impact Analyzer + Optimizer，任务规划到执行
-10. **回滚支持** - 完整的操作备份和回滚机制
-11. **五层知识体系** - Capability→Playbook→Knowledge→Framework→CAADoc，AI 搜索效率提升 10 倍
-10. **智能推荐** - 基于工作区状态自动建议下一步操作
+1. **Kernel 架构** — develop/analyze/repair 三模式，AI 只需选模式，内核自动调度
+2. **意图驱动** — AI 只需表达意图，Planner + Capability/Playbook 自动规划步骤
+3. **需求分析** — 模糊需求自动澄清，决策树引导，生成结构化 RequirementDocument
+4. **Token 优化** — MCP 响应自动压缩，平均节省 50% token，关键信息不丢
+5. **安全操作** — 预览→确认→应用→回滚，全程可控
+6. **代码验证** — 生成后自动静态检查（宏/头文件/命名规范），无需 mkmk
+7. **自动修复** — Repair Loop：诊断→修复→验证，最多 3 次重试
+8. **高性能** — 模板生成约50ms，比 RADE 工具快 100 倍
+9. **完整测试** — 29 套件、~600 测试项，100% 覆盖率
+10. **依赖图管理** — 完整的实体关系图和 Mermaid 可视化
+11. **知识体系** — Capability→Playbook→Knowledge→Philosophy→Framework→CAADoc + Failure Patterns + Decision Trees
 
 ### 📦 支持的功能
+
+**v3.0 核心**
+- ✅ **Kernel 三模式** — develop / analyze / repair
+- ✅ **需求澄清** — 模糊需求 → 决策树 → 结构化需求文档
+- ✅ **静态代码验证** — 生成后自动检查宏/头文件/命名/格式
+- ✅ **修复闭环** — 诊断 → 修复 → 验证，最多 3 次重试
+- ✅ **知识检索** — analyze() 自动搜索 CAA API/Pattern/Playbook
+- ✅ **反馈学习** — 失败模式记录 + 模式检测 + 自动建议 Playbook
+- ✅ **全工具覆盖** — 41 个旧工具全部通过 3-mode 接口可达
 
 **核心工作流**
 - ✅ 工作区分析（Framework、Module、Command 检测）
@@ -1235,6 +1244,7 @@ python test_e2e_workflow.py
 │   ├── mcp_server.py                 # MCP Server (3 Mode, v3.0)
 │   ├── kernel.py                     # Development Kernel (v3.0)
 │   ├── requirements.py               # Requirements Clarifier (v3.0)
+│   │   └── decision_trees/          # 决策树 (3 个)
 │   ├── verifier.py                   # Code Verifier — static + mkmk (v3.0)
 │   ├── repair.py                     # Repair Loop (v3.0)
 │   ├── learning.py                   # Learning System (v3.0)
@@ -1300,6 +1310,18 @@ python test_e2e_workflow.py
 │   ├── fta/                        # FTA: 3D标注、公差
 │   │   └── fta_basics.md
 │   ├── frameworks/                  # Framework 导航 (149 个 CAADoc Framework)
+│   │   └── infrastructure/               # 基础设施: Selection、CodeStyle、Memory
+│   ├── philosophy/               # CAA 底层哲学 (v3.0, 6 篇)
+│   │   ├── updates.md
+│   │   ├── late_types.md
+│   │   ├── reference_vs_instance.md
+│   │   ├── com_lifecycle.md
+│   │   ├── caterror.md
+│   │   └── undo_redo.md
+│   ├── failure_patterns/          # 失败模式 (v3.0, 3 篇)
+│   │   ├── fp_imakefile_link.md
+│   │   ├── fp_missing_include.md
+│   │   └── fp_undeclared_class.md
 │   └── infrastructure/               # 基础设施: Selection、CodeStyle、Memory
 │
 ├── patterns/                          # 开发模式库 (Coarse + Block)
