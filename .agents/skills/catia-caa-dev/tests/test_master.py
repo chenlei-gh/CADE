@@ -40,6 +40,8 @@ SUITES = {
     "L0-3 Repair Loop": "test_repair_loop.py",
     "L0-4 Routing Coverage": "test_kernel_routing.py",
     "L0-5 Code Verifier": "test_code_verifier.py",
+    "L0-6 Token Status": "test_token_status.py",
+    "L0-7 SKILL YAML": "test_skill_yaml.py",
     # ── Integration & Coordination ──
     "Int-1 Build & Run": "test_build_and_run.py",
     "Int-2 Skill-AI": "test_skill_ai_coordination.py",
@@ -77,6 +79,8 @@ VERIFY_STRINGS = {
     "test_repair_loop.py": "passed",
     "test_kernel_routing.py": "passed",
     "test_code_verifier.py": "passed",
+    "test_token_status.py": "passed",
+    "test_skill_yaml.py": "passed",
     "test_build_and_run.py": "All Build Time & Run Time commands working",
     "test_skill_ai_coordination.py": "Perfect —",
     "test_full_regression.py": "ALL TESTS PASSED",

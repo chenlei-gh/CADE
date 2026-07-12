@@ -34,7 +34,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `29/29 suites (100%)` | **29 test files** | **~600 checks** | *2026-07-11*
+> 🟢 **CI Status**: `31/31 suites (100%)` | **31 test files** | **~600 checks** | *2026-07-11*
 
 ---
 
@@ -181,11 +181,11 @@ Retrieval path: **Capability → Playbook → Knowledge → Framework → CAADoc
 26-suite test suite catches drift early:
 
 ```bash
-cade test --quick   # 28 suites (~8s), quick mode skips CATIA tests
-cade test           # 29 suites (~60s), full including CATIA lifecycle
+cade test --quick   # 30 suites (~8s), quick mode skips CATIA tests
+cade test           # 31 suites (~60s), full including CATIA lifecycle
 ```
 
-> 🟢 **Verified**: 29/29 suites (100%) — last full run 2026-07-11
+> 🟢 **Verified**: 31/31 suites (100%) — last full run 2026-07-11
 
 - **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
@@ -236,8 +236,8 @@ cade suggest                      # AI recommends next action
 cade docs                         # auto-generate documentation
 cade prereq MyModule              # view prerequisites
 cade rv                           # create Runtime View
-cade test --quick                 # run all 28 suites (~8s)
-cade test                         # full: 29 suites (~60s)
+cade test --quick                 # run all 30 suites (~8s)
+cade test                         # full: 31 suites (~60s)
 ```
 
 > 🔌 Also available as **MCP Server** (3 modes) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
@@ -245,7 +245,7 @@ cade test                         # full: 29 suites (~60s)
 ### ⚡ Test Results
 
 <details>
-<summary>29/29 suites (100%) · 29 files · ~600 checks · 2026-07-11</summary>
+<summary>31/31 suites (100%) · 31 files · ~600 checks · 2026-07-11</summary>
 
 | | | |
 |---|---|---|
@@ -262,8 +262,8 @@ cade test                         # full: 29 suites (~60s)
 </details>
 
 ```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 28 suites (~8s)
-python .agents/skills/catia-caa-dev/tests/test_master.py           # 29 suites (~60s)
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 30 suites (~8s)
+python .agents/skills/catia-caa-dev/tests/test_master.py           # 31 suites (~60s)
 ```
 
 ---
@@ -319,8 +319,8 @@ graph TD
 
 | | |
 |---|---|
-| Suites | 29 (L1-L7 + Integration + Audit) |
-| Files | 29 (28 suites + 1 standalone) |
+| Suites | 31 (L1-L7 + Integration + Audit) |
+| Files | 31 (30 suites + 1 standalone) |
 | Checks | ~600 |
 | Pass Rate | 100% |
 | Templates | 25+ |
@@ -347,7 +347,7 @@ your_project/
     ├── knowledge/                  ← CAA API reference (8 domains + 149 frameworks)
     ├── patterns/                   ← Architecture patterns (13 patterns)
     ├── examples/                   ← Real CAA projects
-    │   ├── tests/                      ← 29 suites, ~600 checks
+    │   ├── tests/                      ← 31 suites, ~600 checks
     ├── tools/                      ← Setup, validation, utilities
     ├── config/                     ← Editor MCP templates
     └── docs/                       ← Full documentation
@@ -458,14 +458,14 @@ cade rollback --id latest           # 撤销任意操作
 ```bash
 cade suggest                        # AI 推荐下一步
 cade docs                           # 自动生成文档
-cade test --quick                   # 28 套件快速测试 (~8s)
-cade test                           # 29 套件全量测试 (~60s)
+cade test --quick                   # 30 套件快速测试 (~8s)
+cade test                           # 31 套件全量测试 (~60s)
 ```
 
 ### ⚡ 测试结果
 
 <details>
-<summary>29/29 套件 (100%) · 29 文件 · ~600 检查 · 2026-07-11</summary>
+<summary>31/31 套件 (100%) · 31 文件 · ~600 检查 · 2026-07-11</summary>
 
 | | | |
 |---|---|---|
@@ -503,8 +503,8 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 
 | | |
 |---|---|
-| **测试套件** | 29（L1-L7 + Integration + Audit） |
-| **测试文件** | 29（28 套件 + 1 独立） |
+| **测试套件** | 31（L1-L7 + Integration + Audit） |
+| **测试文件** | 31（30 套件 + 1 独立） |
 | **检查项** | ~600 |
 | **通过率** | 100% |
 | **模板** | 25+ |

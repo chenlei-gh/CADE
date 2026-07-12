@@ -61,7 +61,8 @@ def _has_errors_in_diagnostics(d: dict) -> bool:
 def _extract_level1(d: dict) -> dict:
     """Extract the 'what happened in one glance' fields."""
     summary = {
-        "ok": d.get("status") in ("ok", "success", "stopped", "not_running"),
+        "ok": d.get("status") in ("ok", "success", "stopped", "not_running",
+                                     "pending", "no_issues", "fixed"),
         "status": d.get("status", "?"),
     }
 
