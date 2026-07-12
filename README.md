@@ -34,7 +34,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `32/32 suites (100%)` | **32 test files** | **~600 checks** | *2026-07-11*
+> 🟢 **CI Status**: `33/33 suites (100%)` | **36 test files** | **~600 checks** | *2026-07-12*
 
 ---
 
@@ -245,7 +245,7 @@ cade test                         # full: 32 suites (~60s)
 ### ⚡ Test Results
 
 <details>
-<summary>33/33 suites (100%) · 33 files · ~600 checks · 2026-07-11</summary>
+<summary>33/33 suites (100%) · 36 files · ~600 checks · 2026-07-12</summary>
 
 | | | |
 |---|---|---|
@@ -322,7 +322,7 @@ graph TD
 | | |
 |---|---|
 | Suites | 33 (L1-L7 + Integration + Audit) |
-| Files | 33 (32 suites + 1 standalone) |
+| Files | 36 (33 suites + 3 standalone) |
 | Checks | ~600 |
 | Pass Rate | 100% |
 | Templates | 25+ |
@@ -467,7 +467,7 @@ cade test                           # 32 套件全量测试 (~60s)
 ### ⚡ 测试结果
 
 <details>
-<summary>33/33 套件 (100%) · 33 文件 · ~600 检查 · 2026-07-11</summary>
+<summary>33/33 套件 (100%) · 36 文件 · ~600 检查 · 2026-07-11</summary>
 
 | | | |
 |---|---|---|
@@ -508,7 +508,7 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 | | |
 |---|---|
 | **测试套件** | 33（L1-L7 + Integration + Audit） |
-| **测试文件** | 33（32 套件 + 1 独立） |
+| **测试文件** | 36（33 套件 + 3 独立） |
 | **检查项** | ~600 |
 | **通过率** | 100% |
 | **模板** | 25+ |

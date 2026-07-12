@@ -1,12 +1,12 @@
 # Test Index
 
-测试目录包含 **32 个 master runner 套件**。共 **33 个文件**，~600 测试项，覆盖 48 条功能链路。
+测试目录包含 **33 个 master runner 套件**。共 **36 个文件**，~600 测试项，覆盖 48 条功能链路。
 
 知识资产：234 文件（29K + 13P + 13C + 6PB + 149FW + 1E + 6PH + 3FP）
 
 ---
 
-## Master Runner 套件（32）
+## Master Runner 套件（33）
 
 在 `test_master.py` 中注册，可通过 `python test_master.py` 批量运行。
 
@@ -17,6 +17,10 @@
 | `test_kernel_public_api.py` | 16 | L0-1 Kernel API |
 | `test_requirements.py` | 21 | L0-2 Requirements |
 | `test_repair_loop.py` | 20 | L0-3 Repair Loop |
+| `test_kernel_routing.py` | 41 | L0-4 Routing Coverage |
+| `test_code_verifier.py` | 15 | L0-5 Code Verifier |
+| `test_token_status.py` | 29 | L0-6 Token Status |
+| `test_skill_yaml.py` | 17 | L0-7 SKILL YAML |
 
 ### L1 — 单元测试
 
@@ -43,13 +47,13 @@
 | 文件 | 测试项 | Master 标签 |
 |------|--------|------------|
 | `test_e2e_workflow.py` | 创建→编译→运行流程 | L3-1 E2E Workflow |
-| `test_e2e_scenarios.py` | 多种端到端场景 | L3-2 E2E Scenarios |
+| `test_e2e_scenarios.py` | 6 场景 | L3-2 E2E Scenarios |
 
 ### L4 — 架构不变量
 
 | 文件 | 测试项 | Master 标签 |
 |------|--------|------------|
-| `test_l4_architecture.py` | 29 检查项 | L4-1 Architecture (29) |
+| `test_l4_architecture.py` | 39 检查项 | L4-1 Architecture (39) |
 
 ### L5 — 语义完整性
 
@@ -135,5 +139,5 @@ python test_system_health.py
 
 ---
 
-**最后更新**: 2026-07-11  
-**文件数**: 33（32 套件 + 1 独立）
+**最后更新**: 2026-07-12  
+**文件数**: 36（33 套件 + 3 独立）
