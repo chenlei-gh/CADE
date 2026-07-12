@@ -1376,7 +1376,7 @@ python test_e2e_workflow.py
 │   │   └── AI_WORKFLOW_EXAMPLES.md
 │   └── README.md                     # 文档索引
 │
-├── tests/                            # 测试文件（32 个，33 套件，~600 测试项）
+├── tests/                            # 测试文件（36 个，33 套件，~600 测试项）
 │   ├── test_master.py                # 主运行器
 │   ├── test_full_regression.py       # 全系统验证
 │   ├── test_cross_reference.py       # 交叉引用审计
