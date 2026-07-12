@@ -345,20 +345,31 @@ graph TD
 ```text
 your_project/
 ├── .agents/skills/catia-caa-dev/   ← CADE (drop-in)
-    ├── skills/                     ← Engine (28 modules)
-    ├── templates/                  ← 25+ code templates
-    ├── capabilities/               ← 13 core CAA capabilities
-    ├── playbooks/                  ← Solution playbooks
-    ├── knowledge/                  ← CAA API reference (8 domains + 149 frameworks)
-    ├── patterns/                   ← Architecture patterns (13 patterns)
-    ├── examples/                   ← Real CAA projects
-    │   ├── tests/                      ← 32 suites, ~600 checks
-    ├── tools/                      ← Setup, validation, utilities
-    ├── config/                     ← Editor MCP templates
-    └── docs/                       ← Full documentation
+│   ├── SKILL.md                    ← Main documentation
+│   ├── skills/                     ← Engine (28 modules)
+│   │   ├── kernel.py               ← Development Kernel
+│   │   ├── requirements.py         ← Requirem"ents Clarifier + Decomposer
+│   │   ├── verifier.py             ← Code Verifier (static + mkmk)
+│   │   ├── repair.py               ← Repair Loop
+│   │   ├── learning.py             ← Learning System
+│   │   ├── requirements/decision_trees/ ← Decision Trees (3)
+│   │   └── ...
+│   ├── templates/                  ← 25+ code templates
+│   ├── capabilities/               ← 13 CAA capabilities
+│   ├── playbooks/                  ← 6 solution playbooks
+│   ├── knowledge/                  ← CAA knowledge base
+│   │   ├── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
+│   │   ├── philosophy/             ← 6 CAA philosophy docs
+│   │   ├── failure_patterns/       ← 3 failure patterns
+│   │   └── frameworks/             ← 149 CAADoc framework indexes
+│   ├── patterns/                   ← 13 architecture patterns
+│   ├── examples/                   ← Real CAA project examples
+│   ├── tests/                      ← 33 suites, 36 files, ~600 checks
+│   ├── docs/                       ← Full documentation
+│   ├── tools/                      ← Setup, validation, utilities
+│   └── config/                     ← Editor MCP templates
 ├── MyFramework.edu/
-├── MyModule.m/
-└── ...
+└── MyModule.m/
 ```
 
 ---
@@ -529,17 +540,31 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 ```text
 你的项目/
 ├── .agents/skills/catia-caa-dev/   ← CADE（直接放入即可）
-    ├── skills/                     ← 引擎（28 模块）
-    ├── templates/                  ← 25+ 代码模板
-    ├── capabilities/               ← 13 个核心能力
-    ├── playbooks/                  ← 解决方案
-    ├── knowledge/                  ← CAA API 参考（8 领域 + 149 框架）
-    ├── patterns/                   ← 13 个开发模式
-    ├── tests/                      ← 28 测试文件，~600 检查
-    └── docs/                       ← 完整文档
+│   ├── SKILL.md                    ← 主文档
+│   ├── skills/                     ← 引擎（28 模块）
+│   │   ├── kernel.py               ← 开发内核
+│   │   ├── requirements.py         ← 需求澄清 + 分解器
+│   │   ├── verifier.py             ← 代码验证器
+│   │   ├── repair.py               ← 修复闭环
+│   │   ├── learning.py             ← 学习系统
+│   │   ├── requirements/decision_trees/ ← 决策树（3）
+│   │   └── ...
+│   ├── templates/                  ← 25+ 代码模板
+│   ├── capabilities/               ← 13 个 CAA 能力
+│   ├── playbooks/                  ← 6 个解决方案
+│   ├── knowledge/                  ← CAA 知识库
+│   │   ├── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
+│   │   ├── philosophy/             ← 6 篇 CAA 哲学
+│   │   ├── failure_patterns/       ← 3 个失败模式
+│   │   └── frameworks/             ← 149 个 CAADoc 框架索引
+│   ├── patterns/                   ← 13 个架构模式
+│   ├── examples/                   ← 真实 CAA 项目示例
+│   ├── tests/                      ← 33 套件、36 文件、~600 检查
+│   ├── docs/                       ← 完整文档
+│   ├── tools/                      ← 安装、验证、工具
+│   └── config/                     ← 编辑器 MCP 模板
 ├── MyFramework.edu/
-├── MyModule.m/
-└── ...
+└── MyModule.m/
 ```
 
 ---
