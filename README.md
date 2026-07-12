@@ -294,15 +294,18 @@ User Intent
 graph TD
     U[AI / User] -->|3 Modes| K[Kernel<br/>develop / analyze / repair]
     K --> R[Requirement<br/>Clarifier]
-    R --> I[Planner +<br/>Impact + Optimizer]
+    D[Decision Trees] -.-> R
+    R --> E[Decomposer<br/>decisions -> extras]
+    E --> I[Planner +<br/>Impact + Optimizer]
+    E --> Q[Knowledge<br/>5-Layer Retrieval]
     I --> S[Specification]
     S --> G[Generator<br/>25+ Templates]
-    G --> V[Verifier]
+    G --> V[CodeVerifier<br/>static + mkmk]
     V -->|fail| P[Repair Loop<br/>3 retries]
     P --> V
     V -->|pass| O[Output]
 
-    K --> Q[Knowledge<br/>5-Layer Retrieval]
+    K --> Q
     Q --> I
 
     K --> B[Build Engine<br/>35 Commands]
