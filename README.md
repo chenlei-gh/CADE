@@ -34,7 +34,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `31/31 suites (100%)` | **31 test files** | **~600 checks** | *2026-07-11*
+> 🟢 **CI Status**: `32/32 suites (100%)` | **32 test files** | **~600 checks** | *2026-07-11*
 
 ---
 
@@ -181,11 +181,11 @@ Retrieval path: **Capability → Playbook → Knowledge → Framework → CAADoc
 26-suite test suite catches drift early:
 
 ```bash
-cade test --quick   # 30 suites (~8s), quick mode skips CATIA tests
-cade test           # 31 suites (~60s), full including CATIA lifecycle
+cade test --quick   # 31 suites (~8s), quick mode skips CATIA tests
+cade test           # 32 suites (~60s), full including CATIA lifecycle
 ```
 
-> 🟢 **Verified**: 31/31 suites (100%) — last full run 2026-07-11
+> 🟢 **Verified**: 32/32 suites (100%) — last full run 2026-07-11
 
 - **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
@@ -236,8 +236,8 @@ cade suggest                      # AI recommends next action
 cade docs                         # auto-generate documentation
 cade prereq MyModule              # view prerequisites
 cade rv                           # create Runtime View
-cade test --quick                 # run all 30 suites (~8s)
-cade test                         # full: 31 suites (~60s)
+cade test --quick                 # run all 31 suites (~8s)
+cade test                         # full: 32 suites (~60s)
 ```
 
 > 🔌 Also available as **MCP Server** (3 modes) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
@@ -245,25 +245,26 @@ cade test                         # full: 31 suites (~60s)
 ### ⚡ Test Results
 
 <details>
-<summary>31/31 suites (100%) · 31 files · ~600 checks · 2026-07-11</summary>
+<summary>32/32 suites (100%) · 32 files · ~600 checks · 2026-07-11</summary>
 
 | | | |
 |---|---|---|
-| L1 Unit(49) ✅ | L2 DepGraph ✅ | L2 Intent ✅ |
-| L2 Rollback ✅ | L2 Enhanced ✅ | L2 Spec ✅ |
-| L2 Diag ✅ | L2 FixPlan ✅ | L2 Refactor ✅ |
-| L3 E2E ✅ | L4 Arch(29) ✅ | L5 Sem(40) ✅ |
-| L6 Fault(16) ✅ | L7 Know(16) ✅ | L0 Kernel ✅ |
-| L0 Req ✅ | L0 Repair ✅ | Int1 Build ✅ |
-| Int2 Skill ✅ | FullSys ✅ | CrossRef ✅ |
-| Token ✅ | CAA Struct ✅ | Intent ✅ |
-| AI Integ ✅ | TokenAudit ✅ | DeepAudit ✅ |
+| L1 Unit(49) ✅ | L1-2 Decomposer ✅ | L2 DepGraph ✅ |
+| L2 Intent ✅ | L2 Rollback ✅ | L2 Enhanced ✅ |
+| L2 Spec ✅ | L2 Diag ✅ | L2 FixPlan ✅ |
+| L2 Refactor ✅ | L3 E2E ✅ | L4 Arch(29) ✅ |
+| L5 Sem(40) ✅ | L6 Fault(16) ✅ | L7 Know(16) ✅ |
+| L0 Kernel ✅ | L0 Req ✅ | L0 Repair ✅ |
+| Int1 Build ✅ | Int2 Skill ✅ | FullSys ✅ |
+| CrossRef ✅ | Token ✅ | CAA Struct ✅ |
+| Intent ✅ | AI Integ ✅ | TokenAudit ✅ |
+| DeepAudit ✅ | | |
 
 </details>
 
 ```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 30 suites (~8s)
-python .agents/skills/catia-caa-dev/tests/test_master.py           # 31 suites (~60s)
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 31 suites (~8s)
+python .agents/skills/catia-caa-dev/tests/test_master.py           # 32 suites (~60s)
 ```
 
 ---
@@ -319,8 +320,8 @@ graph TD
 
 | | |
 |---|---|
-| Suites | 31 (L1-L7 + Integration + Audit) |
-| Files | 31 (30 suites + 1 standalone) |
+| Suites | 32 (L1-L7 + Integration + Audit) |
+| Files | 32 (31 suites + 1 standalone) |
 | Checks | ~600 |
 | Pass Rate | 100% |
 | Templates | 25+ |
@@ -347,7 +348,7 @@ your_project/
     ├── knowledge/                  ← CAA API reference (8 domains + 149 frameworks)
     ├── patterns/                   ← Architecture patterns (13 patterns)
     ├── examples/                   ← Real CAA projects
-    │   ├── tests/                      ← 31 suites, ~600 checks
+    │   ├── tests/                      ← 32 suites, ~600 checks
     ├── tools/                      ← Setup, validation, utilities
     ├── config/                     ← Editor MCP templates
     └── docs/                       ← Full documentation
@@ -458,26 +459,27 @@ cade rollback --id latest           # 撤销任意操作
 ```bash
 cade suggest                        # AI 推荐下一步
 cade docs                           # 自动生成文档
-cade test --quick                   # 30 套件快速测试 (~8s)
-cade test                           # 31 套件全量测试 (~60s)
+cade test --quick                   # 31 套件快速测试 (~8s)
+cade test                           # 32 套件全量测试 (~60s)
 ```
 
 ### ⚡ 测试结果
 
 <details>
-<summary>31/31 套件 (100%) · 31 文件 · ~600 检查 · 2026-07-11</summary>
+<summary>32/32 套件 (100%) · 32 文件 · ~600 检查 · 2026-07-11</summary>
 
 | | | |
 |---|---|---|
-| L1 单元(49) ✅ | L2 依赖图 ✅ | L2 Intent ✅ |
-| L2 回滚 ✅ | L2 增强 ✅ | L2 Spec ✅ |
-| L2 诊断 ✅ | L2 FixPlan ✅ | L2 重构 ✅ |
-| L3 E2E ✅ | L4 架构(29) ✅ | L5 语义(40) ✅ |
-| L6 故障(16) ✅ | L7 知识(16) ✅ | L0 核心 ✅ |
-| L0 Req ✅ | L0 修复 ✅ | Int1 构建 ✅ |
-| Int2 协同 ✅ | 全系统 ✅ | CrossRef ✅ |
-| Token ✅ | CAA结构 ✅ | Intent ✅ |
-| AI集成 ✅ | Token审计 ✅ | 深度审计 ✅ |
+| L1 单元(49) ✅ | L1-2 分解器 ✅ | L2 依赖图 ✅ |
+| L2 Intent ✅ | L2 回滚 ✅ | L2 增强 ✅ |
+| L2 Spec ✅ | L2 诊断 ✅ | L2 FixPlan ✅ |
+| L2 重构 ✅ | L3 E2E ✅ | L4 架构(29) ✅ |
+| L5 语义(40) ✅ | L6 故障(16) ✅ | L7 知识(16) ✅ |
+| L0 核心 ✅ | L0 Req ✅ | L0 修复 ✅ |
+| Int1 构建 ✅ | Int2 协同 ✅ | 全系统 ✅ |
+| CrossRef ✅ | Token ✅ | CAA结构 ✅ |
+| Intent ✅ | AI集成 ✅ | Token审计 ✅ |
+| 深度审计 ✅ | | |
 
 </details>
 
@@ -503,8 +505,8 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 
 | | |
 |---|---|
-| **测试套件** | 31（L1-L7 + Integration + Audit） |
-| **测试文件** | 31（30 套件 + 1 独立） |
+| **测试套件** | 32（L1-L7 + Integration + Audit） |
+| **测试文件** | 32（31 套件 + 1 独立） |
 | **检查项** | ~600 |
 | **通过率** | 100% |
 | **模板** | 25+ |

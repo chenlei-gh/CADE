@@ -349,3 +349,105 @@ class RequirementsClarifier:
         if re.search(r'(?:add|make|generate)\s+(?:a\s+)?(?:command|dialog|feature|workbench|interface|module|framework|extension|component)\s+\w+', request):
             return True
         return False
+
+
+# ─── Requirements Decomposer (v3.0) ──────────────────────────────
+
+
+class RequirementsDecomposer:
+    """
+    Enhances clarified requirements with cross-domain knowledge.
+
+    Maps decisions from RequirementDocument into actionable extras:
+      - playbooks: which playbooks to reference
+      - capabilities: which capabilities are needed
+      - extra_components: additional CAA components to generate (data_extension, etc.)
+      - imakefile_deps: additional LINK_WITH frameworks
+
+    Design principle:
+      Detects patterns in decisions that imply cross-domain needs
+      (e.g., "trigger=context_menu" → needs DataExtension).
+      Zero changes to existing Intent/Planner/Generator.
+    """
+
+    # Decision value → extras mapping
+    DECISION_EXTRAS = {
+        ("trigger", "context_menu"): {
+            "extra_components": ["data_extension"],
+            "capabilities": ["cap.selection"],
+        },
+        ("trigger", "batch"): {
+            "imakefile_deps": ["AutomationInterfaces"],
+            "capabilities": ["cap.document_export"],
+        },
+        ("output_format", "excel"): {
+            "imakefile_deps": ["AutomationInterfaces"],
+        },
+        ("output_format", "csv"): {
+            "capabilities": ["cap.document_export"],
+        },
+        ("traversal_depth", "recursive"): {
+            "capabilities": ["cap.assembly_tree"],
+        },
+    }
+
+    # Domain → default playbooks
+    DOMAIN_PLAYBOOKS = {
+        "product": ["pb.export_bom", "pb.assembly_stats"],
+        "part": ["pb.batch_feature_check"],
+        "ui": ["pb.create_context_menu"],
+    }
+
+    # Domain → default capabilities
+    DOMAIN_CAPABILITIES = {
+        "product": ["cap.assembly_tree"],
+        "part": ["cap.feature_recognition", "cap.parameter_system"],
+        "ui": ["cap.selection"],
+        "drawing": ["cap.document_export"],
+    }
+
+    def enhance(self, result) -> dict:
+        """
+        Extract enhancement extras from a ClarificationResult or RequirementDocument.
+
+        Args:
+            result: ClarificationResult or RequirementDocument with .decisions dict
+
+        Returns:
+            extras dict with keys: playbooks, capabilities, extra_components, imakefile_deps
+        """
+        extras = {
+            "playbooks": [],
+            "capabilities": [],
+            "extra_components": [],
+            "imakefile_deps": [],
+        }
+
+        decisions = {}
+        domain = "general"
+
+        if hasattr(result, "decisions"):
+            decisions = dict(result.decisions)
+        if hasattr(result, "resolved"):
+            decisions.update(dict(result.resolved))
+        if hasattr(result, "domain"):
+            domain = result.domain
+
+        # Apply decision-based mappings
+        for key, value in decisions.items():
+            mapping_key = (key, value)
+            if mapping_key in self.DECISION_EXTRAS:
+                for extra_key, extra_values in self.DECISION_EXTRAS[mapping_key].items():
+                    extras[extra_key].extend(extra_values)
+
+        # Apply domain defaults
+        if domain in self.DOMAIN_PLAYBOOKS:
+            extras["playbooks"].extend(self.DOMAIN_PLAYBOOKS[domain])
+        if domain in self.DOMAIN_CAPABILITIES:
+            extras["capabilities"].extend(self.DOMAIN_CAPABILITIES[domain])
+
+        # Deduplicate
+        for key in extras:
+            extras[key] = list(dict.fromkeys(extras[key]))
+
+        return extras

@@ -178,6 +178,7 @@ class Kernel:
         request_lower = request.lower()
 
         # Phase 1: Requirement Analysis
+        clarification = None
         try:
             from requirements import RequirementsClarifier
             clarifier = RequirementsClarifier()
@@ -192,6 +193,16 @@ class Kernel:
                 ).to_dict()
         except ImportError:
             pass  # requirements module not loaded yet — fall through
+
+        # Phase 1.3: Requirements Decomposer — extract cross-domain extras
+        extras = {}
+        if clarification:
+            try:
+                from requirements import RequirementsDecomposer
+                decomposer = RequirementsDecomposer()
+                extras = decomposer.enhance(clarification)
+            except ImportError:
+                pass
 
         # Phase 1.5: Build / Run / Setup operations (no plan needed)
         build_run_result = self._handle_build_run(request_lower)
@@ -210,6 +221,12 @@ class Kernel:
 
         self._state = KernelState.GENERATING
         result = self._execute_develop_plan(plan)
+
+        # Phase 2.5: Apply cross-domain extras (data_extension, imakefile deps)
+        if extras and any(extras.values()):
+            apply_result = self._apply_extras(plan, extras)
+            if apply_result:
+                result["extras_applied"] = apply_result
 
         # Phase 3: Static verification of generated code
         verify_result = self._verify_generated_code(plan)
@@ -470,6 +487,81 @@ class Kernel:
             framework = m.group(1)
 
         return name, module, framework
+
+    def _apply_extras(self, plan: dict, extras: dict) -> dict:
+        """
+        Apply cross-domain extras: generate extra components and update dependencies.
+
+        Handles:
+          - extra_components: data_extension → create context menu extension files
+          - imakefile_deps: add frameworks to LINK_WITH
+          - playbooks: inject as code comments for AI reference
+          - capabilities: inject as code comments for AI reference
+        """
+        applied = {"components": [], "deps_added": [], "refs_added": []}
+        intent_data = plan.get("intent", {})
+        name = intent_data.get("name", "")
+        module = intent_data.get("module", "MyModule.m")
+        framework = intent_data.get("framework", "MyFramework")
+
+        if not name or not module:
+            return applied
+
+        module_path = self.workspace_root / module
+        if not module_path.exists():
+            return applied
+
+        # Apply imakefile dependencies
+        if extras.get("imakefile_deps"):
+            imakefile = module_path / "Imakefile.mk"
+            if imakefile.exists():
+                content = imakefile.read_text(encoding="utf-8", errors="replace")
+                for dep in extras["imakefile_deps"]:
+                    if dep not in content:
+                        # Add to LINK_WITH or append new deps
+                        if "LINK_WITH" in content:
+                            new_content = content.replace(
+                                "LINK_WITH =", f"LINK_WITH = {dep}"
+                            ) if "LINK_WITH =" in content and "LINK_WITH = " not in content.split("LINK_WITH =")[-1].split("\n")[0].strip() else content
+                            if dep not in new_content:
+                                lines = new_content.split("\n")
+                                for i, line in enumerate(lines):
+                                    if line.strip().startswith("LINK_WITH"):
+                                        lines[i] = line.rstrip() + " " + dep
+                                        break
+                                new_content = "\n".join(lines)
+                            imakefile.write_text(new_content, encoding="utf-8")
+                            applied["deps_added"].append(dep)
+
+        # Inject playbook/capability references as comments in the main .cpp
+        refs = []
+        if extras.get("playbooks"):
+            refs.append(f"// CADE Playbooks: {', '.join(extras['playbooks'])}")
+        if extras.get("capabilities"):
+            refs.append(f"// CADE Capabilities: {', '.join(extras['capabilities'])}")
+        if extras.get("extra_components"):
+            refs.append(f"// CADE Extra Components: {', '.join(extras['extra_components'])}")
+
+        if refs and name:
+            src_dir = module_path / "src"
+            cpp_file = src_dir / f"{name}.cpp"
+            if cpp_file.exists():
+                content = cpp_file.read_text(encoding="utf-8", errors="replace")
+                if "CADE Playbooks" not in content:
+                    for r in refs:
+                        if r not in content:
+                            # Insert after the last #include
+                            lines = content.split("\n")
+                            last_include = 0
+                            for i, line in enumerate(lines):
+                                if line.strip().startswith("#include"):
+                                    last_include = i
+                            if last_include >= 0:
+                                lines.insert(last_include + 1, r)
+                                cpp_file.write_text("\n".join(lines), encoding="utf-8")
+                                applied["refs_added"].append(r)
+
+        return applied
 
     def _verify_generated_code(self, plan: dict) -> dict:
         """Run static code verification on generated files if module exists."""

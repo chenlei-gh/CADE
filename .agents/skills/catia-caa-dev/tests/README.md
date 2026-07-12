@@ -1,12 +1,12 @@
 # Test Index
 
-测试目录包含 **30 个 master runner 套件**。共 **31 个文件**，~600 测试项，覆盖 48 条功能链路。
+测试目录包含 **31 个 master runner 套件**。共 **32 个文件**，~600 测试项，覆盖 48 条功能链路。
 
 知识资产：234 文件（29K + 13P + 13C + 6PB + 149FW + 1E + 6PH + 3FP）
 
 ---
 
-## Master Runner 套件（30）
+## Master Runner 套件（31）
 
 在 `test_master.py` 中注册，可通过 `python test_master.py` 批量运行。
 
@@ -23,6 +23,7 @@
 | 文件 | 测试项 | Master 标签 |
 |------|--------|------------|
 | `test_full_integration.py` | 49 | L1-1 Unit (49) |
+| `test_decomposer.py` | - | L1-2 Decomposer |
 
 ### L2 — 功能模块集成
 
@@ -134,4 +135,4 @@ python test_system_health.py
 ---
 
 **最后更新**: 2026-07-11  
-**文件数**: 31（30 套件 + 1 独立）
+**文件数**: 32（31 套件 + 1 独立）
