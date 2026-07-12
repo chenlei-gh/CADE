@@ -27,7 +27,7 @@ SUITES = {
     # ── L3: End-to-End ──
     "L3-1 E2E Workflow": "test_e2e_workflow.py",
     # ── L4: Architecture ──
-    "L4-1 Architecture (29)": "test_l4_architecture.py",
+    "L4-1 Architecture (39)": "test_l4_architecture.py",
     # ── L5: Semantic ──
     "L5-1 Semantic (40)": "test_l5_semantic.py",
     # ── L6: Fault Injection ──

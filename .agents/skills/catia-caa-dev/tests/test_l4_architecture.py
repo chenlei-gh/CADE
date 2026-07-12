@@ -209,6 +209,48 @@ cmd2 = Command(name="BadCmd", path=Path("."))
 ck("6.9 Command without module returns None paths", cmd2.header_path() is None)
 
 # ═══════════════════════════════════════════════════════════════════
+# 7. Kernel architecture constraints (v3.0)
+# ═══════════════════════════════════════════════════════════════════
+
+print("\n[7] Kernel architecture constraints (v3.0)")
+
+try:
+    import kernel
+    ck("7.1 kernel module exists", True)
+    ck("7.2 KernelResult dataclass", hasattr(kernel, "KernelResult"))
+    ck("7.3 Kernel class", hasattr(kernel, "Kernel"))
+    ck("7.4 KernelMode enum", hasattr(kernel, "KernelMode"))
+    ck("7.5 3 modes defined",
+       all(hasattr(kernel.KernelMode, m) for m in ("DEVELOP", "ANALYZE", "REPAIR")))
+except ImportError:
+    ck("7.1 kernel module exists", False, "not importable")
+
+try:
+    from requirements import RequirementsClarifier
+    ck("7.6 RequirementsClarifier exists", True)
+except ImportError:
+    ck("7.6 RequirementsClarifier exists", False)
+
+try:
+    from repair import RepairLoop, RepairState
+    ck("7.7 RepairLoop exists", True)
+    ck("7.8 MAX_RETRIES is 3", RepairLoop.MAX_RETRIES == 3)
+except ImportError:
+    ck("7.7 RepairLoop exists", False)
+
+try:
+    from verifier import BuildVerifier
+    ck("7.9 BuildVerifier exists", True)
+except ImportError:
+    ck("7.9 BuildVerifier exists", False)
+
+try:
+    from learning import LearningRecorder
+    ck("7.10 LearningRecorder exists", True)
+except ImportError:
+    ck("7.10 LearningRecorder exists", False)
+
+# ═══════════════════════════════════════════════════════════════════
 print(f"\n{'=' * 70}")
 print(f"  L4 Architecture: {passed}/{total} ({passed / total * 100:.0f}%)")
 print(f"{'=' * 70}")
