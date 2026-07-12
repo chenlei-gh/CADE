@@ -389,6 +389,28 @@ class RequirementsDecomposer:
         ("traversal_depth", "recursive"): {
             "capabilities": ["cap.assembly_tree"],
         },
+        # UI decisions
+        ("with_dialog", "yes"): {
+            "knowledge_refs": ["ui.dialog", "ui.dialog_patterns"],
+        },
+        ("menu_type", "context_menu"): {
+            "knowledge_refs": ["ui.context_menu"],
+            "pattern_refs": ["ui.context_menu_pattern"],
+        },
+        ("menu_type", "toolbar"): {
+            "knowledge_refs": ["ui.toolbar"],
+        },
+        # Drawing decisions
+        ("drawing_type", "create_view"): {
+            "knowledge_refs": ["drawing.basics"],
+        },
+        ("drawing_type", "add_annotation"): {
+            "knowledge_refs": ["drawing.annotations"],
+        },
+        ("drawing_type", "generate_bom_table"): {
+            "knowledge_refs": ["drawing.annotations"],
+            "capabilities": ["cap.assembly_tree"],
+        },
     }
 
     # Domain → default playbooks
@@ -421,6 +443,8 @@ class RequirementsDecomposer:
             "capabilities": [],
             "extra_components": [],
             "imakefile_deps": [],
+            "knowledge_refs": [],
+            "pattern_refs": [],
         }
 
         decisions = {}

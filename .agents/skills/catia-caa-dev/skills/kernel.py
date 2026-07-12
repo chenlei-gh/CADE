@@ -539,6 +539,10 @@ class Kernel:
             refs.append(f"// CADE Playbooks: {', '.join(extras['playbooks'])}")
         if extras.get("capabilities"):
             refs.append(f"// CADE Capabilities: {', '.join(extras['capabilities'])}")
+        if extras.get("knowledge_refs"):
+            refs.append(f"// CADE Knowledge: {', '.join(extras['knowledge_refs'])}")
+        if extras.get("pattern_refs"):
+            refs.append(f"// CADE Patterns: {', '.join(extras['pattern_refs'])}")
         if extras.get("extra_components"):
             refs.append(f"// CADE Extra Components: {', '.join(extras['extra_components'])}")
 
