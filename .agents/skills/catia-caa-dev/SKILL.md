@@ -1235,7 +1235,7 @@ python test_e2e_workflow.py
 │   ├── mcp_server.py                 # MCP Server (3 Mode, v3.0)
 │   ├── kernel.py                     # Development Kernel (v3.0)
 │   ├── requirements.py               # Requirements Clarifier (v3.0)
-│   ├── verifier.py                   # Build Verifier (v3.0)
+│   ├── verifier.py                   # Code Verifier — static + mkmk (v3.0)
 │   ├── repair.py                     # Repair Loop (v3.0)
 │   ├── learning.py                   # Learning System (v3.0)
 │   ├── token_optimizer.py            # AI Token 优化器

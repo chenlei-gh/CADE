@@ -98,7 +98,7 @@ repair()    — fix/refactor  (Command, with recovery)
 - **Kernel** — 3-mode unified entry, internal state machine + dynamic dispatch
 - **Requirement Clarifier** — vague intent → structured decisions (decision trees)
 - **Planner** — Intent + Requirements → optimal DevelopmentPlan
-- **Verifier** — auto compile-check via mkmk
+- **Verifier** — static code check (no mkmk needed) + compile-check via mkmk
 - **Repair Loop** — diagnose → fix → verify, up to 3 retries
 - **Learning** — feedback loop, pattern detection → auto-suggest Playbooks
 
