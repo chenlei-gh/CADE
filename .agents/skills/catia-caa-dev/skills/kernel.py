@@ -211,6 +211,11 @@ class Kernel:
         self._state = KernelState.GENERATING
         result = self._execute_develop_plan(plan)
 
+        # Phase 3: Static verification of generated code
+        verify_result = self._verify_generated_code(plan)
+        if verify_result and verify_result.get("files_checked", 0) > 0:
+            result["verification"] = verify_result
+
         self._state = KernelState.COMPLETED
         return KernelResult(
             status=result.get("status", "ok"), mode="develop",
@@ -465,6 +470,25 @@ class Kernel:
             framework = m.group(1)
 
         return name, module, framework
+
+    def _verify_generated_code(self, plan: dict) -> dict:
+        """Run static code verification on generated files if module exists."""
+        try:
+            from verifier import CodeVerifier
+            intent_data = plan.get("intent", {})
+            module_name = intent_data.get("module", "")
+            if not module_name:
+                return {}
+            module_path = self.workspace_root / module_name
+            if not module_path.exists():
+                return {}
+            verifier = CodeVerifier()
+            result = verifier.verify_module(module_path)
+            return result.to_dict()
+        except ImportError:
+            return {}
+        except Exception:
+            return {}
 
     # ─── Knowledge Lookup ──────────────────────────────────────
 
