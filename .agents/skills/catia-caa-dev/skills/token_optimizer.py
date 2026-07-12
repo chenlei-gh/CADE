@@ -40,7 +40,9 @@ def optimize(result: Any, mode: str = "auto") -> dict:
         return level1
 
     needs_detail = (d.get("error_count", 0) > 0 or
-                    d.get("status") not in ("ok", "success", "stopped", "not_running") or
+                    d.get("status") not in ("ok", "success", "stopped", "not_running",
+                                             "pending", "no_issues", "fixed") or
+                    d.get("status") == "needs_clarification" or
                     _has_errors_in_diagnostics(d))
     if needs_detail:
         level1["detail"] = _extract_level2(d)
