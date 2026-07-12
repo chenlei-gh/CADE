@@ -181,8 +181,8 @@ Retrieval path: **Capability → Playbook → Knowledge → Framework → CAADoc
 26-suite test suite catches drift early:
 
 ```bash
-cade test --quick   # 31 suites (~8s), quick mode skips CATIA tests
-cade test           # 32 suites (~60s), full including CATIA lifecycle
+cade test --quick   # 32 suites (~8s), quick mode skips CATIA tests
+cade test           # 33 suites (~60s), full including CATIA lifecycle
 ```
 
 > 🟢 **Verified**: 32/32 suites (100%) — last full run 2026-07-11
@@ -245,7 +245,7 @@ cade test                         # full: 32 suites (~60s)
 ### ⚡ Test Results
 
 <details>
-<summary>32/32 suites (100%) · 32 files · ~600 checks · 2026-07-11</summary>
+<summary>33/33 suites (100%) · 33 files · ~600 checks · 2026-07-11</summary>
 
 | | | |
 |---|---|---|
@@ -253,6 +253,7 @@ cade test                         # full: 32 suites (~60s)
 | L2 Intent ✅ | L2 Rollback ✅ | L2 Enhanced ✅ |
 | L2 Spec ✅ | L2 Diag ✅ | L2 FixPlan ✅ |
 | L2 Refactor ✅ | L3 E2E ✅ | L4 Arch(29) ✅ |
+| L3-2 E2E Scn ✅ | | |
 | L5 Sem(40) ✅ | L6 Fault(16) ✅ | L7 Know(16) ✅ |
 | L0 Kernel ✅ | L0 Req ✅ | L0 Repair ✅ |
 | Int1 Build ✅ | Int2 Skill ✅ | FullSys ✅ |
@@ -263,8 +264,8 @@ cade test                         # full: 32 suites (~60s)
 </details>
 
 ```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 31 suites (~8s)
-python .agents/skills/catia-caa-dev/tests/test_master.py           # 32 suites (~60s)
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 32 suites (~8s)
+python .agents/skills/catia-caa-dev/tests/test_master.py           # 33 suites (~60s)
 ```
 
 ---
@@ -320,8 +321,8 @@ graph TD
 
 | | |
 |---|---|
-| Suites | 32 (L1-L7 + Integration + Audit) |
-| Files | 32 (31 suites + 1 standalone) |
+| Suites | 33 (L1-L7 + Integration + Audit) |
+| Files | 33 (32 suites + 1 standalone) |
 | Checks | ~600 |
 | Pass Rate | 100% |
 | Templates | 25+ |
@@ -466,7 +467,7 @@ cade test                           # 32 套件全量测试 (~60s)
 ### ⚡ 测试结果
 
 <details>
-<summary>32/32 套件 (100%) · 32 文件 · ~600 检查 · 2026-07-11</summary>
+<summary>33/33 套件 (100%) · 33 文件 · ~600 检查 · 2026-07-11</summary>
 
 | | | |
 |---|---|---|
@@ -474,6 +475,7 @@ cade test                           # 32 套件全量测试 (~60s)
 | L2 Intent ✅ | L2 回滚 ✅ | L2 增强 ✅ |
 | L2 Spec ✅ | L2 诊断 ✅ | L2 FixPlan ✅ |
 | L2 重构 ✅ | L3 E2E ✅ | L4 架构(29) ✅ |
+| L3 E2E 场景 ✅ | | |
 | L5 语义(40) ✅ | L6 故障(16) ✅ | L7 知识(16) ✅ |
 | L0 核心 ✅ | L0 Req ✅ | L0 修复 ✅ |
 | Int1 构建 ✅ | Int2 协同 ✅ | 全系统 ✅ |
@@ -505,8 +507,8 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 
 | | |
 |---|---|
-| **测试套件** | 32（L1-L7 + Integration + Audit） |
-| **测试文件** | 32（31 套件 + 1 独立） |
+| **测试套件** | 33（L1-L7 + Integration + Audit） |
+| **测试文件** | 33（32 套件 + 1 独立） |
 | **检查项** | ~600 |
 | **通过率** | 100% |
 | **模板** | 25+ |
