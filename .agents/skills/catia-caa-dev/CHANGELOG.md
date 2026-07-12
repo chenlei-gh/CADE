@@ -52,6 +52,39 @@
 
 ---
 
+## [3.0.1] - 2026-07-12
+
+### 🧩 Requirements Decomposer
+
+- **Decomposer** (`requirements.py`): 决策→Playbook/Capability/依赖映射
+- 自动增强生成的 .cpp（注入知识引用注释）和 Imakefile.mk（补 LINK_WITH）
+- 跨域检测：trigger=context_menu → data_extension, output=excel → AutomationInterfaces
+
+### 🔍 代码静态验证
+
+- **CodeVerifier** (`verifier.py`): 生成后自动检查宏/头文件/命名/格式
+- 不需要 mkmk/CATIA，纯 Python 正则匹配
+- 集成到 Kernel.develop() 管线
+
+### 🧪 新增测试
+
+- L0-4 Routing Coverage: 41 个旧工具 → 3-mode 全覆盖验证
+- L0-5 Code Verifier: 静态代码检查 (15/15)
+- L0-6 Token Status: 优化器状态白名单 (29/29)
+- L0-7 SKILL YAML: frontmatter 有效性 (17/17)
+- L1-2 Decomposer: 需求分解 (21/21)
+- L3-2 E2E Scenarios: 6 个真实场景端到端 (19/19)
+- 测试套件: 26 → 33
+
+### 🔧 修复
+
+- YAML frontmatter: description 中未引号冒号导致 Skill 加载失败
+- Token Optimizer: pending/no_issues/fixed 未入成功白名单
+- Quick Start: 克隆目录名 cade → CADE
+- README 手机端: 宽表格/ASCII 块折叠
+
+---
+
 ## [2.2.0] - 2026-07-10
 
 ### 🧠 五层知识体系

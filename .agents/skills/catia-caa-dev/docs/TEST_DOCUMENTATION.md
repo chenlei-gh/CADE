@@ -39,12 +39,17 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
 | L0-1 Kernel API | `test_kernel_public_api.py` | 16 | Kernel 3-mode 公共接口 |
 | L0-2 Requirements | `test_requirements.py` | 21 | Requirements Clarifier |
 | L0-3 Repair Loop | `test_repair_loop.py` | 20 | Repair Loop 状态机 |
+| L0-4 Routing Coverage | `test_routing_coverage.py` | 41 | 41 旧工具 → 3-mode 全覆盖 |
+| L0-5 Code Verifier | `test_code_verifier.py` | 15 | 静态代码检查宏/头文件/命名/格式 |
+| L0-6 Token Status | `test_token_status.py` | 29 | 优化器状态白名单验证 |
+| L0-7 SKILL YAML | `test_skill_yaml.py` | 17 | frontmatter 有效性检查 |
 
 ### L1 — 单元测试
 
 | 标签 | 文件 | 测试数 | 覆盖 |
 |------|------|--------|------|
 | L1-1 Unit (49) | `test_full_integration.py` | 49 | 元模型、变更集、模板、分析器、原子操作 |
+| L1-2 Decomposer | `test_decomposer.py` | 21 | 需求分解：决策→Playbook/Capability/依赖 |
 
 ### L2 — 功能模块集成（8 套件）
 
@@ -64,6 +69,7 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
 | 标签 | 文件 | 覆盖 |
 |------|------|------|
 | L3-1 E2E Workflow | `test_e2e_workflow.py` | 创建→编译→运行完整流程 |
+| L3-2 E2E Scenarios | `test_e2e_scenarios.py` | 6 个真实场景端到端 (19/19) |
 
 ### L4 — 架构不变量
 
@@ -111,13 +117,13 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
 ### 快速检查（跳过 Build/Run）
 ```bash
 python tests/test_master.py --quick
-# ~8s, 25 套件（跳过 Int-1 Build & Run）
+# ~8s, 32 套件（跳过 Int-1 Build & Run）
 ```
 
 ### 全量检查
 ```bash
 python tests/test_master.py
-# ~60s, 26 套件（含 CATIA 启停）
+# ~60s, 33 套件（含 CATIA 启停）
 ```
 
 ### 单套件
@@ -142,8 +148,8 @@ python tests/test_master.py --audit
 
 | 指标 | 值 |
 |------|-----|
-| 套件总数 | **26** |
-| L1-L7+L0 核心 | 18 |
+| 套件总数 | **33** |
+| L1-L7+L0 核心 | 24 |
 | 集成套件 | 2 |
 | 审计套件 | 7 |
 | 测试函数 | **56** |
@@ -339,7 +345,7 @@ test_knowledge_system.py: catalog ↔ files 对齐
 
 ### 验证日期
 
-**2026-07-11 23:22**: 全部 12 条链路验证通过，26/26 全量测试 100%（77s）。
+**2026-07-11 23:22**: 全部 12 条链路验证通过，33/33 全量测试 100%（77s）。
   知识资产: 234（29K + 13P + 13C + 6PB + 149FW + 1E + 6PH + 3FP）
 
 ---
@@ -357,5 +363,5 @@ A: `python tests/test_master.py --quick` 已覆盖所有非环境依赖套件。
 
 ---
 
-**最后更新**: 2026-07-11  
+**最后更新**: 2026-07-12  
 **维护者**: Kiro AI Agent

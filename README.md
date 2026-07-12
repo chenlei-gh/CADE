@@ -249,17 +249,17 @@ cade test                         # full: 32 suites (~60s)
 
 | | | |
 |---|---|---|
-| L1 Unit(49) ✅ | L1-2 Decomposer ✅ | L2 DepGraph ✅ |
+| L1 Unit(49) ✅ | L1-2 Decomposer(21) ✅ | L2 DepGraph ✅ |
 | L2 Intent ✅ | L2 Rollback ✅ | L2 Enhanced ✅ |
 | L2 Spec ✅ | L2 Diag ✅ | L2 FixPlan ✅ |
-| L2 Refactor ✅ | L3 E2E ✅ | L4 Arch(29) ✅ |
-| L3-2 E2E Scn ✅ | | |
-| L5 Sem(40) ✅ | L6 Fault(16) ✅ | L7 Know(16) ✅ |
-| L0 Kernel ✅ | L0 Req ✅ | L0 Repair ✅ |
-| Int1 Build ✅ | Int2 Skill ✅ | FullSys ✅ |
-| CrossRef ✅ | Token ✅ | CAA Struct ✅ |
-| Intent ✅ | AI Integ ✅ | TokenAudit ✅ |
-| DeepAudit ✅ | | |
+| L2 Refactor ✅ | L3-1 E2E ✅ | L3-2 E2E Scn(19) ✅ |
+| L4 Arch(29) ✅ | L5 Sem(40) ✅ | L6 Fault(16) ✅ |
+| L7 Know(16) ✅ | L0-1 Kernel(16) ✅ | L0-2 Req(21) ✅ |
+| L0-3 Repair(20) ✅ | L0-4 Routing(41) ✅ | L0-5 Verifier(15) ✅ |
+| L0-6 Token(29) ✅ | L0-7 SKILL(17) ✅ | Int1 Build ✅ |
+| Int2 Skill ✅ | FullSys ✅ | CrossRef ✅ |
+| Token Opt ✅ | CAA Struct ✅ | Intent Plan ✅ |
+| AI Integ ✅ | TokenAudit ✅ | DeepAudit ✅ |
 
 </details>
 
@@ -471,17 +471,17 @@ cade test                           # 32 套件全量测试 (~60s)
 
 | | | |
 |---|---|---|
-| L1 单元(49) ✅ | L1-2 分解器 ✅ | L2 依赖图 ✅ |
+| L1 单元(49) ✅ | L1-2 分解器(21) ✅ | L2 依赖图 ✅ |
 | L2 Intent ✅ | L2 回滚 ✅ | L2 增强 ✅ |
 | L2 Spec ✅ | L2 诊断 ✅ | L2 FixPlan ✅ |
-| L2 重构 ✅ | L3 E2E ✅ | L4 架构(29) ✅ |
-| L3 E2E 场景 ✅ | | |
-| L5 语义(40) ✅ | L6 故障(16) ✅ | L7 知识(16) ✅ |
-| L0 核心 ✅ | L0 Req ✅ | L0 修复 ✅ |
-| Int1 构建 ✅ | Int2 协同 ✅ | 全系统 ✅ |
-| CrossRef ✅ | Token ✅ | CAA结构 ✅ |
-| Intent ✅ | AI集成 ✅ | Token审计 ✅ |
-| 深度审计 ✅ | | |
+| L2 重构 ✅ | L3-1 E2E ✅ | L3-2 E2E场景(19) ✅ |
+| L4 架构(29) ✅ | L5 语义(40) ✅ | L6 故障(16) ✅ |
+| L7 知识(16) ✅ | L0-1 核心(16) ✅ | L0-2 Req(21) ✅ |
+| L0-3 修复(20) ✅ | L0-4 路由(41) ✅ | L0-5 验证器(15) ✅ |
+| L0-6 Token(29) ✅ | L0-7 SKILL(17) ✅ | Int1 构建 ✅ |
+| Int2 协同 ✅ | 全系统 ✅ | CrossRef ✅ |
+| Token优化 ✅ | CAA结构 ✅ | Intent ✅ |
+| AI集成 ✅ | Token审计 ✅ | 深度审计 ✅ |
 
 </details>
 
