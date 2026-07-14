@@ -81,6 +81,10 @@ class ChangeSet:
         """Add a file to create by reading a template and applying replacements"""
         content = template_path.read_text(encoding="utf-8", errors="replace")
         if replacements:
+            # Replace angle-bracket placeholders first: <Key> → value
+            for k, v in replacements.items():
+                content = content.replace(f"<{k}>", v)
+            # Then plain text replacements
             for k, v in replacements.items():
                 content = content.replace(k, v)
         self.add_create(path, content)

@@ -267,9 +267,14 @@ class TemplateGenerator:
             "CommandClassName": name,
             "CommandHeaderName": name,
             "DialogClass": name,
+            "DialogClassName": name,
             "WorkbenchClass": name,
             "FeatureClass": name,
         }
+        # Replace angle-bracket placeholders FIRST (before plain text),
+        # otherwise <CommandClassName> → <SettingsCmd> and we lose the match.
+        for k, v in list(reps.items()):
+            content = content.replace(f"<{k}>", v)
         for k, v in reps.items():
             content = content.replace(k, v)
         return content

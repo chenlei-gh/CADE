@@ -1109,6 +1109,8 @@ def _r(
         "FRAMEWORKNAME": fw_name.replace(".edu", "").upper(),
         "ModuleName": mod_name.replace(".m", ""),
         "MODULENAME": mod_name.replace(".m", "").upper(),
+        "ClassName": name,
+        "DialogClassName": name,
         **extra,
     }
 
