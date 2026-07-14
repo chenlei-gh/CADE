@@ -43,13 +43,13 @@ TOOLS = [
     {
         "name": "develop",
         "description": (
-            "Create, generate, or build CAA components from natural language. "
+            "Create, generate, build, or deploy CAA components from natural language. "
             "Use for: creating commands, features, dialogs, workbenches, interfaces, "
-            "extensions, modules, frameworks. "
-            "The Kernel handles requirement analysis, planning, generation, and verification. "
-            "Returns preview before applying changes. "
+            "extensions, modules, frameworks, builds, CATIA startup, documentation. "
+            "The Kernel handles requirement clarification, decomposition (Playbook/Capability "
+            "matching), planning, code generation, and static verification. "
             'Examples: "create command ExportBOM in MyModule.m", '
-            '"make a feature with attributes Length and Angle".'
+            '"build the workspace", "start CATIA", "generate documentation".'
         ),
         "inputSchema": {
             "type": "object",
@@ -89,9 +89,10 @@ TOOLS = [
         "description": (
             "Fix, refactor, or rollback workspace issues. May modify files (with safety net). "
             "Use for: fixing diagnostics, renaming commands/interfaces/modules, "
-            "moving commands between modules, rollback operations. "
-            "The Kernel runs diagnose -> fix -> verify in a retry loop (max 3 attempts). "
-            'Examples: "fix dictionary entries", "rollback to latest".'
+            "moving commands between modules, rollback operations, creating snapshots. "
+            "The Kernel runs diagnose -> fix -> verify loop (max 3 attempts). "
+            'Examples: "fix dictionary entries", "rename command OldName to NewName in MyModule", '
+            '"rollback to latest", "list rollback points".'
         ),
         "inputSchema": {
             "type": "object",

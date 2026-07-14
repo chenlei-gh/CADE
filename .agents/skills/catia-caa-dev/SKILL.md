@@ -267,9 +267,9 @@ AI 只知道 3 个 Mode:
 | 🎯 **只有 3 个工具** | CADE v3.0 只有三个工具：`develop`（创建/生成）、`analyze`（查询/诊断）、`repair`（修复/重构）。永远不需要知道内部实现。 |
 | 🔌 **用 MCP 调用** | 所有 CADE 功能通过 MCP 工具调用，不要用 CLI。响应已自动 Token 优化。 |
 | 📊 **信 status 不信 output** | API 返回 `{"status": "ok", "error_count": 0}` 就够了，忽略 `output`/`stderr` 字段。 |
-| 🆕 **模糊需求用 develop()** | 用户说"我想做一个..."、"能不能..."时直接调用 `develop()`。Kernel 自动做需求澄清 → 规划 → 生成 → 验证。如果返回 `needs_clarification`，把问题展示给用户。 |
+| 🆕 **模糊需求用 develop()** | 用户说"我想做一个..."、"能不能..."时直接调用 `develop()`。Kernel 自动做需求澄清 → 分解增强（Playbook/Capability/依赖）→ 规划 → 生成 → 代码验证。如果返回 `needs_clarification`，把问题展示给用户。 |
 | 🔍 **只读操作用 analyze()** | 所有查询、诊断、分析用 `analyze()`。它永不会修改文件，无需确认。 |
-| 🔧 **修复用 repair()** | 修复诊断问题、重构、回滚用 `repair()`。Kernel 内部运行 diagnose → fix → verify 最多重试 3 次。 |
+| 🔧 **修复用 repair()** | 修复诊断问题、重构（重命名/移动）、回滚用 `repair()`。Kernel 内部运行 diagnose → fix → verify 最多重试 3 次。 |
 | ⚡ **永远不需要判断"走哪个"** | 用户说"创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`。基于自然语言的动词分类，不需要思考。 |
 | 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架 → 再精准打开 `<CATIA_INSTALL>/CAADoc/` 对应页面。不要跳过 Framework 直接全文搜 CAADoc。 |
 | 📝 **CAADoc 洞察沉淀** | 用 CAADoc 学到**踩坑经验/跨 API 组合/非文档化的行为**时，创建 knowledge/ 文件沉淀。纯 API 签名查询不需要沉淀——下次用 Framework 索引秒查。 |
