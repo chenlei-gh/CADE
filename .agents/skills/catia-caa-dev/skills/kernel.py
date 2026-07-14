@@ -772,7 +772,6 @@ class Kernel:
         "context menu", "右键", "undo", "redo", "update mechanism",
         "selection", "viewer", "gsd", "surface", "drawing", "fta",
         "annotation", "tolerance", "命名", "规范", "生命周期",
-        "对话框", "倒角", "圆角", "孔", "装配", "工程图", "曲面", "撤销",
         "api", "interface", "class", "method", "function",
         "pattern", "example", "tutorial", "documentation", "reference",
         "implement", "explain", "describe",
@@ -784,15 +783,27 @@ class Kernel:
 
     def _is_knowledge_query(self, request: str) -> bool:
         """Detect if this is a knowledge/API question, not a workspace operation"""
-        # Short keywords (2 chars) must match whole-word to avoid false positives
-        # (e.g., "ui" in "build" should NOT match)
         import re
+        # Check built-in keywords (short ones use word-boundary)
         for kw in self._KNOWLEDGE_KW:
             if len(kw) <= 2:
                 if re.search(r'\b' + re.escape(kw) + r'\b', request):
                     return True
             elif kw in request:
                 return True
+        # Check alias keys (Chinese synonyms not in _KNOWLEDGE_KW)
+        try:
+            from pathlib import Path
+            skill_root = Path(__file__).parent.parent
+            catalog_file = skill_root / "catalog" / "index.yaml"
+            aliases = self._load_aliases(catalog_file)
+            for alias in aliases:
+                parts = [p.strip() for p in alias.replace("/", " ").split()]
+                if any(p in request for p in parts):
+                    return True
+        except Exception:
+            pass
+        # Check question patterns
         return any(request.startswith(q) for q in self._KNOWLEDGE_QUESTION_WORDS)
 
     def _lookup_knowledge(self, request: str) -> dict:
@@ -812,7 +823,9 @@ class Kernel:
         aliases = self._load_aliases(catalog_file)
         expanded_request = request
         for alias, keywords in aliases.items():
-            if alias in request:
+            # Split compound aliases like "装配/装配体" and match each part
+            alias_parts = [p.strip() for p in alias.replace("/", " ").split()]
+            if any(part in request for part in alias_parts):
                 # Replace commas with spaces so split() produces clean keywords
                 expanded_request += " " + keywords.replace(",", " ")
 
