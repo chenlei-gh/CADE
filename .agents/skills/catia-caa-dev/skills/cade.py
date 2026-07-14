@@ -383,25 +383,18 @@ def cmd_rollback(args):
 
 
 def cmd_expose(args):
-    from actions import ActionContext
-    from intents import expose_service
-
-    ws = _get_ws(args)
-    ctx = ActionContext(ws)
+    """Expose via Kernel — routes through develop()."""
     comp = args[0] if args else input("Component name: ")
     mod = args[1] if len(args) > 1 else input("Module name: ")
-    result = expose_service(ctx, component_name=comp, module=mod)
-    _print_result(result)
+    text = f"expose service from {comp} in {mod}"
+    result = _kernel("develop", text)
+    _print_kernel(result)
 
 
 def cmd_suggest(args):
-    from actions import ActionContext
-    from intents import suggest_next_action
-
-    ws = _get_ws(args)
-    ctx = ActionContext(ws)
-    result = suggest_next_action(ctx)
-    _print_result(result)
+    """Suggest via Kernel — routes through analyze()."""
+    result = _kernel("analyze", "suggest next action")
+    _print_kernel(result)
 
 
 def cmd_plan(args):
@@ -484,21 +477,14 @@ def cmd_setup(args):
 
 
 def cmd_snapshot(args):
-    from actions import ActionContext
-
-    ws = _get_ws(args)
-    ctx = ActionContext(ws)
-    opts = _get_flags(args)
-
-    if "--diff" in opts:
-        ctx.refresh(label="snapshot")
-        diff = ctx.history.diff_last_two()
-        _print_result(diff)
-    elif "--history" in opts:
-        _print_result(ctx.history.summary())
+    """Snapshot via Kernel — routes through repair()."""
+    if "--diff" in args or "-d" in args:
+        result = _kernel("repair", "show snapshot diff")
+    elif "--history" in args:
+        result = _kernel("repair", "show snapshot history")
     else:
-        snap = ctx.refresh(label="snapshot")
-        _print_result(snap.to_dict())
+        result = _kernel("repair", "create workspace snapshot")
+    _print_kernel(result)
 
 
 # ─── Version / Test ───────────────────────────────────────────────
