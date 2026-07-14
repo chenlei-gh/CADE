@@ -62,27 +62,35 @@ print("\n" + "=" * 70)
 print("  2. LearningRecorder — Event Recording")
 print("=" * 70)
 
-recorder = LearningRecorder(skill_root=SKILL_ROOT)
-check("recorder created", recorder is not None)
-check("events start empty", len(recorder._events) == 0)
+# Use temp dir so _record_failure doesn't pollute real knowledge/
+with tempfile.TemporaryDirectory() as tmpdir:
+    tmp_skill = Path(tmpdir) / "skill"
+    tmp_skill.mkdir()
+    fp_dir_tmp = tmp_skill / "knowledge" / "failure_patterns"
+    fp_dir_tmp.mkdir(parents=True)
 
-recorder.record(e1)
-check("recorded 1 event", len(recorder._events) == 1)
+    recorder = LearningRecorder(skill_root=tmp_skill)
+    recorder.failure_patterns_dir = fp_dir_tmp
+    check("recorder created", recorder is not None)
+    check("events start empty", len(recorder._events) == 0)
 
-recorder.record(e2)
-recorder.record(e3)
-check("recorded 3 events", len(recorder._events) == 3)
+    recorder.record(e1)
+    check("recorded 1 event", len(recorder._events) == 1)
 
-# Convenience method
-recorder.record_event("compile_failure", "Test failure",
-                      error_signature="test_error", file="test.cpp", line=10)
-check("record_event adds event", len(recorder._events) == 4)
-check("last event type", recorder._events[-1].type == "compile_failure")
+    recorder.record(e2)
+    recorder.record(e3)
+    check("recorded 3 events", len(recorder._events) == 3)
 
-# Recent events
-recent = recorder.get_recent_events(limit=2)
-check("get_recent_events limit=2", len(recent) == 2)
-check("recent is dict list", isinstance(recent[0], dict))
+    # Convenience method
+    recorder.record_event("compile_failure", "Test failure",
+                          error_signature="test_error", file="test.cpp", line=10)
+    check("record_event adds event", len(recorder._events) == 4)
+    check("last event type", recorder._events[-1].type == "compile_failure")
+
+    # Recent events
+    recent = recorder.get_recent_events(limit=2)
+    check("get_recent_events limit=2", len(recent) == 2)
+    check("recent is dict list", isinstance(recent[0], dict))
 
 # ═══════════════════════════════════════════════════════════════
 # 3. Failure Pattern Stub Creation

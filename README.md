@@ -262,7 +262,7 @@ cade test                         # full: 32 suites (~60s)
 ### ⚡ Test Results
 
 <details>
-<summary>31/31 suites (100%) · 35 files · ~600 checks · 2026-07-15</summary>
+<summary>34/34 suites (100%) · 36 files · ~650 checks · 2026-07-15</summary>
 
 | | | |
 |---|---|---|
@@ -341,8 +341,26 @@ graph TD
 
 | | |
 |---|---|
-| Suites | 32 (L1-L7 + Integration + Audit) |
-| Files | 35 (32 suites + 3 standalone) |
+| Suites | 34 (L0-L7 + Integration + Audit) |
+| Files | 36 (34 suites + 2 standalone) |
+| Checks | ~650 |
+| Pass Rate | 100% |
+| Templates | 25+ |
+| APIs | 15 (Intent + Action) |
+| CLI Commands | 22 |
+| MCP Modes | 3 (develop / analyze / repair) |
+| Build Commands | 35 |
+| Domain Entities | 10 |
+| Knowledge Assets | 240+ (29K + 14P + 13C + 10PB + 149FW + 6PH + 3FP + 3DT) |
+| Checks | ~650 |
+| Pass Rate | 100% |
+| Templates | 25+ |
+| APIs | 15 (Intent + Action) |
+| CLI Commands | 22 |
+| MCP Modes | 3 (develop / analyze / repair) |
+| Build Commands | 35 |
+| Domain Entities | 10 |
+| Knowledge Assets | 240+ (29K + 14P + 13C + 10PB + 149FW + 6PH + 3FP + 3DT) |
 | Checks | ~600 |
 | Pass Rate | 100% |
 | Templates | 25+ |
@@ -373,15 +391,15 @@ your_project/
 │   │   └── ...
 │   ├── templates/                  ← 25+ code templates
 │   ├── capabilities/               ← 13 CAA capabilities
-│   ├── playbooks/                  ← 6 solution playbooks
+│   ├── playbooks/                  ← 10 solution playbooks
 │   ├── knowledge/                  ← CAA knowledge base
 │   │   ├── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
 │   │   ├── philosophy/             ← 6 CAA philosophy docs
 │   │   ├── failure_patterns/       ← 3 failure patterns
 │   │   └── frameworks/             ← 149 CAADoc framework indexes
-│   ├── patterns/                   ← 13 architecture patterns
+│   ├── patterns/                   ← 14 architecture patterns
 │   ├── examples/                   ← Real CAA project examples
-│   ├── tests/                      ← 32 suites, 35 files, ~600 checks
+│   ├── tests/                      ← 34 suites, 36 files, ~650 checks
 │   ├── docs/                       ← Full documentation
 │   ├── tools/                      ← Setup, validation, utilities
 │   └── config/                     ← Editor MCP templates
@@ -415,7 +433,9 @@ cp -r CADE/.agents /你的/CAA/项目/路径/
 
 ### 🧠 最新更新
 
-**🧬 Development Kernel (v3.0)** — 从工具集合升级为开发内核。AI 只需知道 3 个 Mode：`develop`（创建/生成）、`analyze`（查询/诊断）、`repair`（修复/重构）。41 个 MCP 工具压缩为 3 个入口，Kernel 内部自动调度需求分析、规划、生成、验证和修复全链路。
+**🧬 Development Kernel (v3.0.2)** — 从工具集合升级为开发内核。AI 只需知道 3 个 Mode：`develop`（创建/生成）、`analyze`（查询/诊断）、`repair`（修复/重构）。Kernel 内部自动调度需求分析、多意图分解、规划、生成、验证和修复全链路。
+
+**🧩 多意图分解 (v3.1)** — 复合请求自动拆分。"做装配统计工具，包含导出BOM和自动着色" → 自动拆为 3 个独立子意图，每个走完整管线。
 
 **📉 Token 优化器** — MCP 响应自动压缩，平均节省 50% token。
 
@@ -498,7 +518,7 @@ cade test                           # 32 套件全量测试 (~60s)
 ### ⚡ 测试结果
 
 <details>
-<summary>32/32 套件 (100%) · 35 文件 · ~600 检查 · 2026-07-11</summary>
+<summary>34/34 套件 (100%) · 35 文件 · ~600 检查 · 2026-07-15</summary>
 
 | | | |
 |---|---|---|
@@ -512,24 +532,21 @@ cade test                           # 32 套件全量测试 (~60s)
 | L0-6 Token(29) ✅ | L0-7 SKILL(17) ✅ | Int1 构建 ✅ |
 | Int2 协同 ✅ | 全系统 ✅ | CrossRef ✅ |
 | Token优化 ✅ | CAA结构 ✅ | Intent ✅ |
-| AI集成 ✅ | Token审计 ✅ | 深度审计 ✅ |
+| AI集成 ✅ | 深度审计 ✅ | 系统健康 ✅ |
+| 学习系统 ✅ | 多意图 ✅ |
 
 </details>
 
 ### 🏛 架构
 
 ```
-AI / CLI / MCP
+AI (3 Mode: develop / analyze / repair)
      ↓
-Intent Engine（Planner + Impact + Optimizer）
+Kernel（多意图分解 → 需求澄清 → 规划 → 生成 → 验证 → 修复 → 学习）
      ↓
-Specification → Validation → Generator → ChangeSet → File System
+Primitives（actions / generator / diagnostics / refactor / build / run）
      ↓
-CodeModel（10 实体）+ DependencyGraph + Diagnostics + FixPlan
-     ↓
-Build Engine（35 命令）+ Runtime Engine（7 命令）+ Rollback
-     ↓
-Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
+Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework → CAADoc）
 ```
 
 > **核心理念**：系统能力增长靠沉淀知识资产，不靠修改代码。
@@ -538,19 +555,17 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 
 | | |
 |---|---|
-| **测试套件** | 32（L1-L7 + Integration + Audit） |
-| **测试文件** | 35（32 套件 + 3 独立） |
-| **检查项** | ~600 |
+| **测试套件** | 34（L0-L7 + Integration + Audit） |
+| **测试文件** | 36（34 套件 + 2 独立） |
+| **检查项** | ~650 |
 | **通过率** | 100% |
 | **模板** | 25+ |
 | **API** | 15（Intent + Action） |
 | **CLI 命令** | 22 |
-| **MCP 模式** | 3 |
+| **MCP 模式** | 3（develop / analyze / repair） |
 | **Build 命令** | 35 |
-| **Spec 类型** | 8 |
-| **重构操作** | 3 |
 | **领域实体** | 10 |
-| **知识资产** | 234（29K + 13P + 13C + 6PB + 149FW + 1E + 6PH + 3FP）
+| **知识资产** | 240+（29K + 14P + 13C + 10PB + 149FW + 1E + 6PH + 3FP + 3DT） |
 
 ### 📂 项目结构
 
@@ -568,15 +583,15 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 │   │   └── ...
 │   ├── templates/                  ← 25+ 代码模板
 │   ├── capabilities/               ← 13 个 CAA 能力
-│   ├── playbooks/                  ← 6 个解决方案
+│   ├── playbooks/                  ← 10 个解决方案
 │   ├── knowledge/                  ← CAA 知识库
 │   │   ├── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
 │   │   ├── philosophy/             ← 6 篇 CAA 哲学
 │   │   ├── failure_patterns/       ← 3 个失败模式
 │   │   └── frameworks/             ← 149 个 CAADoc 框架索引
-│   ├── patterns/                   ← 13 个架构模式
+│   ├── patterns/                   ← 14 个架构模式
 │   ├── examples/                   ← 真实 CAA 项目示例
-│   ├── tests/                      ← 32 套件、35 文件、~600 检查
+│   ├── tests/                      ← 34 套件、36 文件、~650 检查
 │   ├── docs/                       ← 完整文档
 │   ├── tools/                      ← 安装、验证、工具
 │   └── config/                     ← 编辑器 MCP 模板
