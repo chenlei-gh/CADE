@@ -39,7 +39,7 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
 | L0-1 Kernel API | `test_kernel_public_api.py` | 16 | Kernel 3-mode 公共接口 |
 | L0-2 Requirements | `test_requirements.py` | 21 | Requirements Clarifier |
 | L0-3 Repair Loop | `test_repair_loop.py` | 20 | Repair Loop 状态机 |
-| L0-4 Routing Coverage | `test_routing_coverage.py` | 41 | 41 旧工具 → 3-mode 全覆盖 |
+| L0-4 Routing Coverage | `test_kernel_routing.py` | 41 | 41 旧工具 → 3-mode 全覆盖 |
 | L0-5 Code Verifier | `test_code_verifier.py` | 15 | 静态代码检查宏/头文件/命名/格式 |
 | L0-6 Token Status | `test_token_status.py` | 29 | 优化器状态白名单验证 |
 | L0-7 SKILL YAML | `test_skill_yaml.py` | 17 | frontmatter 有效性检查 |
