@@ -1,12 +1,12 @@
 # Test Index
 
-测试目录包含 **33 个 master runner 套件**。共 **36 个文件**，~600 测试项，覆盖 48 条功能链路。
+测试目录包含 **32 个 master runner 套件**。共 **35 个文件**，~600 测试项，覆盖 48 条功能链路。
 
 知识资产：234 文件（29K + 13P + 13C + 6PB + 149FW + 1E + 6PH + 3FP）
 
 ---
 
-## Master Runner 套件（33）
+## Master Runner 套件（32）
 
 在 `test_master.py` 中注册，可通过 `python test_master.py` 批量运行。
 
@@ -46,8 +46,7 @@
 
 | 文件 | 测试项 | Master 标签 |
 |------|--------|------------|
-| `test_e2e_workflow.py` | 创建→编译→运行流程 | L3-1 E2E Workflow |
-| `test_e2e_scenarios.py` | 6 场景 | L3-2 E2E Scenarios |
+| `test_e2e_integration.py` | Kernel+Actions | L3-1 E2E Integration |
 
 ### L4 — 架构不变量
 
@@ -140,4 +139,4 @@ python test_system_health.py
 ---
 
 **最后更新**: 2026-07-12  
-**文件数**: 36（33 套件 + 3 独立）
+**文件数**: 35（32 套件 + 3 独立）

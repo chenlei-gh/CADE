@@ -25,8 +25,7 @@ SUITES = {
     "L2-7 FixPlan Executor": "test_fixplan_executor.py",
     "L2-8 Refactor": "test_refactor.py",
     # ── L3: End-to-End ──
-    "L3-1 E2E Workflow": "test_e2e_workflow.py",
-    "L3-2 E2E Scenarios": "test_e2e_scenarios.py",
+    "L3-1 E2E Integration": "test_e2e_integration.py",
     # ── L4: Architecture ──
     "L4-1 Architecture (39)": "test_l4_architecture.py",
     # ── L5: Semantic ──
@@ -71,8 +70,7 @@ VERIFY_STRINGS = {
     "test_diagnostics.py": "100%",
     "test_fixplan_executor.py": "100%",
     "test_refactor.py": "100%",
-    "test_e2e_workflow.py": "所有核心功能验证通过",
-    "test_e2e_scenarios.py": "passed",
+    "test_e2e_integration.py": "passed",
     "test_l4_architecture.py": "100%",
     "test_l5_semantic.py": "100%",
     "test_l6_fault_injection.py": "100%",

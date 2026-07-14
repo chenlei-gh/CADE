@@ -68,8 +68,7 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
 
 | 标签 | 文件 | 覆盖 |
 |------|------|------|
-| L3-1 E2E Workflow | `test_e2e_workflow.py` | 创建→编译→运行完整流程 |
-| L3-2 E2E Scenarios | `test_e2e_scenarios.py` | 6 个真实场景端到端 (19/19) |
+| L3-1 E2E Integration | `test_e2e_integration.py` | Kernel + Actions 完整链路 |
 
 ### L4 — 架构不变量
 
@@ -117,13 +116,13 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
 ### 快速检查（跳过 Build/Run）
 ```bash
 python tests/test_master.py --quick
-# ~8s, 32 套件（跳过 Int-1 Build & Run）
+# ~8s, 31 套件（跳过 Int-1 Build & Run）
 ```
 
 ### 全量检查
 ```bash
 python tests/test_master.py
-# ~60s, 33 套件（含 CATIA 启停）
+# ~60s, 32 套件（含 CATIA 启停）
 ```
 
 ### 单套件
@@ -148,8 +147,8 @@ python tests/test_master.py --audit
 
 | 指标 | 值 |
 |------|-----|
-| 套件总数 | **33** |
-| L1-L7+L0 核心 | 24 |
+| 套件总数 | **32** |
+| L1-L7+L0 核心 | 23 |
 | 集成套件 | 2 |
 | 审计套件 | 7 |
 | 测试函数 | **56** |
@@ -345,7 +344,7 @@ test_knowledge_system.py: catalog ↔ files 对齐
 
 ### 验证日期
 
-**2026-07-11 23:22**: 全部 12 条链路验证通过，33/33 全量测试 100%（77s）。
+**2026-07-11 23:22**: 全部 12 条链路验证通过，32/32 全量测试 100%（77s）。
   知识资产: 234（29K + 13P + 13C + 6PB + 149FW + 1E + 6PH + 3FP）
 
 ---

@@ -1171,7 +1171,7 @@ EXISTING_SUITES = [
     "test_diagnostics.py",
     "test_fixplan_executor.py",
     "test_refactor.py",
-    "test_e2e_workflow.py",
+    "test_e2e_integration.py",
     "test_l4_architecture.py",
     "test_l5_semantic.py",
     "test_l6_fault_injection.py",

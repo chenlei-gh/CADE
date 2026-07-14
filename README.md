@@ -34,7 +34,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `33/33 suites (100%)` | **36 test files** | **~600 checks** | *2026-07-12*
+> 🟢 **CI Status**: `32/32 suites (100%)` | **35 test files** | **~600 checks** | *2026-07-12*
 
 ---
 
@@ -181,8 +181,8 @@ Retrieval path: **Capability → Playbook → Knowledge → Framework → CAADoc
 26-suite test suite catches drift early:
 
 ```bash
-cade test --quick   # 32 suites (~8s), quick mode skips CATIA tests
-cade test           # 33 suites (~60s), full including CATIA lifecycle
+cade test --quick   # 31 suites (~8s), quick mode skips CATIA tests
+cade test           # 32 suites (~60s), full including CATIA lifecycle
 ```
 
 > 🟢 **Verified**: 32/32 suites (100%) — last full run 2026-07-11
@@ -245,14 +245,14 @@ cade test                         # full: 32 suites (~60s)
 ### ⚡ Test Results
 
 <details>
-<summary>33/33 suites (100%) · 36 files · ~600 checks · 2026-07-12</summary>
+<summary>32/32 suites (100%) · 35 files · ~600 checks · 2026-07-12</summary>
 
 | | | |
 |---|---|---|
 | L1 Unit(49) ✅ | L1-2 Decomposer(21) ✅ | L2 DepGraph ✅ |
 | L2 Intent ✅ | L2 Rollback ✅ | L2 Enhanced ✅ |
 | L2 Spec ✅ | L2 Diag ✅ | L2 FixPlan ✅ |
-| L2 Refactor ✅ | L3-1 E2E ✅ | L3-2 E2E Scn(19) ✅ |
+| L2 Refactor ✅ | L3-1 E2E ✅ |
 | L4 Arch(29) ✅ | L5 Sem(40) ✅ | L6 Fault(16) ✅ |
 | L7 Know(16) ✅ | L0-1 Kernel(16) ✅ | L0-2 Req(21) ✅ |
 | L0-3 Repair(20) ✅ | L0-4 Routing(41) ✅ | L0-5 Verifier(15) ✅ |
@@ -264,8 +264,8 @@ cade test                         # full: 32 suites (~60s)
 </details>
 
 ```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 32 suites (~8s)
-python .agents/skills/catia-caa-dev/tests/test_master.py           # 33 suites (~60s)
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 31 suites (~8s)
+python .agents/skills/catia-caa-dev/tests/test_master.py           # 32 suites (~60s)
 ```
 
 ---
@@ -324,8 +324,8 @@ graph TD
 
 | | |
 |---|---|
-| Suites | 33 (L1-L7 + Integration + Audit) |
-| Files | 36 (33 suites + 3 standalone) |
+| Suites | 32 (L1-L7 + Integration + Audit) |
+| Files | 35 (32 suites + 3 standalone) |
 | Checks | ~600 |
 | Pass Rate | 100% |
 | Templates | 25+ |
@@ -364,7 +364,7 @@ your_project/
 │   │   └── frameworks/             ← 149 CAADoc framework indexes
 │   ├── patterns/                   ← 13 architecture patterns
 │   ├── examples/                   ← Real CAA project examples
-│   ├── tests/                      ← 33 suites, 36 files, ~600 checks
+│   ├── tests/                      ← 32 suites, 35 files, ~600 checks
 │   ├── docs/                       ← Full documentation
 │   ├── tools/                      ← Setup, validation, utilities
 │   └── config/                     ← Editor MCP templates
@@ -481,14 +481,14 @@ cade test                           # 32 套件全量测试 (~60s)
 ### ⚡ 测试结果
 
 <details>
-<summary>33/33 套件 (100%) · 36 文件 · ~600 检查 · 2026-07-11</summary>
+<summary>32/32 套件 (100%) · 35 文件 · ~600 检查 · 2026-07-11</summary>
 
 | | | |
 |---|---|---|
 | L1 单元(49) ✅ | L1-2 分解器(21) ✅ | L2 依赖图 ✅ |
 | L2 Intent ✅ | L2 回滚 ✅ | L2 增强 ✅ |
 | L2 Spec ✅ | L2 诊断 ✅ | L2 FixPlan ✅ |
-| L2 重构 ✅ | L3-1 E2E ✅ | L3-2 E2E场景(19) ✅ |
+| L2 重构 ✅ | L3-1 E2E ✅ |
 | L4 架构(29) ✅ | L5 语义(40) ✅ | L6 故障(16) ✅ |
 | L7 知识(16) ✅ | L0-1 核心(16) ✅ | L0-2 Req(21) ✅ |
 | L0-3 修复(20) ✅ | L0-4 路由(41) ✅ | L0-5 验证器(15) ✅ |
@@ -521,8 +521,8 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 
 | | |
 |---|---|
-| **测试套件** | 33（L1-L7 + Integration + Audit） |
-| **测试文件** | 36（33 套件 + 3 独立） |
+| **测试套件** | 32（L1-L7 + Integration + Audit） |
+| **测试文件** | 35（32 套件 + 3 独立） |
 | **检查项** | ~600 |
 | **通过率** | 100% |
 | **模板** | 25+ |
@@ -559,7 +559,7 @@ Knowledge System（29 Knowledge + 13 Pattern + 1 Example）
 │   │   └── frameworks/             ← 149 个 CAADoc 框架索引
 │   ├── patterns/                   ← 13 个架构模式
 │   ├── examples/                   ← 真实 CAA 项目示例
-│   ├── tests/                      ← 33 套件、36 文件、~600 检查
+│   ├── tests/                      ← 32 套件、35 文件、~600 检查
 │   ├── docs/                       ← 完整文档
 │   ├── tools/                      ← 安装、验证、工具
 │   └── config/                     ← 编辑器 MCP 模板
