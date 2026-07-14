@@ -177,6 +177,17 @@ class Kernel:
         self._state = KernelState.CLARIFYING
         request_lower = request.lower()
 
+        # Phase 0: Multi-Intent Decomposition (v3.1) — BEFORE clarification
+        # Split compound requests first so clarification doesn't short-circuit.
+        try:
+            from requirements import MultiIntentDecomposer
+            decomposer_multi = MultiIntentDecomposer()
+            sub_intents = decomposer_multi.decompose(request)
+            if len(sub_intents) > 1:
+                return self._handle_multi_develop(request, sub_intents, policy)
+        except ImportError:
+            pass
+
         # Phase 1: Requirement Analysis
         clarification = None
         try:
@@ -203,6 +214,7 @@ class Kernel:
                 extras = decomposer.enhance(clarification)
             except ImportError:
                 pass
+
 
         # Phase 1.5: Build / Run / Setup operations (no plan needed)
         build_run_result = self._handle_build_run(request_lower)
@@ -414,6 +426,80 @@ class Kernel:
         return KernelResult(
             status="not_applicable", mode="repair", state=self._state.value,
             message="Repair subsystem not available.",
+        ).to_dict()
+
+    # ─── Multi-Intent Handler (v3.1) ───────────────────────────
+
+    def _handle_multi_develop(self, request: str, sub_intents: list,
+                               policy: ModePolicy) -> dict:
+        """
+        Handle compound requests with multiple sub-intents.
+        Each sub-intent goes through the full develop pipeline independently.
+        """
+        self._state = KernelState.PLANNING
+        all_results = []
+
+        for i, si in enumerate(sub_intents):
+            sub_request = si.description or si.goal
+            try:
+                plan = self._build_develop_plan(sub_request)
+                if plan is None:
+                    all_results.append({
+                        "sub_intent": si.to_dict(),
+                        "status": "skipped",
+                        "message": f"Cannot build plan for: {sub_request}",
+                    })
+                    continue
+
+                self._state = KernelState.GENERATING
+                result = self._execute_develop_plan(plan)
+
+                # Apply extras for this sub-intent
+                try:
+                    from requirements import RequirementsClarifier, RequirementsDecomposer
+                    clarifier = RequirementsClarifier()
+                    sub_clarification = clarifier.analyze(sub_request)
+                    decomposer = RequirementsDecomposer()
+                    extras = decomposer.enhance(sub_clarification)
+                    if extras and any(extras.values()):
+                        self._apply_extras(plan, extras)
+                        result["extras_applied"] = True
+                except ImportError:
+                    pass
+
+                # Verify & ensure IdentityCard
+                verify_result = self._verify_generated_code(plan)
+                if verify_result and verify_result.get("files_checked", 0) > 0:
+                    result["verification"] = verify_result
+                ic_ok = self._ensure_identity_card(plan)
+                if ic_ok:
+                    result["identity_card"] = ic_ok
+
+                all_results.append({
+                    "sub_intent": si.to_dict(),
+                    "status": result.get("status", "ok"),
+                    "message": result.get("message", ""),
+                    "data": result,
+                })
+            except Exception as e:
+                all_results.append({
+                    "sub_intent": si.to_dict(),
+                    "status": "error",
+                    "message": str(e),
+                })
+
+        self._state = KernelState.COMPLETED
+        ok_count = sum(1 for r in all_results if r.get("status") == "ok")
+        return KernelResult(
+            status="ok" if ok_count == len(all_results) else "partial",
+            mode="develop", state=self._state.value,
+            message=f"Multi-intent: {ok_count}/{len(all_results)} sub-intents completed.",
+            data={
+                "multi_intent": True,
+                "total": len(all_results),
+                "completed": ok_count,
+                "results": all_results,
+            },
         ).to_dict()
 
     # ─── Develop Plan Helpers ──────────────────────────────────

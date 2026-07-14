@@ -477,3 +477,86 @@ class RequirementsDecomposer:
             extras[key] = list(dict.fromkeys(extras[key]))
 
         return extras
+
+
+# ─── Multi-Intent Decomposer (v3.1) ────────────────────────────────
+
+
+@dataclass
+class SubIntent:
+    """A single decomposed sub-intent from a compound request"""
+    goal: str
+    domain: str = "general"
+    description: str = ""
+    priority: int = 1
+
+    def to_dict(self) -> dict:
+        return {
+            "goal": self.goal, "domain": self.domain,
+            "description": self.description, "priority": self.priority,
+        }
+
+
+class MultiIntentDecomposer:
+    """
+    Splits compound user requests into independent sub-intents.
+
+    Detects connectors like 并/同时/以及/and also/as well as.
+    Each sub-intent goes through the full develop pipeline independently.
+    """
+
+    CN_CONNECTORS = ["并", "同时", "以及", "还有", "另外", "并且", "外加", "包含", "和"]
+    EN_CONNECTORS = ["and also", "as well as", "plus", "additionally", " and "]
+
+    GOAL_DOMAIN_MAP = {
+        "export": "product", "bom": "product", "导出": "product",
+        "color": "product", "着色": "product", "统计": "product",
+        "statistics": "product", "检查": "part", "check": "part",
+        "标注": "drawing", "annotation": "drawing", "工程图": "drawing",
+        "drawing": "drawing", "曲面": "surface", "surface": "surface",
+        "对话框": "ui", "dialog": "ui", "菜单": "ui", "menu": "ui",
+    }
+
+    def decompose(self, request: str, clarification=None) -> List[SubIntent]:
+        if not request or not request.strip():
+            return []
+        domain = clarification.domain if clarification and hasattr(clarification, 'domain') else "general"
+        segments = self._split_request(request)
+        if len(segments) <= 1:
+            return [SubIntent(goal=request.strip()[:80], domain=domain, description=request.strip())]
+        sub_intents = []
+        for i, seg in enumerate(segments):
+            seg = seg.strip()
+            if not seg or len(seg) < 3:
+                continue
+            sub_domain = self._infer_domain(seg)
+            sub_intents.append(SubIntent(
+                goal=seg[:80], domain=sub_domain or domain,
+                description=seg, priority=i + 1,
+            ))
+        return sub_intents if sub_intents else [SubIntent(
+            goal=request.strip()[:80], domain=domain, description=request.strip())]
+
+    def _split_request(self, request: str) -> List[str]:
+        for conn in self.CN_CONNECTORS:
+            if conn in request:
+                parts = request.split(conn)
+                result = []
+                for p in parts:
+                    result.extend(self._split_request(p.strip()))
+                return result if len(result) > 1 else [request]
+        for conn in self.EN_CONNECTORS:
+            if conn in request.lower():
+                parts = request.lower().split(conn)
+                result = []
+                for p in parts:
+                    result.extend(self._split_request(p.strip()))
+                return result if len(result) > 1 else [request]
+        return [request]
+
+    def _infer_domain(self, text: str) -> str:
+        scores = {}
+        for keyword, domain in self.GOAL_DOMAIN_MAP.items():
+            if keyword in text.lower():
+                scores[domain] = scores.get(domain, 0) + 1
+        return max(scores, key=scores.get) if scores else ""
