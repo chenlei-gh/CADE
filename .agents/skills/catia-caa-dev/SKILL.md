@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: "CATIA CAA V5 Development Engine (CADE) v3.0.2 — Kernel 架构（3 Mode: develop/analyze/repair）、Requirement → Intent → Plan → Generate → Verify → Repair → Learn 全链路。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop、Refactor、静态代码验证。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理。CAA 知识系统（29K + 14P + 14 Capability + 14 Playbook + 149 Framework + 6 Philosophy + 3 Failure Pattern + 3 Decision Tree），25+ 模板、15 API、35 Build/Run 命令、35 套件 ~600 测试项。"
+description: "CATIA CAA V5 Development Engine (CADE) v3.0.2 — Kernel 架构（3 Mode: develop/analyze/repair）、Requirement → Intent → Plan → Generate → Verify → Repair → Learn 全链路。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop、Refactor、静态代码验证。动态 CATIA 检测（零硬编码，支持任意版本/路径）、Prerequisites 管理。CAA 知识系统（29K + 14P + 14 Capability + 14 Playbook + 149 Framework + 6 Philosophy + 3 Failure Pattern + 3 Decision Tree），25+ 模板、15 API、35 Build/Run 命令、36 套件 ~600 测试项。"
 triggers:
   - CAA component
   - CATIA component
@@ -222,7 +222,7 @@ triggers:
 
 **版本**: 3.0.2  
 **状态**: ✅ 生产就绪  
-**测试覆盖率**: 100% (35 套件, ~600 测试项全部通过)
+**测试覆盖率**: 100% (36 套件, ~600 测试项全部通过)
 
 这是一个**智能的 CAA 开发引擎（Development Kernel）**，将模糊的开发需求，经过需求分析、规划、知识推理和验证，稳定地转化为可执行实现。
 
@@ -284,7 +284,7 @@ AI 只知道 3 个 Mode:
 6. **代码验证** — 生成后自动静态检查（宏/头文件/命名规范），无需 mkmk
 7. **自动修复** — Repair Loop：诊断→修复→验证，最多 3 次重试
 8. **高性能** — 模板生成约50ms，比 RADE 工具快 100 倍
-9. **完整测试** — 35 套件、~600 测试项，100% 覆盖率
+9. **完整测试** — 36 套件、~600 测试项，100% 覆盖率
 10. **依赖图管理** — 完整的实体关系图和 Mermaid 可视化
 11. **知识体系** — Capability→Playbook→Knowledge→Philosophy→Framework→CAADoc + Failure Patterns + Decision Trees
 
@@ -1378,7 +1378,7 @@ python test_e2e_integration.py
 │   │   └── AI_WORKFLOW_EXAMPLES.md
 │   └── README.md                     # 文档索引
 │
-├── tests/                            # 测试文件（35 个，35 套件，~600 测试项）
+├── tests/                            # 测试文件（35 个，36 套件，~600 测试项）
 │   ├── test_master.py                # 主运行器
 │   ├── test_full_regression.py       # 全系统验证
 │   ├── test_cross_reference.py       # 交叉引用审计
