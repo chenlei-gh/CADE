@@ -772,6 +772,7 @@ class Kernel:
         "context menu", "右键", "undo", "redo", "update mechanism",
         "selection", "viewer", "gsd", "surface", "drawing", "fta",
         "annotation", "tolerance", "命名", "规范", "生命周期",
+        "对话框", "倒角", "圆角", "孔", "装配", "工程图", "曲面", "撤销",
         "api", "interface", "class", "method", "function",
         "pattern", "example", "tutorial", "documentation", "reference",
         "implement", "explain", "describe",
@@ -812,7 +813,8 @@ class Kernel:
         expanded_request = request
         for alias, keywords in aliases.items():
             if alias in request:
-                expanded_request += " " + keywords
+                # Replace commas with spaces so split() produces clean keywords
+                expanded_request += " " + keywords.replace(",", " ")
 
         # Step 2: Detect domain from request
         try:
@@ -828,7 +830,9 @@ class Kernel:
             # Skip aliases table for matching
             parts = catalog_content.split("## 别名映射")
             search_content = parts[0] if len(parts) > 1 else catalog_content
-            search_content += "\n" + (parts[1].split("## 索引")[0] if len(parts) > 1 and "## 索引" in parts[1] else "")
+            # Append index section (skip aliases table between 别名映射 and 索引)
+            if len(parts) > 1 and "## 索引" in parts[1]:
+                search_content += "\n" + parts[1].split("## 索引", 1)[1]
             for line in search_content.split("\n"):
                 line_lower = line.lower()
                 if "|" not in line_lower:
