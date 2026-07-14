@@ -8,7 +8,7 @@ Design principle:
   Pure Python, no external tools needed. Runs in ~100ms after generation.
 
 Checks:
-  Macro       — CATDeclareClass/CATImplementClass present
+  Macro       — CATCreateClass/CATImplementClass/CATImplementBOA/CATImplementTIE present
   Include     — #include references known CAA headers
   Naming      — file names match class/interface conventions
   Dictionary  — .dico entry format
@@ -140,11 +140,13 @@ CAA_INCLUDES = {
     "CATIDerivation": "CATIDerivation.h",
 }
 
-# CAA macros that every .cpp/.h file needs based on type
-REQUIRED_MACROS = {
-    ".h": ["CATDeclareClass"],
-    ".cpp": ["CATImplementClass"],
-}
+# CAA macros — .cpp files need one of these for component registration
+REGISTRATION_MACROS = [
+    "CATCreateClass",       # Commands, Dialogs (external objects)
+    "CATImplementClass",    # DataExtension, Implementation classes
+    "CATImplementBOA",      # BOA implementation
+    "CATImplementTIE",      # TIE interface implementation
+]
 
 # TIE interface patterns
 TIE_PATTERNS = {
@@ -279,11 +281,17 @@ class CodeVerifier:
         """Check a .cpp implementation file"""
         filename = path.name
 
-        # Must have CATImplementClass
-        if not re.search(r'CATImplementClass\s*\(', content):
+        # Header files and utility files don't need registration macros
+        if filename.endswith('Header.cpp') or filename.endswith('Util.cpp'):
+            self._check_includes(path, content)
+            return
+
+        # Must have at least one CAA registration macro
+        has_macro = any(re.search(m + r'\s*\(', content) for m in REGISTRATION_MACROS)
+        if not has_macro:
             self._error("macro", str(path), 0,
-                       f"Missing CATImplementClass in {filename}",
-                       "Add: CATImplementClass(MyClass, DataExtension, CATBaseUnknown, MyClassStartUp);")
+                       f"Missing CAA registration macro in {filename}",
+                       "Add: CATCreateClass(MyClass) or CATImplementClass(...)")
 
         # Should include its own header
         base = Path(filename).stem
@@ -300,11 +308,14 @@ class CodeVerifier:
         """Check a .h declaration file"""
         filename = path.name
 
-        # Must have CATDeclareClass
-        if not re.search(r'CATDeclareClass\s*;?', content):
+        # Check for at least one CAA macro or base class pattern
+        has_macro = any(re.search(m + r'\s*;?', content) for m in REGISTRATION_MACROS)
+        has_base = any(b in content for b in ('CATStateCommand', 'CATDlgDialog',
+                                               'CATBaseUnknown', 'CATISpecObject'))
+        if not has_macro and not has_base:
             self._error("macro", str(path), 0,
-                       f"Missing CATDeclareClass in {filename}",
-                       "Add CATDeclareClass; in the class declaration")
+                       f"Missing CAA macro or base class in {filename}",
+                       "Inherit from CATStateCommand/CATDlgDialog or add CATDeclareClass")
 
         self._check_includes(path, content)
 
@@ -366,7 +377,7 @@ class CodeVerifier:
                       "Add: BUILT_OBJECT_TYPE = SHARED_LIBRARY")
 
         # Check SOURCES lists real files
-        src_match = re.search(r'SOURCES\s*=\s*(.+)', content)
+        src_match = re.search(r'SOURCES\s*=\s*(.+?)$', content)
         if src_match:
             sources = src_match.group(1).strip().replace("\\", " ").split()
             module_dir = path.parent

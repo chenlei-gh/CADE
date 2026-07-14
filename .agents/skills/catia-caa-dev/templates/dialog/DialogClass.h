@@ -25,7 +25,7 @@ class CATNotification;
  * - Checkboxes (CATDlgCheckButton)
  * - Radio buttons (CATDlgRadioButton)
  */
-class <DialogClassName> : public CATDlg Dialog
+class <DialogClassName> : public CATDlgDialog Dialog
 {
     CATDeclareClass;
 
