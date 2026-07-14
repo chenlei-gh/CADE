@@ -415,16 +415,18 @@ class RequirementsDecomposer:
 
     # Domain → default playbooks
     DOMAIN_PLAYBOOKS = {
-        "product": ["pb.export_bom", "pb.assembly_stats"],
-        "part": ["pb.batch_feature_check"],
-        "ui": ["pb.create_context_menu"],
+        "product": ["pb.export_bom", "pb.assembly_stats", "pb.batch_update_save"],
+        "part": ["pb.batch_feature_check", "pb.geometry_quality_check", "pb.parameter_editor"],
+        "surface": ["pb.surface_analysis"],
+        "ui": ["pb.create_context_menu", "pb.custom_viewer"],
     }
 
     # Domain → default capabilities
     DOMAIN_CAPABILITIES = {
-        "product": ["cap.assembly_tree"],
-        "part": ["cap.feature_recognition", "cap.parameter_system"],
-        "ui": ["cap.selection"],
+        "product": ["cap.assembly_tree", "cap.update_mechanism", "cap.persistence"],
+        "part": ["cap.feature_recognition", "cap.parameter_system", "cap.geometry_query"],
+        "surface": ["cap.surface_operations", "cap.geometry_query", "cap.document_export"],
+        "ui": ["cap.selection", "cap.visualization"],
         "drawing": ["cap.document_export"],
     }
 

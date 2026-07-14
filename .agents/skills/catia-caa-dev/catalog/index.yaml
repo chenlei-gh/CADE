@@ -22,6 +22,37 @@ tags: [geometry, feature]          # 标签
 ---
 ```
 
+## 别名映射 (Aliases)
+
+同义词/中英文映射——解决关键词精确匹配的局限性。
+Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edge treatment。
+
+| 别名 | 展开为关键词 |
+|------|------------|
+| 倒角 | chamfer, bevel, edge break |
+| 倒圆角 | fillet, radius, blend, rounding |
+| 打孔 | hole, drill, bore, punch |
+| 装配/装配体 | assembly, product, component, BOM |
+| 工程图 | drawing, sheet, view, drafting |
+| 曲面 | surface, GSD, patch, face |
+| 撤销 | undo, rollback, revert |
+| 重做 | redo, replay |
+| 颜色/着色 | color, material, visualization, appearance |
+| 选择/选取 | selection, pick, highlight, locate |
+| 参数 | parameter, formula, relation, attribute |
+| 更新 | update, refresh, rebuild, regenerate |
+| 导出 | export, save, output, write |
+| 对话框 | dialog, window, form, panel |
+| 右键菜单 | context menu, right click, popup menu |
+| 工具栏 | toolbar, ribbon, command bar |
+| 生命周期 | lifecycle, activate, deactivate, cleanup |
+| 命名规范 | naming, convention, prefix, suffix |
+| 内存管理 | memory, AddRef, Release, leak |
+| 错误处理 | error, HRESULT, exception, CHECK_ARGS |
+| 状态命令 | state command, BuildGraph, wizard, transition |
+| 标注/注释 | annotation, dimension, PMI, FTA, tolerance |
+| 持久化 | persistence, serialize, save, load, stream |
+
 ## 索引
 
 
@@ -53,6 +84,10 @@ tags: [geometry, feature]          # 标签
 | pb.create_context_menu | playbooks/pb_create_context_menu.md | 创建右键菜单命令 | cap.selection |
 | pb.batch_feature_check | playbooks/pb_batch_feature_check.md | 批量特征检查 | cap.feature_recognition, cap.parameter_system |
 | pb.custom_viewer | playbooks/pb_custom_viewer.md | 自定义 3D Viewer | cap.visualization, cap.selection |
+| pb.batch_update_save | playbooks/pb_batch_update_save.md | 批量更新保存 | cap.update_mechanism, cap.persistence |
+| pb.geometry_quality_check | playbooks/pb_geometry_quality_check.md | 几何质量检查 | cap.geometry_query, cap.feature_recognition |
+| pb.parameter_editor | playbooks/pb_parameter_editor.md | 批量参数编辑 | cap.parameter_system, cap.selection |
+| pb.surface_analysis | playbooks/pb_surface_analysis.md | 曲面分析报告 | cap.surface_operations, cap.geometry_query |
 
 ### Framework 索引 (CAADoc)
 

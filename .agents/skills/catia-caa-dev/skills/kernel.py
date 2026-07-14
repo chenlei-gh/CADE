@@ -233,6 +233,11 @@ class Kernel:
         if verify_result and verify_result.get("files_checked", 0) > 0:
             result["verification"] = verify_result
 
+        # Phase 3.5: Ensure IdentityCard (prevent mkmk build failures)
+        ic_ok = self._ensure_identity_card(plan)
+        if ic_ok:
+            result["identity_card"] = ic_ok
+
         self._state = KernelState.COMPLETED
         return KernelResult(
             status=result.get("status", "ok"), mode="develop",
@@ -634,6 +639,43 @@ class Kernel:
         except Exception:
             return {}
 
+    def _ensure_identity_card(self, plan: dict) -> dict:
+        """Ensure IdentityCard is created so mkmk build won't fail.
+        Auto-runs mkCreateIC if Build Time env is available."""
+        intent_data = plan.get("intent", {})
+        framework = intent_data.get("framework", "")
+        if not framework:
+            return {}
+        fw_name = framework if framework.endswith(".edu") else framework + ".edu"
+        fw_dir = self.workspace_root / fw_name
+        if not fw_dir.exists():
+            return {}
+        ic_h = fw_dir / "IdentityCard" / "IdentityCard.h"
+        if not ic_h.exists():
+            return {}
+        # Check if mkCreateIC already run
+        ic_dir = fw_dir / "IdentityCard"
+        has_binary = ic_dir.exists() and any(
+            f.suffix in (".obj", "") and "IdentityCard" in f.name
+            for f in ic_dir.iterdir()
+        )
+        if has_binary:
+            return {"status": "ok", "message": "IdentityCard already up to date."}
+        try:
+            from build import create_identity_card
+            base = framework.replace(".edu", "")
+            result = create_identity_card(self.workspace_root, base)
+            ok = result.get("status") == "success"
+            return {
+                "status": "created" if ok else "pending",
+                "message": "IdentityCard auto-created." if ok else
+                    f"Run manually: mkCreateIC {base}",
+            }
+        except ImportError:
+            return {"status": "pending", "message": f"Run: mkCreateIC {framework.replace('.edu', '')}"}
+        except Exception as e:
+            return {"status": "pending", "message": f"IdentityCard: {e}"}
+
     # ─── Knowledge Lookup ──────────────────────────────────────
 
     # Keywords that suggest knowledge/API query (not workspace operation)
@@ -663,7 +705,7 @@ class Kernel:
         Search knowledge base for relevant information.
 
         Uses catalog/index.yaml for fast keyword→file mapping,
-        then reads matched knowledge files for content.
+        with alias expansion for Chinese synonyms and terminology variants.
         """
         skill_root = Path(__file__).parent.parent
         catalog_file = skill_root / "catalog" / "index.yaml"
@@ -671,7 +713,14 @@ class Kernel:
         results = []
         domain_hint = ""
 
-        # Step 1: Detect domain from request
+        # Step 1: Expand aliases (Chinese synonyms → English keywords)
+        aliases = self._load_aliases(catalog_file)
+        expanded_request = request
+        for alias, keywords in aliases.items():
+            if alias in request:
+                expanded_request += " " + keywords
+
+        # Step 2: Detect domain from request
         try:
             from requirements import RequirementsClarifier
             clarifier = RequirementsClarifier()
@@ -679,20 +728,24 @@ class Kernel:
         except Exception:
             pass
 
-        # Step 2: Search catalog index for keyword matches
+        # Step 3: Search catalog index for keyword matches (with alias expansion)
         if catalog_file.exists():
             catalog_content = catalog_file.read_text(encoding="utf-8", errors="replace")
-            for line in catalog_content.split("\n"):
+            # Skip aliases table for matching
+            parts = catalog_content.split("## 别名映射")
+            search_content = parts[0] if len(parts) > 1 else catalog_content
+            search_content += "\n" + (parts[1].split("## 索引")[0] if len(parts) > 1 and "## 索引" in parts[1] else "")
+            for line in search_content.split("\n"):
                 line_lower = line.lower()
                 if "|" not in line_lower:
                     continue
-                # Match: check if any request keyword appears in this line
-                if any(kw in line_lower for kw in request.split() if len(kw) >= 3):
+                # Match: check if any request keyword (or expanded alias) appears
+                if any(kw in line_lower for kw in expanded_request.split() if len(kw) >= 3):
                     results.append(line.strip())
                     if len(results) >= 10:
                         break
 
-        # Step 3: Build domain-aware response
+        # Step 4: Build domain-aware response
         summary_parts = []
         if domain_hint and domain_hint != "general":
             summary_parts.append(f"Domain: {domain_hint}")
@@ -706,6 +759,32 @@ class Kernel:
             "references": results,
             "hint": "For detailed API code, check knowledge/ files matched above. For official docs, see CAADoc via knowledge/frameworks/.",
         }
+
+    def _load_aliases(self, catalog_file: Path) -> dict:
+        """Parse aliases section from catalog/index.yaml.
+        Returns dict mapping alias (Chinese) → expanded keywords (English)."""
+        aliases = {}
+        if not catalog_file.exists():
+            return aliases
+        try:
+            content = catalog_file.read_text(encoding="utf-8", errors="replace")
+            in_aliases = False
+            for line in content.split("\n"):
+                if "## 别名映射" in line:
+                    in_aliases = True
+                    continue
+                if in_aliases:
+                    if line.startswith("## ") and "别名" not in line:
+                        break
+                    if "|" in line and not line.strip().startswith("|"):
+                        parts = [p.strip() for p in line.split("|")]
+                        if len(parts) >= 3:
+                            alias = parts[1].strip()
+                            keywords = parts[2].strip()
+                            aliases[alias] = keywords
+        except Exception:
+            pass
+        return aliases
 
     # ─── Build / Run / Support Routing ─────────────────────────
 

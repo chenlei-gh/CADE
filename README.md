@@ -22,7 +22,7 @@
 
 ---
 
-# CADE v3.0.0 — CATIA CAA Development Kernel
+# CADE v3.0.2 — CATIA CAA Development Kernel
 
 <div align="center">
 
@@ -189,8 +189,25 @@ cade test           # 32 suites (~60s), full including CATIA lifecycle
 
 - **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
-- **Version Consistency** — 3.0.0 unified across all docs
+- **Version Consistency** — 3.0.2 unified across all docs
 - **Hardcoded Path Detection** — 92 files scanned
+
+---
+
+## 🎯 What CADE Handles (and What It Doesn't)
+
+CADE generates **structural CAA code** — the scaffolding that every CAA component needs:
+
+| ✅ CADE Handles | ❌ CADE Does NOT Handle |
+|---|---|
+| Commands, Dialogs, StateCommands | Business logic inside `BuildGraph()` |
+| Interfaces, Components, Extensions | Algorithm implementation |
+| Modules, Frameworks, IdentityCards | Custom math/geometry operations |
+| Dictionaries, NLS, Imakefiles, Icons | Application-specific data processing |
+| Workbenches, Addins, Toolbars | Runtime behavior tuning |
+| Feature models, Factory models | Third-party library integration |
+
+> **CADE gives you a complete, compilable skeleton.** You fill in the `// TODO: implement` blocks with your business logic.
 
 ---
 
@@ -245,7 +262,7 @@ cade test                         # full: 32 suites (~60s)
 ### ⚡ Test Results
 
 <details>
-<summary>32/32 suites (100%) · 35 files · ~600 checks · 2026-07-12</summary>
+<summary>31/31 suites (100%) · 35 files · ~600 checks · 2026-07-15</summary>
 
 | | | |
 |---|---|---|
@@ -259,7 +276,7 @@ cade test                         # full: 32 suites (~60s)
 | L0-6 Token(29) ✅ | L0-7 SKILL(17) ✅ | Int1 Build ✅ |
 | Int2 Skill ✅ | FullSys ✅ | CrossRef ✅ |
 | Token Opt ✅ | CAA Struct ✅ | Intent Plan ✅ |
-| AI Integ ✅ | TokenAudit ✅ | DeepAudit ✅ |
+| AI Integ ✅ | DeepAudit ✅ | SysHealth ✅ |
 
 </details>
 

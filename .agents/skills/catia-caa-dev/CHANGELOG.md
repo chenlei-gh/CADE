@@ -5,7 +5,26 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+
 ---
+
+## [3.0.2] - 2026-07-15
+
+### 知识检索增强
+
+- 别名映射 (catalog/index.yaml): 23 组中英文同义词
+- Kernel 别名加载: _lookup_knowledge 检索前自动展开别名
+
+### 编译前置检查
+
+- IdentityCard 自动创建: 生成代码后自动运行 mkCreateIC
+- 防止 mkmk 编译时缺少 IdentityCard 的错误
+
+### 测试整理
+
+- token 测试合并: test_token_audit.py → test_token_optimizer.py
+- System Health 加入 master 套件
+- 测试套件: 33 → 31
 
 ---
 

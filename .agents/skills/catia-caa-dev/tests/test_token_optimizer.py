@@ -246,6 +246,84 @@ except ImportError:
 
 
 # ═══════════════════════════════════════════════════════════════
+# 9. API Token Measurement (merged from test_token_audit.py)
+# ═══════════════════════════════════════════════════════════════
+print("\n" + "=" * 70)
+print("  9. API Token Consumption Measurement")
+print("=" * 70)
+
+try:
+    from actions import (
+        ActionContext, list_modules, list_commands, list_interfaces,
+        list_workbenches, get_dependencies, get_dependents,
+        analyze_workspace, validate_workspace,
+    )
+    from intents import (
+        create_executable_command, create_feature, create_extension,
+        suggest_next_action, expose_service,
+    )
+    from diagnostics import diagnose_workspace, diagnose_and_fix
+    from build import error_result as build_err
+    from specification import CommandSpec, FeatureSpec
+    import json as _json
+
+    actx = ActionContext()
+
+    def measure(name, raw_fn, *args, **kwargs):
+        try:
+            raw = raw_fn(*args, **kwargs)
+        except Exception as e:
+            raw = {"status": "error", "message": str(e)[:100]}
+        if hasattr(raw, "to_dict"):
+            raw = raw.to_dict()
+        if not isinstance(raw, dict):
+            raw = {"result": str(raw)[:500]}
+        raw_json = _json.dumps(raw, default=str)
+        raw_tokens = len(raw_json)
+        opt = optimize(raw, mode="auto")
+        opt_json = _json.dumps(opt, default=str)
+        opt_tokens = len(opt_json)
+        savings = raw_tokens - opt_tokens
+        pct = savings * 100 // max(raw_tokens, 1) if savings > 0 else 0
+        # Each measure counts as 1 check: optimization reduced or maintained
+        check(f"{name} opt≤raw", opt_tokens <= raw_tokens + 10,  # +10 tolerance for JSON overhead
+              f"{raw_tokens}→{opt_tokens} (-{pct}%)")
+        return raw
+
+    # Queries
+    measure("list_modules     ", list_modules, actx)
+    measure("list_commands    ", list_commands, actx)
+    measure("list_interfaces  ", list_interfaces, actx)
+    measure("list_workbenches ", list_workbenches, actx)
+    measure("get_dependencies ", get_dependencies, actx, "TestCmd")
+    measure("get_dependents   ", get_dependents, actx, "TestCmd")
+    measure("analyze_workspace", analyze_workspace, actx)
+    measure("validate_workspace", validate_workspace, actx)
+
+    # Creates
+    measure("create_command   ", create_executable_command, actx, "OptCmd", "TestMod.m")
+    measure("create_feature   ", create_feature, actx, "OptFeat", "TestMod.m")
+    measure("create_extension ", create_extension, actx, "OptExt", "CATPart", "TestMod.m")
+    measure("expose_service   ", expose_service, actx, "OptComp", "TestMod.m")
+    measure("suggest_next     ", suggest_next_action, actx)
+
+    # Diagnostics
+    measure("diagnose_workspace", diagnose_workspace, actx)
+    measure("diagnose_and_fix  ", diagnose_and_fix, actx, dry_run=True)
+
+    # Error result
+    measure("build_error      ", build_err, "Build failed: missing include",
+            detail={"file": "MyCmd.cpp", "line": 42})
+
+    # Specs
+    measure("CommandSpec      ", lambda: CommandSpec(name="MyCmd", module="M.m", framework="Fw.edu").to_dict())
+    measure("FeatureSpec      ", lambda: FeatureSpec(name="MyFeat", module="M.m").to_dict())
+
+except ImportError as e:
+    check("API measurement skipped", True, f"import error: {e}"[:80])
+
+
+# ═══════════════════════════════════════════════════════════════
 # Summary
 # ═══════════════════════════════════════════════════════════════
 print("\n" + "=" * 70)

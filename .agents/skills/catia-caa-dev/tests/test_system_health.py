@@ -136,10 +136,14 @@ class SystemHealthCheck:
                         "test_cross_reference.py",
                         "test_token_optimizer.py",
                         "test_caa_structure.py",
-                                                "test_intent_planner.py",
-                                                "test_ai_integration.py",
-                                                "test_token_audit.py",
-                                            ]
+                        "test_intent_planner.py",
+                        "test_ai_integration.py",
+                        "test_kernel_public_api.py",
+                        "test_kernel_routing.py",
+                        "test_requirements.py",
+                        "test_repair_loop.py",
+                        "test_code_verifier.py",
+                    ]
 
         for test in required_tests:
             if not (self.root / "tests" / test).exists():

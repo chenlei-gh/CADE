@@ -318,9 +318,9 @@ class ProductionReadinessCheck:
         # 检查版本号一致性（README.md is at CADE root）
         readme_path = self.root.parent.parent.parent / "README.md"
         files_to_check = [
-            (readme_path, "3.0.0"),
-            (self.root / "SKILL.md", "3.0.0"),
-            (self.root / "CHANGELOG.md", "3.0.0"),
+            (readme_path, "3.0.2"),
+            (self.root / "SKILL.md", "3.0.2"),
+            (self.root / "CHANGELOG.md", "3.0.2"),
         ]
 
         for file_path, expected_version in files_to_check:

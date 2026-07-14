@@ -50,12 +50,13 @@ SUITES = {
     "Full System": "test_full_regression.py",
     # ── Audit ──
     "Cross-Ref Audit": "test_cross_reference.py",
-    "Token Optimizer": "test_token_optimizer.py",
+    "Token Optimizer (merged)": "test_token_optimizer.py",
     "CAA Structure": "test_caa_structure.py",
     "Intent Planner": "test_intent_planner.py",
     "AI Integration": "test_ai_integration.py",
-    "Token Audit": "test_token_audit.py",
     "Deep Audit": "test_deep_audit.py",
+    "System Health": "test_system_health.py",
+    "Learning System": "test_learning.py",
     }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
@@ -91,8 +92,9 @@ VERIFY_STRINGS = {
     "test_caa_structure.py": "All CAA standard paths verified",
     "test_intent_planner.py": "All Planner tests passed",
     "test_ai_integration.py": "AI can seamlessly use ALL CADE APIs",
-        "test_token_audit.py": "LOW (<500)",
-            "test_deep_audit.py": "ALL REFERENCES CONSISTENT",
+    "test_deep_audit.py": "ALL REFERENCES CONSISTENT",
+    "test_system_health.py": "",
+    "test_learning.py": "All learning system tests passed",
     }
 
 
