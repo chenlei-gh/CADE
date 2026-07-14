@@ -1250,6 +1250,7 @@ python test_e2e_integration.py
 │   ├── cade.py                       # CLI 入口 (22 命令)
 │   ├── mcp_server.py                 # MCP Server (3 Mode, v3.0)
 │   ├── kernel.py                     # Development Kernel (v3.0)
+│   ├── catalog.py                    # Knowledge Catalog Index (v3.0)
 │   ├── requirements.py               # Requirements Clarifier (v3.0)
 │   │   └── decision_trees/          # 决策树 (3 个)
 │   ├── verifier.py                   # Code Verifier — static + mkmk (v3.0)

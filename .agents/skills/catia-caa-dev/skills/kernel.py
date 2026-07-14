@@ -791,16 +791,12 @@ class Kernel:
                     return True
             elif kw in request:
                 return True
-        # Check alias keys (Chinese synonyms not in _KNOWLEDGE_KW)
+        # Check alias keys via CatalogIndex (Chinese synonyms not in _KNOWLEDGE_KW)
         try:
-            from pathlib import Path
-            skill_root = Path(__file__).parent.parent
-            catalog_file = skill_root / "catalog" / "index.yaml"
-            aliases = self._load_aliases(catalog_file)
-            for alias in aliases:
-                parts = [p.strip() for p in alias.replace("/", " ").split()]
-                if any(p in request for p in parts):
-                    return True
+            from catalog import CatalogIndex
+            catalog = CatalogIndex.load(Path(__file__).parent.parent)
+            if catalog.has_alias_match(request):
+                return True
         except Exception:
             pass
         # Check question patterns
@@ -808,28 +804,14 @@ class Kernel:
 
     def _lookup_knowledge(self, request: str) -> dict:
         """
-        Search knowledge base for relevant information.
-
-        Uses catalog/index.yaml for fast keyword→file mapping,
-        with alias expansion for Chinese synonyms and terminology variants.
+        Search knowledge base via CatalogIndex (unified model).
+        Alias expansion and keyword matching handled internally.
         """
         skill_root = Path(__file__).parent.parent
-        catalog_file = skill_root / "catalog" / "index.yaml"
-
         results = []
         domain_hint = ""
 
-        # Step 1: Expand aliases (Chinese synonyms → English keywords)
-        aliases = self._load_aliases(catalog_file)
-        expanded_request = request
-        for alias, keywords in aliases.items():
-            # Split compound aliases like "装配/装配体" and match each part
-            alias_parts = [p.strip() for p in alias.replace("/", " ").split()]
-            if any(part in request for part in alias_parts):
-                # Replace commas with spaces so split() produces clean keywords
-                expanded_request += " " + keywords.replace(",", " ")
-
-        # Step 2: Detect domain from request
+        # Step 1: Detect domain
         try:
             from requirements import RequirementsClarifier
             clarifier = RequirementsClarifier()
@@ -837,30 +819,19 @@ class Kernel:
         except Exception:
             pass
 
-        # Step 3: Search catalog index for keyword matches (with alias expansion)
-        if catalog_file.exists():
-            catalog_content = catalog_file.read_text(encoding="utf-8", errors="replace")
-            # Skip aliases table for matching
-            parts = catalog_content.split("## 别名映射")
-            search_content = parts[0] if len(parts) > 1 else catalog_content
-            # Append index section (skip aliases table between 别名映射 and 索引)
-            if len(parts) > 1 and "## 索引" in parts[1]:
-                search_content += "\n" + parts[1].split("## 索引", 1)[1]
-            for line in search_content.split("\n"):
-                line_lower = line.lower()
-                if "|" not in line_lower:
-                    continue
-                # Match: check if any request keyword (or expanded alias) appears
-                if any(kw in line_lower for kw in expanded_request.split() if len(kw) >= 3):
-                    results.append(line.strip())
-                    if len(results) >= 10:
-                        break
+        # Step 2: Search via CatalogIndex (handles alias expansion internally)
+        try:
+            from catalog import CatalogIndex
+            catalog = CatalogIndex.load(skill_root)
+            entries = catalog.search(request, max_results=10)
+            results = [e.raw_line for e in entries]
+        except Exception:
+            pass
 
-        # Step 4: Build domain-aware response
+        # Step 3: Build response
         summary_parts = []
         if domain_hint and domain_hint != "general":
             summary_parts.append(f"Domain: {domain_hint}")
-
         if results:
             summary_parts.append(f"Found {len(results)} references")
 
@@ -870,33 +841,6 @@ class Kernel:
             "references": results,
             "hint": "For detailed API code, check knowledge/ files matched above. For official docs, see CAADoc via knowledge/frameworks/.",
         }
-
-    def _load_aliases(self, catalog_file: Path) -> dict:
-        """Parse aliases section from catalog/index.yaml.
-        Returns dict mapping alias (Chinese) → expanded keywords (English)."""
-        aliases = {}
-        if not catalog_file.exists():
-            return aliases
-        try:
-            content = catalog_file.read_text(encoding="utf-8", errors="replace")
-            in_aliases = False
-            for line in content.split("\n"):
-                if "## 别名映射" in line or line.startswith("## 别名"):
-                    in_aliases = True
-                    continue
-                if in_aliases:
-                    if line.startswith("## ") and "别名" not in line:
-                        break
-                    if "|" in line:
-                        parts = [p.strip() for p in line.split("|")]
-                        # Skip header and separator rows (p1 is column name or dashes)
-                        if len(parts) >= 3 and parts[1] and not parts[1].startswith("-") and parts[1] not in ("别名", "展开为关键词"):
-                            alias = parts[1].strip()
-                            keywords = parts[2].strip()
-                            aliases[alias] = keywords
-        except Exception:
-            pass
-        return aliases
 
     # ─── Build / Run / Support Routing ─────────────────────────
 

@@ -61,6 +61,14 @@ class SystemHealthCheck:
             "skills/clean.py",
             "skills/workspace.py",
             "skills/runtime_view.py",
+            "skills/kernel.py",
+            "skills/catalog.py",
+            "skills/requirements.py",
+            "skills/verifier.py",
+            "skills/repair.py",
+            "skills/learning.py",
+            "skills/token_optimizer.py",
+            "skills/mcp_server.py",
         ]
 
         for module in required_modules:

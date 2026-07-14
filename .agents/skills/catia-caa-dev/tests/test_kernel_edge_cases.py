@@ -316,11 +316,11 @@ print("\n" + "=" * 70)
 print("  12. Alias Loading")
 print("=" * 70)
 
-catalog = SKILL_ROOT / "catalog" / "index.yaml"
-aliases = k._load_aliases(catalog)
-check("aliases loaded", len(aliases) > 10, f"got {len(aliases)}")
-check("倒角 → chamfer", "倒角" in aliases)
-check("至少20个别名", len(aliases) >= 20, f"got {len(aliases)}")
+from catalog import CatalogIndex
+catalog = CatalogIndex.load(SKILL_ROOT)
+check("aliases loaded", len(catalog.aliases) > 10, f"got {len(catalog.aliases)}")
+check("倒角 → chamfer", "倒角" in catalog.aliases)
+check("至少20个别名", len(catalog.aliases) >= 20, f"got {len(catalog.aliases)}")
 
 # Summary
 print("\n" + "=" * 70)
