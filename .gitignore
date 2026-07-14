@@ -55,8 +55,8 @@ temp/
 tmp/
 
 # Learning system test artifacts (auto-generated stubs)
-knowledge/failure_patterns/fp_test_*.md
-knowledge/failure_patterns/fp_missing_link_with.md
+.agents/skills/catia-caa-dev/knowledge/failure_patterns/fp_test_*.md
+.agents/skills/catia-caa-dev/knowledge/failure_patterns/fp_missing_link_with.md
 
 # Test outputs
 test_results/
