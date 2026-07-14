@@ -317,8 +317,56 @@ class Kernel:
         ).to_dict()
 
     def _handle_repair(self, request: str, policy: ModePolicy) -> dict:
-        """REPAIR mode: Diagnose → Fix → Verify (with retry)"""
+        """REPAIR mode: Refactor / Diagnose / Fix / Rollback"""
         self._state = KernelState.REPAIRING
+        request_lower = request.lower()
+
+        # ── Refactor operations ──
+        if any(kw in request_lower for kw in ("rename", "move", "refactor")):
+            try:
+                from actions import ActionContext
+                ctx = ActionContext(str(self.workspace_root))
+                ctx.refresh()
+                snapshot = ctx.snapshot
+                # Extract params
+                import re
+                rename_match = re.search(r'rename\s+(?:command\s+)?(\w+)\s+to\s+(\w+)\s+(?:in\s+)?(\w+(?:\.\w+)?)?', request)
+                move_match = re.search(r'move\s+(?:command\s+)?(\w+)\s+(?:from\s+)?(\w+(?:\.\w+)?)\s+(?:to\s+)?(\w+(?:\.\w+)?)', request)
+                if rename_match:
+                    from refactor import rename_command
+                    old, new, mod = rename_match.groups()
+                    result = rename_command(snapshot, mod or "", old, new)
+                    self._state = KernelState.COMPLETED
+                    return KernelResult(status="ok", mode="repair", state=self._state.value,
+                        message=result.get("message", f"Renamed {old} -> {new}"), data=result).to_dict()
+                if move_match:
+                    from refactor import move_command
+                    cmd, src, tgt = move_match.groups()
+                    result = move_command(snapshot, src, tgt, cmd)
+                    self._state = KernelState.COMPLETED
+                    return KernelResult(status="ok", mode="repair", state=self._state.value,
+                        message=result.get("message", f"Moved {cmd}"), data=result).to_dict()
+            except ImportError:
+                pass
+
+        # ── Rollback operations ──
+        if any(kw in request_lower for kw in ("rollback", "list rollback", "backup")):
+            try:
+                from actions import ActionContext, list_rollback_points, rollback_operation
+                ctx = ActionContext(str(self.workspace_root))
+                import re
+                id_match = re.search(r'(?:to|id)\s+(\w+)', request)
+                if id_match:
+                    result = rollback_operation(ctx, id_match.group(1))
+                else:
+                    result = list_rollback_points(ctx)
+                self._state = KernelState.COMPLETED
+                return KernelResult(status="ok", mode="repair", state=self._state.value,
+                    message=str(result.get("message", "")), data=result).to_dict()
+            except ImportError:
+                pass
+
+        # ── Default: Diagnose + Fix loop ──
 
         try:
             from repair import RepairLoop
