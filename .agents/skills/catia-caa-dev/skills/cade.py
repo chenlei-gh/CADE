@@ -63,6 +63,46 @@ SKILL_ROOT = Path(__file__).parent
 sys.path.insert(0, str(SKILL_ROOT))
 
 
+def _kernel(capability: str, text: str) -> dict:
+    """Route CLI command through Kernel."""
+    from kernel import Kernel, KernelMode
+    mode_map = {"develop": KernelMode.DEVELOP, "analyze": KernelMode.ANALYZE, "repair": KernelMode.REPAIR}
+    # Find workspace from --workspace flag or use default
+    ws = _get_default_ws()
+    for i, a in enumerate(sys.argv):
+        if a in ("--workspace", "-w") and i + 1 < len(sys.argv):
+            ws = sys.argv[i + 1]
+            break
+    k = Kernel(workspace_root=ws)
+    return k.execute(mode_map[capability], text)
+
+
+def _print_kernel(r: dict):
+    """Print Kernel result in CLI-friendly format."""
+    status = r.get("status", "?")
+    msg = r.get("message", "")
+    print(f"[{status}] {msg}")
+    # Show clarification questions if present
+    if r.get("data") and isinstance(r["data"], dict):
+        questions = r["data"].get("questions", [])
+        if questions:
+            print()
+            for q in questions:
+                opts = "/".join(q.get("options", []))
+                print(f"  ? {q.get('question', '')} [{opts}]")
+    # Show verification results
+    verify = r.get("verification", {})
+    if verify:
+        print(f"  Verification: {verify.get('error_count', 0)} errors, {verify.get('files_checked', 0)} files")
+    # Show extras applied
+    extras = r.get("extras_applied", {})
+    if extras:
+        applied = []
+        if extras.get("deps_added"): applied.append(f"deps: {', '.join(extras['deps_added'])}")
+        if extras.get("refs_added"): applied.append(f"refs: {len(extras['refs_added'])} injected")
+        if applied: print(f"  Extras: {'; '.join(applied)}")
+
+
 def main():
     if len(sys.argv) < 2:
         print_help()
@@ -186,137 +226,92 @@ def cmd_run(args):
 
 
 def cmd_create(args):
+    """Create via Kernel — all types routed through develop()."""
     if not args:
         print("Usage: cade create <type> <name> <module> [options]")
-        print("Types: command, feature, extension")
+        print("  type: command | feature | extension | workbench | dialog | interface | module | framework")
+        return
+    sub = args[0].lower()
+    name = args[1] if len(args) > 1 else ""
+    module = args[2] if len(args) > 2 else "MyModule.m"
+    opts = _get_flags(args)
+    dialog = "--dialog" in opts or "-d" in opts
+    wb = None
+    for i, a in enumerate(args):
+        if a in ("--wb", "--workbench") and i + 1 < len(args):
+            wb = args[i + 1]
+
+    if not name:
+        print("Error: name is required")
         return
 
-    sub = args[0].lower()
-    from actions import ActionContext
+    # Build natural language request
+    extra = ""
+    if sub == "command" and dialog:
+        extra = " with dialog"
+        if wb:
+            extra += f" and add to workbench {wb}"
+    if sub == "feature":
+        extra = " with factory"
 
-    ws = _get_ws(args[1:])
-    ctx = ActionContext(ws)
-    opts = _get_flags(args)
-
-    if sub == "command":
-        from intents import create_executable_command
-
-        name = args[1] if len(args) > 1 else input("Command name: ")
-        module = args[2] if len(args) > 2 else input("Module name: ")
-        result = create_executable_command(
-            ctx,
-            name=name,
-            module=module,
-            with_dialog="--dialog" in opts,
-            add_to_workbench=opts.get("--wb") or opts.get("--workbench"),
-        )
-        _print_result(result)
-
-    elif sub == "feature":
-        from intents import create_feature
-
-        name = args[1] if len(args) > 1 else input("Feature name: ")
-        module = args[2] if len(args) > 2 else input("Module name: ")
-        result = create_feature(ctx, name=name, module=module)
-        _print_result(result)
-
-    elif sub == "extension":
-        from intents import create_extension
-
-        name = args[1] if len(args) > 1 else input("Extension name: ")
-        target = args[2] if len(args) > 2 else input("Target object: ")
-        module = args[3] if len(args) > 3 else input("Module name: ")
-        result = create_extension(ctx, name=name, target_object=target, module=module)
-        _print_result(result)
-
-    else:
-        print(f"Unknown create type: {sub}")
+    text = f"create {sub} {name} in {module}{extra}"
+    result = _kernel("develop", text)
+    _print_kernel(result)
 
 
 # ─── Analyze ──────────────────────────────────────────────────────
 
 
 def cmd_analyze(args):
-    from actions import (
-        ActionContext,
-        analyze_workspace,
-        get_dependencies,
-        list_commands,
-        list_modules,
-        visualize_dependencies,
-    )
-
-    ws = _get_ws(args)
-    ctx = ActionContext(ws)
+    """Analyze via Kernel — routes through analyze()."""
     opts = _get_flags(args)
-
     if "--modules" in opts:
-        result = list_modules(ctx)
-        if result["status"] == "ok":
-            for m in result.get("modules", []):
-                print(f"  {m['name']} ({m.get('framework', '?')})")
-
+        text = "list all modules"
     elif "--commands" in opts:
-        result = list_commands(ctx)
-        if result["status"] == "ok":
-            for c in result.get("commands", []):
-                print(f"  {c['name']} ({c.get('module', '?')})")
-
+        text = "list all commands"
     elif "--deps" in opts:
         idx = args.index("--deps")
         entity = args[idx + 1] if idx + 1 < len(args) else ""
-        result = get_dependencies(ctx, entity)
-        _print_result(result)
-
+        text = f"show dependencies of {entity}"
     elif "--graph" in opts:
-        entity = None
-        if "--graph" in args:
-            idx = args.index("--graph")
-            if idx + 1 < len(args) and not args[idx + 1].startswith("--"):
-                entity = args[idx + 1]
-        result = visualize_dependencies(ctx, entity)
-        if "diagram" in result:
-            print(result["diagram"])
-        else:
-            _print_result(result)
-
+        entity = next((args[i + 1] for i, a in enumerate(args) if a == "--graph" and i + 1 < len(args) and not args[i + 1].startswith("--")), None)
+        text = f"visualize dependency graph of {entity}" if entity else "visualize dependency graph"
     else:
-        result = analyze_workspace(ctx)
-        _print_result(result)
+        text = "analyze the workspace"
+    result = _kernel("analyze", text)
+    _print_kernel(result)
+    # Print diagram if present
+    data = result.get("data", {})
+    if isinstance(data, dict) and data.get("diagram"):
+        print(data["diagram"])
+    # Print references if present
+    refs = result.get("references", data.get("references", []))
+    if refs:
+        for r in refs[:5]:
+            print(f"  - {r}")
 
 
 # ─── Diagnose / Fix ───────────────────────────────────────────────
 
 
 def cmd_diagnose(args):
-    from actions import ActionContext
-    from diagnostics import diagnose_workspace
-
+    """Diagnose via Kernel — routes through analyze()."""
     ws = _get_ws(args)
-    ctx = ActionContext(ws)
-    result = diagnose_workspace(ctx)
-    _print_result(result)
+    text = f"diagnose the workspace {ws}" if ws else "diagnose the workspace"
+    result = _kernel("analyze", text)
+    _print_kernel(result)
 
 
 def cmd_fix(args):
-    from actions import ActionContext
-    from diagnostics import diagnose_and_fix
-
-    ws = _get_ws(args)
-    ctx = ActionContext(ws)
-    opts = _get_flags(args)
-    dry_run = "--apply" not in opts
-    result = diagnose_and_fix(ctx, dry_run=dry_run)
-    _print_result(result)
+    """Fix via Kernel — routes through repair()."""
+    result = _kernel("repair", "fix workspace issues")
+    _print_kernel(result)
 
 
 def cmd_validate(args):
-    from actions import ActionContext, validate_workspace
-
-    ws = _get_ws(args)
-    ctx = ActionContext(ws)
-    result = validate_workspace(ctx)
-    _print_result(result)
+    """Validate via Kernel — routes through analyze()."""
+    result = _kernel("analyze", "validate workspace")
+    _print_kernel(result)
 
 
 # ─── Docs ─────────────────────────────────────────────────────────
@@ -349,57 +344,42 @@ def cmd_runtime_view(args):
 
 
 def cmd_refactor(args):
+    """Refactor via Kernel — routes through repair()."""
     if not args:
-        print("Usage: cade refactor <op> [options]")
+        print("Usage: cade refactor rename <old> <new> --module <m>")
+        print("       cade refactor move <cmd> --from <m1> --to <m2>")
         return
-
-    from actions import ActionContext
-    from refactor import move_command, rename_command, rename_interface
-
-    ws = _get_ws(args)
-    ctx = ActionContext(ws)
-    ctx.refresh()
-    snapshot = ctx.snapshot
     sub = args[0].lower()
-
     if sub == "rename":
         old = args[1] if len(args) > 1 else ""
         new = args[2] if len(args) > 2 else ""
         module = _parse_flag(args, "--module", "-m")
-        result = (
-            rename_command(snapshot, module, old, new)
-            if module
-            else {"status": "error", "message": "--module required"}
-        )
-        _print_result(result)
-
+        text = f"rename command {old} to {new} in {module}" if module else f"rename {old} to {new}"
+        result = _kernel("repair", text)
+        _print_kernel(result)
     elif sub == "move":
         cmd_name = args[1] if len(args) > 1 else ""
         src = _parse_flag(args, "--from")
         tgt = _parse_flag(args, "--to")
-        result = move_command(snapshot, src, tgt, cmd_name)
-        _print_result(result)
-
+        text = f"move command {cmd_name} from {src} to {tgt}"
+        result = _kernel("repair", text)
+        _print_kernel(result)
     else:
         print(f"Unknown refactor op: {sub}")
 
 
 def cmd_rollback(args):
-    from actions import ActionContext, list_rollback_points, rollback_operation
-
-    ws = _get_ws(args)
-    ctx = ActionContext(ws)
+    """Rollback via Kernel — routes through repair()."""
     if "--list" in args or "-l" in args:
-        result = list_rollback_points(ctx)
-        for b in result.get("backups", [])[:10]:
-            print(f"  {b['backup_id']}  {b['action']}")
+        result = _kernel("repair", "list rollback points")
+        _print_kernel(result)
     elif "--id" in args:
         bid = args[args.index("--id") + 1] if args.index("--id") + 1 < len(args) else ""
-        result = rollback_operation(ctx, bid)
-        _print_result(result)
+        result = _kernel("repair", f"rollback to {bid}")
+        _print_kernel(result)
     else:
-        result = list_rollback_points(ctx)
-        _print_result(result)
+        result = _kernel("repair", "list rollback points")
+        _print_kernel(result)
 
 
 def cmd_expose(args):
