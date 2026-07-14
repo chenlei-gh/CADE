@@ -58,6 +58,7 @@ SUITES = {
     "System Health": "test_system_health.py",
     "Learning System": "test_learning.py",
     "Multi-Intent": "test_multi_intent.py",
+    "Kernel Edges": "test_kernel_edge_cases.py",
     }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
@@ -97,6 +98,7 @@ VERIFY_STRINGS = {
     "test_system_health.py": "",
     "test_learning.py": "All learning system tests passed",
     "test_multi_intent.py": "All multi-intent tests passed",
+    "test_kernel_edge_cases.py": "All kernel edge case tests passed",
     }
 
 

@@ -783,8 +783,16 @@ class Kernel:
 
     def _is_knowledge_query(self, request: str) -> bool:
         """Detect if this is a knowledge/API question, not a workspace operation"""
-        return any(kw in request for kw in self._KNOWLEDGE_KW) or \
-               any(request.startswith(q) for q in self._KNOWLEDGE_QUESTION_WORDS)
+        # Short keywords (2 chars) must match whole-word to avoid false positives
+        # (e.g., "ui" in "build" should NOT match)
+        import re
+        for kw in self._KNOWLEDGE_KW:
+            if len(kw) <= 2:
+                if re.search(r'\b' + re.escape(kw) + r'\b', request):
+                    return True
+            elif kw in request:
+                return True
+        return any(request.startswith(q) for q in self._KNOWLEDGE_QUESTION_WORDS)
 
     def _lookup_knowledge(self, request: str) -> dict:
         """
@@ -856,15 +864,16 @@ class Kernel:
             content = catalog_file.read_text(encoding="utf-8", errors="replace")
             in_aliases = False
             for line in content.split("\n"):
-                if "## 别名映射" in line:
+                if "## 别名映射" in line or line.startswith("## 别名"):
                     in_aliases = True
                     continue
                 if in_aliases:
                     if line.startswith("## ") and "别名" not in line:
                         break
-                    if "|" in line and not line.strip().startswith("|"):
+                    if "|" in line:
                         parts = [p.strip() for p in line.split("|")]
-                        if len(parts) >= 3:
+                        # Skip header and separator rows (p1 is column name or dashes)
+                        if len(parts) >= 3 and parts[1] and not parts[1].startswith("-") and parts[1] not in ("别名", "展开为关键词"):
                             alias = parts[1].strip()
                             keywords = parts[2].strip()
                             aliases[alias] = keywords

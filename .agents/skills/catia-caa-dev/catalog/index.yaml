@@ -52,6 +52,12 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 | 状态命令 | state command, BuildGraph, wizard, transition |
 | 标注/注释 | annotation, dimension, PMI, FTA, tolerance |
 | 持久化 | persistence, serialize, save, load, stream |
+| 约束 | constraint, coincide, contact, offset, angle, fix, DOF |
+| 向导 | wizard, step, back, next, finish, multi-step |
+| 3D标注 | FTA, PMI, annotation, tolerance, GD&T, dimension |
+| 工程图/出图 | drawing, sheet, view, drafting, DWG, PDF |
+| 查找/搜索 | search, find, locate, lookup, query, retrieve |
+| 重构/改名 | refactor, rename, move, reorganize, restructure |
 
 ## 索引
 
@@ -88,6 +94,10 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 | pb.geometry_quality_check | playbooks/pb_geometry_quality_check.md | 几何质量检查 | cap.geometry_query, cap.feature_recognition |
 | pb.parameter_editor | playbooks/pb_parameter_editor.md | 批量参数编辑 | cap.parameter_system, cap.selection |
 | pb.surface_analysis | playbooks/pb_surface_analysis.md | 曲面分析报告 | cap.surface_operations, cap.geometry_query |
+| pb.batch_drawing | playbooks/pb_batch_drawing.md | 批量工程图生成 | cap.document_export, cap.assembly_tree |
+| pb.auto_annotate_3d | playbooks/pb_auto_annotate_3d.md | 自动3D标注 | cap.annotation, cap.geometry_query |
+| pb.assembly_constraint_check | playbooks/pb_assembly_constraint_check.md | 装配约束检查 | cap.assembly_tree, cap.geometry_query |
+| pb.dialog_wizard | playbooks/pb_dialog_wizard.md | 对话框向导模式 | cap.selection, cap.parameter_system |
 
 ### Framework 索引 (CAADoc)
 

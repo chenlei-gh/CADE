@@ -128,6 +128,8 @@ class RequirementsClarifier:
                      "曲面", "拉伸", "扫掠", "展平"],
         "ui": ["dialog", "command", "toolbar", "menu", "workbench", "对话框",
                 "命令", "菜单", "工作台", "工具栏"],
+        "fta": ["fta", "3d annotation", "pmi", "tolerance", "gd&t", "3d标注",
+                 "公差", "基准", "capture"],
     }
 
     def analyze(self, request: str) -> ClarificationResult:
@@ -415,10 +417,13 @@ class RequirementsDecomposer:
 
     # Domain → default playbooks
     DOMAIN_PLAYBOOKS = {
-        "product": ["pb.export_bom", "pb.assembly_stats", "pb.batch_update_save"],
+        "product": ["pb.export_bom", "pb.assembly_stats", "pb.batch_update_save",
+                     "pb.assembly_constraint_check"],
         "part": ["pb.batch_feature_check", "pb.geometry_quality_check", "pb.parameter_editor"],
         "surface": ["pb.surface_analysis"],
-        "ui": ["pb.create_context_menu", "pb.custom_viewer"],
+        "drawing": ["pb.batch_drawing"],
+        "fta": ["pb.auto_annotate_3d"],
+        "ui": ["pb.create_context_menu", "pb.custom_viewer", "pb.dialog_wizard"],
     }
 
     # Domain → default capabilities
@@ -426,8 +431,9 @@ class RequirementsDecomposer:
         "product": ["cap.assembly_tree", "cap.update_mechanism", "cap.persistence"],
         "part": ["cap.feature_recognition", "cap.parameter_system", "cap.geometry_query"],
         "surface": ["cap.surface_operations", "cap.geometry_query", "cap.document_export"],
-        "ui": ["cap.selection", "cap.visualization"],
-        "drawing": ["cap.document_export"],
+        "drawing": ["cap.document_export", "cap.assembly_tree"],
+        "fta": ["cap.annotation", "cap.geometry_query", "cap.selection"],
+        "ui": ["cap.selection", "cap.visualization", "cap.parameter_system"],
     }
 
     def enhance(self, result) -> dict:
