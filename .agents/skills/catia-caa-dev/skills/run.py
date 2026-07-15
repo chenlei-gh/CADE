@@ -7,6 +7,7 @@ Output: JSON with runtime status
 """
 
 import argparse
+import glob
 import os
 import subprocess
 import sys
@@ -16,6 +17,22 @@ from pathlib import Path
 
 from env import CAAEnvironment
 from utils import Cache, Logger, output_error, output_json, output_success
+
+
+def _clean_cnext_sessions():
+    """Remove CNEXT session files that trigger 'hot restart unavailable' prompt."""
+    import shutil
+    appdata = os.environ.get("LOCALAPPDATA", "")
+    if not appdata:
+        return
+    temp_dir = Path(appdata) / "DassaultSystemes" / "CATTemp"
+    if not temp_dir.exists():
+        return
+    for f in glob.glob(str(temp_dir / "SessionInfoFile_*")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
 
 
 def check_process_running(process_name: str) -> list:
@@ -171,6 +188,8 @@ def start_catia_runtime(
         logger.write("CATIA is already running — stopping gracefully first")
         stop_catia(force=False)
         time.sleep(2)
+        # Clean session files to prevent "热启动不可用" prompt
+        _clean_cnext_sessions()
 
     # Start CATIA
     try:
