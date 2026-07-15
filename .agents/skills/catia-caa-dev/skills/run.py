@@ -176,12 +176,9 @@ def start_catia_runtime(
     # Check if CATIA is already running
     running_catia = check_process_running("CNEXT.exe")
     if running_catia:
-        logger.write("CATIA is already running", "WARNING")
-        return {
-            "status": "already_running",
-            "message": "CATIA is already running",
-            "pid": running_catia[0]["pid"],
-        }
+        logger.write("CATIA is already running — stopping gracefully first")
+        stop_catia(force=False)
+        time.sleep(2)
 
     # Start CATIA
     try:
