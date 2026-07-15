@@ -42,7 +42,6 @@ Supported types (ALL CATIA CAA RADE templates):
 
   Utility:
     class            Plain C++ class
-    adapter          3DS Adapter
 
   Testing:
     testcase         CATTestCase
@@ -417,14 +416,15 @@ class TemplateGenerator:
     def _gen_extension_spec(self, spec, out: Path) -> Dict:
         files = []
         name = spec.name
-        src = out / f"{name}.cpp"
-        src.write_text(
-            self._render(
-                "adapter", name, ExtensionClass=name, TargetObject=spec.target_object
-            ),
-            encoding="utf-8",
-        )
-        files.append(str(src))
+        # Use component templates for extensions (adapter template removed in v3.0.3)
+        for ext in ['.h', '.cpp']:
+            tpl_name = f"Component{ext}"
+            dst = out / f"{name}{ext}"
+            dst.write_text(
+                self._render(tpl_name, name, ExtensionClass=name, TargetObject=spec.target_object),
+                encoding="utf-8",
+            )
+            files.append(str(dst))
         return self._success(files, "extension", name)
 
     def _gen_workbench_spec(self, spec, out: Path) -> Dict:
@@ -481,11 +481,8 @@ Examples:
   python generate.py testcase     CalcTest    -o MyModule.m/src/
   python generate.py xmltestcase  CalcXMLTest -o MyModule.m/
   python generate.py codegen      CalcCodeGen -o MyModule.m/src/
-  python generate.py adapter      CalcAdapter -o MyModule.m/src/
   python generate.py feature      CalcFeature -o MyModule.m/
   python generate.py eventlistener CalcEvt    -o MyModule.m/src/
-  python generate.py plugin       CalcPlugin  -o MyModule.m/src/
-  python generate.py userexit     CalcExit    -o MyModule.m/src/
   python generate.py resource     MyResources -o MyFramework.edu/
   python generate.py identitycard MyFwCard    -o IdentityCard/
   python generate.py imakefile    MyModule    -o MyModule.m/

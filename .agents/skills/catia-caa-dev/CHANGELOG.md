@@ -10,21 +10,32 @@
 
 ## [3.0.2] - 2026-07-15
 
+### 模板系统全面重构
+
+- **模板精度**: 17 个模板全部经 B28 mkmk 编译验证（14/14 全过）
+- **B28 API 对齐**: CATImplementClass Implementation→DataExtension, DeclareResource 替代 CATDeclareClass
+- **删除死模板**: adapter/plugin/userexit/objectmodeler（B28 无对应 API）
+- **Imakefile 修复**: S_Link→LINK_WITH, 多行格式, /EHsc 编译选项
+- **IdentityCard**: .h→.xml, eduFramework 标签, 补 Dialog/DialogEngine 前提
+- **Dictionary**: 纯文本格式, 无注释无前导空行, 自动写入 Runtime View
+- **替换键统一**: _r() 30 键, _fill() 删除, 按键长度降序防子串破坏
+- **模板深度提升**: 命令含 Agent 成员+6 步 BuildGraph, NLS 自动生成, Undo/Redo, CATIAV5Level.lvl 自动
+
+### Kernel & CLI 增强
+
+- **中文意图检测**: 中英文关键词 + 词边界匹配 + 意图部分限域
+- **CLI develop 命令**: cade develop "自然语言请求" --workspace path
+- **模块自动注册**: create_framework/module 自动补 MODULES +=
+
 ### 知识检索增强
 
 - 别名映射 (catalog/index.yaml): 23 组中英文同义词
 - Kernel 别名加载: _lookup_knowledge 检索前自动展开别名
 
-### 编译前置检查
-
-- IdentityCard 自动创建: 生成代码后自动运行 mkCreateIC
-- 防止 mkmk 编译时缺少 IdentityCard 的错误
-
 ### 测试整理
 
-- token 测试合并: test_token_audit.py → test_token_optimizer.py
-- System Health 加入 master 套件
-- 测试套件: 33 → 31
+- 预存 L4-1/Cross-Ref 失败修复: 39/39, 219/219
+- 测试套件: 36
 
 ---
 

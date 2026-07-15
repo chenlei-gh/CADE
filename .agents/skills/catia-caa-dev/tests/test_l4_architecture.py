@@ -200,8 +200,8 @@ ck("6.5 Command.dictionary_entry is non-empty", len(cmd.dictionary_entry()) > 0)
 ck("6.6 Command.nls_block is non-empty", len(cmd.nls_block()) > 0)
 ck("6.7 Command.imakefile_sources is non-empty", len(cmd.imakefile_sources()) > 0)
 ck(
-    "6.8 Command has CATStateCommand in entry",
-    "CATStateCommand" in cmd.dictionary_entry(),
+    "6.8 Command has CATIAfrGeneralWksAddin in dictionary entry",
+    "CATIAfrGeneralWksAddin" in cmd.dictionary_entry(),
 )
 
 # Model integrity — no null module for Command
