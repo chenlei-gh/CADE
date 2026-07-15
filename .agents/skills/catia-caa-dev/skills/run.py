@@ -116,17 +116,25 @@ def start_catia_runtime(
         runtime_view = Path(workspace_path) / arch
 
         if runtime_view.exists():
-            runtime_code = runtime_view / "code"
-            if runtime_code.exists():
-                # Set CATDLLPath for CAA component loading (NOT PATH —
-                # putting RV in PATH would break CNEXT's own DLL resolution)
+                runtime_bin = runtime_view / "code" / "bin"
+                runtime_dict = runtime_view / "code" / "dictionary"
+                runtime_nls = runtime_view / "code" / "resources" / "msgcatalog"
+
+                # CATDLLPath: where CNEXT finds addin DLLs
                 existing = env_vars.get("CATDLLPath", "")
-                env_vars["CATDLLPath"] = (
-                    str(runtime_code) + os.pathsep + existing
-                    if existing
-                    else str(runtime_code)
-                )
-                logger.write(f"CATDLLPath += {runtime_code}")
+                env_vars["CATDLLPath"] = str(runtime_bin) + (os.pathsep + existing if existing else "")
+
+                # CATDictionaryPath: where CNEXT finds .dico files
+                existing = env_vars.get("CATDictionaryPath", "")
+                env_vars["CATDictionaryPath"] = str(runtime_dict) + (os.pathsep + existing if existing else "")
+
+                # CATMsgCatalogPath: where CNEXT finds .CATNls files
+                existing = env_vars.get("CATMsgCatalogPath", "")
+                env_vars["CATMsgCatalogPath"] = str(runtime_nls) + (os.pathsep + existing if existing else "")
+
+                logger.write(f"CATDLLPath += {runtime_bin}")
+                logger.write(f"CATDictionaryPath += {runtime_dict}")
+                logger.write(f"CATMsgCatalogPath += {runtime_nls}")
                 print(f"Using Runtime View: {runtime_view}", file=sys.stderr)
 
     # Get CATSTART path (use CATSTART with proper parameters)
