@@ -24,11 +24,18 @@ public:
     CATStatusChangeRC Desactivate(CATCommand *iFromClient, CATNotification *iNotif);
     CATStatusChangeRC Cancel(CATCommand *iFromClient, CATNotification *iNotif);
 
+    // Undo/Redo support
+    void Undo();
+    void Redo();
+
 private:
     // Agents (created in BuildGraph)
     CATPathElementAgent *_pSelAgent;
     CATDialogAgent      *_pDlgAgent;
     CATIndicationAgent  *_pIndAgent;
+
+    // Undo/Redo state
+    CATCommandGlobalUndo *_pGlobalUndo;
 };
 
 #endif

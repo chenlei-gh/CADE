@@ -468,6 +468,22 @@ def create_command(
                 content=f'#include "{dialog_name}.h"',
             ))
 
+    # --- 8. NLS Resource — auto-generate labels for the command ---
+    if fw:
+        nls_file = fw.path / "CNext" / "resources" / "msgcatalog" / f"{fw.name.replace('.edu', '')}.CATNls"
+        nls_file.parent.mkdir(parents=True, exist_ok=True)
+        nls_entries = (
+            f"{addin_name}.Title  = \"{name}\";\n"
+            f"{addin_name}.Tip    = \"Execute {name}\";\n"
+            f"{addin_name}.Help   = \"This command performs {name} operation.\";\n"
+        )
+        if nls_file.exists():
+            old_nls = nls_file.read_text(encoding="utf-8", errors="replace")
+            if addin_name not in old_nls:
+                cs.add_modify(nls_file, old_nls.rstrip() + "\n" + nls_entries)
+        else:
+            cs.add_create(nls_file, nls_entries)
+
     cs.metadata = {
         "command": name,
         "module": module,
