@@ -457,6 +457,13 @@ class CAAEnvironment:
         if not mkinit.exists():
             raise FileNotFoundError(f"mkinit.bat not found. Expected at: {mkinit}")
 
+        if not tck_profile.exists():
+            raise FileNotFoundError(
+                f"tck_profile.bat not found at: {tck_profile}. "
+                f"This is REQUIRED for license framework initialization. "
+                f"Without it, mkmk will fail with RADE licensing errors."
+            )
+
         # Detect VS vcvarsall.bat for compiler environment
         vcvars = self._find_vcvars()
 
