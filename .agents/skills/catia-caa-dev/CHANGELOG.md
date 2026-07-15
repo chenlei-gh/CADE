@@ -8,7 +8,30 @@
 
 ---
 
-## [3.2.0] - 2026-07-15
+## [3.2.0] - 2026-07-16
+
+### Build 环境修复（关键）
+
+- **完整 Build Time 链路**: `tck_init → tck_profile → mkinit → mkGetPreq → mkmk`
+  - 修复缺失 `tck_profile` 导致 mkmk 误报 RADE license 错误
+  - 修复 `build.py` batch 文件单行 `%PATH%` 展开失效（改为多行）
+  - 编译前自动调用 `setup_prerequisite_path()` 链接 CATIA 安装
+  - 添加 `tck_profile.bat` 缺失硬校验 + 测试验证
+- **缓存优化**: `setup_prerequisite_path` 结果缓存，避免重复执行
+
+### Run 环境修复（关键）
+
+- **启动方式**: `CATSTART` → `mkrun`（CAA 开发工作区标准启动工具）
+  - CATSTART 无法加载 workspace Runtime View，导致 addin 不显示
+  - mkrun 正确初始化 CATDLLPath、dictionary、NLS 等所有运行时路径
+- **优雅重启**: CNEXT 已运行时自动 `taskkill` 优雅关闭后再启动
+- **窗口优化**: `start /min` 最小化 cmd，`CREATE_NO_WINDOW` 抑制弹窗
+- **新增 `--dev` 模式**: `python run.py --dev <workspace>` 一键编译+启动
+
+### 模板修复
+
+- **CommandClass.cpp**: `Undo()`/`Redo()` → `ExecuteUndo()`/`ExecuteRedo()`（B28 API）
+- **CommandClass.cpp**: 新增 `#include "CATCommandGlobalUndo.h"`（B28 需显式包含）
 
 ### 模板渲染引擎统一
 
