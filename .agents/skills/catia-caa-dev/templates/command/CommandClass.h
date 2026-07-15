@@ -47,19 +47,19 @@ public:
      * @brief Command activation
      * @return TRUE to continue, FALSE to cancel
      */
-    virtual CATBoolean Activate(CATCommand* iFromClient, CATNotification* iNotification);
+    virtual CATStatusChangeRC Activate(CATCommand* iFromClient, CATNotification* iNotification);
 
     /**
      * @brief Command deactivation
      * @return TRUE if deactivation successful
      */
-    virtual CATBoolean Desactivate(CATCommand* iFromClient, CATNotification* iNotification);
+    virtual CATStatusChangeRC Desactivate(CATCommand* iFromClient, CATNotification* iNotification);
 
     /**
      * @brief Cancel command
      * @return TRUE if cancel successful
      */
-    virtual CATBoolean Cancel(CATCommand* iFromClient, CATNotification* iNotification);
+    virtual CATStatusChangeRC Cancel(CATCommand* iFromClient, CATNotification* iNotification);
 
 private:
     // --- Acquisition Agents ---

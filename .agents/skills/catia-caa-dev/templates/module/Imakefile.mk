@@ -23,3 +23,4 @@ PUBLIC_HEADERS = \
 LINK_WITH = \
     System \
     ObjectModelerBase
+MkmkUnauthorizedAPI_Check = FALSE
