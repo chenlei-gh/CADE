@@ -211,16 +211,14 @@ def start_catia_runtime(
                 "timestamp": start_time.isoformat(),
             }
         else:
-            # Use Popen with DETACHED_PROCESS for clean background launch.
-            # This avoids cmd.exe overhead and ensures CATIA survives Python exit.
+            # Use Popen with CREATE_NO_WINDOW to suppress cmd popup.
+            # DETACHED_PROCESS ensures CATIA survives Python exit.
             import subprocess as sp
 
-            DETACHED = 0x00000008  # DETACHED_PROCESS
-            NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
             sp.Popen(
                 cmd_args,
                 env=env_vars,
-                creationflags=DETACHED | NO_WINDOW,
+                creationflags=sp.DETACHED_PROCESS | sp.CREATE_NO_WINDOW,
                 stdout=sp.DEVNULL,
                 stderr=sp.DEVNULL,
             )
