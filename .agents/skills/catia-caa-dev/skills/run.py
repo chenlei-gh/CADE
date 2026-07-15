@@ -156,7 +156,7 @@ def start_catia_runtime(
             f"call mkrun\r\n",
             encoding="ascii",
         )
-        cmd_args = ["cmd", "/c", str(batfile)]
+        cmd_args = ["cmd", "/c", f"start /min cmd /c {batfile}"]
         logger.write(f"Using mkrun (workspace): {workspace_path}")
     else:
         # No workspace — use CATSTART for a plain CATIA launch
@@ -216,10 +216,11 @@ def start_catia_runtime(
             import subprocess as sp
 
             DETACHED = 0x00000008  # DETACHED_PROCESS
+            NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
             sp.Popen(
                 cmd_args,
                 env=env_vars,
-                creationflags=DETACHED,
+                creationflags=DETACHED | NO_WINDOW,
                 stdout=sp.DEVNULL,
                 stderr=sp.DEVNULL,
             )
