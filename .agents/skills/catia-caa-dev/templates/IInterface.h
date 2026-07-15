@@ -5,6 +5,7 @@
 
 // System Framework
 #include "CATBaseUnknown.h"
+#include "CATUnicodeString.h"
 
 // Export from this module
 #ifndef ExportedByModuleName
@@ -29,7 +30,7 @@ public:
      * @param oParam Output parameter
      * @return HRESULT S_OK if successful, E_FAIL otherwise
      */
-    virtual HRESULT MethodName(const Type iParam, Type& oParam) = 0;
+    virtual HRESULT Execute(const CATUnicodeString& iParam, CATUnicodeString& oResult) = 0;
 };
 
 #endif

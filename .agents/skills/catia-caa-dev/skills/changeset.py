@@ -47,6 +47,7 @@ class Patch:
             "file": str(self.file),
             "operation": self.operation,
             "target": self.target,
+            "content": self.content,
             "content_preview": self.content[:80] + "..."
             if len(self.content) > 80
             else self.content,
@@ -81,12 +82,18 @@ class ChangeSet:
         """Add a file to create by reading a template and applying replacements"""
         content = template_path.read_text(encoding="utf-8", errors="replace")
         if replacements:
-            # Replace angle-bracket placeholders first: <Key> → value
-            for k, v in replacements.items():
-                content = content.replace(f"<{k}>", v)
+            # Sort by key length descending: longer keys first to avoid substring corruption
+            # e.g., CommandClassName before ClassName
+            sorted_keys = sorted(replacements.keys(), key=len, reverse=True)
+            # Replace mustache-style placeholders: {{Key}} → value
+            for k in sorted_keys:
+                content = content.replace("{{" + k + "}}", replacements[k])
+            # Replace angle-bracket placeholders: <Key> → value
+            for k in sorted_keys:
+                content = content.replace(f"<{k}>", replacements[k])
             # Then plain text replacements
-            for k, v in replacements.items():
-                content = content.replace(k, v)
+            for k in sorted_keys:
+                content = content.replace(k, replacements[k])
         self.add_create(path, content)
 
     def add_modify(self, path: Path, new_content: str):

@@ -169,9 +169,12 @@ def validate_framework_structure(framework_path: Path) -> Dict[str, Any]:
     """
     required = {
         "IdentityCard": framework_path / "IdentityCard",
-        "IdentityCard.h": framework_path / "IdentityCard" / "IdentityCard.h",
+        "IdentityCard.xml": framework_path / "IdentityCard" / "IdentityCard.xml",
         "Imakefile.mk": framework_path / "Imakefile.mk",
     }
+    # Accept .h as fallback
+    if not required["IdentityCard.xml"].exists():
+        required["IdentityCard.xml"] = framework_path / "IdentityCard" / "IdentityCard.h"
 
     optional = {
         "PublicInterfaces": framework_path / "PublicInterfaces",

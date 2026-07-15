@@ -1,30 +1,30 @@
 //===================================================================
 // COPYRIGHT DASSAULT SYSTEMES YYYY
 //===================================================================
-// <ModuleName>.h
+// <ClassName>.h
 // Workbench addin for framework <FrameworkName>
 //===================================================================
 
-#ifndef <ModuleName>_H
-#define <ModuleName>_H
+#ifndef <ClassName>_H
+#define <ClassName>_H
 
 #include "CATBaseUnknown.h"
 #include "CATCmdContainer.h"
 
-class <ModuleName> : public CATBaseUnknown
+class <ClassName> : public CATBaseUnknown
 {
     CATDeclareClass;
 
 public:
-    <ModuleName>();
-    virtual ~<ModuleName>();
+    <ClassName>();
+    virtual ~<ClassName>();
 
     void CreateCommands();
     CATCmdContainer* CreateToolbars();
 
 private:
-    <ModuleName>(<ModuleName> &);
-    <ModuleName>& operator=(<ModuleName>&);
+    <ClassName>(<ClassName> &);
+    <ClassName>& operator=(<ClassName>&);
 };
 
 #endif

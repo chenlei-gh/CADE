@@ -12,7 +12,7 @@ using namespace std;
 //-----------------------------------------------------------------------------
 // Component declaration
 //-----------------------------------------------------------------------------
-CATImplementClass(AddinName, Implementation, CATBaseUnknown, CATNull);
+CATImplementClass(AddinName, DataExtension, CATBaseUnknown, CATNull);
 
 //-----------------------------------------------------------------------------
 // Constructor

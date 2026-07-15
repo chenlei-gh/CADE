@@ -170,16 +170,16 @@ LINK_WITH = \
 #
 # 3. Framework structure:
 #    YourFramework.m/
-#    ├── src/
-#    │   └── FeatureModule.m/
-#    │       ├── Imakefile.mk (this file)
-#    │       ├── {PREFIX}{FEATURE_NAME}.h
-#    │       ├── {PREFIX}{FEATURE_NAME}.cpp
-#    │       ├── {PREFIX}{FEATURE_NAME}Build.cpp
-#    │       └── {PREFIX}{FEATURE_NAME}Replace.cpp
-#    ├── LocalInterfaces/
-#    ├── ProtectedInterfaces/
-#    └── PublicInterfaces/
+#    +-- src/
+#    |   +-- FeatureModule.m/
+#    |       +-- Imakefile.mk (this file)
+#    |       +-- {PREFIX}{FEATURE_NAME}.h
+#    |       +-- {PREFIX}{FEATURE_NAME}.cpp
+#    |       +-- {PREFIX}{FEATURE_NAME}Build.cpp
+#    |       +-- {PREFIX}{FEATURE_NAME}Replace.cpp
+#    +-- LocalInterfaces/
+#    +-- ProtectedInterfaces/
+#    +-- PublicInterfaces/
 #
 # 4. Common build issues:
 #    - Missing framework in LINK_WITH

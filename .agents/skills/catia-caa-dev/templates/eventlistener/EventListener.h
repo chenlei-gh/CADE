@@ -3,12 +3,12 @@
 #define EventListenerName_h
 
 // System Framework
-#include "CATEventListener.h"
+#include "CATEventSubscriber.h"
 
 /**
- * @brief EventListenerName - CATIA Event Listener
+ * @brief EventListenerName - CATIA Event Subscriber
  * 
- * Listens to specific CATIA events and reacts accordingly.
+ * Subscribes to specific CATIA events and reacts accordingly.
  * 
  * Common events:
  * - Document open/close
@@ -16,7 +16,7 @@
  * - Feature modification
  * - Workbench activation
  */
-class EventListenerName : public CATEventListener
+class EventListenerName : public CATEventSubscriber
 {
 public:
     EventListenerName();

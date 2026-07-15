@@ -132,8 +132,14 @@ class Framework(Entity):
         )
 
     def identitycard_path(self) -> Path:
-        """IdentityCard/IdentityCard.h"""
-        return self.path / "IdentityCard" / "IdentityCard.h"
+        """IdentityCard .xml (or .h fallback)"""
+        xml = self.path / "IdentityCard" / "IdentityCard.xml"
+        if xml.exists():
+            return xml
+        h = self.path / "IdentityCard" / "IdentityCard.h"
+        if h.exists():
+            return h
+        return xml  # default: .xml (current standard)
 
     def rsc_path(self) -> Path:
         """CNext/resources/resources/{bare_name}.CATRsc"""
@@ -783,10 +789,21 @@ class WorkspaceSnapshot:
                     graph.add_relationship(wb, cmd, RelationType.USES)
 
     def get_framework(self, name: str) -> Optional[Framework]:
+        # Prefer exact match, then prefix match, then fallback
+        exact = None
+        prefix = None
         for f in self.frameworks:
-            if f.name == name or f.name.startswith(name):
-                return f
-        return None
+            if f.name == name:
+                exact = f
+            elif f.name.startswith(name):
+                if prefix is None:
+                    prefix = f
+        # Prefer frameworks with modules
+        candidates = [fw for fw in (exact, prefix) if fw is not None]
+        for fw in candidates:
+            if fw.modules:
+                return fw
+        return candidates[0] if candidates else None
 
     def get_module(
         self, name: str, framework_name: Optional[str] = None

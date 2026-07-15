@@ -34,7 +34,7 @@ fw = Framework(name="MyFramework.edu", path=Path("/ws/MyFramework.edu"))
 
 # IdentityCard
 check("IdentityCard path", str(fw.identitycard_path()) ==
-      r"\ws\MyFramework.edu\IdentityCard\IdentityCard.h")
+      r"\ws\MyFramework.edu\IdentityCard\IdentityCard.xml")
 
 # Dictionary
 dict_path = str(fw.dictionary_path())

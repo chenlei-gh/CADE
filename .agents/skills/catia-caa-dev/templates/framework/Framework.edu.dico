@@ -1,11 +1,1 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<Framework name="FrameworkName">
-	<Description>FrameworkName framework</Description>
-	<Modules>
-		<Module name="ModuleName">
-			<Interfaces>
-				<Interface name="IInterfaceName"/>
-			</Interfaces>
-		</Module>
-	</Modules>
-</Framework>
+

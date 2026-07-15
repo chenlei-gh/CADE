@@ -4,5 +4,4 @@
 # Top-level build configuration for FrameworkName
 #
 
-# Module list (one per line)
-MODULES += ModuleName
+# Module list (added automatically when modules are created)

@@ -528,10 +528,27 @@ class Kernel:
         except (ValueError, TypeError):
             itype = IntentType.CREATE_COMMAND
 
+        # Auto-detect framework if not specified (prefer .edu with modules)
+        if not framework:
+            try:
+                from analyzer import WorkspaceAnalyzer
+                snap = WorkspaceAnalyzer(self.workspace_root).analyze()
+                # Prefer frameworks that have modules
+                for fw in snap.frameworks:
+                    if fw.modules:
+                        framework = fw.name
+                        break
+                if not framework:
+                    for fw in snap.frameworks:
+                        framework = fw.name
+                        break
+            except Exception:
+                pass
+
         intent = Intent(
             type=itype,
             name=name,
-            module=module or "MyModule.m",
+            module=(module or "MyModule") + ("" if (module or "").endswith(".m") else ".m"),
             framework=framework or "MyFramework",
         )
 
@@ -586,10 +603,36 @@ class Kernel:
     # ─── Intent Detection ──────────────────────────────────────
 
     def _detect_intent_type(self, request: str) -> str:
-        """Detect IntentType from natural language request"""
+        """Detect IntentType from natural language request (EN + CN)"""
+        import re
+
+        # Extract intent-relevant portion (before module/framework specification)
+        # "创建X命令在Y模块" → intent part is "创建X命令"
+        intent_part = request
+        for sep in (' 在', ' 到', ' in ', ' into ', ' 放在', ' 放到', ' 于'):
+            idx = request.find(sep)
+            if idx > 0:
+                intent_part = request[:idx]
+                break
+
+        # Order matters: more specific matches first
+        # Chinese keywords first (more specific in CN context)
+        # English keywords with word-boundary check (avoid substring matches like testmodule→module)
         mapping = [
-            ("command", "CreateCommand"),
+            # Chinese keywords (most specific in CN context)
+            ("对话框", "CreateCommandWithDialog"),
+            ("命令", "CreateCommand"),
+            ("特征", "CreateFeature"),
+            ("扩展", "CreateExtension"),
+            ("接口", "CreateInterface"),
+            ("工作台", "CreateWorkbench"),
+            ("模块", "CreateModule"),
+            ("框架", "CreateFramework"),
+            # English keywords (check with word boundaries to avoid substring matches)
+        ]
+        en_mapping = [
             ("dialog", "CreateCommandWithDialog"),
+            ("command", "CreateCommand"),
             ("feature", "CreateFeature"),
             ("extension", "CreateExtension"),
             ("interface", "CreateInterface"),
@@ -597,33 +640,109 @@ class Kernel:
             ("module", "CreateModule"),
             ("framework", "CreateFramework"),
         ]
+        # Try intent part first (CN keywords)
+        for keyword, intent_type in mapping:
+            if keyword in intent_part:
+                return intent_type
+        # Try intent part with EN keywords (word-boundary aware)
+        for keyword, intent_type in en_mapping:
+            if re.search(r'\b' + keyword + r'\b', intent_part):
+                return intent_type
+        # Fallback: check full request (CN)
         for keyword, intent_type in mapping:
             if keyword in request:
+                return intent_type
+        # Fallback: check full request (EN)
+        for keyword, intent_type in en_mapping:
+            if re.search(r'\b' + keyword + r'\b', request):
                 return intent_type
         return "CreateCommand"  # default
 
     def _extract_entities(self, request: str) -> tuple:
-        """Extract (name, module, framework) from natural language request"""
+        """Extract (name, module, framework) from natural language request (EN + CN)"""
         import re
+
+        # ASCII-only identifier: [A-Za-z][A-Za-z0-9_]* (NOT \w — includes CJK in Python 3)
+        ID = r'[A-Za-z][A-Za-z0-9_]*'
+        QID = ID + r'(?:\.' + ID + r')?'  # qualified: Module.m or Framework.edu
 
         name = None
         module = None
         framework = None
 
-        # Pattern: "create command <Name> in <Module>"
-        m = re.search(r'(?:create|make|generate)\s+(?:a\s+)?\w+\s+(\w+)', request)
+        # Extract intent-relevant portion (before module/framework specification)
+        intent_part = request
+        # Try spaced separators first
+        for sep in (' 在', ' 到', ' in ', ' into ', ' 放在', ' 放到', ' 于'):
+            idx = request.find(sep)
+            if idx > 0:
+                intent_part = request[:idx]
+                break
+        # CN without spaces: remove "在<Module>模块" / "到<Module>" tail
+        if intent_part == request:
+            # Pattern: <location_word><ModuleName>模块
+            m = re.search(r'(?:在|到|放在|放到)\s*(' + QID + r')\s*(?:模块|中|里)?', request)
+            if m:
+                intent_part = request[:m.start()]
+
+        # ── Name patterns (scoped to intent_part) ──
+        CN_TYPES = r'(?:命令|对话框|特征|工作台|模块|框架)'
+        # EN: "create command <Name>" / "make a <Name>"
+        m = re.search(r'(?:create|make|generate)\s+(?:a\s+)?' + ID + r'\s+(' + ID + ')', intent_part)
         if m:
             name = m.group(1)
+        # CN: "<CamelCase>命令" / "叫<CamelCase>的命令"
+        if not name:
+            m = re.search(r'(?:叫|名为)?\s*(' + ID + r')\s*(?:的)?\s*' + CN_TYPES, intent_part)
+            if m:
+                # Exclude names that look like module specs
+                if not m.group(1).lower().endswith('module'):
+                    name = m.group(1)
+        # CN: "命令<CamelCase>" (type before name)
+        if not name:
+            m = re.search(CN_TYPES + r'\s*(' + ID + ')', intent_part)
+            if m:
+                name = m.group(1)
+        # CN: "创建<Name>命令" (verb + name + optional type)
+        if not name:
+            m = re.search(r'(?:创建|新建|生成|添加|增加)\s*(?:一个|新的)?\s*' + CN_TYPES + r'?\s*(' + ID + ')', intent_part)
+            if m:
+                name = m.group(1)
 
-        # Pattern: "in <Module>"
-        m = re.search(r'in\s+(\w+(?:\.\w+)?)', request)
+        # ── Module patterns ──
+        # EN: "in <Module>" / "module <Module>"
+        m = re.search(r'(?:in|into|module)\s+(' + QID + ')', request, re.IGNORECASE)
         if m:
             module = m.group(1)
+        # CN: "在<Module>模块" / "<Module>模块中" / "放在<Module>模块"
+        if not module:
+            m = re.search(r'(?:在|放到|放在|到)\s*(' + QID + r')\s*模块', request)
+            if m:
+                module = m.group(1)
+        # CN: "到<Module>" (without 模块, e.g., "添加对话框X到Module")
+        if not module:
+            m = re.search(r'(?:在|放到|放在|到)\s*(' + QID + r')(?:\s|$)', request)
+            if m and m.group(1) not in ('一个', '新的'):
+                module = m.group(1)
+        if not module:
+            m = re.search(r'(' + QID + r')\s*模块\s*(?:中|里|内)', request)
+            if m:
+                module = m.group(1)
 
-        # Pattern: "framework <Framework>"
-        m = re.search(r'(?:framework|fw)\s+(\w+(?:\.\w+)?)', request, re.IGNORECASE)
+        # ── Framework patterns ──
+        # EN: "framework <Framework>" / "fw <Framework>"
+        m = re.search(r'(?:framework|fw)\s+(' + QID + ')', request, re.IGNORECASE)
         if m:
             framework = m.group(1)
+        # CN: "框架<Framework>" / "<Framework>框架"
+        if not framework:
+            m = re.search(r'框架\s*(?:叫|是|为)?\s*(' + QID + ')', request)
+            if m:
+                framework = m.group(1)
+        if not framework:
+            m = re.search(r'(' + QID + r')\s*框架', request)
+            if m:
+                framework = m.group(1)
 
         return name, module, framework
 
@@ -736,8 +855,10 @@ class Kernel:
         fw_dir = self.workspace_root / fw_name
         if not fw_dir.exists():
             return {}
-        ic_h = fw_dir / "IdentityCard" / "IdentityCard.h"
-        if not ic_h.exists():
+        ic = fw_dir / "IdentityCard" / "IdentityCard.xml"
+        if not ic.exists():
+            ic = fw_dir / "IdentityCard" / "IdentityCard.h"
+        if not ic.exists():
             return {}
         # Check if mkCreateIC already run
         ic_dir = fw_dir / "IdentityCard"

@@ -1,11 +1,11 @@
 //===================================================================
 // COPYRIGHT DASSAULT SYSTEMES YYYY
 //===================================================================
-// <ModuleName>Addin.cpp
-// Workbench addin — registers commands with CATIA toolbars
+// <ClassName>.cpp
+// Workbench addin -- registers commands with CATIA toolbars
 //===================================================================
 
-#include "<ModuleName>Addin.h"
+#include "<ClassName>.h"
 #include "CATIAfrGeneralWksAddin.h"
 #include "CATCommandHeader.h"
 #include "CATCreateWorkshop.h"
@@ -13,20 +13,20 @@
 // Command header macro for our command
 MacDeclareHeader(<CommandClassName>Hdr);
 
-CATImplementClass(<ModuleName>Addin, Implementation, CATBaseUnknown, CATNull);
+CATImplementClass(<ClassName>,DataExtension,CATBaseUnknown,<ClassName>);
 
-#include "TIE_CATIAfrGeneralWksAddin.h"
-TIE_CATIAfrGeneralWksAddin(<ModuleName>Addin);
+#include <TIE_CATIAfrGeneralWksAddin.h>
+TIE_CATIAfrGeneralWksAddin(<ClassName>);
 
-<ModuleName>Addin::<ModuleName>Addin() : CATBaseUnknown()
+<ClassName>::<ClassName>() : CATBaseUnknown()
 {
 }
 
-<ModuleName>Addin::~<ModuleName>Addin()
+<ClassName>::~<ClassName>()
 {
 }
 
-void <ModuleName>Addin::CreateCommands()
+void <ClassName>::CreateCommands()
 {
     new <CommandClassName>Hdr(
         "<ModuleName>.<CommandClassName>",
@@ -36,7 +36,7 @@ void <ModuleName>Addin::CreateCommands()
     );
 }
 
-CATCmdContainer* <ModuleName>Addin::CreateToolbars()
+CATCmdContainer* <ClassName>::CreateToolbars()
 {
     NewAccess(CATCmdContainer, pToolbar, <ModuleName>Tlb);
     AddToolbarView(pToolbar, 1, Right);

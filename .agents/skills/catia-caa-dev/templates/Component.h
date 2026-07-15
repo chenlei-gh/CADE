@@ -5,6 +5,7 @@
 
 // System Framework
 #include "CATBaseUnknown.h"
+#include "CATUnicodeString.h"
 
 // Local Framework
 #include "IInterfaceName.h"
@@ -22,7 +23,7 @@ public:
     virtual ~ComponentName();
 
     // IInterfaceName implementation
-    virtual HRESULT MethodName(const Type iParam, Type& oParam);
+    virtual HRESULT Execute(const CATUnicodeString& iParam, CATUnicodeString& oResult);
 
 private:
     // Private data members

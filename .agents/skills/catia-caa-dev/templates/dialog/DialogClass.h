@@ -15,19 +15,22 @@ class CATDlgEditor;
 
 class <DialogClassName> : public CATDlgDialog
 {
-    CATDeclareClass;
+    DeclareResource(<DialogClassName>,CATDlgDialog);
 
 public:
-    <DialogClassName>(CATDialog *iParent, const CATString &iName);
+    <DialogClassName>(CATDialog *iParent);
     virtual ~<DialogClassName>();
 
     void Build();
-    void GetValue(CATUnicodeString &oValue) const;
 
 private:
     CATDlgFrame  *_pFrame;
     CATDlgLabel  *_pLabel;
     CATDlgEditor *_pEditor;
+
+    // Copy constructor and assignment operator, not implemented
+    <DialogClassName>(const <DialogClassName> &iObjectToCopy);
+    <DialogClassName>& operator=(const <DialogClassName> &iObjectToCopy);
 };
 
 #endif

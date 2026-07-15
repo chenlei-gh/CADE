@@ -187,8 +187,21 @@ def dry_run_build(workspace_path: Path, timeout: int = 60) -> dict:
 
 
 def create_runtime_view(workspace_path: Path) -> dict:
-    """Create/update Runtime View (mkCreateRuntimeView)"""
-    return _exec_build_cmd("mkCreateRuntimeView", workspace_path)
+    """Create/update Runtime View (mkCreateRuntimeView) + copy dictionaries"""
+    result = _exec_build_cmd("mkCreateRuntimeView", workspace_path)
+    # mkCreateRuntimeView may skip dictionary copy — ensure it manually
+    _copy_dictionaries_to_runtime(workspace_path)
+    return result
+
+
+def _copy_dictionaries_to_runtime(workspace_path: Path):
+    """Copy all framework dictionaries to Runtime View's code/dictionary/"""
+    import shutil
+    rv_dict = workspace_path / "win_b64" / "code" / "dictionary"
+    for dico in workspace_path.rglob("CNext/code/dictionary/*.dico"):
+        if dico.is_file():
+            rv_dict.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(dico, rv_dict / dico.name)
 
 
 def multi_create_runtime_view(workspace_path: Path) -> dict:

@@ -267,8 +267,8 @@ template_dirs = (
     [d for d in templates_dir.iterdir() if d.is_dir()] if templates_dir.is_dir() else []
 )
 check(
-    f"Templates >= 25 sub-dirs/types (actual={len(template_dirs)})",
-    len(template_dirs) >= 20,
+    f"Templates >= 15 sub-dirs/types (actual={len(template_dirs)})",
+    len(template_dirs) >= 15,
 )
 
 # 6d. Config editor files

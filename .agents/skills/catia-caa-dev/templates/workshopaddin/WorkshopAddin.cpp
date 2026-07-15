@@ -6,7 +6,7 @@
 #include <iostream>
 using namespace std;
 
-CATImplementClass(WorkshopAddinName, Implementation, CATBaseUnknown, CATNull);
+CATImplementClass(WorkshopAddinName, DataExtension, CATBaseUnknown, CATNull);
 
 WorkshopAddinName::WorkshopAddinName()
     : _pWorkshop(NULL)

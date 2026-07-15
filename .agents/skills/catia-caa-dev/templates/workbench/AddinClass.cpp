@@ -9,18 +9,17 @@
 #include "CATCommandHeader.h"
 #include "CATCmdContainer.h"
 #include "CATCmdStarter.h"
+#include "CATCreateWorkshop.h"
 
 // Interface TIE includes
 #include "TIE_CATIAfrGeneralWksAddin.h"
-#include "TIE_CATIWorkbenchAddin.h"
 
 // Expose interfaces via TIE
 TIE_CATIAfrGeneralWksAddin({{PREFIX}}Addin);
-TIE_CATIWorkbenchAddin({{PREFIX}}Addin);
 
 // Implement IID for class identification
 CATImplementClass({{PREFIX}}Addin,
-                  Implementation,
+                  DataExtension,
                   CATBaseUnknown,
                   CATNull);
 
@@ -43,6 +42,15 @@ CATImplementClass({{PREFIX}}Addin,
 }
 
 //-----------------------------------------------------------------------
+// CreateCommands - Register commands
+//-----------------------------------------------------------------------
+void {{PREFIX}}Addin::CreateCommands()
+{
+    // Register command headers here
+    // new MyCmdHeader("MyCmd", "MyModule", "MyCmd", (void*)NULL);
+}
+
+//-----------------------------------------------------------------------
 // CreateToolbars - Create addin toolbars
 //-----------------------------------------------------------------------
 CATCmdContainer* {{PREFIX}}Addin::CreateToolbars()
@@ -59,19 +67,17 @@ CATCmdContainer* {{PREFIX}}Addin::CreateToolbars()
     //                      CATCommandHeaderTypeExclusive);
     
     // Create toolbar container
-    CATCmdContainer* pToolbarStarter = NULL;
     NewAccess(CATCmdContainer, pToolbarStarter, {{PREFIX}}AddinTlbStarter);
     
     if (pToolbarStarter)
     {
         // Create addin toolbar
-        CATCmdContainer* pAddinToolbar = NULL;
         NewAccess(CATCmdContainer, pAddinToolbar, {{PREFIX}}AddinTlb);
         
         if (pAddinToolbar)
         {
             // Make toolbar visible
-            SetAccessChild({{PREFIX}}AddinTlbStarter, {{PREFIX}}AddinTlb);
+            SetAccessChild(pToolbarStarter, pAddinToolbar);
             
             // Add commands to toolbar
             // SetAccessNext("{{PREFIX}}AddinCmdHdr");

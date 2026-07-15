@@ -160,40 +160,6 @@ def _apply_and_return(cs: ChangeSet, dry_run: bool = False) -> Dict:
     return result
 
 
-def _fill(
-    content: str, name: str, fw: str = "MyFramework", mod: str = "MyModule", **extra
-) -> str:
-    year = str(datetime.now().year)
-    reps = {
-        "YYYY": year,
-        "ComponentName": name,
-        "COMPONENTNAME": name.upper(),
-        "ClassName": name,
-        "IInterfaceName": name,
-        "FrameworkName": fw,
-        "FRAMEWORKNAME": fw.upper(),
-        "ModuleName": mod,
-        "MODULENAME": mod.upper(),
-        "TestCaseName": name,
-        "AdapterName": name,
-        "AddinName": name,
-        "PluginName": name,
-        "UserExitName": name,
-        "EventListenerName": name,
-        "ObjectModelerName": name,
-        "WorkshopAddinName": name,
-        "CommandClassName": name,
-        "CommandHeaderName": f"{name}Header",
-        "DialogClass": name,
-        "WorkbenchClass": name,
-        "FeatureClass": name,
-        "IIDLInterfaceName": name,
-        "XmlTestCaseName": name,
-    }
-    reps.update(extra)
-    for k, v in reps.items():
-        content = content.replace(k, v)
-    return content
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -272,7 +238,7 @@ def create_framework(
         action="create_framework", description=f"Create framework '{fw_name}'"
     )
     cs.add_create_file(
-        fw_dir / "IdentityCard" / "IdentityCard.h",
+        fw_dir / "IdentityCard" / "IdentityCard.xml",
         ctx.tpl("framework", "IdentityCard.h"),
         {"FrameworkName": base, "YYYY": ctx.y()},
     )
@@ -288,12 +254,26 @@ def create_framework(
     )
 
     if modules:
+        mod_names = []
         for mn in modules:
+            mod_base = mn.replace(".m", "") if mn.endswith(".m") else mn
+            mod_names.append(mod_base)
             sub = _module_cs(ctx, fw_dir, mn)
             cs.created.update(sub.created)
             cs.modified.update(sub.modified)
+        # Update framework Imakefile to register modules
+        fw_imk = fw_dir / "Imakefile.mk"
+        if fw_imk.exists() or str(fw_imk) in cs.created:
+            lines = [f"MODULES += {n}" for n in mod_names]
+            cs.add_patch(Patch(
+                file=fw_imk,
+                operation="append",
+                target="",
+                content="\n" + "\n".join(lines),
+            ))
 
-    cs.metadata = {"framework": fw_name, "path": str(fw_dir), "modules": modules or []}
+    # Auto-configure prerequisite paths (best-effort — requires Build Time env)
+    cs.metadata = {"setup_prereq": _try_setup_prereq(ctx.workspace_root)}
     return _result(cs)
 
 
@@ -304,9 +284,19 @@ def create_module(ctx: ActionContext, framework_name: str, module_name: str) -> 
     if not fw:
         return _error(f"Framework not found: {framework_name}")
     mod_name = module_name if module_name.endswith(".m") else f"{module_name}.m"
+    mod_base = mod_name.replace(".m", "")
     if (fw.path / mod_name).exists():
         return _error(f"Module already exists: {mod_name}")
     cs = _module_cs(ctx, fw.path, mod_name)
+    # Update framework Imakefile to register the module
+    fw_imk = fw.path / "Imakefile.mk"
+    if fw_imk.exists():
+        cs.add_patch(Patch(
+            file=fw_imk,
+            operation="append",
+            target="",
+            content=f"\nMODULES += {mod_base}",
+        ))
     cs.metadata = {"framework": framework_name, "module": mod_name}
     return _result(cs)
 
@@ -396,16 +386,40 @@ def create_command(
         _r(addin_name, fw_name, module, CommandClassName=name, ModuleName=module_base),
     )
 
-    # --- 5. Update Imakefile with WIZARD_LINK_MODULES ---
+    # --- 5. Ensure Imakefile has WIZARD_LINK_MODULES (append, don't overwrite) ---
     if mod.imakefile_path().exists():
         old = mod.imakefile_path().read_text(encoding="utf-8", errors="replace")
         if "WIZARD_LINK_MODULES" not in old:
-            new = (
-                "BUILT_OBJECT_TYPE=SHARED LIBRARY\n"
-                "S_Link = \$(WIZARD_LINK_MODULES)\n"
-                "WIZARD_LINK_MODULES = JS0GROUP CATApplicationFrame CATDialogEngine CATObjectModelerBase\n"
-            )
-            cs.add_modify(mod.imakefile_path(), new)
+            if "LINK_WITH" not in old:
+                cs.add_patch(Patch(
+                    file=mod.imakefile_path(),
+                    operation="append",
+                    target="",
+                    content="\n#INSERTION ZONE NOT FOUND, MOVE AND APPEND THIS VARIABLE IN YOUR LINK STATEMENT\n"
+                            "LINK_WITH = $(WIZARD_LINK_MODULES)\n"
+                            "# DO NOT EDIT :: 3DS WIZARDS WILL ADD CODE HERE\n"
+                            "WIZARD_LINK_MODULES =  \\\n"
+                            "JS0GROUP \\\n"
+                            "JS0FM \\\n"
+                            "CATApplicationFrame \\\n"
+                            "CATDialogEngine \\\n"
+                            "DI0PANV2 \n"
+                            "# END WIZARD EDITION ZONE\n",
+                ))
+            else:
+                cs.add_patch(Patch(
+                    file=mod.imakefile_path(),
+                    operation="append",
+                    target="",
+                    content="\n# DO NOT EDIT :: 3DS WIZARDS WILL ADD CODE HERE\n"
+                            "WIZARD_LINK_MODULES =  \\\n"
+                            "JS0GROUP \\\n"
+                            "JS0FM \\\n"
+                            "CATApplicationFrame \\\n"
+                            "CATDialogEngine \\\n"
+                            "DI0PANV2 \n"
+                            "# END WIZARD EDITION ZONE\n",
+                ))
 
     # --- 6. Framework .dico — register addin ---
     fw = mod.framework
@@ -416,9 +430,36 @@ def create_command(
         if dico_file.exists():
             old = dico_file.read_text(encoding="utf-8", errors="replace")
             if addin_name not in old:
-                cs.add_modify(dico_file, old.rstrip() + "\n" + entry)
+                stripped = old.rstrip()
+                cs.add_modify(dico_file, (stripped + "\n" if stripped else "") + entry)
         else:
             cs.add_create(dico_file, entry)
+        # Also write to Runtime View location so CATIA finds it after mkCreateRuntimeView
+        rv_dico = ctx.workspace_root / "win_b64" / "code" / "dictionary" / dico_file.name
+        rv_dico.parent.mkdir(parents=True, exist_ok=True)
+        cs.add_create(rv_dico, entry)
+
+    # --- 7. Dialog files (when dialog_name is provided) ---
+    if dialog_name:
+        tpl_dlg = ctx.tpl("dialog")
+        dlg_h = tpl_dlg / "DialogClass.h"
+        dlg_cpp = tpl_dlg / "DialogClass.cpp"
+        if dlg_h.exists() and dlg_cpp.exists():
+            cs.add_create_file(
+                li / f"{dialog_name}.h", dlg_h,
+                _r(dialog_name, fw_name, module, DialogClassName=dialog_name),
+            )
+            cs.add_create_file(
+                src / f"{dialog_name}.cpp", dlg_cpp,
+                _r(dialog_name, fw_name, module, DialogClassName=dialog_name),
+            )
+            # Add dialog include to command header
+            cs.add_patch(Patch(
+                file=li / f"{name}.h",
+                operation="insert_after",
+                target='#include "CATStateCommand.h"',
+                content=f'#include "{dialog_name}.h"',
+            ))
 
     cs.metadata = {
         "command": name,
@@ -458,6 +499,9 @@ def create_workbench(ctx: ActionContext, name: str, framework: str = None) -> Di
     )
     cs.add_create_file(
         src / f"{name}.cpp", tpl_wb / "WorkbenchClass.cpp", _r(name, fw.name, mod.name)
+    )
+    cs.add_create_file(
+        li / f"{name}Addin.h", tpl_wb / "AddinClass.h", _r(name, fw.name, mod.name)
     )
     cs.add_create_file(
         src / f"{name}Addin.cpp", tpl_wb / "AddinClass.cpp", _r(name, fw.name, mod.name)
@@ -521,12 +565,12 @@ def create_interface(
         return _error(f"Module not found: {module}")
 
     cs = ChangeSet(action="create_interface", description=f"Create interface '{name}'")
-    pi = mod.path / "PublicInterfaces"
+    li = mod.path / "LocalInterfaces"
     src = mod.src_dir or mod.path / "src"
-    pi.mkdir(parents=True, exist_ok=True)
+    li.mkdir(parents=True, exist_ok=True)
     src.mkdir(parents=True, exist_ok=True)
 
-    cs.add_create_file(pi / f"{name}.h", ctx.tpl("IInterface.h"), _r(name))
+    cs.add_create_file(li / f"{name}.h", ctx.tpl("IInterface.h"), _r(name))
     cs.add_create_file(src / f"{name}.cpp", ctx.tpl("IInterface.cpp"), _r(name))
 
     if use_idl:
@@ -1079,18 +1123,47 @@ def cleanup_old_backups(ctx: ActionContext, keep_count: int = 10) -> Dict:
 # ══════════════════════════════════════════════════════════════════
 
 
+def _try_setup_prereq(workspace_root: Path) -> str:
+    """Attempt to run mkGetPreq (best-effort — requires Build Time env)."""
+    try:
+        from build import setup_prerequisite_path
+        result = setup_prerequisite_path(workspace_root)
+        return result.get("message", "ok") if result.get("status") == "success" else "skipped"
+    except Exception:
+        return "skipped (no Build Time environment)"
+
+
 def _r(
     name: str, fw_name: str = "MyFramework", mod_name: str = "MyModule", **extra
 ) -> Dict[str, str]:
-    """Build replacement dict for template filling"""
+    """Build replacement dict for template filling — single source of truth"""
+    fw = fw_name.replace(".edu", "")
+    mod = mod_name.replace(".m", "")
     return {
         "YYYY": str(datetime.now().year),
-        "FrameworkName": fw_name.replace(".edu", ""),
-        "FRAMEWORKNAME": fw_name.replace(".edu", "").upper(),
-        "ModuleName": mod_name.replace(".m", ""),
-        "MODULENAME": mod_name.replace(".m", "").upper(),
+        "PREFIX": name,
+        # Entity names
         "ClassName": name,
+        "ComponentName": name,
+        "COMPONENTNAME": name.upper(),
+        "IInterfaceName": name,
+        "TestCaseName": name,
+        "AddinName": name,
+        "EventListenerName": name,
+        "WorkshopAddinName": name,
+        "XmlTestCaseName": name,
+        "FeatureClass": name,
+        "WorkbenchClass": name,
+        "DialogClass": name,
         "DialogClassName": name,
+        "CommandClassName": name,
+        "CommandHeaderName": f"{name}Header",
+        "IIDLInterfaceName": name,
+        # Framework/Module
+        "FrameworkName": fw,
+        "FRAMEWORKNAME": fw.upper(),
+        "ModuleName": mod,
+        "MODULENAME": mod.upper(),
         **extra,
     }
 

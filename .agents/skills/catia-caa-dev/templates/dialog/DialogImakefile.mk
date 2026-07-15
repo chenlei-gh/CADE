@@ -8,7 +8,7 @@ LINK_WITH=JS0GROUP JS0CORBA JS0FM
 LINK_WITH=$(LINK_WITH) ApplicationFrame Dialog Visualization
 
 # Additional compiler flags (optional)
-LOCAL_CCFLAGS=
+LOCAL_CCFLAGS=/EHsc
 
 # Additional linker flags (optional)
 LOCAL_LNKFLAGS=

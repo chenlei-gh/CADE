@@ -360,13 +360,13 @@ class DiagnosticsEngine:
                     Diagnostic(
                         severity=Severity.WARNING,
                         problem=f"IdentityCard missing for {fw.name}",
-                        reason="No IdentityCard.h — Framework identity is not defined",
+                        reason="No IdentityCard.xml (or .h) — Framework identity is not defined",
                         category="integrity",
                         entity=fw.name,
                         fix_plan=FixPlan(
                             action=FixAction.CREATE_FILE,
                             file=str(ic),
-                            line=f"// IdentityCard for {fw.name}",
+                            line=f"<?xml version=\"1.0\"?>\n<eduFramework ...>",
                             description=f"Create IdentityCard for {fw.name}",
                         ),
                         auto_fixable=True,

@@ -8,11 +8,9 @@
 
 // Application Frame
 #include "CATBaseUnknown.h"
-#include "CATCmdWorkbench.h"
 
 // Interface includes
 #include "CATIAfrGeneralWksAddin.h"
-#include "CATIWorkbenchAddin.h"
 
 /**
  * @class {{PREFIX}}Addin
@@ -44,6 +42,11 @@ public:
      * Destructor
      */
     virtual ~{{PREFIX}}Addin();
+
+    /**
+     * Creates command headers
+     */
+    void CreateCommands();
 
     /**
      * Creates toolbars for the addin

@@ -102,8 +102,10 @@ class WorkspaceAnalyzer:
                 self.logger.write(f"  Framework (by IdentityCard): {fw.name}")
 
     def _analyze_framework_details(self, fw: Framework, path: Path):
-        # IdentityCard
-        ic = path / "IdentityCard" / "IdentityCard.h"
+        # IdentityCard (.xml preferred, .h fallback)
+        ic = path / "IdentityCard" / "IdentityCard.xml"
+        if not ic.exists():
+            ic = path / "IdentityCard" / "IdentityCard.h"
         if ic.exists():
             fw.identitycard = ic
             # Parse dependencies from IdentityCard

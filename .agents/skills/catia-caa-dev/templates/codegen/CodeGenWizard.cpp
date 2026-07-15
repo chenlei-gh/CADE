@@ -29,7 +29,7 @@ TIE_IInterfaceName(ComponentName);
 #define QUERYINTERFACE_ComponentName
 
 #if defined(__ComponentName)
-CATImplementClass(ComponentName, Implementation, CATBaseUnknown, CATNull);
+CATImplementClass(ComponentName, DataExtension, CATBaseUnknown, CATNull);
 
 HRESULT __stdcall ComponentName::QueryInterface(const IID& iid, void** ppv)
 {

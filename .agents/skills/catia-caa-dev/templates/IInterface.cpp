@@ -3,6 +3,10 @@
 // Interface header
 #include "IInterfaceName.h"
 
+// C++ standard library
+#include <iostream>
+using namespace std;
+
 // Define the Interface IID
 // In production, use guidgen.exe to generate unique GUID
 IID IID_IInterfaceName = { 
@@ -11,5 +15,5 @@ IID IID_IInterfaceName = {
 };
 
 // Implement the interface meta-object
-// Provides MetaObject() — required for linking
+// Provides MetaObject() -- required for linking
 CATImplementInterface(IInterfaceName, CATBaseUnknown);

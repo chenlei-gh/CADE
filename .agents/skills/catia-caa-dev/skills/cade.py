@@ -5,6 +5,9 @@ CADE — CATIA CAA Development Kernel CLI
 Unified command-line interface for all CADE tools.
 
 Usage:
+  cade develop <request> [--workspace path]
+                                   # Full development pipeline (自然语言→代码)
+
   cade build [workspace]           # Incremental build (mkmk -u)
   cade build --full [workspace]    # Full rebuild
   cade build --clean [workspace]   # Clean + build
@@ -113,6 +116,8 @@ def main():
 
     if cmd == "build":
         cmd_build(args)
+    elif cmd == "develop":
+        cmd_develop(args)
     elif cmd == "run":
         cmd_run(args)
     elif cmd == "create":
@@ -158,6 +163,60 @@ def main():
     else:
         print(f"Unknown command: {cmd}")
         print_help()
+
+
+# ─── Develop ───────────────────────────────────────────────────────
+
+
+def cmd_develop(args):
+    """Full development pipeline: natural language → code.
+    Usage: cade develop "创建一个设置命令SettingsCmd，放在TestModule模块" --workspace D:/test
+    """
+    if not args:
+        print("Usage: cade develop <natural language request> [--workspace path]")
+        print()
+        print("Examples:")
+        print('  cade develop "create command HelloCmd in MyModule"')
+        print('  cade develop "创建一个设置命令SettingsCmd，放在TestModule模块中"')
+        print('  cade develop "analyze the workspace" --workspace D:/myproject')
+        return
+
+    # Separate flags from the natural language request
+    opts = _get_flags(args)
+    flag_keywords = {"--workspace", "-w", "--mode", "-m"}
+    text_parts = [a for a in args if a not in flag_keywords and (not a.startswith("--") or a in ("--dialog",))]
+    # Also skip values that follow flags
+    skip_next = False
+    filtered = []
+    for i, a in enumerate(args):
+        if skip_next:
+            skip_next = False
+            continue
+        if a in ("--workspace", "-w", "--mode", "-m"):
+            skip_next = True
+            continue
+        if a.startswith("--") and a not in ("--dialog",):
+            skip_next = True
+            continue
+        filtered.append(a)
+    text = " ".join(filtered)
+
+    if not text.strip():
+        print("Error: please provide a natural language request")
+        return
+
+    # Detect mode: contains analysis/comprehension keywords → analyze
+    analyze_kw = ("analyze", "list", "show", "check", "inspect", "validate", "diagnos",
+                  "分析", "列出", "显示", "检查", "验证", "诊断")
+    repair_kw = ("fix", "repair", "修复", "恢复")
+    text_lower = text.lower()
+    if any(kw in text_lower for kw in analyze_kw):
+        result = _kernel("analyze", text)
+    elif any(kw in text_lower for kw in repair_kw):
+        result = _kernel("repair", text)
+    else:
+        result = _kernel("develop", text)
+    _print_kernel(result)
 
 
 # ─── Build ────────────────────────────────────────────────────────

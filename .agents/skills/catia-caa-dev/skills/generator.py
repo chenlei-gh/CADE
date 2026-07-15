@@ -193,10 +193,27 @@ class TemplateGenerator:
         generated = []
         extra = kw.get("extra_repl", {})
 
+        # Map template directory name to the prefix used in template filenames
+        _TPL_PREFIX = {
+            "commandheader": "CommandHeader",
+            "eventlistener": "EventListener",
+            "workshopaddin": "WorkshopAddin",
+            "addin": "Addin",
+            "workbench": "Workbench",
+            "testcase": "TestCase",
+            "xmltestcase": "XmlTestCase",
+            "class": "Class",
+            "codegen": "CodeGenWizard",
+        }
+        tpl_prefix = _TPL_PREFIX.get(ttype, ttype.capitalize())
+
         for tf in sorted(src_dir.rglob("*")):
             if tf.is_file() and not tf.name.startswith("."):
                 rel = tf.relative_to(src_dir)
-                out_file = out / str(rel).replace("FrameworkName", fw)
+                # Replace template prefix in filename with user-provided name
+                rel_str = str(rel).replace(tpl_prefix, name)
+                rel_str = rel_str.replace("FrameworkName", fw)
+                out_file = out / rel_str
                 out_file.parent.mkdir(parents=True, exist_ok=True)
 
                 content = tf.read_text(encoding="utf-8", errors="replace")
@@ -243,26 +260,20 @@ class TemplateGenerator:
 
     def _replace(self, content: str, name: str, fw: str, mod: str) -> str:
         year = str(datetime.now().year)
+        fw_base = fw.replace(".edu", "")
+        mod_base = mod.replace(".m", "")
         reps = {
             "YYYY": year,
+            "PREFIX": name,
+            "ClassName": name,
             "ComponentName": name,
             "COMPONENTNAME": name.upper(),
-            "ClassName": name,
             "IInterfaceName": name,
             "IIDLInterfaceName": name,
-            "FrameworkName": fw,
-            "FRAMEWORKNAME": fw.upper(),
-            "FrameworkBareName": fw.replace(".edu", ""),
-            "ModuleName": mod,
-            "MODULENAME": mod.upper(),
             "TestCaseName": name,
             "XmlTestCaseName": name,
-            "AdapterName": name,
             "AddinName": name,
-            "PluginName": name,
-            "UserExitName": name,
             "EventListenerName": name,
-            "ObjectModelerName": name,
             "WorkshopAddinName": name,
             "CommandClassName": name,
             "CommandHeaderName": name,
@@ -270,13 +281,18 @@ class TemplateGenerator:
             "DialogClassName": name,
             "WorkbenchClass": name,
             "FeatureClass": name,
+            "FrameworkName": fw_base,
+            "FrameworkBareName": fw_base,
+            "FRAMEWORKNAME": fw_base.upper(),
+            "ModuleName": mod_base,
+            "MODULENAME": mod_base.upper(),
         }
-        # Replace angle-bracket placeholders FIRST (before plain text),
-        # otherwise <CommandClassName> → <SettingsCmd> and we lose the match.
-        for k, v in list(reps.items()):
-            content = content.replace(f"<{k}>", v)
-        for k, v in reps.items():
-            content = content.replace(k, v)
+        # Sort by key length descending: longer keys first to avoid substring corruption
+        sorted_keys = sorted(reps.keys(), key=len, reverse=True)
+        for k in sorted_keys:
+            content = content.replace(f"<{k}>", reps[k])
+        for k in sorted_keys:
+            content = content.replace(k, reps[k])
         return content
 
     def _validate_name(self, name: str) -> bool:

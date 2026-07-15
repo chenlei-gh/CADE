@@ -4,15 +4,13 @@
 #include "ComponentName.h"
 
 // C++ standard library
-#include "iostream.h"
+#include <iostream>
+using namespace std;
 
 //-----------------------------------------------------------------------------
 
 // To declare that the class is a component main class
-CATImplementClass(ComponentName, Implementation, CATBaseUnknown, CATNull);
-
-// Bind the interface using BOA (Basic Object Adapter)
-CATImplementBOA(IInterfaceName, ComponentName);
+CATImplementClass(ComponentName, DataExtension, CATBaseUnknown, CATNull);
 
 //-----------------------------------------------------------------------------
 // Constructor
@@ -31,12 +29,11 @@ ComponentName::~ComponentName()
 }
 
 //-----------------------------------------------------------------------------
-// MethodName - Implementation
+// Execute - Implementation
 //-----------------------------------------------------------------------------
-HRESULT ComponentName::MethodName(const Type iParam, Type& oParam)
+HRESULT ComponentName::Execute(const CATUnicodeString& iParam, CATUnicodeString& oResult)
 {
-    // Implementation here
-    cout << "ComponentName::MethodName" << endl;
-    
+    cout << "ComponentName::Execute" << endl;
+    oResult = "ComponentName executed";
     return S_OK;
 }

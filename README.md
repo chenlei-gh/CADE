@@ -22,7 +22,7 @@
 
 ---
 
-# CADE v3.0.2 — CATIA CAA Development Kernel
+# CADE — CATIA CAA Development Kernel
 
 <div align="center">
 
@@ -85,7 +85,7 @@ cp -r CADE/.agents /path/to/your/caa/project/
 
 ## 🧠 What's New
 
-### 🧬 Development Kernel (v3.0)
+### 🧬 Development Kernel 
 
 CADE evolves from a tool collection to a **Development Kernel** — AI knows only 3 modes:
 
@@ -189,7 +189,6 @@ cade test           # 32 suites (~60s), full including CATIA lifecycle
 
 - **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
-- **Version Consistency** — 3.0.2 unified across all docs
 - **Hardcoded Path Detection** — 92 files scanned
 
 ---
@@ -316,7 +315,7 @@ graph TD
     E --> I[Planner +<br/>Impact + Optimizer]
     E --> Q[Knowledge<br/>5-Layer Retrieval]
     I --> S[Specification]
-    S --> G[Generator<br/>25+ Templates]
+    S --> G[Generator<br/>17+ Templates]
     G --> V[CodeVerifier<br/>static + mkmk]
     V -->|fail| P[Repair Loop<br/>3 retries]
     P --> V
@@ -345,7 +344,7 @@ graph TD
 | Files | 36 (34 suites + 2 standalone) |
 | Checks | ~650 |
 | Pass Rate | 100% |
-| Templates | 25+ |
+| Templates | 17+ |
 | APIs | 15 (Intent + Action) |
 | CLI Commands | 22 |
 | MCP Modes | 3 (develop / analyze / repair) |
@@ -354,7 +353,7 @@ graph TD
 | Knowledge Assets | 240+ (29K + 14P + 13C + 14PB + 149FW + 6PH + 3FP + 3DT) |
 | Checks | ~650 |
 | Pass Rate | 100% |
-| Templates | 25+ |
+| Templates | 17+ |
 | APIs | 15 (Intent + Action) |
 | CLI Commands | 22 |
 | MCP Modes | 3 (develop / analyze / repair) |
@@ -363,7 +362,7 @@ graph TD
 | Knowledge Assets | 240+ (29K + 14P + 13C + 14PB + 149FW + 6PH + 3FP + 3DT) |
 | Checks | ~600 |
 | Pass Rate | 100% |
-| Templates | 25+ |
+| Templates | 17+ |
 | APIs | 15 (Intent + Action) |
 | CLI Commands | 22 |
 | MCP Modes | 3 |
@@ -433,9 +432,9 @@ cp -r CADE/.agents /你的/CAA/项目/路径/
 
 ### 🧠 最新更新
 
-**🧬 Development Kernel (v3.0.2)** — 从工具集合升级为开发内核。AI 只需知道 3 个 Mode：`develop`（创建/生成）、`analyze`（查询/诊断）、`repair`（修复/重构）。Kernel 内部自动调度需求分析、多意图分解、规划、生成、验证和修复全链路。
+**🧬 Development Kernel ** — 从工具集合升级为开发内核。AI 只需知道 3 个 Mode：`develop`（创建/生成）、`analyze`（查询/诊断）、`repair`（修复/重构）。Kernel 内部自动调度需求分析、多意图分解、规划、生成、验证和修复全链路。
 
-**🧩 多意图分解 (v3.1)** — 复合请求自动拆分。"做装配统计工具，包含导出BOM和自动着色" → 自动拆为 3 个独立子意图，每个走完整管线。
+**🧩 多意图分解 ()** — 复合请求自动拆分。"做装配统计工具，包含导出BOM和自动着色" → 自动拆为 3 个独立子意图，每个走完整管线。
 
 **📉 Token 优化器** — MCP 响应自动压缩，平均节省 50% token。
 

@@ -33,10 +33,9 @@ CommandHeaderName::~CommandHeaderName()
 //-----------------------------------------------------------------------------
 CATCommand* CommandHeaderName::CreateCommand()
 {
-    cout << "CommandHeaderName::CreateCommand" << endl;
-    
-    // Create and return a new instance of the command
-    return new CommandClassName();
+    // Return NULL: this header does not create a command directly.
+    // Commands are created by state command classes, not headers.
+    return NULL;
 }
 
 //-----------------------------------------------------------------------------

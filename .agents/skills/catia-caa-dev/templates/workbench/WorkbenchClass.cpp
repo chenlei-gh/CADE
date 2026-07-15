@@ -3,12 +3,13 @@
 // {{PREFIX}}Workbench.cpp
 // Workbench implementation
 //===================================================================
-#include "{{PREFIX}}Workbench.h"
+#include "{{PREFIX}}.h"
 
 // Application Frame
 #include "CATCommandHeader.h"
 #include "CATCmdContainer.h"
 #include "CATCmdStarter.h"
+#include "CATCreateWorkshop.h"
 
 // Include your command headers here
 // Example:
@@ -61,19 +62,16 @@ void {{PREFIX}}Workbench::CreateCommands()
 CATCmdContainer* {{PREFIX}}Workbench::CreateToolbars()
 {
     // Create toolbar starter (container manager)
-    CATCmdContainer* pToolbarStarter = NULL;
     NewAccess(CATCmdContainer, pToolbarStarter, {{PREFIX}}TlbStarter);
     
     if (pToolbarStarter)
     {
         // Create main toolbar
-        CATCmdContainer* pMainToolbar = NULL;
         NewAccess(CATCmdContainer, pMainToolbar, {{PREFIX}}MainTlb);
         
         if (pMainToolbar)
         {
-            // Set toolbar as visible
-            SetAccessChild({{PREFIX}}TlbStarter, {{PREFIX}}MainTlb);
+            SetAccessChild(pToolbarStarter, pMainToolbar);
             
             // Add command starters to toolbar
             // Pattern: SetAccessCommand(ParentID, CommandID)
@@ -94,7 +92,7 @@ CATCmdContainer* {{PREFIX}}Workbench::CreateToolbars()
         // NewAccess(CATCmdContainer, pSecondToolbar, {{PREFIX}}SecondTlb);
         // if (pSecondToolbar)
         // {
-        //     SetAccessChild({{PREFIX}}TlbStarter, {{PREFIX}}SecondTlb);
+        //     SetAccessChild(pToolbarStarter, pSecondToolbar);
         //     // Add commands...
         // }
     }

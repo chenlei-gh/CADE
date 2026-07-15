@@ -8,12 +8,9 @@
 #include "CATDlgFrame.h"
 #include "CATDlgLabel.h"
 #include "CATDlgEditor.h"
-#include "CATUnicodeString.h"
 
-CATImplementClass(<DialogClassName>, DataExtension, CATDlgDialog, <ModuleName>);
-
-<DialogClassName>::<DialogClassName>(CATDialog *iParent, const CATString &iName)
-    : CATDlgDialog(iParent, iName, CATDlgWndModal | CATDlgWndOKCancel)
+<DialogClassName>::<DialogClassName>(CATDialog *iParent)
+    : CATDlgDialog(iParent, "<DialogClassName>Id", CATDlgWndBtnClose | CATDlgGridLayout)
     , _pFrame(NULL)
     , _pLabel(NULL)
     , _pEditor(NULL)
@@ -26,17 +23,11 @@ CATImplementClass(<DialogClassName>, DataExtension, CATDlgDialog, <ModuleName>);
 
 void <DialogClassName>::Build()
 {
-    _pFrame = new CATDlgFrame(this, "Frame", CATDlgFraNoFrame | CATDlgGridLayout);
+    _pFrame = new CATDlgFrame(this, "FrameId", CATDlgFraNoTitle | CATDlgGridLayout);
 
-    _pLabel = new CATDlgLabel(_pFrame, "Label");
+    _pLabel = new CATDlgLabel(_pFrame, "LabelId");
     _pLabel->SetTitle("Value:");
 
-    _pEditor = new CATDlgEditor(_pFrame, "Editor");
+    _pEditor = new CATDlgEditor(_pFrame, "EditorId");
     _pEditor->SetVisibleTextWidth(20);
-}
-
-void <DialogClassName>::GetValue(CATUnicodeString &oValue) const
-{
-    if (_pEditor)
-        _pEditor->GetTitle(oValue);
 }

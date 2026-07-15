@@ -9,7 +9,7 @@ LINK_WITH=$(LINK_WITH) ApplicationFrame Dialog Visualization
 LINK_WITH=$(LINK_WITH) InteractiveInterfaces GeometricObjects
 
 # Additional compiler flags (optional)
-LOCAL_CCFLAGS=
+LOCAL_CCFLAGS=/EHsc
 
 # Additional linker flags (optional)
 LOCAL_LNKFLAGS=

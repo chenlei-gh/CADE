@@ -43,13 +43,15 @@ TOOLS = [
     {
         "name": "develop",
         "description": (
-            "Create, generate, build, or deploy CAA components from natural language. "
-            "Use for: creating commands, features, dialogs, workbenches, interfaces, "
-            "extensions, modules, frameworks, builds, CATIA startup, documentation. "
-            "The Kernel handles requirement clarification, decomposition (Playbook/Capability "
-            "matching), planning, code generation, and static verification. "
+            "Create, generate, build, or deploy CAA components from natural language (EN/CN). "
+            "Use for: creating commands, features, dialogs (auto-generated with command), "
+            "workbenches, interfaces, extensions, modules, frameworks. "
+            "Also handles: builds, CATIA startup, documentation, workspace prerequisites. "
+            "The Kernel handles requirement clarification, intent detection (CN+EN), "
+            "planning, code generation, static verification, and IdentityCard setup. "
             'Examples: "create command ExportBOM in MyModule.m", '
-            '"build the workspace", "start CATIA", "generate documentation".'
+            '"创建一个设置命令SettingsCmd，放在TestModule模块中", '
+            '"build the workspace", "start CATIA".'
         ),
         "inputSchema": {
             "type": "object",
@@ -68,9 +70,10 @@ TOOLS = [
         "description": (
             "Query, diagnose, or inspect the workspace. READ-ONLY — never modifies files. "
             "Use for: workspace analysis, listing modules/commands, dependency analysis, "
-            "diagnostics, validation, impact analysis. "
+            "diagnostics, validation, impact analysis. Supports EN and CN requests. "
             'Examples: "analyze the workspace", "list all modules", '
-            '"show dependencies of MyCmd", "diagnose module MyModule.m".'
+            '"列出所有模块", "show dependencies of MyCmd", '
+            '"diagnose module TestModule.m".'
         ),
         "inputSchema": {
             "type": "object",
@@ -92,7 +95,7 @@ TOOLS = [
             "moving commands between modules, rollback operations, creating snapshots. "
             "The Kernel runs diagnose -> fix -> verify loop (max 3 attempts). "
             'Examples: "fix dictionary entries", "rename command OldName to NewName in MyModule", '
-            '"rollback to latest", "list rollback points".'
+            '"修复工作区问题", "rollback to latest".'
         ),
         "inputSchema": {
             "type": "object",
