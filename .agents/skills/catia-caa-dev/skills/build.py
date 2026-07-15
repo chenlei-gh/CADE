@@ -263,6 +263,25 @@ def get_prerequisite(workspace_path: Path, target: str = "") -> dict:
     return _exec_build_cmd(cmd, workspace_path)
 
 
+def setup_prerequisite_path(workspace_path: Path, catia_install: str = None) -> dict:
+    """
+    Set up prerequisite workspace path (mkGetPreq -p).
+    Links the CAA workspace to the CATIA installation so mkmk can
+    find system frameworks (BSFBuildtimeData, System, etc.).
+    
+    Equivalent to: mkGetPreq -p "C:/Program Files/Dassault Systemes/B28;"
+    """
+    if not catia_install:
+        from env import CAAEnvironment
+        env = CAAEnvironment()
+        env.load_config()
+        catia_install = env.config.get("CATIA_INSTALL", "")
+    if not catia_install:
+        return error_result("CATIA installation path not configured")
+    cmd = f'mkGetPreq -p "{catia_install};"'
+    return _exec_build_cmd(cmd, workspace_path)
+
+
 def print_prerequisite(workspace_path: Path, target: str = "") -> dict:
     """Print prerequisite tree (mkPrintPreq)"""
     cmd = f"mkPrintPreq {target}" if target else "mkPrintPreq"

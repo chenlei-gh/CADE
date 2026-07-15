@@ -851,8 +851,16 @@ class Kernel:
 
         # Build
         try:
-            from build import incremental_build, full_build, clean_build, build_with_threads, create_runtime_view
+            from build import incremental_build, full_build, clean_build, build_with_threads, create_runtime_view, setup_prerequisite_path
             ws = self.workspace_root
+
+            # Setup prerequisite path (auto-link to CATIA installation)
+            if any(kw in request for kw in ("setup prereq", "setup workspace", "init workspace")):
+                r = setup_prerequisite_path(ws)
+                self._state = KernelState.COMPLETED
+                return KernelResult(status=r.get("status", "ok"), mode="develop", state=self._state.value,
+                    message="Workspace prerequisites configured.", data=r if isinstance(r, dict) else {}).to_dict()
+
             if any(kw in request for kw in ("build", "compile", "mkmk")):
                 import re
                 n = int(re.search(r'(\d+)\s*thread', request).group(1)) if re.search(r'(\d+)\s*thread', request) else 8
