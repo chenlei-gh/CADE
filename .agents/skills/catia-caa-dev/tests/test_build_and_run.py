@@ -160,7 +160,7 @@ start_r = start_catia_runtime(workspace_path=WORKSPACE, wait_for_exit=False, tim
 check("5.3 start_catia_runtime dict", isinstance(start_r, dict))
 check(
     "5.4 start status",
-    start_r.get("status") in ("started", "error", "already_running"),
+    start_r.get("status") in ("started", "launching", "error", "already_running"),
     start_r.get("status", "?"),
 )
 
