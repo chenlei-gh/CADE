@@ -13,6 +13,8 @@ Usage:
   cade build --clean [workspace]   # Clean + build
   cade build --threads 8 [ws]      # Multi-threaded build
 
+  cade dev <workspace>              # Build + Run in one command
+
   cade run [workspace]             # Start CATIA
   cade run --stop                  # Stop CATIA
   cade run --macro path.CATScript  # Run macro
@@ -116,6 +118,8 @@ def main():
 
     if cmd == "build":
         cmd_build(args)
+    elif cmd == "dev":
+        cmd_dev(args)
     elif cmd == "develop":
         cmd_develop(args)
     elif cmd == "run":
@@ -248,6 +252,30 @@ def cmd_build(args):
         result = incremental_build(Path(ws))
 
     _print_result(result)
+
+
+# ─── Dev (Build + Run) ───────────────────────────────────────────
+
+
+def cmd_dev(args):
+    """Build then run — one-command development cycle.
+    Usage: cade dev <workspace>
+    """
+    from build import incremental_build
+    from run import start_catia_runtime
+
+    ws = _get_ws(args)
+    if not ws:
+        print("Error: workspace path required")
+        return
+
+    print(f"[build] {ws}")
+    build_result = incremental_build(Path(ws))
+    if build_result.get("status") != "success":
+        _print_result(build_result)
+        return
+    print(f"[run] {ws}")
+    _print_result(start_catia_runtime(workspace_path=ws))
 
 
 # ─── Run ──────────────────────────────────────────────────────────
