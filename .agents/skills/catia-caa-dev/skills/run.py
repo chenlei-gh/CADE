@@ -222,8 +222,8 @@ def start_catia_runtime(
             # Quick poll (shorter intervals, return early if found)
             logger.write("Waiting for CNEXT...")
             runtime_result = None
-            for i in range(15):
-                time.sleep(0.2)
+            for i in range(30):
+                time.sleep(0.5)
                 running = check_process_running("CNEXT.exe")
                 if running:
                     logger.write(f"CNEXT detected after {(i + 1) * 0.2:.1f}s")
@@ -485,13 +485,14 @@ def main():
     parser = argparse.ArgumentParser(
         description="Start CATIA Runtime View",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=r"""
 Examples:
   python run.py                              # Start CATIA (default environment)
-  python run.py D:\\workspace                 # Start with Runtime View
+  python run.py D:\workspace                 # Start with Runtime View
   python run.py --env CATIA.P3.V5-6R2018.B28 # Specify environment
   python run.py --wait                       # Start and wait for exit
   python run.py --check                      # Check if running
+  python run.py --dev D:\workspace           # Build + Run in one command
         """,
     )
 
@@ -522,6 +523,10 @@ Examples:
     )
 
     parser.add_argument(
+        "--dev", action="store_true", help="Build then run (shortcut for build+run cycle)"
+    )
+
+    parser.add_argument(
         "--timeout",
         type=int,
         default=300,
@@ -543,6 +548,17 @@ Examples:
             result, exit_code=0 if result["status"] in ["stopped", "not_running"] else 1
         )
         return
+
+    # Dev mode: build then run
+    if args.dev and args.workspace:
+        from build import build_workspace
+        from pathlib import Path as _Path
+        print("Building...", file=sys.stderr)
+        build_result = build_workspace(_Path(args.workspace))
+        if build_result.get("status") != "success":
+            output_json(build_result, exit_code=1)
+            return
+        print("Build OK, launching...", file=sys.stderr)
 
     # Start CATIA
     result = start_catia_runtime(

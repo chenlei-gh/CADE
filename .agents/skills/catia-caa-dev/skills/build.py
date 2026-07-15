@@ -55,9 +55,17 @@ def build_workspace(
         for p in workspace_path.iterdir()
     )
     if has_framework:
-        prereq_result = setup_prerequisite_path(workspace_path)
-        if prereq_result.get("status") not in ("success",):
-            logger.write(f"Prerequisites: {prereq_result.get('message', '?')}")
+        # Cache check: skip if already configured (mkGetPreq is idempotent but slow)
+        cache_data = cache.load()
+        last_prereq = cache_data.get("prereq_workspace", "")
+        if last_prereq != str(workspace_path):
+            prereq_result = setup_prerequisite_path(workspace_path)
+            if prereq_result.get("status") == "success":
+                cache_data["prereq_workspace"] = str(workspace_path)
+                cache.save(cache_data)
+                logger.write("Prerequisites configured")
+        else:
+            logger.write("Prerequisites already configured (cached)")
 
     # --- Get Build Time command ---
     try:
