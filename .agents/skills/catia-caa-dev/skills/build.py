@@ -48,6 +48,17 @@ def build_workspace(
     if not workspace_path.exists():
         return error_result(f"Workspace path does not exist: {workspace_path}")
 
+    # --- Auto-configure workspace prerequisites (links to CATIA installation) ---
+    # Only run if workspace looks like a real CAA workspace (has .edu directory)
+    has_framework = any(
+        p.is_dir() and p.name.endswith(".edu")
+        for p in workspace_path.iterdir()
+    )
+    if has_framework:
+        prereq_result = setup_prerequisite_path(workspace_path)
+        if prereq_result.get("status") not in ("success",):
+            logger.write(f"Prerequisites: {prereq_result.get('message', '?')}")
+
     # --- Get Build Time command ---
     try:
         cmd, cmd_display = caa_env.build_time_command(str(workspace_path), options)
@@ -77,6 +88,7 @@ def build_workspace(
         batfile.write_text(bat_content, encoding="ascii")
 
         logger.write("Executing build...")
+        # CREATE_NO_WINDOW = 0x08000000 suppresses cmd popup
         result = subprocess.run(
             ["cmd", "/c", str(batfile)],
             capture_output=True,
@@ -84,6 +96,7 @@ def build_workspace(
             timeout=timeout,
             encoding="utf-8",
             errors="replace",
+            creationflags=0x08000000 if sys.platform == "win32" else 0,
         )
 
         # Read output from temp file
@@ -405,6 +418,7 @@ def _exec_build_cmd(command: str, workspace_path: Path, timeout: int = 300) -> d
             timeout=timeout,
             encoding="utf-8",
             errors="replace",
+            creationflags=0x08000000 if sys.platform == "win32" else 0,
         )
 
         try:

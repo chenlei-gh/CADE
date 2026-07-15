@@ -157,7 +157,21 @@ def start_catia_runtime(
             encoding="ascii",
         )
         cmd_args = ["cmd", "/c", str(batfile)]
-        logger.write(f"Using mkrun via batch: {batfile}")
+        logger.write(f"Using mkrun (workspace): {workspace_path}")
+    else:
+        # No workspace — use CATSTART for a plain CATIA launch
+        if not env_name:
+            env_name = caa_env.get_default_env()
+        env_dir = caa_env.get_catenv_dir()
+        cmd_args = [
+            str(catstart_path),
+            "-run", "CNEXT.exe",
+            "-env", env_name,
+            "-direnv", env_dir,
+            "-nowindow",
+        ]
+        logger.write(f"Using CATSTART: {catstart_path}")
+        logger.write(f"Environment: {env_name}")
 
     # Check if CATIA is already running
     running_catia = check_process_running("CNEXT.exe")
