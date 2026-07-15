@@ -51,7 +51,7 @@ def make_workspace(base: Path) -> Path:
 
 
 print("=" * 65)
-print("  CADE v3.0.2 — Real-World UI Scenario Test")
+print("  CADE v3.2.0 — Real-World UI Scenario Test")
 print("=" * 65)
 
 # ═══════════════════════════════════════════════════════════════
