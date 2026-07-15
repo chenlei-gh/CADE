@@ -452,6 +452,7 @@ class CAAEnvironment:
 
         mkinit = code_command / "mkinit.bat"
         tck_init = code_command / "tck_init.bat"
+        tck_profile = catia_path / arch / "TCK" / "command" / "tck_profile.bat"
 
         if not mkinit.exists():
             raise FileNotFoundError(f"mkinit.bat not found. Expected at: {mkinit}")
@@ -459,13 +460,16 @@ class CAAEnvironment:
         # Detect VS vcvarsall.bat for compiler environment
         vcvars = self._find_vcvars()
 
-        # Full Build Time chain: vcvarsall → tck_init → mkinit → mkmk
+        # Full Build Time chain matching VS RADE add-in initialization:
+        #   tck_init → tck_profile → mkinit → mkGetPreq → mkmk
+        # Uses & not && because mkGetPreq returns non-zero on success.
         cmd_str = (
-            f'call "{vcvars}" amd64 > NUL 2>&1 && '
-            f'call "{tck_init}" > NUL 2>&1 && '
-            f'call "{mkinit}" > NUL 2>&1 && '
-            f"set PATH={code_bin};{code_command};%PATH% && "
-            f'cd /d "{workspace_path}" && '
+            f'call "{tck_init}" > NUL 2>&1 & '
+            f'call "{tck_profile}" > NUL 2>&1 & '
+            f'call "{mkinit}" > NUL 2>&1 & '
+            f"set PATH={code_bin};{code_command};%PATH% & "
+            f'cd /d "{workspace_path}" & '
+            f'mkGetPreq -p "{catia_path};" > NUL 2>&1 & '
             f"mkmk {mkmk_options}"
         )
 
@@ -495,6 +499,7 @@ class CAAEnvironment:
 
         mkinit = code_command / "mkinit.bat"
         tck_init = code_command / "tck_init.bat"
+        tck_profile = catia_path / arch / "TCK" / "command" / "tck_profile.bat"
         vcvars = self._find_vcvars()
 
         # Auto-detect: prefer .bat in code/command, fallback to .exe with M suffix
@@ -518,6 +523,7 @@ class CAAEnvironment:
             cmd_str = (
                 f'call "{vcvars}" amd64 > NUL 2>&1 && '
                 f'call "{tck_init}" > NUL 2>&1 && '
+                f'call "{tck_profile}" > NUL 2>&1 && '
                 f'call "{mkinit}" > NUL 2>&1 && '
                 f"set PATH={code_bin};{code_command};%PATH% && "
                 f'cd /d "{workspace_path}" && '
@@ -527,6 +533,7 @@ class CAAEnvironment:
             cmd_str = (
                 f'call "{vcvars}" amd64 > NUL 2>&1 && '
                 f'call "{tck_init}" > NUL 2>&1 && '
+                f'call "{tck_profile}" > NUL 2>&1 && '
                 f'call "{mkinit}" > NUL 2>&1 && '
                 f"set PATH={code_bin};{code_command};%PATH% && "
                 f"{resolved_cmd}"

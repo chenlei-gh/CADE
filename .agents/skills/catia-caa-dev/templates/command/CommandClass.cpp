@@ -80,12 +80,12 @@ void <CommandClassName>::Undo()
 {
     // Reverse the last operation using stored undo data
     if (_pGlobalUndo)
-        _pGlobalUndo->Undo();
+        _pGlobalUndo->ExecuteUndo();
 }
 
 void <CommandClassName>::Redo()
 {
     // Re-apply the last undone operation
     if (_pGlobalUndo)
-        _pGlobalUndo->Redo();
+        _pGlobalUndo->ExecuteRedo();
 }

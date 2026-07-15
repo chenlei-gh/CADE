@@ -64,8 +64,16 @@ def build_workspace(
     batfile = Path(tempfile.mktemp(suffix=".bat", prefix="mkmk_run_"))
 
     try:
-        # Create batch file that runs the build and captures output
-        bat_content = f'@echo off\r\n{cmd_display} > "{tmpfile}" 2>&1\r\necho EXIT_CODE=%ERRORLEVEL% >> "{tmpfile}"\r\n'
+        # Create batch file — split & chain into separate lines for proper %PATH% expansion
+        steps = cmd_display.split(" & ")
+        bat_lines = ["@echo off"]
+        for i, step in enumerate(steps):
+            if i == len(steps) - 1:
+                bat_lines.append(f'{step} > "{tmpfile}" 2>&1')
+            else:
+                bat_lines.append(step)
+        bat_lines.append(f'echo EXIT_CODE=%ERRORLEVEL% >> "{tmpfile}"')
+        bat_content = "\r\n".join(bat_lines) + "\r\n"
         batfile.write_text(bat_content, encoding="ascii")
 
         logger.write("Executing build...")
