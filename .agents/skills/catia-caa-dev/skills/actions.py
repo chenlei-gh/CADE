@@ -252,6 +252,13 @@ def create_framework(
         ctx.tpl("framework", "FrameworkImakefile.mk"),
         {"FrameworkName": base},
     )
+    # Generate CATIAV5Level.lvl at workspace root (required for B28 builds)
+    lvl_tpl = ctx.tpl("framework", "CATIAV5Level.lvl")
+    if lvl_tpl.exists():
+        cs.add_create_file(
+            ctx.workspace_root / "CATIAV5Level.lvl", lvl_tpl,
+            {"YYYY": ctx.y()},
+        )
 
     if modules:
         mod_names = []

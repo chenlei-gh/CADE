@@ -6,7 +6,7 @@ End-to-end test covering all modules and workflows.
 Test Coverage:
   1. Environment detection
   2. Workspace analysis (meta model + analyzer)
-  3. Template generation (25 types)
+  3. Template generation (17 types)
   4. ChangeSet operations (preview + apply + rollback)
   5. Atomic actions (query + create + delete)
   6. Build + Run (if CATIA available)
