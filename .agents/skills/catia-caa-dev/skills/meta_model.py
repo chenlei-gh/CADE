@@ -381,12 +381,9 @@ class Command(Entity):
     # ── Domain Methods: registration ────────────────────────────
 
     def dictionary_entry(self) -> str:
-        """Catalog entry line: MyCmd CATStateCommand libMyModule"""
-        cmd_type = (
-            "CATStateCommand" if self.is_stateful or self.dialog else "CATCommand"
-        )
+        """Framework .dico entry: AddinName CATIAfrGeneralWksAddin libModuleName"""
         module_lib = self.module.bare_name if self.module else ""
-        return f"{self.name}  {cmd_type}  lib{module_lib}"
+        return f"{self.name}  CATIAfrGeneralWksAddin  lib{module_lib}"
 
     def nls_title(self) -> str:
         """NLS title entry: MyCmd.Title"""
@@ -409,8 +406,9 @@ class Command(Entity):
         return f"{self.name}.png"
 
     def imakefile_sources(self) -> str:
-        """Sources to append to Imakefile.mk SOURCES list"""
-        return f"    src/{self.name}.cpp \\\n    src/{self.name}Header.cpp"
+        """Sources for Imakefile.mk — mkmk auto-discovers .cpp in src/, 
+        so we only return explicit files when needed."""
+        return f"    src/{self.name}.cpp"
 
     # ── Domain Methods: validation ──────────────────────────────
 

@@ -342,15 +342,13 @@ def create_command(
     visibility: str = Visibility.ALWAYS,
 ) -> Dict:
     """
-    Create a Command with ALL related files.
+    Create a Command + Addin for B28 CAA.
 
-    Automatically creates:
-      - Command.h               (LocalInterfaces/)
-      - Command.cpp              (src/)
-      - [Name]Header.cpp         (src/)
-      - Catalog update           (framework level)
-      - NLS entries              (framework level)
-      - Imakefile update         (add to SOURCES)
+    Generates:
+      - {Name}.h / {Name}.cpp         (CATStateCommand subclass)
+      - {Module}Addin.h / .cpp        (workbench addin, registers command)
+      - Framework .dico               (register addin as CATIAfrGeneralWksAddin)
+      - Imakefile update              (WIZARD_LINK_MODULES)
     """
     ctx.refresh()
     mod = ctx.snapshot.get_module(module, framework)
@@ -358,92 +356,75 @@ def create_command(
         fw_names = [fw.name for fw in ctx.snapshot.frameworks]
         return _error(f"Module '{module}' not found. Frameworks: {fw_names}")
 
-    for cmd in mod.commands:
-        if cmd.name.lower() == name.lower():
-            return _error(f"Command '{name}' already exists in '{module}'")
-
     cs = ChangeSet(
         action="create_command", description=f"Create command '{name}' in '{module}'"
     )
     fw_name = mod.framework.name if mod.framework else "MyFramework"
+    module_base = module.replace(".m", "")
 
     src = mod.src_dir or mod.path / "src"
     li = mod.path / "LocalInterfaces"
     src.mkdir(parents=True, exist_ok=True)
     li.mkdir(parents=True, exist_ok=True)
-    y = ctx.y()
 
     # --- 1. Command.h (LocalInterfaces) ---
-    tpl_cmd_h = (
-        ctx.tpl("command", "CommandClass.h")
-        if is_stateful
-        else ctx.tpl("commandheader", "CommandHeader.h")
-    )
     cs.add_create_file(
-        li / f"{name}.h", tpl_cmd_h, _r(name, fw_name, module, CommandClassName=name)
-    )
-
-    # --- 2. Command.cpp (src) ---
-    tpl_cmd_cpp = ctx.tpl("command", "CommandClass.cpp")
-    cs.add_create_file(
-        src / f"{name}.cpp",
-        tpl_cmd_cpp,
+        li / f"{name}.h",
+        ctx.tpl("command", "CommandClass.h"),
         _r(name, fw_name, module, CommandClassName=name),
     )
 
-    # --- 3. CommandHeader.cpp (src) — registration ---
-    tpl_hdr = ctx.tpl("commandheader", "CommandHeader.cpp")
+    # --- 2. Command.cpp (src) ---
     cs.add_create_file(
-        src / f"{name}Header.cpp",
-        tpl_hdr,
-        _r(
-            name,
-            fw_name,
-            module,
-            CommandHeaderName=f"{name}Header",
-            CommandClassName=name,
-        ),
+        src / f"{name}.cpp",
+        ctx.tpl("command", "CommandClass.cpp"),
+        _r(name, fw_name, module, CommandClassName=name),
     )
 
-    # --- 4. Update Imakefile ---
+    # --- 3. Addin.h (LocalInterfaces) — registers command with workbench ---
+    addin_name = f"{module_base}Addin"
+    cs.add_create_file(
+        li / f"{addin_name}.h",
+        ctx.tpl("module", "AddinClass.h"),
+        _r(addin_name, fw_name, module, CommandClassName=name, ModuleName=module_base),
+    )
+
+    # --- 4. Addin.cpp (src) — toolbar + command registration ---
+    cs.add_create_file(
+        src / f"{addin_name}.cpp",
+        ctx.tpl("module", "AddinClass.cpp") if (ctx.tpl("module") / "AddinClass.cpp").exists() else ctx.tpl("command", "CommandClass.cpp"),
+        _r(addin_name, fw_name, module, CommandClassName=name, ModuleName=module_base),
+    )
+
+    # --- 5. Update Imakefile with WIZARD_LINK_MODULES ---
     if mod.imakefile_path().exists():
         old = mod.imakefile_path().read_text(encoding="utf-8", errors="replace")
-        # Build a temporary command to use its imakefile_sources()
-        from meta_model import Command as CmdModel
-
-        temp_cmd = CmdModel(name=name, path=Path("."))
-        temp_cmd.module = mod
-        new_sources = temp_cmd.imakefile_sources()
-        if new_sources not in old:
-            new = old.replace("SOURCES = \\", f"SOURCES = \\\n{new_sources}")
+        if "WIZARD_LINK_MODULES" not in old:
+            new = (
+                "BUILT_OBJECT_TYPE=SHARED LIBRARY\n"
+                "S_Link = \$(WIZARD_LINK_MODULES)\n"
+                "WIZARD_LINK_MODULES = JS0GROUP CATApplicationFrame CATDialogEngine CATObjectModelerBase\n"
+            )
             cs.add_modify(mod.imakefile_path(), new)
-            cs.add_warning("Imakefile.mk updated — verify SOURCES list")
 
-    # --- 5. Catalog entry ---
+    # --- 6. Framework .dico — register addin ---
     fw = mod.framework
     if fw:
-        cat_file = fw.dictionary_path()
-        if cat_file.exists():
-            old_cat = cat_file.read_text(encoding="utf-8", errors="replace")
-            entry = temp_cmd.dictionary_entry()
-            if entry not in old_cat and name not in old_cat:
-                new_cat = old_cat + f"\n{entry}\n"
-                cs.add_modify(cat_file, new_cat)
-
-    # --- 6. NLS entries ---
-    nls_file = fw.catalog_path() if fw else None
-    if nls_file and nls_file.parent.exists():
-        nls_file.parent.mkdir(parents=True, exist_ok=True)
-        nls_content = temp_cmd.nls_block()
-        if nls_file.exists():
-            old = nls_file.read_text(encoding="utf-8", errors="replace")
-            cs.add_modify(nls_file, old + "\n" + nls_content)
+        dico_file = fw.path / "CNext" / "code" / "dictionary" / f"{fw.name.replace('.edu', '')}.dico"
+        dico_file.parent.mkdir(parents=True, exist_ok=True)
+        entry = f"{addin_name} CATIAfrGeneralWksAddin lib{module_base}\n"
+        if dico_file.exists():
+            old = dico_file.read_text(encoding="utf-8", errors="replace")
+            if addin_name not in old:
+                cs.add_modify(dico_file, old.rstrip() + "\n" + entry)
         else:
-            cs.add_create(nls_file, nls_content)
+            cs.add_create_file(dico_file, None, {})
+            cs.add_modify(dico_file, entry)
 
     cs.metadata = {
         "command": name,
         "module": module,
+        "addin": addin_name,
         "is_stateful": is_stateful,
         "dialog": dialog_name,
     }
