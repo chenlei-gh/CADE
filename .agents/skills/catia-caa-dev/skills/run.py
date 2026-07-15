@@ -117,24 +117,9 @@ def start_catia_runtime(
 
         if runtime_view.exists():
                 runtime_bin = runtime_view / "code" / "bin"
-                runtime_dict = runtime_view / "code" / "dictionary"
-                runtime_nls = runtime_view / "code" / "resources" / "msgcatalog"
-
-                # CATDLLPath: where CNEXT finds addin DLLs
                 existing = env_vars.get("CATDLLPath", "")
                 env_vars["CATDLLPath"] = str(runtime_bin) + (os.pathsep + existing if existing else "")
-
-                # CATDictionaryPath: where CNEXT finds .dico files
-                existing = env_vars.get("CATDictionaryPath", "")
-                env_vars["CATDictionaryPath"] = str(runtime_dict) + (os.pathsep + existing if existing else "")
-
-                # CATMsgCatalogPath: where CNEXT finds .CATNls files
-                existing = env_vars.get("CATMsgCatalogPath", "")
-                env_vars["CATMsgCatalogPath"] = str(runtime_nls) + (os.pathsep + existing if existing else "")
-
                 logger.write(f"CATDLLPath += {runtime_bin}")
-                logger.write(f"CATDictionaryPath += {runtime_dict}")
-                logger.write(f"CATMsgCatalogPath += {runtime_nls}")
                 print(f"Using Runtime View: {runtime_view}", file=sys.stderr)
 
     # Get CATSTART path (use CATSTART with proper parameters)
@@ -147,25 +132,32 @@ def start_catia_runtime(
     executable_path = catstart_path
     logger.write(f"Using CATSTART: {catstart_path}")
 
-    # Build command with proper parameters
-    # Auto-detect environment name and directory if not specified
-    if not env_name:
-        env_name = caa_env.get_default_env()
-    env_dir = caa_env.get_catenv_dir()
+    # Build command with proper parameters.
+    # When workspace is provided, use mkrun (standard CAA dev workflow)
+    # instead of CATSTART, because mkrun properly initializes Runtime View paths.
+    if workspace_path:
+        import tempfile
+        catia_path = Path(caa_env.config.get("CATIA_INSTALL", ""))
+        arch = caa_env.get_architecture() or "win_b64"
+        tck_init = catia_path / arch / "code" / "command" / "tck_init.bat"
+        tck_profile = catia_path / arch / "TCK" / "command" / "tck_profile.bat"
+        mkinit = catia_path / arch / "code" / "command" / "mkinit.bat"
+        code_bin = catia_path / arch / "code" / "bin"
+        code_command = catia_path / arch / "code" / "command"
 
-    cmd_args = [
-        str(executable_path),
-        "-run",
-        "CNEXT.exe",
-        "-env",
-        env_name,
-        "-direnv",
-        env_dir,
-        "-nowindow",
-    ]
-
-    logger.write(f"Environment: {env_name}")
-    logger.write(f"Environment directory: {env_dir}")
+        batfile = Path(tempfile.mktemp(suffix=".bat", prefix="cade_run_"))
+        batfile.write_text(
+            "@echo off\r\n"
+            f'call "{tck_init}" > NUL 2>&1\r\n'
+            f'call "{tck_profile}" > NUL 2>&1\r\n'
+            f'call "{mkinit}" > NUL 2>&1\r\n'
+            f"set PATH={code_bin};{code_command};%PATH%\r\n"
+            f'cd /d "{workspace_path}"\r\n'
+            f"call mkrun\r\n",
+            encoding="ascii",
+        )
+        cmd_args = ["cmd", "/c", str(batfile)]
+        logger.write(f"Using mkrun via batch: {batfile}")
 
     # Check if CATIA is already running
     running_catia = check_process_running("CNEXT.exe")
