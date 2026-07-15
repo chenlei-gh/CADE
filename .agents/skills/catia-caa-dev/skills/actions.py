@@ -418,8 +418,7 @@ def create_command(
             if addin_name not in old:
                 cs.add_modify(dico_file, old.rstrip() + "\n" + entry)
         else:
-            cs.add_create_file(dico_file, None, {})
-            cs.add_modify(dico_file, entry)
+            cs.add_create(dico_file, entry)
 
     cs.metadata = {
         "command": name,
