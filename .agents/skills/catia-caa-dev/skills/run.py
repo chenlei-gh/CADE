@@ -31,35 +31,28 @@ def check_process_running(process_name: str) -> list:
     running_processes = []
 
     try:
-        # Use Windows tasklist command
+        # Use pipe approach (more reliable than /FI on Chinese Windows)
         result = subprocess.run(
-            ["tasklist", "/FI", f"IMAGENAME eq {process_name}", "/FO", "CSV", "/NH"],
+            ["cmd", "/c", f"tasklist | findstr {process_name}"],
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
+            timeout=10,
         )
 
-        if result.returncode == 0 and result.stdout.strip():
-            # Parse CSV output
-            lines = result.stdout.strip().split("\n")
-            for line in lines:
+        if result.stdout.strip():
+            for line in result.stdout.strip().split("\n"):
                 if process_name.lower() in line.lower():
-                    # CSV format: "ImageName","PID","SessionName","Session#","MemUsage"
-                    parts = line.replace('"', "").split(",")
+                    parts = line.split()
                     if len(parts) >= 2:
                         try:
                             running_processes.append(
-                                {
-                                    "pid": int(parts[1].strip()),
-                                    "name": parts[0].strip(),
-                                    "running_since": "unknown",
-                                }
+                                {"pid": int(parts[1]), "name": parts[0]}
                             )
                         except (ValueError, IndexError):
                             pass
-    except Exception as e:
-        # If tasklist fails, return empty list
+    except Exception:
         pass
 
     return running_processes
@@ -289,7 +282,7 @@ def stop_catia(force: bool = False) -> dict:
                     capture_output=True,
                     timeout=15,
                 )
-                time.sleep(2)
+                time.sleep(5)  # CNEXT needs time to flush state files
                 # Check if still running
                 still_running = check_process_running("CNEXT.exe")
                 if any(p["pid"] == pid for p in still_running):
