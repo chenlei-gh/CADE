@@ -153,10 +153,10 @@ def start_catia_runtime(
             f'call "{mkinit}" > NUL 2>&1\r\n'
             f"set PATH={code_bin};{code_command};%PATH%\r\n"
             f'cd /d "{workspace_path}"\r\n'
-            f"call mkrun\r\n",
+            f"start /B call mkrun\r\n",
             encoding="ascii",
         )
-        cmd_args = ["cmd", "/c", f"start /min cmd /c {batfile}"]
+        cmd_args = ["cmd", "/c", str(batfile)]
         logger.write(f"Using mkrun (workspace): {workspace_path}")
     else:
         # No workspace — use CATSTART for a plain CATIA launch
