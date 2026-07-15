@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from utils import render_template
+
 # ─── Patch ───────────────────────────────────────────────────────
 
 
@@ -82,18 +84,7 @@ class ChangeSet:
         """Add a file to create by reading a template and applying replacements"""
         content = template_path.read_text(encoding="utf-8", errors="replace")
         if replacements:
-            # Sort by key length descending: longer keys first to avoid substring corruption
-            # e.g., CommandClassName before ClassName
-            sorted_keys = sorted(replacements.keys(), key=len, reverse=True)
-            # Replace mustache-style placeholders: {{Key}} → value
-            for k in sorted_keys:
-                content = content.replace("{{" + k + "}}", replacements[k])
-            # Replace angle-bracket placeholders: <Key> → value
-            for k in sorted_keys:
-                content = content.replace(f"<{k}>", replacements[k])
-            # Then plain text replacements
-            for k in sorted_keys:
-                content = content.replace(k, replacements[k])
+            content = render_template(content, replacements)
         self.add_create(path, content)
 
     def add_modify(self, path: Path, new_content: str):

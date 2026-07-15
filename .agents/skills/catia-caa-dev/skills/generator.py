@@ -9,7 +9,7 @@ It never knows about AI or user intent.
 Usage: python generator.py [type] [name] [options]
 Output: JSON with generation result
 
-Supported types (ALL CATIA CAA RADE templates):
+Supported types (17 validated B28 templates):
   Fundamental:
     interface        IInterface.h/cpp
     component        Component.h/cpp (requires --interface)
@@ -36,8 +36,7 @@ Supported types (ALL CATIA CAA RADE templates):
   Component/Interface:
     idl              IDL Interface (.h + .cpp + .idl)
 
-  Object Modeler:
-    objectmodeler    Object Modeler (Feature/SpecObject)
+  Feature:
     feature          Feature Component (5+ files)
 
   Utility:
@@ -52,15 +51,9 @@ Supported types (ALL CATIA CAA RADE templates):
 
   Extension:
     eventlistener    CATIA Event Listener
-    plugin           CATIA Plugin
-    userexit         CATIA User Exit
 
   Resource:
     resource         Catalog + NLS + Icon + CATRsc (5 files)
-    catalog          CATCatalog
-    nls              CATNls (English + Chinese)
-    icon             Icon resource
-    catrsc           CATRsc resource
 """
 
 import argparse
@@ -71,11 +64,25 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from utils import Cache, Logger, output_json
+from utils import Cache, Logger, output_json, render_template
 
 
 class TemplateGenerator:
-    """CAA Template Generator — supports ALL 21+ template types"""
+    """CAA Template Generator — 17 validated B28 templates"""
+
+    # Template prefix mapping: template directory name → filename prefix in templates
+    _TPL_PREFIX = {
+        "command": "CommandClass",
+        "commandheader": "CommandHeader",
+        "eventlistener": "EventListener",
+        "workshopaddin": "WorkshopAddin",
+        "addin": "WorkbenchAddin",
+        "workbench": "Workbench",
+        "testcase": "TestCase",
+        "xmltestcase": "XmlTestCase",
+        "class": "Class",
+        "codegen": "CodeGenWizard",
+    }
 
     def __init__(self):
         self.skill_root = Path(__file__).parent.parent
@@ -193,18 +200,7 @@ class TemplateGenerator:
         extra = kw.get("extra_repl", {})
 
         # Map template directory name to the prefix used in template filenames
-        _TPL_PREFIX = {
-            "commandheader": "CommandHeader",
-            "eventlistener": "EventListener",
-            "workshopaddin": "WorkshopAddin",
-            "addin": "Addin",
-            "workbench": "Workbench",
-            "testcase": "TestCase",
-            "xmltestcase": "XmlTestCase",
-            "class": "Class",
-            "codegen": "CodeGenWizard",
-        }
-        tpl_prefix = _TPL_PREFIX.get(ttype, ttype.capitalize())
+        tpl_prefix = self._TPL_PREFIX.get(ttype, ttype.capitalize())
 
         for tf in sorted(src_dir.rglob("*")):
             if tf.is_file() and not tf.name.startswith("."):
@@ -216,12 +212,11 @@ class TemplateGenerator:
                 out_file.parent.mkdir(parents=True, exist_ok=True)
 
                 content = tf.read_text(encoding="utf-8", errors="replace")
-                content = self._replace(content, name, fw, mod)
-                for k, v in extra.items():
-                    content = content.replace(k, v)
-
+                # Merge extra replacements + interface override into unified render
+                extra_kwargs = dict(extra)
                 if iface:
-                    content = content.replace("IInterfaceName", iface)
+                    extra_kwargs["IInterfaceName"] = iface
+                content = self._replace(content, name, fw, mod, **extra_kwargs)
 
                 out_file.write_text(content, encoding="utf-8")
                 generated.append(str(out_file))
@@ -242,10 +237,7 @@ class TemplateGenerator:
                 ext = src.suffix
                 out_file = out / f"{name}{ext}"
                 content = src.read_text(encoding="utf-8", errors="replace")
-                content = self._replace(content, name, fw, mod)
-                if extra_repl:
-                    for k, v in extra_repl.items():
-                        content = content.replace(k, v)
+                content = self._replace(content, name, fw, mod, **(extra_repl or {}))
                 out_file.write_text(content, encoding="utf-8")
                 generated.append(str(out_file))
                 self.logger.write(f"Generated: {out_file}")
@@ -257,7 +249,13 @@ class TemplateGenerator:
 
     # ─── Helpers ──────────────────────────────────────────────────
 
-    def _replace(self, content: str, name: str, fw: str, mod: str) -> str:
+    def _replace(self, content: str, name: str, fw: str, mod: str, **extra) -> str:
+        """Render template content by replacing all placeholders.
+        
+        Builds a comprehensive replacements dict from name/framework/module,
+        merges in any extra kwargs (which take priority), then delegates to
+        the unified render_template() in utils.py.
+        """
         year = str(datetime.now().year)
         fw_base = fw.replace(".edu", "")
         mod_base = mod.replace(".m", "")
@@ -279,6 +277,7 @@ class TemplateGenerator:
             "DialogClass": name,
             "DialogClassName": name,
             "WorkbenchClass": name,
+            "WorkbenchAddin": name,
             "FeatureClass": name,
             "FrameworkName": fw_base,
             "FrameworkBareName": fw_base,
@@ -286,13 +285,76 @@ class TemplateGenerator:
             "ModuleName": mod_base,
             "MODULENAME": mod_base.upper(),
         }
-        # Sort by key length descending: longer keys first to avoid substring corruption
-        sorted_keys = sorted(reps.keys(), key=len, reverse=True)
-        for k in sorted_keys:
-            content = content.replace(f"<{k}>", reps[k])
-        for k in sorted_keys:
-            content = content.replace(k, reps[k])
-        return content
+        # Merge extra kwargs — they override base dict entries
+        reps.update(extra)
+        return render_template(content, reps)
+
+    def _render(
+        self, template_ref: str, name: str,
+        fw: str = "MyFramework", mod: str = "MyModule", **kwargs
+    ) -> str:
+        """Find a template by name, read it, and render with replacements.
+
+        Supports:
+          - Root template files: "Component.h", "Component.cpp", etc.
+          - Directory-based templates: "command", "dialog", "feature", etc.
+          - Special aliases: "interface" → IInterface.h, "component" → Component.cpp
+
+        Args:
+            template_ref: Template file name or directory type
+            name: The user-provided name for replacements
+            fw: Framework name
+            mod: Module name
+            **kwargs: Extra replacements (e.g., CommandClassName="MyCmd")
+
+        Returns:
+            Rendered template content as a string
+
+        Raises:
+            FileNotFoundError: If no matching template found
+        """
+        # 1. Try as exact root template file
+        src = self.templates_dir / template_ref
+        if src.is_file():
+            content = src.read_text(encoding="utf-8", errors="replace")
+            return self._replace(content, name, fw, mod, **kwargs)
+
+        # 2. Try as directory — find the primary source file
+        src_dir = self.templates_dir / template_ref
+        if src_dir.is_dir():
+            tpl_prefix = self._TPL_PREFIX.get(template_ref, template_ref.capitalize())
+            # Determine preferred extension: "header" → .h, else → .cpp
+            prefer_h = "header" in template_ref.lower()
+            pref_suffix = ".h" if prefer_h else ".cpp"
+            alt_suffix = ".cpp" if prefer_h else ".h"
+            # Score: preferred suffix with matching prefix > alt suffix with matching prefix > any .cpp > any .h > anything
+            candidates = sorted(
+                [
+                    f
+                    for f in src_dir.rglob("*")
+                    if f.is_file() and not f.name.startswith(".")
+                ],
+                key=lambda f: (
+                    0 if f.suffix == pref_suffix and tpl_prefix in f.stem else
+                    1 if f.suffix == alt_suffix and tpl_prefix in f.stem else
+                    2 if f.suffix == pref_suffix else
+                    3 if f.suffix == alt_suffix else 4,
+                    f.name,
+                ),
+            )
+            if candidates:
+                content = candidates[0].read_text(encoding="utf-8", errors="replace")
+                return self._replace(content, name, fw, mod, **kwargs)
+
+        # 3. Special aliases for root-level single-file templates
+        _ALIASES = {"interface": "IInterface.h", "component": "Component.cpp"}
+        if template_ref in _ALIASES:
+            src = self.templates_dir / _ALIASES[template_ref]
+            if src.is_file():
+                content = src.read_text(encoding="utf-8", errors="replace")
+                return self._replace(content, name, fw, mod, **kwargs)
+
+        raise FileNotFoundError(f"Template not found: {template_ref}")
 
     def _validate_name(self, name: str) -> bool:
         if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
@@ -306,6 +368,7 @@ class TemplateGenerator:
         """Generate code from a Specification object.
         This is the canonical Generator entry point — Spec is the contract.
         """
+        output_dir.mkdir(parents=True, exist_ok=True)
         spec_type = spec.__class__.__name__
 
         if spec_type == "CommandSpec":
@@ -460,7 +523,7 @@ def main():
     available = gen.get_available_templates()
 
     parser = argparse.ArgumentParser(
-        description="Generate CATIA CAA components from 21+ template types",
+        description="Generate CATIA CAA components from 17 template types",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 Template types: {", ".join(available)}
@@ -476,7 +539,6 @@ Examples:
   python generate.py addin        MyAddin     -o MyModule.m/src/
   python generate.py dialog       CalcDlg     -o MyModule.m/src/
   python generate.py idl          ICalc       -o MyModule.m/
-  python generate.py objectmodeler CalcObj    -o MyModule.m/src/
   python generate.py class        CalcUtil    -o MyModule.m/src/
   python generate.py testcase     CalcTest    -o MyModule.m/src/
   python generate.py xmltestcase  CalcXMLTest -o MyModule.m/

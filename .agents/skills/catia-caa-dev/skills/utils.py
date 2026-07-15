@@ -8,7 +8,7 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 class Logger:
@@ -226,6 +226,49 @@ def format_duration(seconds: float) -> str:
     return f"{hours}h {minutes}m {secs}s"
 
 
+def render_template(content: str, replacements: Optional[Dict[str, str]] = None) -> str:
+    """
+    Unified template rendering — single source of truth.
+
+    Applies replacements in three passes to support multiple placeholder styles:
+      1. {{Key}} — mustache/double-brace (full-line placeholders)
+      2. <Key> — angle-bracket (inline placeholders)
+      3. Key   — plain text (variable/identifier substitution)
+
+    Keys are sorted by length (longest first) to prevent substring corruption.
+    e.g., CommandClassName is replaced before ClassName.
+
+    Used by both changeset.py (add_create_file) and generator.py (_replace/_render).
+
+    Args:
+        content: Template content with placeholders
+        replacements: Dict mapping placeholder keys to replacement values
+
+    Returns:
+        Rendered content with all placeholders resolved
+    """
+    if not replacements:
+        return content
+
+    # Sort by key length descending: longer keys first to avoid substring corruption
+    # e.g., CommandClassName must be replaced before ClassName
+    sorted_keys = sorted(replacements.keys(), key=len, reverse=True)
+
+    # Pass 1: {{Key}} — mustache/double-brace
+    for k in sorted_keys:
+        content = content.replace("{{" + k + "}}", replacements[k])
+
+    # Pass 2: <Key> — angle-bracket
+    for k in sorted_keys:
+        content = content.replace(f"<{k}>", replacements[k])
+
+    # Pass 3: Key — plain text (most aggressive, applied last)
+    for k in sorted_keys:
+        content = content.replace(k, replacements[k])
+
+    return content
+
+
 if __name__ == "__main__":
     # Test utilities
     print("Testing utilities...")
@@ -247,6 +290,14 @@ if __name__ == "__main__":
     # Test duration formatting
     assert format_duration(45.5) == "45.5s"
     assert format_duration(125) == "2m 5s"
-    print("✓ Duration formatting works")
+    print("\u2713 Duration formatting works")
 
-    print("\n✓ All utilities working correctly")
+    # Test render_template
+    tmpl = "class <LongName> : public <Name> { /* {{LongName}} */ };"
+    result = render_template(tmpl, {"LongName": "MyCmd", "Name": "Cmd"})
+    assert "MyCmd" in result and "Cmd" in result
+    assert "class MyCmd" in result
+    assert "public Cmd" in result
+    print("✓ render_template works")
+
+    print("\n\u2713 All utilities working correctly")

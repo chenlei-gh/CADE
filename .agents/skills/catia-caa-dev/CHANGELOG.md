@@ -8,6 +8,27 @@
 
 ---
 
+## [3.0.3] - 2026-07-15
+
+### 模板渲染引擎统一
+
+- **抽取统一函数**: `render_template()` 加入 `utils.py`，作为模板渲染的唯一入口
+  - 支持三种占位符风格：`{{Key}}`（双花括号）、`<Key>`（尖括号）、`Key`（纯文本）
+  - 按键长度降序替换，杜绝子串破坏
+  - `changeset.py` 和 `generator.py` 统一调用，消除两套渲染引擎漂移风险
+- **changeset.py**: `add_create_file()` 委托给 `render_template()`，移除内联重复代码
+- **generator.py**: `_replace()` 委托给 `render_template()`，新增 `**extra` 参数支持额外键值
+- **generator.py**: 修复关键 Bug — 新增缺失的 `_render()` 方法，spec-based 生成链路（`generate_from_spec`）此前因 `AttributeError` 完全不可用
+- **generator.py**: 修复 `generate_from_spec()` 未创建输出目录的 Bug
+- **消除二次替换反模式**: `_gen_from_dir()` 和 `_gen_root_files()` 的 extra_repl 通过 `_replace(**extra)` 统一处理，而非手动 `str.replace()`
+
+### 测试
+
+- `render_template()` 单元测试加入 `utils.py`
+- 全量 35/35 套件通过（含 spec-based 生成器验证）
+
+---
+
 ## [3.0.2] - 2026-07-15
 
 ### 模板系统全面重构
