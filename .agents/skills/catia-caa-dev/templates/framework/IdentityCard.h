@@ -1,3 +1,5 @@
-AddPrereqComponent("System", Public);
-AddPrereqComponent("ObjectModelerBase", Public);
-AddPrereqComponent("ApplicationFrame", Public);
+<?xml version="1.0" encoding="iso-8859-1"?>
+<codeFramework xmlns="http://www.3ds.ic" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.3ds.ic ICModel.xsd">
+  <prerequisite name="System" access="Protected" />
+  <prerequisite name="ApplicationFrame" access="Protected" />
+</codeFramework>

@@ -1,26 +1,13 @@
-# COPYRIGHT DASSAULT SYSTEMES YYYY
-#
-# Imakefile.mk for ModuleName
-#
+//===================================================================
+// COPYRIGHT DASSAULT SYSTEMES YYYY
+//===================================================================
+// Imakefile for module ModuleName
+//===================================================================
 
-# Module name
-MODULE = ModuleName
+BUILT_OBJECT_TYPE=SHARED LIBRARY
 
-# Source files
-SOURCES = \
-    src/IInterfaceName.cpp \
-    src/ComponentName.cpp
+S_Link = $(WIZARD_LINK_MODULES)
 
-# Local headers
-LOCAL_HEADERS = \
-    LocalInterfaces/ComponentName.h
-
-# Public headers (interfaces)
-PUBLIC_HEADERS = \
-    PublicInterfaces/IInterfaceName.h
-
-# Dependencies
-LINK_WITH = \
-    System \
-    ObjectModelerBase
-MkmkUnauthorizedAPI_Check = FALSE
+# DO NOT EDIT :: 3DS WIZARDS WILL ADD CODE HERE
+WIZARD_LINK_MODULES = JS0GROUP CATApplicationFrame CATDialogEngine CATObjectModelerBase
+# END WIZARD EDITION ZONE

@@ -1,31 +1,29 @@
-// COPYRIGHT DASSAULT SYSTEMES 2026
-#ifndef <CommandHeaderClassName>_h
-#define <CommandHeaderClassName>_h
+// COPYRIGHT DASSAULT SYSTEMES YYYY
+#include "<CommandHeaderName>.h"
+#include "<CommandClassName>.h"
 
-#include "CATCommandHeader.h"
-
-/**
- * @brief Command header for toolbar/menu integration
- * 
- * This class registers the command with CATIA's command infrastructure:
- * - Creates toolbar button
- * - Defines icon
- * - Sets tooltip/help text
- * - Manages command lifecycle
- */
-class <CommandHeaderClassName>
+<CommandHeaderName>::<CommandHeaderName>(const CATString &iHeaderName)
+    : CATCommandHeader(iHeaderName)
+    , _commandName("<CommandClassName>")
+    , _iconPath("Icons/<CommandClassName>.bmp")
 {
-public:
-    /**
-     * @brief Create and register command header
-     * Call this during workbench initialization
-     */
-    static void CreateCommandHeader();
+}
 
-private:
-    // Prevent instantiation
-    <CommandHeaderClassName>();
-    ~<CommandHeaderClassName>();
-};
+<CommandHeaderName>::~<CommandHeaderName>()
+{
+}
 
-#endif
+CATCommandHeader *<CommandHeaderName>::Clone() const
+{
+    return new <CommandHeaderName>(GetName());
+}
+
+CATUnicodeString <CommandHeaderName>::GetCommandName() const
+{
+    return _commandName;
+}
+
+CATUnicodeString <CommandHeaderName>::GetIconPath() const
+{
+    return _iconPath;
+}
