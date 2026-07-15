@@ -5,6 +5,7 @@
 //===================================================================
 
 #include "<CommandClassName>.h"
+#include "CATCommandGlobalUndo.h"
 #include "CATCreateExternalObject.h"
 
 CATCreateClass(<CommandClassName>);

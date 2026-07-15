@@ -216,6 +216,41 @@ class CAAEnvironment:
                 return arch
         return None
 
+    def _find_rade_settings(self) -> str:
+        """Find RADE CATSettings directory for licensing.
+
+        Returns a cmd SET command string, or empty string if not found.
+        Required for mkmk to validate RADE license environment.
+        """
+        import os as _os
+        appdata = _os.environ.get("APPDATA", "")
+        if appdata:
+            cat_settings = Path(appdata) / "DassaultSystemes" / "CATSettings"
+            if cat_settings.exists():
+                return f'set CATUserSettingPath={cat_settings} && '
+        return ""
+
+    def _find_vcvars(self) -> Path:
+        """Find vcvarsall.bat for VS compiler environment.
+
+        Searches common VS 2012 (VC11) install locations.
+        Raises FileNotFoundError if not found.
+        """
+        candidates = [
+            Path(r"C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat"),
+            Path(r"C:\Program Files\Microsoft Visual Studio 11.0\VC\vcvarsall.bat"),
+        ]
+        for p in candidates:
+            if p.exists():
+                return p
+        # Also check newer VS versions that mkinit might support
+        for ver in ["12.0", "14.0", "2017", "2019", "2022"]:
+            for base in ["C:\\Program Files (x86)\\Microsoft Visual Studio", "C:\\Program Files\\Microsoft Visual Studio"]:
+                p = Path(base) / ver / "VC\\Auxiliary\\Build\\vcvarsall.bat" if ver in ("2017", "2019", "2022") else Path(base) / ver / "VC\\vcvarsall.bat"
+                if p.exists():
+                    return p
+        raise FileNotFoundError("vcvarsall.bat not found. Install Visual Studio 2012+")
+
     def get_mkmk_path(self) -> Optional[Path]:
         """Get full path to mkmk executable"""
         if not self.config:
@@ -398,9 +433,10 @@ class CAAEnvironment:
         Build the correct cmd.exe command to run mkmk with full Build Time environment.
 
         This replicates the VS Build Time Prompt behavior:
-          1. tck_init.bat  → basic TCK variables
-          2. mkinit.bat    → full Mkmk environment (detects VS, Windows Kit, etc.)
-          3. mkmkM.exe     → actual compilation
+          1. vcvarsall.bat → VS compiler environment
+          2. tck_init.bat  → basic TCK variables
+          3. mkinit.bat    → full Mkmk environment (detects VS, Windows Kit, etc.)
+          4. mkmk.bat      → workspace detection + compilation
 
         Args:
             workspace_path: Path to workspace or module directory
@@ -409,26 +445,28 @@ class CAAEnvironment:
         Returns:
             Tuple of (command_list, display_string)
         """
-        mkinit = self.get_mkinit_bat()
         catia_path = Path(self.config.get("CATIA_INSTALL", ""))
         arch = self._detect_architecture(catia_path) or "win_b64"
         code_bin = catia_path / arch / "code" / "bin"
+        code_command = catia_path / arch / "code" / "command"
 
-        if not mkinit or not mkinit.exists():
+        mkinit = code_command / "mkinit.bat"
+        tck_init = code_command / "tck_init.bat"
+
+        if not mkinit.exists():
             raise FileNotFoundError(f"mkinit.bat not found. Expected at: {mkinit}")
 
-        # Detect the correct mkmk executable name (mkmkM.exe or mkmk.exe)
-        mkmk_path = self.get_mkmk_path()
-        mkmk_name = mkmk_path.name if mkmk_path else "mkmkM.exe"
+        # Detect VS vcvarsall.bat for compiler environment
+        vcvars = self._find_vcvars()
 
-        # Build the cmd command string
-        # The full environment can only be initialized inside cmd.exe
-        code_command = catia_path / arch / "code" / "command"
+        # Full Build Time chain: vcvarsall → tck_init → mkinit → mkmk
         cmd_str = (
+            f'call "{vcvars}" amd64 > NUL 2>&1 && '
+            f'call "{tck_init}" > NUL 2>&1 && '
             f'call "{mkinit}" > NUL 2>&1 && '
             f"set PATH={code_bin};{code_command};%PATH% && "
             f'cd /d "{workspace_path}" && '
-            f"{mkmk_name} {mkmk_options}"
+            f"mkmk {mkmk_options}"
         )
 
         return ["cmd", "/c", cmd_str], cmd_str
@@ -450,14 +488,14 @@ class CAAEnvironment:
         Returns:
             Tuple of (command_list, display_string)
         """
-        mkinit = self.get_mkinit_bat()
         catia_path = Path(self.config.get("CATIA_INSTALL", ""))
         arch = self._detect_architecture(catia_path) or "win_b64"
         code_bin = catia_path / arch / "code" / "bin"
         code_command = catia_path / arch / "code" / "command"
 
-        if not mkinit or not mkinit.exists():
-            raise FileNotFoundError(f"mkinit.bat not found")
+        mkinit = code_command / "mkinit.bat"
+        tck_init = code_command / "tck_init.bat"
+        vcvars = self._find_vcvars()
 
         # Auto-detect: prefer .bat in code/command, fallback to .exe with M suffix
         cmd_name, cmd_args = (
@@ -478,6 +516,8 @@ class CAAEnvironment:
 
         if workspace_path:
             cmd_str = (
+                f'call "{vcvars}" amd64 > NUL 2>&1 && '
+                f'call "{tck_init}" > NUL 2>&1 && '
                 f'call "{mkinit}" > NUL 2>&1 && '
                 f"set PATH={code_bin};{code_command};%PATH% && "
                 f'cd /d "{workspace_path}" && '
@@ -485,6 +525,8 @@ class CAAEnvironment:
             )
         else:
             cmd_str = (
+                f'call "{vcvars}" amd64 > NUL 2>&1 && '
+                f'call "{tck_init}" > NUL 2>&1 && '
                 f'call "{mkinit}" > NUL 2>&1 && '
                 f"set PATH={code_bin};{code_command};%PATH% && "
                 f"{resolved_cmd}"
