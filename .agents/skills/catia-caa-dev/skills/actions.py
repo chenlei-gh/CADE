@@ -67,7 +67,7 @@ from meta_model import (
     Workbench,
     WorkspaceSnapshot,
 )
-from utils import Logger, output_json
+from utils import Logger, output_json, render_template
 
 # ─── ActionContext ───────────────────────────────────────────────
 
@@ -468,46 +468,58 @@ def create_command(
                 content=f'#include "{dialog_name}.h"',
             ))
 
-    # --- 8. NLS Resource — auto-generate labels for the command + toolbar ---
+    # --- 8. NLS + CATRsc Resources — use templates for UI display ---
     if fw:
-        nls_file = fw.path / "CNext" / "resources" / "msgcatalog" / f"{fw.name.replace('.edu', '')}.CATNls"
+        tpl_nls = ctx.tpl("command", "resources", "CommandFramework.CATNls")
+        tpl_rsc = ctx.tpl("command", "resources", "CommandFramework.CATRsc")
+        fw_base = fw.name.replace(".edu", "")
+
+        # NLS
+        nls_file = fw.path / "CNext" / "resources" / "msgcatalog" / f"{fw_base}.CATNls"
         nls_file.parent.mkdir(parents=True, exist_ok=True)
-        nls_entries = (
-            # Addin entries
+        if tpl_nls.exists():
+            nls_content = render_template(tpl_nls.read_text(encoding="utf-8", errors="replace"), {
+                "CommandClassName": name,
+                "CommandHeaderName": name,
+                "CommandTitle": name,
+                "FrameworkName": fw_base,
+            })
+            if nls_file.exists():
+                old = nls_file.read_text(encoding="utf-8", errors="replace")
+                if name not in old:
+                    cs.add_modify(nls_file, old.rstrip() + "\n" + nls_content)
+            else:
+                cs.add_create(nls_file, nls_content)
+
+        # CATRsc
+        rsc_file = fw.path / "CNext" / "resources" / "graphic" / f"{fw_base}.CATRsc"
+        rsc_file.parent.mkdir(parents=True, exist_ok=True)
+        if tpl_rsc.exists():
+            rsc_content = render_template(tpl_rsc.read_text(encoding="utf-8", errors="replace"), {
+                "CommandClassName": name,
+                "CommandHeaderName": name,
+                "CommandIconName": name.lower(),
+                "FrameworkName": fw_base,
+            })
+            if rsc_file.exists():
+                old = rsc_file.read_text(encoding="utf-8", errors="replace")
+                if name not in old:
+                    cs.add_modify(rsc_file, old.rstrip() + "\n" + rsc_content)
+            else:
+                cs.add_create(rsc_file, rsc_content)
+
+        # Toolbar + addin NLS (required for toolbar visibility)
+        addin_nls = (
             f"{addin_name}.Title  = \"{name}\";\n"
             f"{addin_name}.Tip    = \"Execute {name}\";\n"
-            f"{addin_name}.Help   = \"This command performs {name} operation.\";\n"
-            # Toolbar entry (required for toolbar visibility in CNEXT)
             f"{module_base}Tlb.Title  = \"{module_base} Commands\";\n"
-            f"{module_base}Tlb.Tip    = \"{module_base} Command Toolbar\";\n"
-            # Command entry (required for button display)
-            f"{name}.Title  = \"{name}\";\n"
-            f"{name}.Tip    = \"Execute {name}\";\n"
-            f"{name}.Help   = \"This command performs {name} operation.\";\n"
         )
         if nls_file.exists():
-            old_nls = nls_file.read_text(encoding="utf-8", errors="replace")
-            if addin_name not in old_nls:
-                cs.add_modify(nls_file, old_nls.rstrip() + "\n" + nls_entries)
+            old = nls_file.read_text(encoding="utf-8", errors="replace")
+            if addin_name not in old:
+                cs.add_modify(nls_file, old.rstrip() + "\n" + addin_nls)
         else:
-            cs.add_create(nls_file, nls_entries)
-
-    # --- 8b. CATRsc Resource — toolbar icon resources for UI display ---
-    if fw:
-        rsc_file = fw.path / "CNext" / "resources" / "graphic" / f"{fw.name.replace('.edu', '')}.CATRsc"
-        rsc_file.parent.mkdir(parents=True, exist_ok=True)
-        rsc_entries = (
-            f"{module_base}Tlb.Screen  = \"{module_base} Commands\";\n"
-            f"{module_base}Tlb.Icon.Normal  = \"Icons/default.bmp\";\n"
-            f"{name}.Screen  = \"{name}\";\n"
-            f"{name}.Icon.Normal  = \"Icons/default.bmp\";\n"
-        )
-        if rsc_file.exists():
-            old_rsc = rsc_file.read_text(encoding="utf-8", errors="replace")
-            if module_base not in old_rsc:
-                cs.add_modify(rsc_file, old_rsc.rstrip() + "\n" + rsc_entries)
-        else:
-            cs.add_create(rsc_file, rsc_entries)
+            cs.add_create(nls_file, addin_nls)
 
     cs.metadata = {
         "command": name,
