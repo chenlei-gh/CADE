@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 from env import CAAEnvironment
-from utils import Cache, Logger, output_error, output_json, output_success
+from utils import Cache, Logger, output_json
 
 
 def _clean_cnext_sessions():
