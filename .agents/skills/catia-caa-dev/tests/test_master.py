@@ -66,6 +66,9 @@ SUITES = {
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
 
+# Suites that need a shared CNEXT instance (start once, stop after all)
+NEEDS_CNEXT = {"Int-1 Build & Run", "Full System", "Kernel Edges", "UI Scenario"}
+
 VERIFY_STRINGS = {
     "test_full_integration.py": "ALL TESTS PASSED",
     "test_phase1_enhancements.py": "Phase 1 Enhancement Tests Complete",
@@ -109,6 +112,7 @@ def run(quick: bool = False):
     passed = 0
     failed = 0
     total_time = 0
+    cnext_started = False
 
     print("=" * 70)
     print("  CADE Test Suite — Master Runner")
@@ -124,6 +128,17 @@ def run(quick: bool = False):
             continue
 
         print(f"\n  [{label}]", end="", flush=True)
+
+        # Shared CNEXT: start once before first CNEXT-dependent suite
+        if not cnext_started and label in NEEDS_CNEXT and not quick:
+            try:
+                sys.path.insert(0, str(SKILL_ROOT / "skills"))
+                from run import start_catia_runtime
+                r = start_catia_runtime()
+                if r.get("status") in ("started", "launching"):
+                    cnext_started = True
+            except Exception:
+                pass
 
         t0 = time.time()
         try:
@@ -151,6 +166,14 @@ def run(quick: bool = False):
             failed += 1
             tail = (r.stderr or r.stdout)[-120:].replace("\n", " ")[:100]
             print(f" FAIL ({t1 - t0:.1f}s) — {tail}")
+
+    # Stop shared CNEXT if started
+    if cnext_started:
+        try:
+            from run import stop_catia
+            stop_catia(force=False)
+        except Exception:
+            pass
 
     # Summary
     total = passed + failed
