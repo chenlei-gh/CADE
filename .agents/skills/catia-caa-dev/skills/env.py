@@ -412,6 +412,88 @@ class CAAEnvironment:
             self._rules = get_rules(ver)
         return self._rules
 
+    def _resolve_rade_settings(self) -> Dict[str, str]:
+        """
+        Resolve RADE license settings from CATEnv files.
+
+        When tck_profile fails (TCK not registered), this fallback reads
+        the CAA_RADE CATEnv file and extracts the variables mkmk needs
+        for RADE license validation.
+
+        Returns:
+            Dict of env vars to set in the build .bat (keys use %VAR% syntax
+            for cmd.exe expansion, e.g. 'APPDATA').
+        """
+        catenv_dir = Path(self.get_catenv_dir())
+        user_catenv = Path(os.environ.get("APPDATA", "")) / "DassaultSystemes" / "CATEnv"
+        settings = {}
+
+        # Priority: RADE specific env file first, then CATIA env as fallback
+        candidates = [
+            catenv_dir / "CAA_RADE.V5-6R2018.B28.txt",
+            catenv_dir / "CATIA_P3.V5-6R2018.B28.txt",
+        ]
+        # Also check user CATEnv
+        if user_catenv.exists():
+            for f in user_catenv.glob("*.txt"):
+                candidates.append(f)
+
+        for fpath in candidates:
+            if not fpath.exists():
+                continue
+            try:
+                with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("!") or line.startswith("#"):
+                            continue
+                        if "=" in line:
+                            key, _, value = line.partition("=")
+                            key = key.strip()
+                            value = value.strip()
+                            if key in ("CATUserSettingPath", "CATReferenceSettingPath"):
+                                settings[key] = value
+                            elif key == "RADECATSettingPath" and key not in settings:
+                                settings[key] = value
+            except Exception:
+                continue
+
+            # Found at least CATUserSettingPath, stop scanning
+            if "CATUserSettingPath" in settings:
+                break
+
+        # If RADE file exists, RADECATSettingPath mirrors CATUserSettingPath
+        if "CATUserSettingPath" in settings and "RADECATSettingPath" not in settings:
+            settings["RADECATSettingPath"] = settings["CATUserSettingPath"]
+
+        return settings
+
+    def _generate_catenv_fallback_bat(self) -> str:
+        """
+        Generate .bat commands that set RADE license variables from CATEnv fallback.
+
+        CSIDL_* paths are resolved at cmd.exe runtime via %APPDATA%, %LOCALAPPDATA% etc.
+        Returns empty string if CATEnv files cannot be read.
+        """
+        settings = self._resolve_rade_settings()
+        if not settings or "CATUserSettingPath" not in settings:
+            return ""
+
+        lines = ["echo [CADE] tck_profile failed, using CATEnv fallback for RADE license"]
+        appdata = os.environ.get("APPDATA", "%APPDATA%")
+        localappdata = os.environ.get("LOCALAPPDATA", "%LOCALAPPDATA%")
+        userprofile = os.environ.get("USERPROFILE", "%USERPROFILE%")
+
+        for key, value in settings.items():
+            # Resolve CSIDL_* macros to actual paths
+            resolved = value
+            resolved = resolved.replace("CSIDL_APPDATA", appdata)
+            resolved = resolved.replace("CSIDL_LOCAL_APPDATA", localappdata)
+            resolved = resolved.replace("CSIDL_PERSONAL", f"{userprofile}\\Documents")
+            lines.append(f"set {key}={resolved}")
+
+        return "\r\n".join(lines) + "\r\n"
+
     def build_time_command(
         self, workspace_path: str, mkmk_options: str = "-u"
     ) -> Tuple[list, str]:
@@ -419,10 +501,15 @@ class CAAEnvironment:
         Build the correct cmd.exe command to run mkmk with full Build Time environment.
 
         This replicates the VS Build Time Prompt behavior:
-          1. vcvarsall.bat → VS compiler environment
-          2. tck_init.bat  → basic TCK variables
-          3. mkinit.bat    → full Mkmk environment (detects VS, Windows Kit, etc.)
-          4. mkmk.bat      → workspace detection + compilation
+          1. tck_init.bat     → basic TCK variables
+          2. tck_profile.bat  → RADE license initialization (with workspace TCK lookup)
+          3. [FALLBACK]       → if TCK not registered, load CATEnv settings directly
+          4. mkinit.bat       → full Mkmk environment (detects VS, Windows Kit, etc.)
+          5. mkGetPreq        → link workspace prerequisites
+          6. mkmk             → compilation
+
+        The fallback at step 3 makes build.py robust even when TCK is not configured,
+        by reading RADE license settings from CATEnv files (CAA_RADE.V5-6R2018.B28.txt).
 
         Args:
             workspace_path: Path to workspace or module directory
@@ -443,28 +530,49 @@ class CAAEnvironment:
         if not mkinit.exists():
             raise FileNotFoundError(f"mkinit.bat not found. Expected at: {mkinit}")
 
-        if not tck_profile.exists():
-            raise FileNotFoundError(
-                f"tck_profile.bat not found at: {tck_profile}. "
-                f"This is REQUIRED for license framework initialization. "
-                f"Without it, mkmk will fail with RADE licensing errors."
+        # Generate CATEnv fallback block (used if tck_profile fails)
+        fallback_block = self._generate_catenv_fallback_bat()
+
+        # Build .bat content with proper error handling and fallback
+        # tck_profile may fail if TCK not registered — we fall back to CATEnv.
+        lines = []
+        lines.append("@echo off")
+        lines.append(f'call "{tck_init}" > NUL 2>&1')
+
+        if tck_profile.exists():
+            # Try tck_profile with workspace path (helps TCK locate the workspace TCK)
+            lines.append(
+                f'call "{tck_profile}" "{workspace_path}" > NUL 2>&1'
             )
+            lines.append("set _TCKPROFILE_RC=%ERRORLEVEL%")
+            if fallback_block:
+                lines.append("if %_TCKPROFILE_RC% neq 0 (")
+                for fb_line in fallback_block.strip().split("\r\n"):
+                    if fb_line.strip():
+                        lines.append(f"    {fb_line.strip()}")
+                lines.append(")")
+        elif fallback_block:
+            lines.append("echo [CADE] tck_profile.bat missing, using CATEnv fallback")
+            for fb_line in fallback_block.strip().split("\r\n"):
+                if fb_line.strip():
+                    lines.append(fb_line.strip())
 
-        # Full Build Time chain matching VS RADE add-in initialization:
-        #   tck_init → tck_profile → mkinit → mkGetPreq → mkmk
-        # vcvarsall not needed — mkinit.bat already detects VS compiler.
-        # Uses & not && because mkGetPreq returns non-zero on success.
-        cmd_str = (
-            f'call "{tck_init}" > NUL 2>&1 & '
-            f'call "{tck_profile}" > NUL 2>&1 & '
-            f'call "{mkinit}" > NUL 2>&1 & '
-            f"set PATH={code_bin};{code_command};%PATH% & "
-            f'cd /d "{workspace_path}" & '
-            f'mkGetPreq -p "{catia_path};" > NUL 2>&1 & '
-            f"mkmk {mkmk_options}"
-        )
+        lines.append(f'call "{mkinit}" > NUL 2>&1')
+        lines.append(f"set PATH={code_bin};{code_command};%PATH%")
+        lines.append(f'cd /d "{workspace_path}"')
+        lines.append(f'call mkGetPreq -p "{catia_path};" > NUL 2>&1')
+        # mkmk output goes to stdout — build.py will capture it
+        lines.append(f"mkmk {mkmk_options}")
 
-        return ["cmd", "/c", cmd_str], cmd_str
+        bat_content = "\r\n".join(lines) + "\r\n"
+
+        # Write to temp .bat for cmd.exe execution
+        import tempfile
+        self._build_bat = Path(tempfile.mktemp(suffix=".bat", prefix="cade_build_"))
+        self._build_bat.write_text(bat_content, encoding="ascii")
+
+        display = f"tck_init → tck_profile → [fallback if TCK missing] → mkinit → mkmk {mkmk_options}"
+        return ["cmd", "/c", str(self._build_bat)], display
 
     def run_command(self, command: str, workspace_path: str = None) -> Tuple[list, str]:
         """
