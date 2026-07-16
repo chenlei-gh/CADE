@@ -1,70 +1,96 @@
 ---
 id: ui.toolbar
-title: Toolbar / CommandHeader
+title: Toolbar / CommandHeader / CATIAfrGeneralWksAddin
 category: knowledge
 domain: ui
-keywords: [toolbar, CATCommandHeader, CATCmdAccess, CATCmdContainer, catalog, workbench, addin, command registration]
-apis: [CATCommandHeader, CATCmdAccess, CATCmdContainer, CATCmdStarter]
+keywords: [toolbar, CATCommandHeader, CATCmdAccess, CATCmdContainer, catalog, workbench, addin, command registration, CATIAfrGeneralWksAddin, MacDeclareHeader]
+apis: [CATCommandHeader, CATCmdAccess, CATCmdContainer, CATCmdStarter, MacDeclareHeader, MacImplementHeader]
 requires: [infra.selection]
 patterns: []
 examples: []
 release: [R19, R28]
-tags: [ui, command, registration]
+tags: [ui, command, registration, addin]
 ---
 
-# Toolbar / CommandHeader (工具栏/命令头)
+# CATIAfrGeneralWksAddin 命令注册（官方模式）
 
-CAA 命令通过 `CATCommandHeader` 注册到 Workbench 的 Toolbar 中。
+**⚠️ 关键约束：CommandHeader 类必须用 `MacDeclareHeader` 宏生成，且必须在 .cpp 文件中使用（不能在 .h 文件）。**
 
-## CommandHeader 基本结构
+## 官方原始示例
 
-```cpp
-// CATCommandHeader 宏声明 (在 Header 文件中)
-CATCommandHeader(MyCmdHeader, "MyCmd",
-    CATCommandAccess::User,      // 访问级别
-    CATCommandMode::Shared,      // 命令模式
-    "MyWorkbench",               // 所属 Workbench
-    "MyToolbar",                 // 所属 Toolbar
-    "My Command",                // 显示名称
-    "Cmd Icon",                  // 图标资源
-    "Tooltip Text",              // 工具提示
-    "MyModule"                   // 所属 Module
-);
-```
+参考：`CAADoc/CAAApplicationFrame.edu/CAAAfrGeneralWksAddin.m/src/CAAAfrGeneralWksAdn.cpp`
 
-## Workbench Addin 注册
+## 正确代码模板
+
+### Addin.cpp（同一个 .cpp 文件，不需要单独 .h）
 
 ```cpp
-// Workbench Addin 中创建 Toolbar
-void MyWorkbenchAddin::CreateCommands() {
-    // 创建 Toolbar
-    new CATCmdContainer("MyToolbar");
+#include "TTModuleAddin.h"
+#include "CATIAfrGeneralWksAddin.h"
+#include "CATCreateWorkshop.h"
 
-    // 添加命令到 Toolbar
-    new MyCmdHeader("MyCmd",
-        "MyModule",       // Module
-        "MyToolbar",       // Toolbar
-        "My Command"       // Display Name
+// ⭐ 关键：MacDeclareHeader 必须在 .cpp 中使用！
+#include "CATCommandHeader.h"
+MacDeclareHeader(QuickCmdHdr);
+
+CATImplementClass(TTModuleAddin,DataExtension,CATBaseUnknown,TTModuleAddin);
+
+TIE_CATIAfrGeneralWksAddin(TTModuleAddin);
+
+void TTModuleAddin::CreateCommands()
+{
+    // ⭐ 必须用 4 参数构造 (HeaderID, LoadName, ClassName, Argument)
+    new QuickCmdHdr(
+        "TTModule.QuickCmd",   // HeaderID
+        "TTModule",             // LoadName — StartCommand() 定位 DLL
+        "QuickCmd",             // ClassName
+        (void*)NULL             // Argument
     );
+}
+
+CATCmdContainer* TTModuleAddin::CreateToolbars()
+{
+    NewAccess(CATCmdContainer, pToolbar, TTModuleTlb);
+    AddToolbarView(pToolbar, 1, Right);
+
+    NewAccess(CATCmdStarter, pCmd, QuickCmd);
+    SetAccessCommand(pCmd, "TTModule.QuickCmd");
+    SetAccessChild(pToolbar, pCmd);
+
+    return pToolbar;
 }
 ```
 
-## Catalog 注册
+## 为什么不能在 .h 中使用 MacDeclareHeader
 
-命令必须在 Catalog 中注册才能被 CATIA 识别：
+```
+MacDeclareHeader = MacDefineHeader (类声明)
+                 + MacImplementHeader (方法实现)
 
-```xml
-<!-- Catalog 文件 -->
-<Command name="MyCmd" class="MyCmdClass" module="MyModule"/>
+放在 .h → 每个 .cpp include 它 → 链接器报"重复定义"
+放在 .cpp → 只有一次声明和实现 → 正确
 ```
 
-## 常用参数
+## 为什么不能用 CATImplementHeaderResources 代替
 
-| 参数 | 说明 |
-|------|------|
-| Access | `User` / `Admin` / `Restricted` |
-| Mode | `Shared` / `Exclusive` |
-| Workbench | 命令所属 Workbench ID |
-| Toolbar | 命令所属 Toolbar ID |
-| Icon | 图标资源名称 |
-| Tooltip | 鼠标悬停提示 |
+```cpp
+// ❌ 错误：只实现 GetFW() 和 GetResourceFile()，不声明类！
+CATImplementHeaderResources(QuickCmdHdr, CATCommandHeader, QuickCmdHdr);
+
+// ✅ 正确：完整声明类 + 实现所有构造函数
+MacDeclareHeader(QuickCmdHdr);
+```
+
+## 为什么必须用 4 参数构造
+
+`CATCommandHeader::StartCommand()` 使用 LoadName 定位 DLL、使用 ClassName 创建命令实例。单参数构造缺少这两项 → 命令无法创建。
+
+## 按钮不显示排查清单
+
+1. ☐ `MacDeclareHeader` 在 .cpp 中？（不能在 .h 中）
+2. ☐ 4 参数构造？(HeaderID, LoadName, ClassName, Argument)
+3. ☐ `win_b64/code/dictionary/` 有 .dico 文件？
+4. ☐ `win_b64/resources/msgcatalog/` 有 .CATRsc + .CATNls？
+5. ☐ `win_b64/resources/graphic/icons/normal/` 有图标 .bmp？
+6. ☐ CNEXT 启动时 `CATDictionaryPath` 指向 Runtime View？
+7. ☐ Dictioanry 内容：`TTModuleAddin CATIAfrGeneralWksAddin libTTModule`
