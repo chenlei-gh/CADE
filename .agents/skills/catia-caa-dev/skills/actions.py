@@ -492,6 +492,23 @@ def create_command(
         else:
             cs.add_create(nls_file, nls_entries)
 
+    # --- 8b. CATRsc Resource — toolbar icon resources for UI display ---
+    if fw:
+        rsc_file = fw.path / "CNext" / "resources" / "graphic" / f"{fw.name.replace('.edu', '')}.CATRsc"
+        rsc_file.parent.mkdir(parents=True, exist_ok=True)
+        rsc_entries = (
+            f"{module_base}Tlb.Screen  = \"{module_base} Commands\";\n"
+            f"{module_base}Tlb.Icon.Normal  = \"Icons/default.bmp\";\n"
+            f"{name}.Screen  = \"{name}\";\n"
+            f"{name}.Icon.Normal  = \"Icons/default.bmp\";\n"
+        )
+        if rsc_file.exists():
+            old_rsc = rsc_file.read_text(encoding="utf-8", errors="replace")
+            if module_base not in old_rsc:
+                cs.add_modify(rsc_file, old_rsc.rstrip() + "\n" + rsc_entries)
+        else:
+            cs.add_create(rsc_file, rsc_entries)
+
     cs.metadata = {
         "command": name,
         "module": module,
