@@ -23,6 +23,99 @@ from parser import parse_mkmk_output
 from utils import Cache, Logger, format_duration, output_json
 
 
+# ─── Health & Verification ──────────────────────────────────────
+
+def validate_workspace(workspace_path: Path) -> dict:
+    """Validate a CAA workspace before building. Returns issues list."""
+    issues = []
+    warnings = []
+    fws = [p for p in workspace_path.iterdir() if p.is_dir() and p.name.endswith(".edu")]
+
+    if not fws:
+        issues.append("No .edu framework found — not a CAA workspace")
+        return {"can_build": False, "issues": issues, "warnings": warnings}
+
+    for fw in fws:
+        ic = fw / "IdentityCard"
+        if not (ic.exists() and any(ic.iterdir())):
+            issues.append(f"{fw.name}: missing IdentityCard")
+        imake = fw / "Imakefile.mk"
+        if not imake.exists():
+            issues.append(f"{fw.name}: missing Imakefile.mk")
+        mods = [m for m in fw.iterdir() if m.is_dir() and m.name.endswith(".m")]
+        if not mods:
+            issues.append(f"{fw.name}: no modules (.m) found")
+        for mod in mods:
+            if not (mod / "Imakefile.mk").exists():
+                issues.append(f"{mod.name}: missing Imakefile.mk")
+
+    can_build = not any("missing IdentityCard" in i or "no modules" in i for i in issues)
+    return {"can_build": can_build, "issues": issues, "warnings": warnings}
+
+
+def verify_build(workspace_path: Path) -> dict:
+    """Post-build verification: check DLLs were produced."""
+    arch = "win_b64"
+    try:
+        from env import CAAEnvironment
+        env = CAAEnvironment(); env.load_config()
+        arch = env.get_architecture() or "win_b64"
+    except Exception:
+        pass
+
+    bin_dir = workspace_path / arch / "code" / "bin"
+    dlls = list(bin_dir.glob("*.dll")) if bin_dir.exists() else []
+    issues = []
+
+    if not dlls:
+        issues.append(f"No DLLs found in {bin_dir}")
+    for dll in dlls:
+        size = dll.stat().st_size
+        if size < 1024:
+            issues.append(f"{dll.name}: suspicious size ({size} bytes)")
+
+    return {
+        "dll_count": len(dlls),
+        "dlls": [{"name": d.name, "size": d.stat().st_size} for d in dlls],
+        "issues": issues,
+        "ok": len(issues) == 0,
+    }
+
+
+def diagnose_environment() -> dict:
+    """Diagnose CAA build environment health."""
+    from env import CAAEnvironment
+    env = CAAEnvironment()
+    result = {"ok": True, "checks": [], "issues": []}
+
+    if not env.load_config():
+        result["ok"] = False
+        result["issues"].append("CAA configuration not loaded")
+        return result
+
+    catia = Path(env.config.get("CATIA_INSTALL", ""))
+    arch = env.get_architecture() or "win_b64"
+
+    checks = [
+        ("CATIA installation", catia.exists()),
+        ("tck_init.bat", (catia / arch / "code" / "command" / "tck_init.bat").exists()),
+        ("tck_profile.bat", (catia / arch / "TCK" / "command" / "tck_profile.bat").exists()),
+        ("mkinit.bat", (catia / arch / "code" / "command" / "mkinit.bat").exists()),
+        ("mkmk.bat", (catia / arch / "code" / "command" / "mkmk.bat").exists()),
+        ("mkmkM.exe", (catia / arch / "code" / "bin" / "mkmkM.exe").exists()),
+        ("CNEXT.exe", (catia / arch / "code" / "bin" / "CNEXT.exe").exists()),
+        ("CATSTART.exe", (catia / arch / "code" / "bin" / "CATSTART.exe").exists()),
+    ]
+
+    for name, ok in checks:
+        result["checks"].append({"name": name, "ok": ok})
+        if not ok:
+            result["ok"] = False
+            result["issues"].append(f"Missing: {name}")
+
+    return result
+
+
 def build_workspace(
     workspace_path: Path, options: str = "-u", timeout: int = 600
 ) -> dict:
@@ -47,6 +140,13 @@ def build_workspace(
 
     if not workspace_path.exists():
         return error_result(f"Workspace path does not exist: {workspace_path}")
+
+    # --- Pre-build health check ---
+    health = validate_workspace(workspace_path)
+    if health["issues"]:
+        logger.write(f"Workspace issues: {health['issues']}")
+        if not health.get("can_build", True):
+            return error_result(f"Workspace validation failed: {'; '.join(health['issues'])}")
 
     # --- Auto-configure workspace prerequisites (links to CATIA installation) ---
     # Only run if workspace looks like a real CAA workspace (has .edu directory)
@@ -164,6 +264,13 @@ def build_workspace(
         }
 
         cache.save(build_result)
+
+        # Post-build verification
+        if status == "success":
+            verify = verify_build(workspace_path)
+            if verify["issues"]:
+                build_result["verification"] = verify
+                logger.write(f"Post-build: {verify['issues']}")
         logger.write(
             f"Status: {status} | Errors: {parsed['error_count']} | Duration: {format_duration(duration)}"
         )

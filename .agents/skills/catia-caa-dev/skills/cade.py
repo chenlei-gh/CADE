@@ -160,6 +160,8 @@ def main():
         cmd_setup(args)
     elif cmd == "version":
         cmd_version()
+    elif cmd == "health":
+        cmd_health(args)
     elif cmd == "test":
         cmd_test(args)
     elif cmd in ("help", "-h", "--help"):
@@ -575,6 +577,32 @@ def cmd_snapshot(args):
 
 
 # ─── Version / Test ───────────────────────────────────────────────
+
+
+def cmd_health(args):
+    """Diagnose workspace and environment health.
+    Usage: cade health [workspace]
+    """
+    from build import validate_workspace, diagnose_environment
+    ws = _get_ws(args)
+
+    print("=== Environment ===")
+    diag = diagnose_environment()
+    for c in diag["checks"]:
+        print(f"  [{'OK' if c['ok'] else 'FAIL'}] {c['name']}")
+
+    if ws:
+        print(f"\n=== Workspace: {ws} ===")
+        health = validate_workspace(Path(ws))
+        for i in health["issues"]:
+            print(f"  [FAIL] {i}")
+        for w in health.get("warnings", []):
+            print(f"  [WARN] {w}")
+        if not health["issues"]:
+            print("  [OK] Workspace structure valid")
+
+    if diag["issues"]:
+        print(f"\nIssues: {len(diag['issues'])}")
 
 
 def cmd_version():
