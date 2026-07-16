@@ -177,7 +177,7 @@ class CATIADetector:
         Returns sorted list (newest version first).
         """
         if self.verbose:
-            print("🔍 Scanning for CATIA installations...")
+            print("[SCAN] Scanning for CATIA installations...")
 
         all_installations = []
         drives = self.get_available_drives()
@@ -208,9 +208,9 @@ class CATIADetector:
 
         if self.verbose:
             if all_installations:
-                print(f"✅ Found {len(all_installations)} CATIA installation(s)")
+                print(f"[OK] Found {len(all_installations)} CATIA installation(s)")
             else:
-                print("❌ No CATIA installations found")
+                print("[FAIL] No CATIA installations found")
 
         return all_installations
 
@@ -239,7 +239,7 @@ if __name__ == "__main__":
     installations = detect_catia_installations(verbose=True)
 
     if installations:
-        print("\n📋 Detected Installations:")
+        print("\n[LIST] Detected Installations:")
         for i, inst in enumerate(installations, 1):
             code_bin = inst.get_code_bin_path()
             print(f"\n[{i}] {inst.version}")
@@ -247,5 +247,5 @@ if __name__ == "__main__":
             print(f"    Release: {inst.release}")
             print(f"    Code/Bin: {code_bin if code_bin else 'Not found'}")
     else:
-        print("\n⚠️  No CATIA installations detected")
+        print("\n[WARN]  No CATIA installations detected")
         print("    Please install CATIA or check installation paths")

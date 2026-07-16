@@ -282,12 +282,12 @@ def main():
     if args.detect:
         catia_root = detect_catia_root()
         if catia_root:
-            print(f"✅ CATIA detected: {catia_root}")
+            print(f"[OK] CATIA detected: {catia_root}")
             cnext = find_cnext_exe(catia_root)
             if cnext:
-                print(f"✅ CNEXT.exe: {cnext}")
+                print(f"[OK] CNEXT.exe: {cnext}")
         else:
-            print("❌ CATIA not detected")
+            print("[FAIL] CATIA not detected")
         return
 
     # Configure workspace
@@ -301,13 +301,13 @@ def main():
     )
 
     if result["status"] == "ok":
-        print(f"✅ {result['message']}")
+        print(f"[OK] {result['message']}")
         print("\nConfiguration:")
         import json
         print(json.dumps(result["config"], indent=2))
         print(f"\nConfiguration saved to: {workspace}/.cade_workspace.json")
     else:
-        print(f"❌ {result['message']}")
+        print(f"[FAIL] {result['message']}")
         sys.exit(1)
 
 

@@ -64,7 +64,7 @@ def select_catia_installation(
         return installations[0]
 
     # Display options
-    print("\n📋 Detected CATIA installations:")
+    print("\n[LIST] Detected CATIA installations:")
     for i, inst in enumerate(installations, 1):
         code_bin = inst.get_code_bin_path()
         print(f"  [{i}] {inst.version} - {inst.root_path}")
@@ -85,12 +85,12 @@ def select_catia_installation(
                 return installations[idx]
             else:
                 print(
-                    f"❌ Invalid choice. Please enter a number between 1 and {len(installations)}."
+                    f"[FAIL] Invalid choice. Please enter a number between 1 and {len(installations)}."
                 )
         except ValueError:
-            print("❌ Invalid input. Please enter a number.")
+            print("[FAIL] Invalid input. Please enter a number.")
         except KeyboardInterrupt:
-            print("\n❌ Cancelled by user")
+            print("\n[FAIL] Cancelled by user")
             return None
 
 
@@ -352,7 +352,7 @@ def main():
     if args.detect:
         installations = detect_catia_installations_interactive(verbose=True)
         if installations:
-            print(f"\n✅ Found {len(installations)} CATIA installation(s)")
+            print(f"\n[OK] Found {len(installations)} CATIA installation(s)")
             for inst in installations:
                 print(f"\n{inst.version}:")
                 print(f"  Path: {inst.root_path}")
@@ -364,7 +364,7 @@ def main():
                 if code_bin:
                     print(f"  Code/Bin: {code_bin}")
         else:
-            print("❌ No CATIA installations detected")
+            print("[FAIL] No CATIA installations detected")
         return
 
     # Configure workspace
@@ -379,14 +379,14 @@ def main():
     )
 
     if result["status"] == "ok":
-        print(f"✅ {result['message']}")
+        print(f"[OK] {result['message']}")
         print("\nConfiguration:")
         import json
 
         print(json.dumps(result["config"], indent=2))
         print(f"\nConfiguration saved to: {workspace}/.cade_workspace.json")
     else:
-        print(f"❌ {result['message']}")
+        print(f"[FAIL] {result['message']}")
         sys.exit(1)
 
 

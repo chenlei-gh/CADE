@@ -399,36 +399,36 @@ def main():
     # Execute command
     if args.command == "add":
         result = add_prerequisite(Path(args.framework), args.component, args.visibility)
-        print(f"{'✅' if result['status'] == 'ok' else '⚠️'} {result['message']}")
+        print(f"{'[OK]' if result['status'] == 'ok' else '[WARN]'} {result['message']}")
 
     elif args.command == "remove":
         result = remove_prerequisite(Path(args.framework), args.component)
-        print(f"{'✅' if result['status'] == 'ok' else '⚠️'} {result['message']}")
+        print(f"{'[OK]' if result['status'] == 'ok' else '[WARN]'} {result['message']}")
 
     elif args.command == "list":
         result = list_prerequisites(Path(args.framework))
         if result["status"] == "ok":
-            print(f"\n📋 Prerequisites for {result['framework']}:\n")
+            print(f"\n[LIST] Prerequisites for {result['framework']}:\n")
             for prereq in result["prerequisites"]:
-                print(f"  • {prereq['component']} ({prereq['visibility']})")
+                print(f"  - {prereq['component']} ({prereq['visibility']})")
             print(f"\nTotal: {result['count']}")
         else:
-            print(f"❌ {result['message']}")
+            print(f"[FAIL] {result['message']}")
 
     elif args.command == "validate":
         result = validate_prerequisites(Path(args.workspace))
-        print(f"\n🔍 Validation Results:\n")
+        print(f"\n[CHECK] Validation Results:\n")
 
         if result["status"] == "ok":
-            print("  ✅ All prerequisites are valid")
+            print("  [OK] All prerequisites are valid")
         else:
             if result["issues"]["circular_deps"]:
-                print("  ❌ Circular dependencies detected:")
+                print("  [FAIL] Circular dependencies detected:")
                 for cycle in result["issues"]["circular_deps"]:
                     print(f"     {cycle}")
 
             if result["issues"]["missing_deps"]:
-                print("  ⚠️  Missing dependencies:")
+                print("  [WARN]  Missing dependencies:")
                 for missing in result["issues"]["missing_deps"]:
                     print(f"     {missing}")
 
@@ -436,11 +436,11 @@ def main():
 
     elif args.command == "suggest":
         result = suggest_prerequisites(Path(args.module))
-        print(f"\n💡 Suggested Prerequisites:\n")
+        print(f"\n[TIP] Suggested Prerequisites:\n")
 
         if result["recommendations"]:
             for fw in result["recommendations"]:
-                print(f"  • {fw}")
+                print(f"  - {fw}")
                 desc = COMMON_PREREQS.get(fw, "")
                 if desc:
                     print(f"    {desc}")
@@ -456,7 +456,7 @@ def main():
 
     elif args.command == "init":
         result = add_default_prerequisites(Path(args.framework))
-        print(f"✅ Added {result['count']} default prerequisites")
+        print(f"[OK] Added {result['count']} default prerequisites")
 
 
 if __name__ == "__main__":

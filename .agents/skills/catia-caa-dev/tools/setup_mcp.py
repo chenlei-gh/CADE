@@ -155,9 +155,9 @@ def detect_windsurf() -> Path | None:
 def write_zed_config(dry_run=False):
     """Zed needs no config — just confirm SKILL.md exists."""
     if detect_zed():
-        print("  ✅ Zed: Auto-detected via SKILL.md (no config needed)")
+        print("  [OK] Zed: Auto-detected via SKILL.md (no config needed)")
     else:
-        print("  ⚠️ Zed: SKILL.md not found")
+        print("  [WARN] Zed: SKILL.md not found")
 
 
 def write_claude_config(config_path: Path, dry_run=False):
@@ -178,7 +178,7 @@ def write_claude_config(config_path: Path, dry_run=False):
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
-    print(f"  {'[DRY RUN]' if dry_run else '✅'} Claude Desktop: {config_path}")
+    print(f"  {'[DRY RUN]' if dry_run else '[OK]'} Claude Desktop: {config_path}")
 
 
 def write_cursor_config(config_path: Path, dry_run=False):
@@ -199,7 +199,7 @@ def write_cursor_config(config_path: Path, dry_run=False):
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
-    print(f"  {'[DRY RUN]' if dry_run else '✅'} Cursor: {config_path}")
+    print(f"  {'[DRY RUN]' if dry_run else '[OK]'} Cursor: {config_path}")
 
 
 def write_vscode_config(config_path: Path, dry_run=False):
@@ -220,7 +220,7 @@ def write_vscode_config(config_path: Path, dry_run=False):
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
-    print(f"  {'[DRY RUN]' if dry_run else '✅'} VS Code: {config_path}")
+    print(f"  {'[DRY RUN]' if dry_run else '[OK]'} VS Code: {config_path}")
 
 
 def write_windsurf_config(config_path: Path, dry_run=False):
@@ -241,7 +241,7 @@ def write_windsurf_config(config_path: Path, dry_run=False):
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
-    print(f"  {'[DRY RUN]' if dry_run else '✅'} Windsurf: {config_path}")
+    print(f"  {'[DRY RUN]' if dry_run else '[OK]'} Windsurf: {config_path}")
 
 
 # ─── Main ───────────────────────────────────────────────────────────

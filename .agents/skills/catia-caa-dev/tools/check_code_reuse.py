@@ -103,7 +103,7 @@ class CodeReuseChecker:
             )
             self.results["recommendation"] = "REVIEW_REQUIRED"
         else:
-            print("  ✓ No duplicate components found")
+            print("  [v] No duplicate components found")
 
         return duplicates
 
@@ -131,7 +131,7 @@ class CodeReuseChecker:
             )
             self.results["recommendation"] = "REVIEW_REQUIRED"
         else:
-            print("  ✓ No duplicate interfaces found")
+            print("  [v] No duplicate interfaces found")
 
         return duplicates
 
@@ -155,7 +155,7 @@ class CodeReuseChecker:
         if similar:
             print(f"  ℹ Found {len(similar)} example(s) in CAASystem.edu")
         else:
-            print("  ✓ No examples in CAASystem.edu")
+            print("  [v] No examples in CAASystem.edu")
 
         return similar
 
@@ -193,7 +193,7 @@ class CodeReuseChecker:
             if self.results["recommendation"] == "PROCEED":
                 self.results["recommendation"] = "USE_CAA_LIBRARIES"
         else:
-            print("  ✓ No anti-patterns detected")
+            print("  [v] No anti-patterns detected")
 
         return detected
 
@@ -226,7 +226,7 @@ class CodeReuseChecker:
             for lib, reason in suggestions.items():
                 print(f"  → {lib}: {reason}")
         else:
-            print("  ✓ Using base libraries only")
+            print("  [v] Using base libraries only")
 
         return suggestions
 
@@ -271,13 +271,13 @@ class CodeReuseChecker:
 
         # Final recommendation
         if severity == "CRITICAL":
-            print("❌ STOP: Duplicate component/interface found!")
+            print("[FAIL] STOP: Duplicate component/interface found!")
             print("   Action: Review existing code before creating new component")
         elif severity == "WARNING":
             print("⚠ CAUTION: Potential anti-pattern detected")
             print("   Action: Verify you cannot use CAA libraries instead")
         else:
-            print("✓ OK: No major issues detected")
+            print("[v] OK: No major issues detected")
             print("   Action: Proceed with component creation")
 
         print("=" * 50)
