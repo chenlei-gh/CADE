@@ -21,18 +21,19 @@ from utils import Cache, Logger, output_error, output_json, output_success
 
 def _clean_cnext_sessions():
     """Remove CNEXT session files that trigger 'hot restart unavailable' prompt."""
-    import shutil
     appdata = os.environ.get("LOCALAPPDATA", "")
     if not appdata:
         return
     temp_dir = Path(appdata) / "DassaultSystemes" / "CATTemp"
     if not temp_dir.exists():
         return
-    for f in glob.glob(str(temp_dir / "SessionInfoFile_*")):
-        try:
-            os.remove(f)
-        except OSError:
-            pass
+    # SessionInfo and AbendTrace both trigger hot-restart prompt
+    for pattern in ["SessionInfoFile_*", "AbendTrace_*"]:
+        for f in glob.glob(str(temp_dir / pattern)):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
 
 
 def check_process_running(process_name: str) -> list:
