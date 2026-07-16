@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: "CATIA CAA V5 Development Engine (CADE) v3.2.0 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（29K+14P+14Capability+14Playbook+149Framework+6Philosophy+3Failure+3DecisionTree），17+模板、15API、35Build/Run命令、cade dev一键闭环、35套件~600测试项。"
+description: "CATIA CAA V5 Development Engine (CADE) v3.2.0 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（29K+14P+14Capability+14Playbook+149Framework+6Philosophy+3Failure+3DecisionTree），107几何图标+RGBA多色、82模板(16类型)、39测试套件(~11000行)、cade dev一键闭环。"
 triggers:
   - CAA component
   - CATIA component
