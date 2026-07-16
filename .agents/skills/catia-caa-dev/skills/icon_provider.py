@@ -434,23 +434,22 @@ def copy_icons_to_runtime(workspace_path: Path):
     for fw in workspace_path.iterdir():
         if not fw.is_dir() or not fw.name.endswith(".edu"):
             continue
-        fw_base = fw.name.replace(".edu", "")
 
-        # CATRsc → win_b64/resources/graphic/ (CNEXT reads from CATGraphicPath)
-        rsc = fw / "CNext" / "resources" / "graphic" / f"{fw_base}.CATRsc"
-        if rsc.exists():
-            rsc_dst = workspace_path / "win_b64" / "resources" / "graphic" / f"{fw_base}.CATRsc"
-            rsc_dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(rsc, rsc_dst)
+        # CATRsc (in msgcatalog/) → win_b64/resources/msgcatalog/
+        rsc_dir = fw / "CNext" / "resources" / "msgcatalog"
+        if rsc_dir.exists():
+            for rsc in rsc_dir.glob("*.CATRsc"):
+                rsc_dst = workspace_path / "win_b64" / "resources" / "msgcatalog" / rsc.name
+                rsc_dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(rsc, rsc_dst)
 
         # Icons → win_b64/resources/graphic/icons/
         src = fw / "CNext" / "resources" / "graphic" / "icons"
-        if not src.exists():
-            continue
-        dst = workspace_path / "win_b64" / "resources" / "graphic" / "icons"
-        dst.mkdir(parents=True, exist_ok=True)
-        for sf in src.rglob("*.bmp"):
-            df = dst / sf.relative_to(src)
-            df.parent.mkdir(parents=True, exist_ok=True)
-            if not df.exists() or sf.stat().st_mtime > df.stat().st_mtime:
-                shutil.copy2(sf, df)
+        if src.exists():
+            dst = workspace_path / "win_b64" / "resources" / "graphic" / "icons"
+            dst.mkdir(parents=True, exist_ok=True)
+            for sf in src.rglob("*.bmp"):
+                df = dst / sf.relative_to(src)
+                df.parent.mkdir(parents=True, exist_ok=True)
+                if not df.exists() or sf.stat().st_mtime > df.stat().st_mtime:
+                    shutil.copy2(sf, df)

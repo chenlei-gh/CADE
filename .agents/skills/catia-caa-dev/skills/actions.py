@@ -495,20 +495,14 @@ def create_command(
             else:
                 cs.add_create(nls_file, nls_content)
 
-        # CATRsc — use icon param if provided, else derive from name
-        rsc_file = fw.path / "CNext" / "resources" / "graphic" / f"{fw_base}.CATRsc"
+        # CATRsc — in msgcatalog/ (where CNEXT reads it via CATMsgCatalogPath)
+        # Named after header class, format: HeaderClass.HeaderID.Icon.Normal
+        rsc_file = fw.path / "CNext" / "resources" / "msgcatalog" / f"{name}Hdr.CATRsc"
         rsc_file.parent.mkdir(parents=True, exist_ok=True)
         if tpl_rsc.exists():
             icon_name = icon if icon else name.lower()
             rsc_category = category if category else "Commands"
-            rsc_content = render_template(tpl_rsc.read_text(encoding="utf-8", errors="replace"), {
-                "CommandClassName": name,
-                "CommandHeaderName": name,
-                "CommandIconName": icon_name,
-                "FrameworkName": fw_base,
-            })
-            # Replace hardcoded category
-            rsc_content = rsc_content.replace("MfgToolsCommands", rsc_category)
+            rsc_content = f'{name}Hdr.{module_base}.{name}.Icon.Normal = "I_{icon_name}";\n'
             if rsc_file.exists():
                 old = rsc_file.read_text(encoding="utf-8", errors="replace")
                 if name not in old:
