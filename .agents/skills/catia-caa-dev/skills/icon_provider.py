@@ -4,12 +4,12 @@ CADE Icon Provider
 Multi-source icon resolution with local cache and offline fallback.
 
 Sources (tried in order):
-  1. Iconify API  (largest open icon collection, ~200k icons)
-  2. Phosphor Icons (MIT, engineering-focused)
-  3. Local cache   (~/.cade/cache/icons/)
-  4. Generated BMP (24x24, command initial letter — never fails)
+  1. Local cache   (~/.cade/cache/icons/)
+  2. Iconify API  (Carbon Design — consistent engineering style)
+  3. Generated BMP (24x24, command initial letter — never fails)
 
 Network is optional — icon download failure never blocks generation.
+Style is enforced via Iconify's "carbon" collection for visual consistency.
 """
 
 import os
@@ -21,36 +21,86 @@ from typing import Optional
 CACHE_DIR = Path.home() / ".cade" / "cache" / "icons"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+# ─── Domain-to-Icon Mapping (CAA engineering context) ──────────
+DOMAIN_MAP = {
+    # Manufacturing / Machining
+    "hole": "drill", "pocket": "box", "contour": "contour-draw",
+    "mill": "cube", "drill": "drill", "machine": "cog",
+    # Assembly / Structure
+    "assemble": "assembly", "part": "cube", "product": "package",
+    "component": "cube", "constrain": "constraint",
+    # Geometry / Modeling
+    "pad": "box", "extrude": "extrusion", "revolve": "circle-dash",
+    "fillet": "radius", "chamfer": "cut", "sketch": "draw",
+    "surface": "surface", "wireframe": "wireframe", "point": "point",
+    "line": "line", "curve": "curve", "split": "cut",
+    "trim": "cut-out", "join": "join-straight", "transform": "move",
+    # Analysis / Measure
+    "measure": "ruler", "distance": "ruler-alt", "angle": "angle",
+    "analyze": "analytics", "check": "checkmark", "verify": "checkmark-outline",
+    "report": "report", "statistic": "chart-bar",
+    # UI / Interaction
+    "select": "cursor-1", "pick": "cursor-1", "dialog": "application-web",
+    "setting": "settings", "config": "settings-adjust", "option": "chevron-down",
+    "view": "view", "zoom": "zoom-in", "pan": "pan-horizontal",
+    # Data / File
+    "save": "save", "open": "folder-open", "export": "export",
+    "import": "import-export", "file": "document", "catalog": "catalog",
+    "database": "data-base", "search": "search", "filter": "filter",
+}
 
-def get_icon(icon_name: str, style: str = "engineering") -> Optional[Path]:
+
+def resolve_icon(command_name: str, hint: str = None) -> str:
     """
-    Resolve icon file path. Order: cache → Iconify → Phosphor → generate.
-
+    Smart icon resolution from command name + domain hint.
+    
     Args:
-        icon_name: Icon search term (e.g., "drill", "gear", "arrow-right")
-        style: Icon style hint ("engineering", "minimal", "bold")
-
+        command_name: e.g., "HoleCmd", "MeasureDistance"
+        hint: optional domain keyword, e.g., "manufacturing", "analysis"
+    
     Returns:
-        Path to .bmp file (24x24), or None if failed (caller should proceed without icon)
+        Icon name for get_icon()
+    """
+    name_lower = command_name.lower().replace("cmd", "").replace("command", "")
+    if hint:
+        hint_lower = hint.lower()
+        if hint_lower in DOMAIN_MAP:
+            return DOMAIN_MAP[hint_lower]
+    # Try each word in the command name
+    for word in name_lower.split("_"):
+        word = word.strip()
+        if word in DOMAIN_MAP:
+            return DOMAIN_MAP[word]
+    # Try partial match
+    for key, value in DOMAIN_MAP.items():
+        if key in name_lower:
+            return value
+    # Fallback: use command name as icon search term
+    return name_lower.split("_")[0] if "_" in name_lower else name_lower
+
+
+def get_icon(icon_name: str, style: str = "carbon") -> Optional[Path]:
+    """
+    Resolve icon file path with style consistency.
+    
+    Default collection: IBM Carbon Design (engineering-focused, consistent style).
+    Order: local cache → Iconify Carbon → generated BMP.
+    
+    Returns:
+        Path to .bmp file (24x24), or None (caller proceeds without icon)
     """
     # 1. Check local cache
     cached = _check_cache(icon_name, style)
     if cached:
         return cached
 
-    # 2. Try Iconify (largest collection)
+    # 2. Try Iconify — Carbon collection only for style consistency
     path = _try_iconify(icon_name, style)
     if path:
         _cache(icon_name, style, path)
         return path
 
-    # 3. Try Phosphor (MIT, local fallback)
-    path = _try_phosphor(icon_name, style)
-    if path:
-        _cache(icon_name, style, path)
-        return path
-
-    # 4. Generate placeholder (never fails)
+    # 3. Generate placeholder (never fails)
     path = _generate_bmp(icon_name)
     _cache(icon_name, style, path)
     return path
@@ -74,14 +124,14 @@ def _cache_key(icon_name: str, style: str) -> str:
 
 
 def _try_iconify(icon_name: str, style: str) -> Optional[Path]:
-    """Download icon from Iconify API (https://iconify.design)."""
+    """Download from Iconify — Carbon Design collection for style consistency."""
     try:
         import urllib.request
         import json
 
-        # Search for icons matching the term
         query = icon_name.replace("-", " ").replace("_", " ")
-        url = f"https://api.iconify.design/search?query={query}&limit=3"
+        # Force Carbon collection for visual consistency
+        url = f"https://api.iconify.design/search?query={query}&prefix=carbon&limit=3"
         req = urllib.request.Request(url, headers={"User-Agent": "CADE/3.2"})
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
@@ -89,43 +139,17 @@ def _try_iconify(icon_name: str, style: str) -> Optional[Path]:
         if not data.get("icons"):
             return None
 
-        # Pick best match (prefer Material Design or Carbon for engineering)
-        prefix = _best_prefix(data["icons"], style)
-        icon_id = data["icons"][0] if prefix is None else f"{prefix}:{data['icons'][0].split(':')[-1]}"
+        icon_id = data["icons"][0]  # carbon:icon-name
+        if ":" not in icon_id:
+            icon_id = f"carbon:{icon_id}"
 
-        # Download SVG and convert to BMP
-        svg_url = f"https://api.iconify.design/{icon_id}.svg?width=24&height=24&color=%23000000"
+        svg_url = f"https://api.iconify.design/{icon_id}.svg?width=24&height=24&color=%23161616"
         req2 = urllib.request.Request(svg_url, headers={"User-Agent": "CADE/3.2"})
         with urllib.request.urlopen(req2, timeout=5) as resp2:
             svg_data = resp2.read().decode("utf-8")
 
         return _svg_to_bmp(svg_data, icon_name)
 
-    except Exception:
-        return None
-
-
-def _best_prefix(icons: list, style: str) -> Optional[str]:
-    """Pick best icon set prefix."""
-    prefixes = {i.split(":")[0] for i in icons if ":" in i}
-    # Preferred sets for engineering/CATIA style
-    preferred = ["mdi", "carbon", "ph", "material-symbols", "lucide", "fluent"]
-    for p in preferred:
-        if p in prefixes:
-            return p
-    return next(iter(prefixes)) if prefixes else None
-
-
-def _try_phosphor(icon_name: str, style: str) -> Optional[Path]:
-    """Try Phosphor Icons (MIT) — local package if installed."""
-    try:
-        import urllib.request
-        term = icon_name.replace(" ", "-").lower()
-        url = f"https://raw.githubusercontent.com/phosphor-icons/core/main/assets/regular/{term}.svg"
-        req = urllib.request.Request(url, headers={"User-Agent": "CADE/3.2"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            svg_data = resp.read().decode("utf-8")
-        return _svg_to_bmp(svg_data, icon_name)
     except Exception:
         return None
 
@@ -268,3 +292,20 @@ def _generate_bmp(icon_name: str) -> Path:
         f.write(pixels)
 
     return tmp
+
+def copy_icons_to_runtime(workspace_path: Path):
+    """Copy all framework icons to Runtime View after compilation."""
+    for fw in workspace_path.iterdir():
+        if not fw.is_dir() or not fw.name.endswith(".edu"):
+            continue
+        src = fw / "CNext" / "resources" / "graphic" / "icons"
+        if not src.exists():
+            continue
+        for dst_dir in ["win_b64/code/resources/graphic/icons", "win_b64/resources/graphic/icons"]:
+            dst = workspace_path / dst_dir
+            dst.mkdir(parents=True, exist_ok=True)
+            for sf in src.rglob("*.bmp"):
+                df = dst / sf.relative_to(src)
+                df.parent.mkdir(parents=True, exist_ok=True)
+                if not df.exists() or sf.stat().st_mtime > df.stat().st_mtime:
+                    shutil.copy2(sf, df)

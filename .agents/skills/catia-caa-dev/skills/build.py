@@ -271,6 +271,12 @@ def build_workspace(
             if verify["issues"]:
                 build_result["verification"] = verify
                 logger.write(f"Post-build: {verify['issues']}")
+            # Copy icons to runtime view for CNEXT visibility
+            try:
+                from icon_provider import copy_icons_to_runtime
+                copy_icons_to_runtime(workspace_path)
+            except Exception:
+                pass
         logger.write(
             f"Status: {status} | Errors: {parsed['error_count']} | Duration: {format_duration(duration)}"
         )
