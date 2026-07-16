@@ -163,6 +163,9 @@ def start_catia_runtime(
             f'call "{tck_init}" > NUL 2>&1\r\n'
             f'call "{tck_profile}" > NUL 2>&1\r\n'
             f'call "{mkinit}" > NUL 2>&1\r\n'
+            f"set PATH={code_bin};{code_command};%PATH%\r\n"
+            # Add workspace graphic path so CNEXT finds icons
+            f"set CATGraphicPath={workspace_path}\\{arch}\\resources\\graphic;%CATGraphicPath%\r\n"
             f'cd /d "{workspace_path}"\r\n'
             f"call mkrun\r\n",
             encoding="ascii",

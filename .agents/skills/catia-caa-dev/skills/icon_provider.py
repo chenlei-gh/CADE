@@ -124,14 +124,13 @@ def _cache_key(icon_name: str, style: str) -> str:
 
 
 def _try_iconify(icon_name: str, style: str) -> Optional[Path]:
-    """Download from Iconify — Carbon Design collection for style consistency."""
+    """Download from Iconify — Carbon Design PNG (no SVG conversion needed)."""
     try:
         import urllib.request
         import json
 
         query = icon_name.replace("-", " ").replace("_", " ")
-        # Force Carbon collection for visual consistency
-        url = f"https://api.iconify.design/search?query={query}&prefix=carbon&limit=3"
+        url = f"https://api.iconify.design/search?query={query}&prefix=carbon&limit=1"
         req = urllib.request.Request(url, headers={"User-Agent": "CADE/3.2"})
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
@@ -139,22 +138,98 @@ def _try_iconify(icon_name: str, style: str) -> Optional[Path]:
         if not data.get("icons"):
             return None
 
-        icon_id = data["icons"][0]  # carbon:icon-name
+        icon_id = data["icons"][0]
         if ":" not in icon_id:
             icon_id = f"carbon:{icon_id}"
 
-        svg_url = f"https://api.iconify.design/{icon_id}.svg?width=24&height=24&color=%23161616"
-        req2 = urllib.request.Request(svg_url, headers={"User-Agent": "CADE/3.2"})
+        # Download PNG directly — skip SVG→BMP conversion
+        png_url = f"https://api.iconify.design/{icon_id}.png?width=24&height=24&color=%23161616"
+        req2 = urllib.request.Request(png_url, headers={"User-Agent": "CADE/3.2"})
         with urllib.request.urlopen(req2, timeout=5) as resp2:
-            svg_data = resp2.read().decode("utf-8")
+            png_data = resp2.read()
 
-        return _svg_to_bmp(svg_data, icon_name)
+        return png_to_bmp(png_data, icon_name)
 
     except Exception:
         return None
 
 
-def _svg_to_bmp(svg_data: str, name: str) -> Path:
+def png_to_bmp(png_data: bytes, name: str) -> Path:
+    """Convert PNG bytes to 24x24 BMP. Uses pure Python — no PIL dependency."""
+    import zlib, struct as _struct
+    tmp = Path(os.environ.get("TEMP", "/tmp")) / f"cade_icon_{name}.bmp"
+
+    # Minimal PNG parser (handle 24/32-bit RGBA PNG)
+    # PNG: 8-byte signature, then IHDR chunk
+    if png_data[:8] != b'\x89PNG\r\n\x1a\n':
+        return _generate_bmp(name)
+
+    # Find IHDR
+    ihdr_start = 8 + 4  # skip signature + IHDR length
+    width = int.from_bytes(png_data[ihdr_start:ihdr_start+4], 'big')
+    height = int.from_bytes(png_data[ihdr_start+4:ihdr_start+8], 'big')
+    bit_depth = png_data[ihdr_start+8]
+    color_type = png_data[ihdr_start+9]
+
+    # Extract IDAT chunks (deflate-compressed pixel data)
+    pos = 8
+    idat_data = b''
+    while pos < len(png_data):
+        chunk_len = int.from_bytes(png_data[pos:pos+4], 'big')
+        chunk_type = png_data[pos+4:pos+8].decode('ascii', errors='ignore')
+        if chunk_type == 'IDAT':
+            idat_data += png_data[pos+8:pos+8+chunk_len]
+        elif chunk_type == 'IEND':
+            break
+        pos += 12 + chunk_len
+
+    try:
+        raw_data = zlib.decompress(idat_data)
+    except Exception:
+        return _generate_bmp(name)
+
+    # Write BMP
+    out_w, out_h = 24, 24
+    row_size = ((out_w * 3 + 3) // 4) * 4
+    pixel_size = row_size * out_h
+    file_size = 54 + pixel_size
+
+    with open(tmp, "wb") as f:
+        f.write(b"BM")
+        f.write(_struct.pack("<I", file_size))
+        f.write(_struct.pack("<HH", 0, 0))
+        f.write(_struct.pack("<I", 54))
+        f.write(_struct.pack("<I", 40))
+        f.write(_struct.pack("<i", out_w))
+        f.write(_struct.pack("<i", -out_h))
+        f.write(_struct.pack("<H", 1))
+        f.write(_struct.pack("<H", 24))
+        f.write(_struct.pack("<I", 0))
+        f.write(_struct.pack("<I", pixel_size))
+        f.write(_struct.pack("<I", 2835))
+        f.write(_struct.pack("<I", 2835))
+        f.write(_struct.pack("<I", 0))
+        f.write(_struct.pack("<I", 0))
+
+        # Scale and render pixels
+        pixels = bytearray(pixel_size)
+        src_row_size = width * (4 if color_type == 6 else 3)
+        for y in range(out_h):
+            sy = int(y * height / out_h)
+            for x in range(out_w):
+                sx = int(x * width / out_w)
+                src_offset = sy * src_row_size + sx * (4 if color_type == 6 else 3)
+                if src_offset + 2 < len(raw_data):
+                    r = raw_data[src_offset]
+                    g = raw_data[src_offset + 1]
+                    b = raw_data[src_offset + 2]
+                else:
+                    r, g, b = 128, 128, 128
+                dst_offset = y * row_size + x * 3
+                pixels[dst_offset:dst_offset+3] = bytes([b, g, r])
+        f.write(pixels)
+
+    return tmp
     """Convert SVG to 24x24 BMP using pure Python (no external deps).
     
     For complex SVGs, falls back to generated placeholder.
@@ -189,65 +264,6 @@ def _svg_to_bmp(svg_data: str, name: str) -> Path:
         return _generate_bmp(name)
 
     return _render_bmp(points, 24, 24)
-
-
-def _render_bmp(points: list, width: int, height: int) -> Path:
-    """Render points as simple BMP with bounding box scaling."""
-    tmp = Path(os.environ.get("TEMP", "/tmp")) / "cade_icon_tmp.bmp"
-    
-    if not points:
-        return _generate_bmp("unknown")
-
-    # Calculate bounding box
-    xs = [p[0] for p in points]
-    ys = [p[1] for p in points]
-    min_x, max_x = min(xs), max(xs)
-    min_y, max_y = min(ys), max(ys)
-    scale_x = (width - 4) / max(max_x - min_x, 1)
-    scale_y = (height - 4) / max(max_y - min_y, 1)
-    scale = min(scale_x, scale_y) * 0.8
-    offset_x = (width - (max_x - min_x) * scale) / 2 - min_x * scale
-    offset_y = (height - (max_y - min_y) * scale) / 2 - min_y * scale
-
-    # Create BMP
-    row_size = ((width * 3 + 3) // 4) * 4
-    pixel_data_size = row_size * height
-    file_size = 54 + pixel_data_size
-
-    with open(tmp, "wb") as f:
-        # BMP header
-        f.write(b"BM")
-        f.write(struct.pack("<I", file_size))
-        f.write(struct.pack("<HH", 0, 0))
-        f.write(struct.pack("<I", 54))
-        # DIB header
-        f.write(struct.pack("<I", 40))
-        f.write(struct.pack("<i", width))
-        f.write(struct.pack("<i", -height))
-        f.write(struct.pack("<H", 1))
-        f.write(struct.pack("<H", 24))
-        f.write(struct.pack("<I", 0))
-        f.write(struct.pack("<I", pixel_data_size))
-        f.write(struct.pack("<I", 2835))
-        f.write(struct.pack("<I", 2835))
-        f.write(struct.pack("<I", 0))
-        f.write(struct.pack("<I", 0))
-
-        # Pixel data
-        pixels = bytearray(pixel_data_size)
-        for x in range(width):
-            for y in range(height):
-                sx = (x - offset_x) / scale + min_x
-                sy = (y - offset_y) / scale + min_y
-                # Simple point-in-path check
-                color = (0, 0, 0)  # black
-                if min_x <= sx <= max_x and min_y <= sy <= max_y:
-                    color = (255, 255, 255)  # white interior
-                offset = y * row_size + x * 3
-                pixels[offset:offset + 3] = bytes(color)
-        f.write(pixels)
-
-    return tmp
 
 
 def _generate_bmp(icon_name: str) -> Path:
@@ -294,18 +310,27 @@ def _generate_bmp(icon_name: str) -> Path:
     return tmp
 
 def copy_icons_to_runtime(workspace_path: Path):
-    """Copy all framework icons to Runtime View after compilation."""
+    """Copy all framework icons + CATRsc to Runtime View after compilation."""
     for fw in workspace_path.iterdir():
         if not fw.is_dir() or not fw.name.endswith(".edu"):
             continue
+        fw_base = fw.name.replace(".edu", "")
+
+        # CATRsc → win_b64/resources/graphic/ (CNEXT reads from CATGraphicPath)
+        rsc = fw / "CNext" / "resources" / "graphic" / f"{fw_base}.CATRsc"
+        if rsc.exists():
+            rsc_dst = workspace_path / "win_b64" / "resources" / "graphic" / f"{fw_base}.CATRsc"
+            rsc_dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(rsc, rsc_dst)
+
+        # Icons → win_b64/resources/graphic/icons/
         src = fw / "CNext" / "resources" / "graphic" / "icons"
         if not src.exists():
             continue
-        for dst_dir in ["win_b64/code/resources/graphic/icons", "win_b64/resources/graphic/icons"]:
-            dst = workspace_path / dst_dir
-            dst.mkdir(parents=True, exist_ok=True)
-            for sf in src.rglob("*.bmp"):
-                df = dst / sf.relative_to(src)
-                df.parent.mkdir(parents=True, exist_ok=True)
-                if not df.exists() or sf.stat().st_mtime > df.stat().st_mtime:
-                    shutil.copy2(sf, df)
+        dst = workspace_path / "win_b64" / "resources" / "graphic" / "icons"
+        dst.mkdir(parents=True, exist_ok=True)
+        for sf in src.rglob("*.bmp"):
+            df = dst / sf.relative_to(src)
+            df.parent.mkdir(parents=True, exist_ok=True)
+            if not df.exists() or sf.stat().st_mtime > df.stat().st_mtime:
+                shutil.copy2(sf, df)
