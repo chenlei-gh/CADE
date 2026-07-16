@@ -197,6 +197,33 @@ def parse_mkmk_output(output: str) -> Dict:
     return parser.parse(output)
 
 
+# ─── Error Diagnosis ──────────────────────────────────────────
+
+_ERROR_ADVICE = {
+    "C2027": "使用了未定义类型 — 需要 #include 完整的类头文件（不只是前向声明）",
+    "C2039": "不是类的成员 — 检查方法名是否正确（B28: Undo→ExecuteUndo, Redo→ExecuteRedo）",
+    "C2143": "语法错误 — 检查缺少分号或花括号",
+    "C1083": "找不到头文件 — 检查 #include 路径或是否缺少 AddPrereqComponent",
+    "LNK2001": "未解析的外部符号 — 检查 Imakefile.mk 的 LINK_WITH 是否缺少依赖模块",
+    "LNK2019": "未解析的外部符号 — 同上，检查模块链接配置",
+    "mkmk-ERROR": "mkmk 配置错误 — 检查 workspace 是否有 .edu 框架目录",
+}
+
+
+def diagnose_errors(parse_result: dict) -> list:
+    """Generate actionable fix suggestions for compilation errors."""
+    suggestions = []
+    seen = set()
+    for err in parse_result.get("errors", []):
+        code = err.get("code", "")
+        if code in _ERROR_ADVICE and code not in seen:
+            seen.add(code)
+            suggestions.append(f"[{code}] {_ERROR_ADVICE[code]}")
+            if err.get("file"):
+                suggestions[-1] += f" (文件: {err['file']})"
+    return suggestions
+
+
 if __name__ == "__main__":
     # Test with sample output
     test_output = """

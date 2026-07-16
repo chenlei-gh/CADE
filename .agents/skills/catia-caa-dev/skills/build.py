@@ -124,6 +124,10 @@ def build_workspace(
         # Parse errors/warnings
         parsed = parse_mkmk_output(output)
 
+        # Auto-diagnose fix suggestions
+        from parser import diagnose_errors
+        suggestions = diagnose_errors(parsed)
+
         # Extract exit code from output
         exit_code = result.returncode
         for line in output.split("\n"):
@@ -150,6 +154,7 @@ def build_workspace(
             "warning_count": parsed["warning_count"],
             "errors": parsed["errors"],
             "warnings": parsed["warnings"],
+            "suggestions": suggestions if status == "failed" else [],
             "duration": format_duration(duration),
             "duration_seconds": duration,
             "workspace": str(workspace_path),
