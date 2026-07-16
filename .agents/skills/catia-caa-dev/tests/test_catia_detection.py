@@ -43,15 +43,15 @@ class TestRunner:
         try:
             result = func()
             if result:
-                print(f"✅ PASSED: {name}")
+                print(f"[PASS] {name}")
                 self.passed += 1
                 self.tests.append((name, True, None))
             else:
-                print(f"❌ FAILED: {name}")
+                print(f"[FAIL] {name}")
                 self.failed += 1
                 self.tests.append((name, False, "Test returned False"))
         except Exception as e:
-            print(f"❌ FAILED: {name}")
+            print(f"[FAIL] {name}")
             print(f"   Error: {e}")
             self.failed += 1
             self.tests.append((name, False, str(e)))
@@ -66,8 +66,8 @@ class TestRunner:
         print(f"TEST SUMMARY")
         print(f"{'=' * 60}")
         print(f"Total: {self.passed + self.failed}")
-        print(f"✅ Passed: {self.passed}")
-        print(f"❌ Failed: {self.failed}")
+        print(f"[PASS] Total: {self.passed}")
+        print(f"[FAIL] Total: {self.failed}")
 
         if self.failed > 0:
             print(f"\nFailed tests:")
@@ -107,7 +107,7 @@ def test_detector_basic():
                 f"Expected {expected} for {dir_name}, got {result}"
             )
 
-    print("  ✓ Version extraction works correctly")
+    print("  [OK] Version extraction works correctly")
     return True
 
 
@@ -137,10 +137,10 @@ def test_detector_scan():
         inst2 = CATIAInstallation.from_dict(data)
         assert inst2.version == inst.version
 
-        print(f"    ✓ Serialization works")
+        print(f"    [OK] Serialization works")
 
     if len(installations) == 0:
-        print("  ⚠️  No CATIA installations found (this may be expected)")
+        print("  [WARN]  No CATIA installations found (this may be expected)")
 
     return True
 
@@ -152,9 +152,9 @@ def test_legacy_detect_catia_root():
     if root:
         print(f"  Detected root: {root}")
         assert root.exists(), f"Root doesn't exist: {root}"
-        print("  ✓ Legacy detection works")
+        print("  [OK] Legacy detection works")
     else:
-        print("  ⚠️  No CATIA detected (this may be expected)")
+        print("  [WARN]  No CATIA detected (this may be expected)")
 
     return True
 
@@ -180,7 +180,7 @@ def test_installation_class():
     assert inst2.version == inst.version
     assert inst2.root_path == inst.root_path
 
-    print("  ✓ CATIAInstallation class works correctly")
+    print("  [OK] CATIAInstallation class works correctly")
     return True
 
 
@@ -214,9 +214,9 @@ def test_workspace_setup():
             assert loaded_config is not None
             assert loaded_config["catia_version"] == config["catia_version"]
 
-            print("  ✓ Workspace setup works correctly")
+            print("  [OK] Workspace setup works correctly")
         else:
-            print(f"  ⚠️  Setup failed: {result['message']}")
+            print(f"  [WARN]  Setup failed: {result['message']}")
             print("     (This may be expected if no CATIA is installed)")
 
     return True
@@ -257,7 +257,7 @@ def test_detection_sorting():
     print(f"  Actual order:   {actual_order}")
 
     assert actual_order == expected_order, f"Sorting incorrect"
-    print("  ✓ Version sorting works correctly")
+    print("  [OK] Version sorting works correctly")
 
     return True
 

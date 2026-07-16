@@ -15,6 +15,8 @@ SKILL_ROOT = Path(__file__).parent.parent
 SUITES = {
     # ── L1: Unit Tests ──
     "L1-1 Unit (49)": "test_full_integration.py",
+    "L1-2 Icons (14)": "test_icons.py",
+    "L1-3 Token Audit": "test_token_audit.py",
     # ── L2: Integration — Feature modules ──
     "L2-1 Dependency Graph": "test_phase1_enhancements.py",
     "L2-2 Intent Layer": "test_phase2_intents.py",
@@ -45,6 +47,7 @@ SUITES = {
     "L1-2 Decomposer": "test_decomposer.py",
     # ── Integration & Coordination ──
     "Int-1 Build & Run": "test_build_and_run.py",
+    "Sys-1 CATIA Detection": "test_catia_detection.py",
     "Int-2 Skill-AI": "test_skill_ai_coordination.py",
     # ── Full System ──
     "Full System": "test_full_regression.py",
