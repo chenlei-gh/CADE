@@ -216,20 +216,6 @@ class CAAEnvironment:
                 return arch
         return None
 
-    def _find_rade_settings(self) -> str:
-        """Find RADE CATSettings directory for licensing.
-
-        Returns a cmd SET command string, or empty string if not found.
-        Required for mkmk to validate RADE license environment.
-        """
-        import os as _os
-        appdata = _os.environ.get("APPDATA", "")
-        if appdata:
-            cat_settings = Path(appdata) / "DassaultSystemes" / "CATSettings"
-            if cat_settings.exists():
-                return f'set CATUserSettingPath={cat_settings} && '
-        return ""
-
     def _find_vcvars(self) -> Path:
         """Find vcvarsall.bat for VS compiler environment.
 
@@ -464,11 +450,9 @@ class CAAEnvironment:
                 f"Without it, mkmk will fail with RADE licensing errors."
             )
 
-        # Detect VS vcvarsall.bat for compiler environment
-        vcvars = self._find_vcvars()
-
         # Full Build Time chain matching VS RADE add-in initialization:
         #   tck_init → tck_profile → mkinit → mkGetPreq → mkmk
+        # vcvarsall not needed — mkinit.bat already detects VS compiler.
         # Uses & not && because mkGetPreq returns non-zero on success.
         cmd_str = (
             f'call "{tck_init}" > NUL 2>&1 & '

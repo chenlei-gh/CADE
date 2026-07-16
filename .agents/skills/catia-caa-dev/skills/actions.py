@@ -223,7 +223,6 @@ def create_framework(
     ctx: ActionContext,
     name: str,
     modules: List[str] = None,
-    dependencies: List[str] = None,
 ) -> Dict:
     """Create a new Framework"""
     ctx.refresh()
