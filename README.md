@@ -34,7 +34,9 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `32/32 suites (100%)` | **35 test files** | **~600 checks** | *2026-07-12*
+> 🟢 **CI Status**: `36/36 suites (100%)` | **~600 checks** | *2026-07-16*
+
+> **v3.2.0** — Generate → Build → Run closed loop | `cade dev` one-command cycle
 
 ---
 
@@ -76,8 +78,8 @@ cp -r CADE/.agents /path/to/your/caa/project/
 |---|---|
 | Create command manually (8 files) | One command: `cade create` |
 | Click through RADE wizards | Tell AI in natural language |
-| Multi-step build/run workflow | `cade build && cade run` |
-| Guess what broke | `cade diagnose && cade fix` |
+| Multi-step build/run workflow | `cade dev` (build+run in one) |
+| Guess what broke | `cade health && cade diagnose` |
 | No undo for mistakes | `cade rollback --id latest` |
 | Wasted AI context tokens | Auto 50% token savings |
 
@@ -222,11 +224,12 @@ cade create extension MyExt CATPart MyModule
 
 ### 🔨 Build & Run
 ```bash
-cade build                          # incremental (mkmk -u)
-cade build --full --threads 8       # full rebuild, 8 threads
-cade run                            # start CATIA Runtime View
-cade run --macro test.CATScript     # run a macro
-cade run --stop                     # stop all CATIA processes
+cade dev <workspace>               # Build + Run in one command
+cade build                         # incremental (mkmk -u)
+cade build --full                  # full rebuild
+cade run                           # start CATIA Runtime View (via mkrun)
+cade run --stop                    # stop CATIA gracefully
+cade health [workspace]            # diagnose environment + workspace
 ```
 
 ### 🔍 Analyze & Fix
@@ -466,7 +469,7 @@ cp -r CADE/.agents /你的/CAA/项目/路径/
 |---|---|
 | 手动创建 8 个文件 | `cade create command 我的命令 我的模块` |
 | 操作 RADE 向导，多次点击 | 告诉 AI："创建一个带对话框的命令" |
-| `mkmk` → `mkCreateRuntimeView` → `CNEXT` | `cade build && cade run` |
+| `mkmk` → `mkCreateRuntimeView` → `CNEXT` | `cade dev` 一键编译启动 |
 | 重构后猜测哪里坏了 | `cade diagnose && cade fix --apply` |
 | 误删了没法恢复 | `cade rollback --id latest` |
 | AI 上下文被冗长输出浪费 | Token 优化器自动节省 50% token |
@@ -484,10 +487,12 @@ cade create extension 我的扩展 CATPart 我的模块
 
 **🔨 编译运行**
 ```bash
-cade build                          # 增量编译
-cade build --full --threads 8       # 全量编译
-cade run                            # 启动 CATIA Runtime View
-cade run --stop                     # 停止 CATIA
+cade dev <workspace>               # 一键编译+启动
+cade build                         # 增量编译
+cade build --full                  # 全量编译
+cade run                           # 启动 CATIA Runtime View
+cade run --stop                    # 停止 CATIA
+cade health [workspace]            # 环境+工作区诊断
 ```
 
 **🔍 分析修复**
