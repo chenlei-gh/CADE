@@ -442,17 +442,18 @@ cp -r CADE/.agents /你的/CAA/项目/路径/
 
 **🧩 Intent Engine** — 复杂任务自动分解为可执行步骤。Planner（意图→计划）+ Impact Analyzer（影响分析）+ Optimizer（方案排序）。
 
-**🎨 高级 UI 布局** — 9 个知识文件覆盖 CAA UI 每个角落：
+**🎨 智能图标解析** — 命令自动获取语义化图标：
 
-| 模式 | 场景 |
-|------|------|
-| GridConstraints | 7 种锚定、跨行跨列、伸缩策略 |
-| 多层嵌套 | 3-5 层 Frame 层级结构 |
-| 列表-详情 | 选择器 + 属性面板（BOM 编辑器） |
-| 动态表单 | Combo 切换 → 面板显示/隐藏 |
-| 树形导航 | CATDlgTree + Tab 内容区 |
-| 向导 | 状态机驱动的 Back/Next 多步骤 |
-| 反模式 | 10 种常见错误 → 正确做法 |
+```python
+create_command(ctx, "DrillCmd", "Machining.m", icon="drill")
+# → DOMAIN_MAP[hole] → carbon:drill → 24x24 BMP
+# → 编译后自动同步到 Runtime View
+```
+
+- 50+ CAA 领域关键词自动映射 Carbon Design 图标
+- IBM Carbon 集合确保统一的 16px 网格工程风格
+- 离线优先：本地缓存 + 占位 BMP 永不失败
+- 编译后持久化：图标随编译保留，重启 CNEXT 不丢失
 
 **📐 三大新领域** — 6 个知识文件 + 3 个开发模式：
 
