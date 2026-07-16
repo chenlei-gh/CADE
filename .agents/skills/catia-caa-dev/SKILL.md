@@ -271,6 +271,7 @@ AI 只知道 3 个 Mode:
 | ⚡ **永远不需要判断"走哪个"** | 用户说"创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`。基于自然语言的动词分类，不需要思考。 |
 | 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架 → 再精准打开 `<CATIA_INSTALL>/CAADoc/` 对应页面。不要跳过 Framework 直接全文搜 CAADoc。 |
 | 📝 **CAADoc 洞察沉淀** | 用 CAADoc 学到**踩坑经验/跨 API 组合/非文档化的行为**时，创建 knowledge/ 文件沉淀。纯 API 签名查询不需要沉淀——下次用 Framework 索引秒查。 |
+| 🧠 **跨项目记忆库** | 遇到疑难问题（编译、运行时、工具链），先查 `D:/Vault/Memory/BestPractices.md`。症状速查表见下方 **故障排查** 章节。 |
 
 ### ✨ 核心优势
 
@@ -1544,6 +1545,18 @@ result = delete_command(ctx, name="MyCmd", module="TestModule.m")
 ⑧ cade fix --apply                  ← 让引擎自动修复
 
 > ⚠️ **不要**跳过前两步直接写代码。docs/ 帮助文档和 knowledge/patterns/examples 里 90% 的问题已有答案。
+
+### 🚨 症状速查表
+
+| 症状 | 第一排查点 | 文档 |
+|------|-----------|------|
+| CNEXT 无工具栏按钮 | `MacDeclareHeader` 在 .cpp 中？ | `knowledge/ui/toolbar.md` |
+| 编译成功但 DLL 未生成 | `build.py` false positive？ | `BestPractices.md → 编译输出完整性审计` |
+| mkmk 报 License 错误 | TCK 未注册？CATEnv 回退 | `BestPractices.md → TCK 回退策略` |
+| 编译无 make 输出 | `mkGetPreq` 缺 `call` 前缀 | `BestPractices.md → mkGetPreq 静默退出` |
+| CNEXT 找不到 addin | `CATDictionaryPath` 指向 Runtime View？ | `BestPractices.md → CNEXT 环境变量` |
+| Runtime View 缺资源 | 编译后是否同步 dico/NLS/icons？ | `BestPractices.md → Runtime View 同步` |
+| Dialog LNK2001 错误 | 误用 `CATImplementClass`？ | `knowledge/ui/dialog.md` |
 
 ### 常见问题
 
