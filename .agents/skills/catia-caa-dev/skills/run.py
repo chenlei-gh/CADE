@@ -27,8 +27,9 @@ def _clean_cnext_sessions():
     temp_dir = Path(appdata) / "DassaultSystemes" / "CATTemp"
     if not temp_dir.exists():
         return
-    # SessionInfo and AbendTrace both trigger hot-restart prompt
-    for pattern in ["SessionInfoFile_*", "AbendTrace_*"]:
+    # All files that trigger hot-restart or recovery prompts
+    patterns = ["SessionInfoFile_*", "AbendTrace_*", "CNext*.roll", "error.log"]
+    for pattern in patterns:
         for f in glob.glob(str(temp_dir / pattern)):
             try:
                 os.remove(f)
