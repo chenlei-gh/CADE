@@ -158,14 +158,22 @@ def start_catia_runtime(
         code_command = catia_path / arch / "code" / "command"
 
         batfile = Path(tempfile.mktemp(suffix=".bat", prefix="cade_run_"))
+        # Build environment with workspace Runtime View paths.
+        # mkrun sets Mkmk*_PATH from mkinit (CATIA install), but we must
+        # also inject the workspace's own paths so CNEXT finds its addins.
+        rv = f"{workspace_path}\\{arch}"
         batfile.write_text(
             "@echo off\r\n"
             f'call "{tck_init}" > NUL 2>&1\r\n'
             f'call "{tck_profile}" > NUL 2>&1\r\n'
             f'call "{mkinit}" > NUL 2>&1\r\n'
             f"set PATH={code_bin};{code_command};%PATH%\r\n"
-            # Add workspace graphic path so CNEXT finds icons
-            f"set CATGraphicPath={workspace_path}\\{arch}\\resources\\graphic;%CATGraphicPath%\r\n"
+            # Workspace Runtime View paths (prepend to CNEXT search order)
+            f"set CATDLLPath={rv}\\code\\bin;%CATDLLPath%\r\n"
+            f"set CATDictionaryPath={rv}\\code\\dictionary;%CATDictionaryPath%\r\n"
+            f"set CATMsgCatalogPath={rv}\\resources\\msgcatalog;%CATMsgCatalogPath%\r\n"
+            f"set CATReffilesPath={rv}\\reffiles;%CATReffilesPath%\r\n"
+            f"set CATGraphicPath={rv}\\resources\\graphic;%CATGraphicPath%\r\n"
             f'cd /d "{workspace_path}"\r\n'
             f"call mkrun\r\n",
             encoding="ascii",

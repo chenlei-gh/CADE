@@ -82,6 +82,50 @@ def verify_build(workspace_path: Path) -> dict:
     }
 
 
+def sync_runtime_view(workspace_path: Path, arch: str = "win_b64") -> dict:
+    """Sync CNext resources to Runtime View after build for CNEXT visibility."""
+    import shutil
+    rv = workspace_path / arch
+    synced = []
+    errors = []
+    for fw_dir in workspace_path.iterdir():
+        if not fw_dir.is_dir() or not fw_dir.name.endswith(".edu"):
+            continue
+        cnext = fw_dir / "CNext"
+        if not cnext.exists():
+            continue
+        # Dictionary
+        dict_src = cnext / "code" / "dictionary"
+        if dict_src.exists():
+            dict_dst = rv / "code" / "dictionary"
+            dict_dst.mkdir(parents=True, exist_ok=True)
+            for f in dict_src.glob("*.dico"):
+                shutil.copy2(f, dict_dst / f.name)
+                synced.append(f"dictionary/{f.name}")
+        # NLS + CATRsc
+        msg_src = cnext / "resources" / "msgcatalog"
+        if msg_src.exists():
+            msg_dst = rv / "resources" / "msgcatalog"
+            msg_dst.mkdir(parents=True, exist_ok=True)
+            for f in msg_src.glob("*"):
+                if f.is_file():
+                    shutil.copy2(f, msg_dst / f.name)
+                    synced.append(f"msgcatalog/{f.name}")
+        # Icons
+        icon_src = cnext / "resources" / "graphic" / "icons"
+        if icon_src.exists():
+            icon_dst = rv / "resources" / "graphic" / "icons"
+            icon_dst.mkdir(parents=True, exist_ok=True)
+            for f in icon_src.rglob("*.bmp"):
+                rel = f.relative_to(icon_src)
+                dst = icon_dst / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, dst)
+                synced.append(f"icons/{rel.as_posix()}")
+        break
+    return {"synced": synced, "errors": errors, "ok": len(errors) == 0}
+
+
 def diagnose_environment() -> dict:
     """Diagnose CAA build environment health."""
     from env import CAAEnvironment
@@ -255,10 +299,11 @@ def build_workspace(
             if verify["issues"]:
                 build_result["verification"] = verify
                 logger.write(f"Post-build: {verify['issues']}")
-            # Copy icons to runtime view for CNEXT visibility
+            # Sync framework resources to Runtime View for CNEXT visibility
             try:
-                from icon_provider import copy_icons_to_runtime
-                copy_icons_to_runtime(workspace_path)
+                sync = sync_runtime_view(workspace_path)
+                if sync["synced"]:
+                    logger.write(f"Runtime View synced: {len(sync['synced'])} files")
             except Exception:
                 pass
         logger.write(
