@@ -386,25 +386,32 @@ graph TD
 your_project/
 ├── .agents/skills/catia-caa-dev/   ← CADE (drop-in)
 │   ├── SKILL.md                    ← Main documentation
-│   ├── skills/                     ← Engine (28 modules)
-│   │   ├── kernel.py               ← Development Kernel
-│   │   ├── requirements.py         ← Requirem"ents Clarifier + Decomposer
-│   │   ├── verifier.py             ← Code Verifier (static + mkmk)
-│   │   ├── repair.py               ← Repair Loop
-│   │   ├── icon_provider.py         ← Smart Icon Resolution
-│   │   ├── requirements/decision_trees/ ← Decision Trees (3)
+│   ├── skills/                     ← Engine (29 modules)
+│   │   ├── kernel.py               ← Development Kernel (3-mode)
+│   │   ├── cade.py                 ← CLI: build / dev / run / refactor
+│   │   ├── build.py                ← mkmk build pipeline
+│   │   ├── run.py                  ← CNEXT runtime launcher
+│   │   ├── actions.py              ← Atomic dev actions (CRUD)
+│   │   ├── generator.py            ← Template engine (16 types)
+│   │   ├── icon_provider.py        ← 107 geometric icons, RGBA multi-color
+│   │   ├── verifier.py             ← Static + mkmk code verifier
+│   │   ├── repair.py               ← Repair loop
+│   │   ├── refactor.py             ← Rename / move / extract
+│   │   ├── diagnostics.py          ← Issue detection + fix plans
+│   │   ├── intent/                 ← Intent Engine (Planner + Impact + Optimizer)
+│   │   ├── intents/                ← Intent-specific handlers
 │   │   └── ...
-│   ├── templates/                  ← 25+ code templates
-│   ├── capabilities/               ← 13 CAA capabilities
-│   ├── playbooks/                  ← 14 solution playbooks
+│   ├── templates/                  ← 82 code templates (16 types)
+│   ├── capabilities/               ← CAA capability docs
+│   ├── playbooks/                  ← Solution playbooks
 │   ├── knowledge/                  ← CAA knowledge base
-│   │   ├── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
+│   │   ├── frameworks/             ← 149 CAADoc framework indexes
 │   │   ├── philosophy/             ← 6 CAA philosophy docs
 │   │   ├── failure_patterns/       ← 3 failure patterns
-│   │   └── frameworks/             ← 149 CAADoc framework indexes
-│   ├── patterns/                   ← 14 architecture patterns
+│   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
+│   ├── patterns/                   ← Architecture patterns
 │   ├── examples/                   ← Real CAA project examples
-│   ├── tests/                      ← 34 suites, 36 files, ~650 checks
+│   ├── tests/                      ← 39 suites, ~11,000 lines
 │   ├── docs/                       ← Full documentation
 │   ├── tools/                      ← Setup, validation, utilities
 │   └── config/                     ← Editor MCP templates
@@ -585,24 +592,32 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 你的项目/
 ├── .agents/skills/catia-caa-dev/   ← CADE（直接放入即可）
 │   ├── SKILL.md                    ← 主文档
-│   ├── skills/                     ← 引擎（28 模块）
-│   │   ├── kernel.py               ← 开发内核
-│   │   ├── requirements.py         ← 需求澄清 + 分解器
-│   │   ├── verifier.py             ← 代码验证器
+│   ├── skills/                     ← 引擎（29 模块）
+│   │   ├── kernel.py               ← 开发内核（3 模式）
+│   │   ├── cade.py                 ← CLI：build / dev / run / refactor
+│   │   ├── build.py                ← mkmk 编译管线
+│   │   ├── run.py                  ← CNEXT 运行时启动器
+│   │   ├── actions.py              ← 原子开发动作（增删改查）
+│   │   ├── generator.py            ← 模板引擎（16 种类型）
+│   │   ├── icon_provider.py        ← 107 种几何图标，RGBA 多色渲染
+│   │   ├── verifier.py             ← 静态 + mkmk 代码验证
 │   │   ├── repair.py               ← 修复闭环
-│   │   ├── requirements/decision_trees/ ← 决策树（3）
+│   │   ├── refactor.py             ← 重命名 / 移动 / 提取
+│   │   ├── diagnostics.py          ← 问题检测 + 修复计划
+│   │   ├── intent/                 ← 意图引擎（规划 + 影响分析 + 优化）
+│   │   ├── intents/                ← 意图处理器
 │   │   └── ...
-│   ├── templates/                  ← 25+ 代码模板
-│   ├── capabilities/               ← 13 个 CAA 能力
-│   ├── playbooks/                  ← 14 个解决方案
+│   ├── templates/                  ← 82 个代码模板（16 种类型）
+│   ├── capabilities/               ← CAA 能力文档
+│   ├── playbooks/                  ← 解决方案手册
 │   ├── knowledge/                  ← CAA 知识库
-│   │   ├── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
+│   │   ├── frameworks/             ← 149 个 CAADoc 框架索引
 │   │   ├── philosophy/             ← 6 篇 CAA 哲学
 │   │   ├── failure_patterns/       ← 3 个失败模式
-│   │   └── frameworks/             ← 149 个 CAADoc 框架索引
-│   ├── patterns/                   ← 14 个架构模式
+│   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
+│   ├── patterns/                   ← 架构模式
 │   ├── examples/                   ← 真实 CAA 项目示例
-│   ├── tests/                      ← 34 套件、36 文件、~650 检查
+│   ├── tests/                      ← 39 套件、~11,000 行
 │   ├── docs/                       ← 完整文档
 │   ├── tools/                      ← 安装、验证、工具
 │   └── config/                     ← 编辑器 MCP 模板
