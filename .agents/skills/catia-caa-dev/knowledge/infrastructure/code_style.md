@@ -172,8 +172,8 @@ CATImplementInterface(IMyService, CATBaseUnknown);
 // CATImplementBOA — BOA 绑定宏
 CATImplementBOA(IMyService, CATBaseUnknown);
 
-// MacDeclareHeader — 命令注册宏
-MacDeclareHeader(MyCmdHeader);
+// CATImplementHeaderResources — 命令注册宏（支持图标）
+CATImplementHeaderResources(MyCmdHeader, CATCommandHeader, MyCmdHeader);
 ```
 
 ## 公共方法排序

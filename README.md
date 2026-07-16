@@ -18,6 +18,10 @@
    ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚══════╝
 </pre>
 
+🟥🟥🟥🟥&ensp;🟦🟦🟦🟦&ensp;🟪🟪🟪🟪&ensp;🟩🟩🟩🟩&ensp;🟪🟪🟪🟪&ensp;🟧🟧🟧🟧&ensp;🩵🩵🩵🩵
+
+<sub>Mfg · Assembly · Geometry · Analysis · Settings · Data · Test</sub>
+
 </div>
 
 ---
@@ -134,21 +138,25 @@ cade impact IMyInterface interface delete
 - **Impact Analyzer** — Assess blast radius before refactoring  
 - **Optimizer** — Score & rank alternative plans
 
-### 🎨 Smart Icon Resolution
+### 🎨 Smart Icon Resolution (v3.2 — Color-Coded)
 
-Commands get **context-aware icons** without manual design:
+Commands get **context-aware, color-coded icons** from IBM Carbon:
 
 ```python
 create_command(ctx, "DrillCmd", "Machining.m", icon="drill")
-# → DOMAIN_MAP[keyword] → carbon:drill → 24x24 BMP
-# → CNext/resources/graphic/icons/normal/I_drill.bmp
+# → Iconify Carbon search → drill-back SVG → Pillow render → 22×22 BMP
+# → DOMAIN_MAP[keyword] → COLOR_MAP[domain] → deep red (220,38,38)
+# → I_drill.bmp with 256-step color palette (anti-aliased)
 # → auto-copied to Runtime View after build
 ```
 
-- **50+ CAA domain keywords** automatically map to Carbon Design icons
-- **IBM Carbon** collection enforces consistent 16px-grid engineering style
-- **Offline-first**: local cache + generated placeholder fallback
+- **58 domain keywords** → 46 unique Carbon icons via Iconify API
+- **7 color categories** mapped by engineering domain:
+  🔴 Red (mfg) · 🔵 Blue (assembly) · 🟣 Indigo (geometry) · 🟢 Green (analysis) · 🟣 Purple (settings) · 🟠 Orange (data) · 🩵 Teal (test)
+- **Pillow-based rendering**: SVG → ImageDraw polygon fill → 256-step color palette (preserves anti-aliasing)
+- **Offline-first**: local cache `~/.cade/cache/icons/` + placeholder fallback
 - **Post-build persistence**: icons survive compilation and CNEXT restart
+- **Each BMP**: 22×22, 8-bit indexed, 1,606 bytes
 
 ### 📐 New Knowledge Domains
 
@@ -438,18 +446,22 @@ cp -r CADE/.agents /你的/CAA/项目/路径/
 
 **🧩 Intent Engine** — 复杂任务自动分解为可执行步骤。Planner（意图→计划）+ Impact Analyzer（影响分析）+ Optimizer（方案排序）。
 
-**🎨 智能图标解析** — 命令自动获取语义化图标：
+**🎨 智能图标解析 (v3.2 — 颜色编码)** — 命令自动获取语义化、颜色分类图标：
 
 ```python
 create_command(ctx, "DrillCmd", "Machining.m", icon="drill")
-# → DOMAIN_MAP[hole] → carbon:drill → 24x24 BMP
+# → Iconify Carbon 搜索 → drill-back SVG → Pillow 渲染 → 22×22 BMP
+# → DOMAIN_MAP[关键词] → COLOR_MAP[领域] → 深红 (220,38,38)
+# → I_drill.bmp, 256 阶颜色渐变色板 (抗锯齿)
 # → 编译后自动同步到 Runtime View
 ```
 
-- 50+ CAA 领域关键词自动映射 Carbon Design 图标
-- IBM Carbon 集合确保统一的 16px 网格工程风格
-- 离线优先：本地缓存 + 占位 BMP 永不失败
+- 58 个领域关键词 → 46 种 Carbon 图标 (Iconify API)
+- **7 色分类**按工程领域：🔴红(制造)·🔵蓝(装配)·🟣靛(几何)·🟢绿(分析)·🟣紫(设置)·🟠橙(数据)·🩵青(测试)
+- **Pillow 渲染管线**：SVG → ImageDraw 多边形填充 → 256 阶渐变色板 (保留抗锯齿)
+- 离线优先：本地缓存 `~/.cade/cache/icons/` + 占位兜底
 - 编译后持久化：图标随编译保留，重启 CNEXT 不丢失
+- 每个 BMP：22×22, 8-bit 索引色, 1,606 字节
 
 **📐 三大新领域** — 6 个知识文件 + 3 个开发模式：
 

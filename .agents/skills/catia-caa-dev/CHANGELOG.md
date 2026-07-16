@@ -45,6 +45,16 @@
 - **generator.py**: 修复 `generate_from_spec()` 未创建输出目录的 Bug
 - **消除二次替换反模式**: `_gen_from_dir()` 和 `_gen_root_files()` 的 extra_repl 通过 `_replace(**extra)` 统一处理，而非手动 `str.replace()`
 
+### 图标系统 v3.2 — 全面重写
+
+- **107 种几何图案**：纯本地生成，零网络依赖，涵盖形状/箭头/媒体/编辑/通信/数学/自然/3D 等 12 个分类
+- **4x 超采样抗锯齿**：88×88 绘制 → LANCZOS 缩放 → 22×22 输出，边缘平滑
+- **RGBA 真多色渲染**：每个图标 11-50 种颜色（FASTOCTREE 量化），支持 BODY/EDGE/DIM/ACCENT 四色层
+- **7 色域分类**：红(制造)·蓝(装配)·靛(几何)·绿(分析)·紫(UI)·橙(数据)·青(测试)
+- **白边高亮**：所有图标纯白轮廓 (#FFFFFF)，深色工具栏上醒目可见
+- **删除旧方案**：移除 Iconify API 网络下载、SVG 解析器、贝塞尔渲染等 ~300 行死代码
+- **删除冗余依赖**：卸载 svglib、reportlab、cairosvg 等 9 个包，仅保留 Pillow
+
 ### 测试
 
 - `render_template()` 单元测试加入 `utils.py`

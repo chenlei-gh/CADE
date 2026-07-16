@@ -1247,7 +1247,7 @@ python test_e2e_integration.py
 │   ├── requirements.py               # Requirements Clarifier (v3.0)
 │   │   └── decision_trees/          # 决策树 (3 个)
 │   ├── verifier.py                   # Code Verifier — static + mkmk (v3.0)
-│   ├── icon_provider.py              # Multi-source icon resolver (v3.2)
+│   ├── icon_provider.py              # 107 geometric icons, 4x SSAA, RGBA multi-color (v3.2)
 │   ├── repair.py                     # Repair Loop (v3.0)
 │   ├── token_optimizer.py            # AI Token 优化器
 │   ├── docgen.py                     # 文档生成器
