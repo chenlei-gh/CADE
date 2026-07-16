@@ -10,8 +10,8 @@
 #include "CATCommandHeader.h"
 #include "CATCreateWorkshop.h"
 
-// Command header macro for our command
-MacDeclareHeader(<CommandClassName>Hdr);
+// Command header — uses CATImplementHeaderResources for icon support
+CATImplementHeaderResources(<CommandClassName>Hdr, CATCommandHeader, <CommandClassName>Hdr);
 
 CATImplementClass(<ClassName>,DataExtension,CATBaseUnknown,<ClassName>);
 
