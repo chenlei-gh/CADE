@@ -387,10 +387,13 @@ def create_command(
     )
 
     # --- 4. Addin.cpp (src) — toolbar + command registration ---
+    toolbar_pos = "Right"  # default position
+    toolbar_pri = "1"       # default priority
     cs.add_create_file(
         src / f"{addin_name}.cpp",
         ctx.tpl("module", "AddinClass.cpp") if (ctx.tpl("module") / "AddinClass.cpp").exists() else ctx.tpl("command", "CommandClass.cpp"),
-        _r(addin_name, fw_name, module, CommandClassName=name, ModuleName=module_base),
+        _r(addin_name, fw_name, module, CommandClassName=name, ModuleName=module_base,
+           ToolbarPriority=toolbar_pri, ToolbarPosition=toolbar_pos),
     )
 
     # --- 5. Ensure Imakefile has WIZARD_LINK_MODULES (append, don't overwrite) ---
@@ -477,11 +480,13 @@ def create_command(
         # NLS
         nls_file = fw.path / "CNext" / "resources" / "msgcatalog" / f"{fw_base}.CATNls"
         nls_file.parent.mkdir(parents=True, exist_ok=True)
+        # NLS — use tooltip param if provided
         if tpl_nls.exists():
+            nls_title = tooltip if tooltip else name
             nls_content = render_template(tpl_nls.read_text(encoding="utf-8", errors="replace"), {
                 "CommandClassName": name,
                 "CommandHeaderName": name,
-                "CommandTitle": name,
+                "CommandTitle": nls_title,
                 "FrameworkName": fw_base,
             })
             if nls_file.exists():
@@ -491,16 +496,20 @@ def create_command(
             else:
                 cs.add_create(nls_file, nls_content)
 
-        # CATRsc
+        # CATRsc — use icon param if provided, else derive from name
         rsc_file = fw.path / "CNext" / "resources" / "graphic" / f"{fw_base}.CATRsc"
         rsc_file.parent.mkdir(parents=True, exist_ok=True)
         if tpl_rsc.exists():
+            icon_name = icon if icon else name.lower()
+            rsc_category = category if category else "Commands"
             rsc_content = render_template(tpl_rsc.read_text(encoding="utf-8", errors="replace"), {
                 "CommandClassName": name,
                 "CommandHeaderName": name,
-                "CommandIconName": name.lower(),
+                "CommandIconName": icon_name,
                 "FrameworkName": fw_base,
             })
+            # Replace hardcoded category
+            rsc_content = rsc_content.replace("MfgToolsCommands", rsc_category)
             if rsc_file.exists():
                 old = rsc_file.read_text(encoding="utf-8", errors="replace")
                 if name not in old:
@@ -509,9 +518,10 @@ def create_command(
                 cs.add_create(rsc_file, rsc_content)
 
         # Toolbar + addin NLS (required for toolbar visibility)
+        tip = tooltip if tooltip else f"Execute {name}"
         addin_nls = (
             f"{addin_name}.Title  = \"{name}\";\n"
-            f"{addin_name}.Tip    = \"Execute {name}\";\n"
+            f"{addin_name}.Tip    = \"{tip}\";\n"
             f"{module_base}Tlb.Title  = \"{module_base} Commands\";\n"
         )
         if nls_file.exists():

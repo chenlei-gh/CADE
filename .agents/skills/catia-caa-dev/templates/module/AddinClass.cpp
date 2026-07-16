@@ -39,7 +39,7 @@ void <ClassName>::CreateCommands()
 CATCmdContainer* <ClassName>::CreateToolbars()
 {
     NewAccess(CATCmdContainer, pToolbar, <ModuleName>Tlb);
-    AddToolbarView(pToolbar, 1, Right);
+    AddToolbarView(pToolbar, <ToolbarPriority>, <ToolbarPosition>);
 
     NewAccess(CATCmdStarter, pCmd, <CommandClassName>);
     SetAccessCommand(pCmd, "<ModuleName>.<CommandClassName>");
