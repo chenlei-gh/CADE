@@ -112,11 +112,11 @@ All MCP responses are **auto-optimized** for AI consumption. Key data preserved,
 
 ```
 API call       Raw     Optimized   Saved
-analyze        341 →   28         91%
-suggest_next   272 →   28         89%
-spec_to_dict   162 →   44         72%
+build_health   339 →   112         67%
+parse_mkmk     199 →   85          57%
+run_command    589 →   156         74%
 ─────────────────────────────────────
-Total average: 50% savings
+Total average: 55% savings
 ```
 
 ### 🧩 Intent Engine
