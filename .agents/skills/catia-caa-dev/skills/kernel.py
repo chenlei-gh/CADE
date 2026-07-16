@@ -1008,6 +1008,14 @@ class Kernel:
                 self._state = KernelState.COMPLETED
                 return KernelResult(status="ok", mode="develop", state=self._state.value,
                     message="CATIA started.", data=r if isinstance(r, dict) else {}).to_dict()
+            # Dev: build + run in one step
+            if "dev" in request or ("build" in request and "run" in request):
+                r_build = incremental_build(ws)
+                r_run = start_catia_runtime(workspace_path=str(self.workspace_root)) if r_build.get("status") == "success" else None
+                self._state = KernelState.COMPLETED
+                return KernelResult(status="ok", mode="develop", state=self._state.value,
+                    message=f"Build: {r_build.get('message','')}; Run: {r_run.get('message','')}" if r_run else r_build.get('message',''),
+                    data={"build": r_build, "run": r_run}).to_dict()
             if "stop catia" in request or "kill catia" in request:
                 r = stop_catia()
                 self._state = KernelState.COMPLETED
