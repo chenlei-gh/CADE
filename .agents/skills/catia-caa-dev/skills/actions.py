@@ -516,6 +516,20 @@ def create_command(
             else:
                 cs.add_create(rsc_file, rsc_content)
 
+        # --- 8c. Icon file — resolve via icon_provider, copy to framework ---
+        if fw and icon:
+            try:
+                from icon_provider import get_icon
+                import shutil as _shutil
+                ico_path = get_icon(icon)
+                if ico_path and ico_path.exists():
+                    icons_dir = fw.path / "CNext" / "resources" / "graphic" / "icons" / "normal"
+                    icons_dir.mkdir(parents=True, exist_ok=True)
+                    ico_name = f"I_{icon.replace(' ', '_')}.bmp"
+                    _shutil.copy(ico_path, icons_dir / ico_name)
+            except Exception:
+                pass  # icon failure never blocks generation
+
         # Toolbar + addin NLS (required for toolbar visibility)
         tip = tooltip if tooltip else f"Execute {name}"
         addin_nls = (
