@@ -124,7 +124,7 @@ def _cache_key(icon_name: str, style: str) -> str:
 
 
 def _try_iconify(icon_name: str, style: str) -> Optional[Path]:
-    """Download from Iconify — Carbon Design PNG (no SVG conversion needed)."""
+    """Download SVG from Iconify Carbon and render to 8-bit BMP."""
     try:
         import urllib.request
         import json
@@ -142,38 +142,148 @@ def _try_iconify(icon_name: str, style: str) -> Optional[Path]:
         if ":" not in icon_id:
             icon_id = f"carbon:{icon_id}"
 
-        # Download PNG directly — skip SVG→BMP conversion
-        png_url = f"https://api.iconify.design/{icon_id}.png?width=24&height=24&color=%23161616"
-        req2 = urllib.request.Request(png_url, headers={"User-Agent": "CADE/3.2"})
+        # Download SVG
+        svg_url = f"https://api.iconify.design/{icon_id}.svg?width=32&height=32"
+        req2 = urllib.request.Request(svg_url, headers={"User-Agent": "CADE/3.2"})
         with urllib.request.urlopen(req2, timeout=5) as resp2:
-            png_data = resp2.read()
+            svg_data = resp2.read().decode("utf-8")
 
-        return png_to_bmp(png_data, icon_name)
+        return svg_to_bmp8(svg_data, icon_name)
 
     except Exception:
         return None
 
 
-def png_to_bmp(png_data: bytes, name: str) -> Path:
-    """Convert PNG bytes to 24x24 BMP. Uses pure Python — no PIL dependency."""
+def svg_to_bmp8(svg_data: str, name: str) -> Path:
+    """Render SVG <path> outlines to 22x22 8-bit grayscale BMP for B28."""
+    import re, struct as _struct
+    tmp = Path(os.environ.get("TEMP", "/tmp")) / f"cade_icon_{name}.bmp"
+
+    # Extract all path data strings
+    paths = re.findall(r' d="([^"]+)"', svg_data)
+    if not paths:
+        return _generate_bmp(name)
+
+    # Parse all path segments into point lists
+    all_points = []
+    for path_data in paths:
+        # Tokenize SVG path with compact number handling
+        # Split on command letters (including H/V for horizontal/vertical lines)
+        segments = re.split(r'(?=[MLCZHVTQSAmclzhvtqsa])', path_data)
+        points, cx, cy = [], 0, 0
+        for seg in segments:
+            if not seg.strip():
+                continue
+            cmd = seg[0].upper()
+            # Parse numbers: handle compact format like "1.414-1.414"
+            nums_str = seg[1:].strip()
+            # Replace compact negative signs with space-separated negatives
+            nums_str = re.sub(r'(?<=\d)-(?=\d)', ' -', nums_str)
+            nums = [float(x) for x in nums_str.split()]
+            cu = cmd
+            if cu == 'M':
+                cx, cy = nums[0], nums[1] if len(nums) > 1 else 0
+                points.append((cx, cy))
+            elif cu == 'L' and len(nums) >= 2:
+                cx, cy = nums[0], nums[1]
+                points.append((cx, cy))
+            elif cu == 'H' and len(nums) >= 1:
+                cx = nums[0]
+                points.append((cx, cy))
+            elif cu == 'V' and len(nums) >= 1:
+                cy = nums[0]
+                points.append((cx, cy))
+            elif cu == 'C' and len(nums) >= 6:
+                cx, cy = nums[4], nums[5]
+                points.append((cx, cy))
+            elif cu == 'Z':
+                points.append(points[0] if points else (0, 0))
+        if points:
+            all_points.append(points)
+
+    if not all_points:
+        return _generate_bmp(name)
+
+    # Calculate combined bounding box from all paths
+    all_pts = [p for pts in all_points for p in pts]
+    xs = [p[0] for p in all_pts]
+    ys = [p[1] for p in all_pts]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    w, h = max_x - min_x, max_y - min_y
+    if w < 1: w = 1
+    if h < 1: h = 1
+
+    out_w, out_h = 22, 22
+    margin = 2
+    scale = min((out_w - 2 * margin) / w, (out_h - 2 * margin) / h)
+    ox = (out_w - w * scale) / 2 - min_x * scale
+    oy = (out_h - h * scale) / 2 - min_y * scale
+
+    # 8-bit indexed BMP
+    row_size = ((out_w + 3) // 4) * 4
+    palette_size = 256 * 4
+    pixel_size = row_size * out_h
+    file_size = 54 + palette_size + pixel_size
+
+    with open(tmp, "wb") as f:
+        f.write(b"BM")
+        f.write(_struct.pack("<I", file_size))
+        f.write(_struct.pack("<HH", 0, 0))
+        f.write(_struct.pack("<I", 54 + palette_size))
+        f.write(_struct.pack("<I", 40))
+        f.write(_struct.pack("<i", out_w))
+        f.write(_struct.pack("<i", out_h))
+        f.write(_struct.pack("<H", 1))
+        f.write(_struct.pack("<H", 8))
+        f.write(_struct.pack("<I", 0))
+        f.write(_struct.pack("<I", pixel_size))
+        f.write(_struct.pack("<I", 2835))
+        f.write(_struct.pack("<I", 2835))
+        f.write(_struct.pack("<I", 256))
+        f.write(_struct.pack("<I", 0))
+        # Grayscale palette: 0=white, 255=black
+        for i in range(256):
+            v = 255 - i if i < 128 else 0
+            f.write(bytes([v, v, v, 0]))
+
+        # Render: 0=white bg, dark for path interior
+        pixels = bytearray(pixel_size)
+        for y in range(out_h):
+            for x in range(out_w):
+                inside = False
+                for pts in all_points:
+                    # Point-in-polygon test
+                    n = len(pts)
+                    j = n - 1
+                    for i in range(n):
+                        xi, yi = pts[i]
+                        xj, yj = pts[j]
+                        syi = yi * scale + oy
+                        syj = yj * scale + oy
+                        sxi = xi * scale + ox
+                        sxj = xj * scale + ox
+                        if ((syi > y) != (syj > y)) and (x < (sxj - sxi) * (y - syi) / (syj - syi) + sxi):
+                            inside = not inside
+                        j = i
+                pixels[y * row_size + x] = 50 if inside else 0
+        f.write(pixels)
+
+    return tmp
+    """Convert PNG to B28-compatible 8-bit indexed BMP (22x22)."""
     import zlib, struct as _struct
     tmp = Path(os.environ.get("TEMP", "/tmp")) / f"cade_icon_{name}.bmp"
 
-    # Minimal PNG parser (handle 24/32-bit RGBA PNG)
-    # PNG: 8-byte signature, then IHDR chunk
     if png_data[:8] != b'\x89PNG\r\n\x1a\n':
         return _generate_bmp(name)
 
-    # Find IHDR
-    ihdr_start = 8 + 4  # skip signature + IHDR length
+    ihdr_start = 8 + 4
     width = int.from_bytes(png_data[ihdr_start:ihdr_start+4], 'big')
     height = int.from_bytes(png_data[ihdr_start+4:ihdr_start+8], 'big')
-    bit_depth = png_data[ihdr_start+8]
     color_type = png_data[ihdr_start+9]
 
-    # Extract IDAT chunks (deflate-compressed pixel data)
-    pos = 8
-    idat_data = b''
+    # Extract IDAT chunks
+    pos, idat_data = 8, b''
     while pos < len(png_data):
         chunk_len = int.from_bytes(png_data[pos:pos+4], 'big')
         chunk_type = png_data[pos+4:pos+8].decode('ascii', errors='ignore')
@@ -184,49 +294,59 @@ def png_to_bmp(png_data: bytes, name: str) -> Path:
         pos += 12 + chunk_len
 
     try:
-        raw_data = zlib.decompress(idat_data)
+        raw = zlib.decompress(idat_data)
     except Exception:
         return _generate_bmp(name)
 
-    # Write BMP
-    out_w, out_h = 24, 24
-    row_size = ((out_w * 3 + 3) // 4) * 4
+    # B28-compatible: 22x22, 8-bit indexed, bottom-up
+    out_w, out_h = 22, 22
+    bpp = 1 if color_type == 0 else 8
+    palette_size = 256 * 4 if bpp == 8 else 2 * 4
+    row_size = ((out_w * bpp + 31) // 32) * 4
     pixel_size = row_size * out_h
-    file_size = 54 + pixel_size
+    file_size = 54 + palette_size + pixel_size
+    src_bpp = 4 if color_type == 6 else 3
+    src_row = width * src_bpp
 
     with open(tmp, "wb") as f:
         f.write(b"BM")
         f.write(_struct.pack("<I", file_size))
         f.write(_struct.pack("<HH", 0, 0))
-        f.write(_struct.pack("<I", 54))
+        f.write(_struct.pack("<I", 54 + palette_size))
         f.write(_struct.pack("<I", 40))
         f.write(_struct.pack("<i", out_w))
-        f.write(_struct.pack("<i", -out_h))
+        f.write(_struct.pack("<i", out_h))  # positive = bottom-up for B28
         f.write(_struct.pack("<H", 1))
-        f.write(_struct.pack("<H", 24))
+        f.write(_struct.pack("<H", bpp * 8))
         f.write(_struct.pack("<I", 0))
         f.write(_struct.pack("<I", pixel_size))
         f.write(_struct.pack("<I", 2835))
         f.write(_struct.pack("<I", 2835))
-        f.write(_struct.pack("<I", 0))
-        f.write(_struct.pack("<I", 0))
+        if bpp == 8:
+            f.write(_struct.pack("<I", 256))  # colors used
+            f.write(_struct.pack("<I", 0))     # important colors
+        else:
+            f.write(_struct.pack("<I", 0))
+            f.write(_struct.pack("<I", 0))
 
-        # Scale and render pixels
+        # 8-bit grayscale palette
+        if bpp == 8:
+            for i in range(256):
+                f.write(bytes([i, i, i, 0]))
+
+        # Pixels (bottom-up, scaled)
         pixels = bytearray(pixel_size)
-        src_row_size = width * (4 if color_type == 6 else 3)
         for y in range(out_h):
             sy = int(y * height / out_h)
             for x in range(out_w):
                 sx = int(x * width / out_w)
-                src_offset = sy * src_row_size + sx * (4 if color_type == 6 else 3)
-                if src_offset + 2 < len(raw_data):
-                    r = raw_data[src_offset]
-                    g = raw_data[src_offset + 1]
-                    b = raw_data[src_offset + 2]
+                so = sy * src_row + sx * src_bpp
+                if so + 2 < len(raw):
+                    r, g, b = raw[so], raw[so+1], raw[so+2]
+                    gray = int(0.299 * r + 0.587 * g + 0.114 * b)
+                    pixels[y * row_size + x] = gray if gray > 0 else 30
                 else:
-                    r, g, b = 128, 128, 128
-                dst_offset = y * row_size + x * 3
-                pixels[dst_offset:dst_offset+3] = bytes([b, g, r])
+                    pixels[y * row_size + x] = 128
         f.write(pixels)
 
     return tmp
@@ -267,44 +387,44 @@ def png_to_bmp(png_data: bytes, name: str) -> Path:
 
 
 def _generate_bmp(icon_name: str) -> Path:
-    """Generate a 24x24 BMP with the first letter of the icon name.
-    This is the ultimate fallback — never fails.
-    """
+    """Generate 22x22 8-bit placeholder BMP — never fails."""
+    import struct as _struct
     tmp = Path(os.environ.get("TEMP", "/tmp")) / "cade_icon_tmp.bmp"
 
-    letter = icon_name[0].upper() if icon_name else "?"
-    width, height = 24, 24
-    row_size = ((width * 3 + 3) // 4) * 4
-    pixel_data_size = row_size * height
-    file_size = 54 + pixel_data_size
+    out_w, out_h = 22, 22
+    row_size = ((out_w + 3) // 4) * 4
+    pixel_size = row_size * out_h
+    palette_size = 256 * 4
+    file_size = 54 + palette_size + pixel_size
 
     with open(tmp, "wb") as f:
         f.write(b"BM")
-        f.write(struct.pack("<I", file_size))
-        f.write(struct.pack("<HH", 0, 0))
-        f.write(struct.pack("<I", 54))
-        f.write(struct.pack("<I", 40))
-        f.write(struct.pack("<i", width))
-        f.write(struct.pack("<i", -height))
-        f.write(struct.pack("<H", 1))
-        f.write(struct.pack("<H", 24))
-        f.write(struct.pack("<I", 0))
-        f.write(struct.pack("<I", pixel_data_size))
-        f.write(struct.pack("<I", 2835))
-        f.write(struct.pack("<I", 2835))
-        f.write(struct.pack("<I", 0))
-        f.write(struct.pack("<I", 0))
-
-        # Fill with light gray background, dark border
-        pixels = bytearray(pixel_data_size)
-        for y in range(height):
-            for x in range(width):
-                if 2 <= x <= 21 and 2 <= y <= 21:
-                    r, g, b = 200, 200, 210  # light gray
+        f.write(_struct.pack("<I", file_size))
+        f.write(_struct.pack("<HH", 0, 0))
+        f.write(_struct.pack("<I", 54 + palette_size))
+        f.write(_struct.pack("<I", 40))
+        f.write(_struct.pack("<i", out_w))
+        f.write(_struct.pack("<i", out_h))
+        f.write(_struct.pack("<H", 1))
+        f.write(_struct.pack("<H", 8))
+        f.write(_struct.pack("<I", 0))
+        f.write(_struct.pack("<I", pixel_size))
+        f.write(_struct.pack("<I", 2835))
+        f.write(_struct.pack("<I", 2835))
+        f.write(_struct.pack("<I", 256))
+        f.write(_struct.pack("<I", 0))
+        # Grayscale palette
+        for i in range(256):
+            v = 255 - i if i < 128 else 0
+            f.write(bytes([v, v, v, 0]))
+        # Light gray fill with dark border
+        pixels = bytearray(pixel_size)
+        for y in range(out_h):
+            for x in range(out_w):
+                if 2 <= x <= 19 and 2 <= y <= 19:
+                    pixels[y * row_size + x] = 200  # light gray
                 else:
-                    r, g, b = 80, 80, 90  # border
-                offset = y * row_size + x * 3
-                pixels[offset:offset + 3] = bytes([b, g, r])
+                    pixels[y * row_size + x] = 50   # dark border
         f.write(pixels)
 
     return tmp
