@@ -135,22 +135,21 @@ cade impact IMyInterface interface delete
 - **Impact Analyzer** — Assess blast radius before refactoring  
 - **Optimizer** — Score & rank alternative plans
 
-### 🎨 Advanced UI Layout Knowledge
+### 🎨 Smart Icon Resolution
 
-CADE now covers **every CAA UI layout scenario** — from simple forms to complex wizards:
+Commands get **context-aware icons** without manual design:
 
-| Pattern | Use Case |
-|---------|----------|
-| **GridConstraints** | 7 anchor types, span, stretch strategies |
-| **Multi-layer nesting** | 3-5 layer Frame hierarchy patterns |
-| **Master-Detail** | SelectorList + Properties panel (BOM editor) |
-| **Dynamic Form** | Combo-driven panel show/hide |
-| **Tree Navigation** | CATDlgTree + tab-based content area |
-| **Wizard** | State-machine-driven Back/Next multi-step |
-| **Splitter** | User-resizable left/right panes |
-| **Anti-Patterns** | 10 common mistakes → correct approach |
+```python
+create_command(ctx, "DrillCmd", "Machining.m", icon="drill")
+# → DOMAIN_MAP[keyword] → carbon:drill → 24x24 BMP
+# → CNext/resources/graphic/icons/normal/I_drill.bmp
+# → auto-copied to Runtime View after build
+```
 
-→ `knowledge/ui/` now has **9 files** covering every UI angle.
+- **50+ CAA domain keywords** automatically map to Carbon Design icons
+- **IBM Carbon** collection enforces consistent 16px-grid engineering style
+- **Offline-first**: local cache + generated placeholder fallback
+- **Post-build persistence**: icons survive compilation and CNEXT restart
 
 ### 📐 New Knowledge Domains
 
