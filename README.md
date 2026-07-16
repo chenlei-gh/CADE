@@ -51,9 +51,14 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 git clone https://github.com/chenlei-gh/CADE.git
 cp -r CADE/.agents /path/to/your/caa/project/
 
-# 2. That's it. Open in your editor.
+# 2. Install the only Python dependency
+pip install Pillow
+
+# 3. That's it. Open in your editor.
 #    CADE auto-detects CATIA. Zero config.
 ```
+
+**Prerequisites:** CATIA V5 B28 + Visual Studio with RADE plugin installed.
 
 > [!TIP]
 > **Zed** — works out of the box.  
@@ -434,10 +439,17 @@ cade create command 我的命令 我的模块 --dialog --wb 我的工作台
 ### ⚡ 快速开始
 
 ```bash
+# 1. 克隆到你的 CAA 项目
 git clone https://github.com/chenlei-gh/CADE.git
 cp -r CADE/.agents /你的/CAA/项目/路径/
-# 用编辑器打开项目。CADE 自动检测 CATIA，零配置。
+
+# 2. 安装唯一的 Python 依赖
+pip install Pillow
+
+# 3. 用编辑器打开项目。CADE 自动检测 CATIA，零配置。
 ```
+
+**前置条件：** CATIA V5 B28 + Visual Studio（含 RADE 插件）已安装。
 
 > [!TIP]
 > **Zed** — 开箱即用。
