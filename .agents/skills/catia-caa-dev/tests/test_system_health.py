@@ -66,7 +66,6 @@ class SystemHealthCheck:
             "skills/requirements.py",
             "skills/verifier.py",
             "skills/repair.py",
-            "skills/learning.py",
             "skills/token_optimizer.py",
             "skills/mcp_server.py",
         ]

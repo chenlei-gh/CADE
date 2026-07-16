@@ -245,10 +245,10 @@ except ImportError:
     ck("7.9 BuildVerifier exists", False)
 
 try:
-    from learning import LearningRecorder
-    ck("7.10 LearningRecorder exists", True)
+    from actions import ActionContext
+    ck("7.10 ActionContext exists", True)
 except ImportError:
-    ck("7.10 LearningRecorder exists", False)
+    ck("7.10 ActionContext exists", False)
 
 # ═══════════════════════════════════════════════════════════════════
 print(f"\n{'=' * 70}")

@@ -34,7 +34,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `36/36 suites (100%)` | **~600 checks** | *2026-07-16*
+> 🟢 **CI Status**: `35/35 suites (100%)` | **~600 checks** | *2026-07-16*
 
 > **v3.2.0** — Generate → Build → Run closed loop | `cade dev` one-command cycle
 
@@ -102,7 +102,6 @@ repair()    — fix/refactor  (Command, with recovery)
 - **Planner** — Intent + Requirements → optimal DevelopmentPlan
 - **Verifier** — static code check (no mkmk needed) + compile-check via mkmk
 - **Repair Loop** — diagnose → fix → verify, up to 3 retries
-- **Learning** — feedback loop, pattern detection → auto-suggest Playbooks
 
 → 41 MCP tools collapsed to **3 modes**. AI never needs to know internals.
 
@@ -329,9 +328,6 @@ graph TD
     K --> B[Build Engine<br/>35 Commands]
     K --> X[Runtime Engine<br/>7 Commands]
     K --> Z[Diagnostics +<br/>FixPlan + Refactor]
-
-    L[Learning] -.->|feedback| Q
-    P -.->|patterns| L
 ```
 
 > **Philosophy**: Capability grows by accumulating knowledge assets, not by modifying code.
@@ -387,7 +383,7 @@ your_project/
 │   │   ├── requirements.py         ← Requirem"ents Clarifier + Decomposer
 │   │   ├── verifier.py             ← Code Verifier (static + mkmk)
 │   │   ├── repair.py               ← Repair Loop
-│   │   ├── learning.py             ← Learning System
+│   │   ├── icon_provider.py         ← Smart Icon Resolution
 │   │   ├── requirements/decision_trees/ ← Decision Trees (3)
 │   │   └── ...
 │   ├── templates/                  ← 25+ code templates
@@ -582,7 +578,6 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 │   │   ├── requirements.py         ← 需求澄清 + 分解器
 │   │   ├── verifier.py             ← 代码验证器
 │   │   ├── repair.py               ← 修复闭环
-│   │   ├── learning.py             ← 学习系统
 │   │   ├── requirements/decision_trees/ ← 决策树（3）
 │   │   └── ...
 │   ├── templates/                  ← 25+ 代码模板
