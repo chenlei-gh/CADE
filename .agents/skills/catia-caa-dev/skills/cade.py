@@ -492,11 +492,30 @@ def cmd_plan(args):
         print("Usage: cade plan <type> <name> <module> [--fw framework]")
         return
     from intent import Intent, IntentType, plan
+    # Map user-friendly names to IntentType values
+    type_map = {
+        "command": IntentType.CREATE_COMMAND,
+        "cmd": IntentType.CREATE_COMMAND,
+        "feature": IntentType.CREATE_FEATURE,
+        "dialog": IntentType.CREATE_DIALOG,
+        "workbench": IntentType.CREATE_WORKBENCH,
+        "wb": IntentType.CREATE_WORKBENCH,
+        "interface": IntentType.CREATE_INTERFACE,
+        "component": IntentType.CREATE_COMPONENT,
+        "extension": IntentType.CREATE_EXTENSION,
+        "cmd_dialog": IntentType.CREATE_COMMAND_WITH_DIALOG,
+        "feature_factory": IntentType.CREATE_FEATURE_WITH_FACTORY,
+    }
+    intent_type = type_map.get(args[0].lower(), None)
+    if not intent_type:
+        print(f"Unknown type: {args[0]}. Valid: {', '.join(type_map.keys())}")
+        return
+    flags = _get_flags(args)
     i = Intent(
-        type=IntentType(args[0]),
+        type=intent_type,
         name=args[1],
         module=args[2],
-        framework=_get_flag(args, "--fw") or "MyFramework",
+        framework=flags.get("--fw", "MyFramework"),
     )
     result = plan(i)
     _print_result(result.to_dict())
