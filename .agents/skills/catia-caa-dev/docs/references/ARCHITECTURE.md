@@ -235,3 +235,157 @@ patterns/     ── 架构模式 (按模式类型)
 - **B28 API 适配**: `Undo()` → `ExecuteUndo()`, CATDeclareClass → CATImplementClass
 - **模板版本感知**: 模板自动选择对应版本的 API
 - **test_version_strategy.py** 验证所有版本的模板一致性
+
+## 元模型实体关系
+
+```
+Workspace
+  └── Framework (*.edu)
+        ├── IdentityCard.h
+        ├── Module (*.m)
+        │     ├── Command
+        │     │     ├── Header (CATCommandHeader)
+        │     │     ├── Dialog (optional)
+        │     │     └── Icon (CATRsc + BMP)
+        │     ├── Interface (IDL + C++)
+        │     ├── Component (BOA/TIE)
+        │     ├── Feature (StartUp + BuildTime)
+        │     ├── Extension (DataExtension)
+        │     ├── Workbench + Addin
+        │     └── EventListener
+        ├── Catalog (CATAfrCommandHeaderAccess)
+        ├── Dictionary (.dico)
+        ├── NLS (CATNls)
+        └── Imakefile (.mk)
+```
+
+10 个核心实体，每个有完整的 CRUD + 依赖追踪 + 级联删除。
+
+## 构建管线详解
+
+```
+build_workspace(ws)
+  │
+  ├── 1. env.py: CAAEnvironment.load_config()
+  │   └── catia_detector.py 动态扫描 CATIA 安装
+  │
+  ├── 2. setup_prerequisite_path()
+  │   └── 链接 Framework Prerequisites → CATIA 安装
+  │
+  ├── 3. 生成 batch 脚本
+  │   ├── tck_init.bat    ← 初始化 TCK 工具链
+  │   ├── tck_profile.bat ← 加载编译 Profile
+  │   ├── mkinit.bat      ← 初始化工作区
+  │   └── mkGetPreq       ← 解析 Prerequisites
+  │
+  ├── 4. 执行 mkmk -u -a
+  │   ├── parser.py 实时解析 stdout/stderr
+  │   ├── 结构化错误: {file, line, code, message}
+  │   └── 结构化警告: {file, line, code, message}
+  │
+  ├── 5. 编译后处理
+  │   ├── copy_icons_to_runtime()  ← 图标 → win_b64/
+  │   ├── verify_build()           ← 验证产物完整性
+  │   └── 生成 build.json 缓存
+  │
+  └── 返回: {status, error_count, warning_count, duration, errors[], warnings[]}
+```
+
+## 运行时管线详解
+
+```
+start_catia_runtime(workspace_path)
+  │
+  ├── 1. 检查 CNEXT 是否已运行
+  │   ├── 已运行 → stop_catia(force=False) 优雅关闭
+  │   └── _clean_cnext_sessions() 清理热启动文件
+  │
+  ├── 2. 构建环境
+  │   ├── CAAEnvironment.load_config()
+  │   └── CATDLLPath += workspace/win_b64/code/bin
+  │
+  ├── 3. 生成启动 batch
+  │   ├── tck_init → tck_profile → mkinit
+  │   ├── set CATGraphicPath  ← 图标可见性
+  │   └── cd workspace && call mkrun
+  │
+  ├── 4. 启动
+  │   ├── DETACHED_PROCESS (CATIA 独立于 Python)
+  │   └── CREATE_NO_WINDOW (抑制 cmd 弹窗)
+  │
+  └── 轮询检测 CNEXT.exe (30 次 × 0.5s)
+```
+
+## CLI 命令参考
+
+```
+cade build <workspace>          # mkmk 编译
+cade dev <workspace>            # 编译 + 启动 (一键闭环)
+cade run <workspace>            # 仅启动 CNEXT
+cade diagnose [workspace]       # 诊断工作区问题
+cade fix [--apply]              # 自动修复
+cade plan <type> <name> <mod>   # 生成开发计划
+cade impact <entity> <type>     # 变更影响分析
+cade refactor rename <...>      # 重命名
+cade refactor move <...>        # 移动
+cade rollback --list            # 列出回滚点
+cade rollback --id <id>         # 执行回滚
+cade clean                      # 清理构建产物
+```
+
+## 测试架构 (L1-L6)
+
+| 层级 | 描述 | 测试文件 | 数量 |
+|------|------|----------|------|
+| L1 | 单元测试 (函数级) | test_icons.py, test_token_*.py | 3 |
+| L2 | 模块测试 (单模块) | test_refactor.py, test_repair_loop.py | 4 |
+| L3 | 集成测试 (模块协作) | test_e2e_integration.py | 1 |
+| L4 | 架构测试 (不变量) | test_l4_architecture.py | 1 |
+| L5 | 语义测试 (正确性) | test_l5_semantic.py, test_specification.py | 2 |
+| L6 | 故障注入 (鲁棒性) | test_l6_fault_injection.py | 1 |
+| E2E | 端到端 (AI 模拟) | test_ai_integration.py, test_full_*.py | 3 |
+| 回归 | 全量回归 | test_full_regression.py (1287 行) | 1 |
+| 专项 | 特定功能 | test_phase*.py, test_skill_*.py 等 | 23 |
+
+总计 39 个测试文件，~11,000 行测试代码。
+
+## 图标分类统计
+
+| 类别 | 数量 | 示例 |
+|------|------|------|
+| 形状 | 11 | box, circle, triangle, hexagon, diamond, ring |
+| 操作 | 6 | play, drill, cut, cursor, move, merge |
+| 箭头 | 8 | arrow-up/down/left/right, refresh, chevron |
+| 工具 | 8 | settings, search, pencil, ruler, funnel, delete |
+| 媒体 | 4 | pause, stop, forward, backward |
+| 编辑 | 5 | copy, paste, undo, redo, zoom-in/out |
+| 数据 | 9 | doc, folder, disk, export, import, book, db |
+| 符号 | 7 | check, angle, chart, code, link, star, heart |
+| 数学 | 6 | plus, minus, multiply, divide, equal, percent |
+| 对象 | 8 | key, bell, tag, pin, flag, trophy, shield, clock |
+| 通信 | 6 | mail, chat, phone, share, wifi, globe |
+| 自然 | 5 | sun, moon, cloud, lightning, flame |
+| 日常 | 8 | home, user, calendar, camera, map, battery, power |
+| 3D | 4 | cube, contour, package, download/upload |
+| 锁/UI | 6 | lock, unlock, window, eye, hand, info, warning, question |
+| **合计** | **107** | |
+
+## 配置系统
+
+```
+catalog/index.yaml        ← 知识索引
+config/editors/*.json     ← 编辑器 MCP 模板 (Claude/Cursor/VSCode/Windsurf)
+cache/build.json          ← 编译缓存
+cache/generate.json       ← 生成缓存
+cache/runtime.json        ← 运行时状态
+intent/templates/task_templates.json ← 任务模板
+requirements/decision_trees/*.yaml   ← 决策树 (3)
+```
+
+## Token 优化策略
+
+`token_optimizer.py` 在 MCP 响应前自动压缩：
+- **mode=auto**: 自动检测内容类型选择策略
+- **mode=compact**: 移除冗余字段，保留核心数据
+- **mode=summary**: 仅返回摘要 (status + counts)
+- 平均节省 50-70% token，对 AI Agent 透明
