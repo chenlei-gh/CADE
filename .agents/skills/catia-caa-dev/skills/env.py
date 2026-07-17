@@ -44,6 +44,7 @@ class CAAEnvironment:
         self.env = os.environ.copy()
         self._version = None
         self._rules = None
+        self._tck_id = None
 
     def load_config(self) -> bool:
         """Load configuration, auto-detect if missing"""
@@ -207,6 +208,87 @@ class CAAEnvironment:
         self.env["PATH"] = os.pathsep.join(path_components)
 
         return self.env
+
+    def resolve_tck_id(self) -> Optional[str]:
+        """
+        Discover the TCK identifier to use with tck_profile.bat.
+
+        tck_profile.bat requires a TCK name as its FIRST positional argument
+        (e.g. "V5_6R2018_B28"), NOT a workspace path. Passing a workspace path
+        causes: "#ERR# ADLBC - 0009: Too many arguments" -> exit code 5,
+        which silently falls back to CATEnv-only license vars and leaves mkmk
+        unable to resolve workspace frameworks ("mkmk-ERROR: ... at least, one
+        framework").
+
+        Discovery order:
+          1. Explicit CAA_TCK_ID in config/caa_env_config.txt (user override).
+          2. Query tck_list.bat and pick the TCK matching this CATIA version
+             label (e.g. B28 -> "V5_6R2018_B28"), preferring the bare version
+             TCK over helper TCKs like SCM_adm_*/tckDevTools_*/CSC_*/Mkmk_*.
+
+        Returns:
+            TCK identifier string, or None if it cannot be determined.
+        """
+        if self._tck_id:
+            return self._tck_id
+
+        # 1. Explicit override
+        explicit = self.config.get("CAA_TCK_ID")
+        if explicit:
+            self._tck_id = explicit
+            return self._tck_id
+
+        catia_path = Path(self.config.get("CATIA_INSTALL", ""))
+        if not catia_path.exists():
+            return None
+        arch = self._detect_architecture(catia_path) or "win_b64"
+        tck_init = catia_path / arch / "code" / "command" / "tck_init.bat"
+        tck_list = catia_path / arch / "TCK" / "command" / "tck_list.bat"
+        if not (tck_init.exists() and tck_list.exists()):
+            return None
+
+        import tempfile
+        bat_content = (
+            "@echo off\r\n"
+            f'call "{tck_init}" > NUL 2>&1\r\n'
+            f'call "{tck_list}"\r\n'
+        )
+        try:
+            with tempfile.NamedTemporaryFile(
+                suffix=".bat", prefix="cade_tcklist_", delete=False,
+                mode="w", encoding="ascii", newline="",
+            ) as f:
+                f.write(bat_content)
+                bat_path = f.name
+            proc = subprocess.run(
+                ["cmd", "/c", bat_path],
+                capture_output=True, text=True, timeout=30,
+            )
+            names = proc.stdout.split()
+        except Exception:
+            return None
+        finally:
+            try:
+                os.unlink(bat_path)
+            except Exception:
+                pass
+
+        # Version label used by CATIA install dir (e.g. "B28")
+        version_label = catia_path.name  # e.g. "B28"
+        helper_prefixes = ("SCM_adm_", "tckDevTools_", "CSC_", "Mkmk_")
+
+        candidates = [n for n in names if n.endswith(f"_{version_label}")]
+        # Prefer the bare version TCK (no helper prefix), e.g. V5_6R2018_B28
+        plain = [n for n in candidates if not n.startswith(helper_prefixes)]
+        if plain:
+            self._tck_id = plain[0]
+        elif candidates:
+            self._tck_id = candidates[0]
+        elif names:
+            # Last resort: first TCK returned by tck_list
+            self._tck_id = names[0]
+
+        return self._tck_id
 
     def _detect_architecture(self, catia_path: Path) -> Optional[str]:
         """Detect CATIA architecture (win_b64 or intel_a)"""
@@ -534,7 +616,7 @@ class CAAEnvironment:
         return "\r\n".join(lines) + "\r\n"
 
     def build_time_command(
-        self, workspace_path: str, mkmk_options: str = "-u"
+        self, workspace_path: str, mkmk_options: str = "-u -a"
     ) -> Tuple[list, str]:
         """
         Build the correct cmd.exe command to run mkmk with full Build Time environment.
@@ -578,10 +660,15 @@ class CAAEnvironment:
         lines.append("@echo off")
         lines.append(f'call "{tck_init}" > NUL 2>&1')
 
-        if tck_profile.exists():
-            # Try tck_profile with workspace path (helps TCK locate the workspace TCK)
+        tck_id = self.resolve_tck_id()
+        if tck_profile.exists() and tck_id:
+            # tck_profile.bat requires the TCK identifier as its first
+            # positional argument (e.g. "V5_6R2018_B28"), NOT a workspace
+            # path. Passing a path here previously caused exit code 5
+            # ("Too many arguments") and silently fell back to CATEnv-only
+            # license vars, leaving mkmk unable to resolve frameworks.
             lines.append(
-                f'call "{tck_profile}" "{workspace_path}" > NUL 2>&1'
+                f'call "{tck_profile}" {tck_id} > NUL 2>&1'
             )
             lines.append("set _TCKPROFILE_RC=%ERRORLEVEL%")
             if fallback_block:
@@ -605,9 +692,13 @@ class CAAEnvironment:
 
         bat_content = "\r\n".join(lines) + "\r\n"
 
-        # Write to temp .bat for cmd.exe execution (P2-008 fix)
+        # Write to temp .bat for cmd.exe execution (P2-008 fix).
+        # newline="" prevents Python's text-mode \n -> \r\n translation from
+        # doubling the \r\n we already embed in bat_content (which produced
+        # malformed \r\r\n line endings that corrupted the CATIA TCK/mkmk
+        # batch chain and caused spurious "no framework" errors).
         import tempfile
-        with tempfile.NamedTemporaryFile(suffix=".bat", prefix="cade_build_", delete=False, mode="w", encoding="ascii") as f:
+        with tempfile.NamedTemporaryFile(suffix=".bat", prefix="cade_build_", delete=False, mode="w", encoding="ascii", newline="") as f:
             f.write(bat_content)
             self._build_bat = Path(f.name)
 
@@ -658,11 +749,18 @@ class CAAEnvironment:
         else:
             resolved_cmd = command  # best effort
 
+        tck_id = self.resolve_tck_id()
+        tck_profile_call = (
+            f'call "{tck_profile}" {tck_id} > NUL 2>&1 && '
+            if tck_profile.exists() and tck_id
+            else ""
+        )
+
         if workspace_path:
             cmd_str = (
                 f'call "{vcvars}" amd64 > NUL 2>&1 && '
                 f'call "{tck_init}" > NUL 2>&1 && '
-                f'call "{tck_profile}" > NUL 2>&1 && '
+                f"{tck_profile_call}"
                 f'call "{mkinit}" > NUL 2>&1 && '
                 f"set PATH={code_bin};{code_command};%PATH% && "
                 f'cd /d "{workspace_path}" && '
@@ -672,7 +770,7 @@ class CAAEnvironment:
             cmd_str = (
                 f'call "{vcvars}" amd64 > NUL 2>&1 && '
                 f'call "{tck_init}" > NUL 2>&1 && '
-                f'call "{tck_profile}" > NUL 2>&1 && '
+                f"{tck_profile_call}"
                 f'call "{mkinit}" > NUL 2>&1 && '
                 f"set PATH={code_bin};{code_command};%PATH% && "
                 f"{resolved_cmd}"
@@ -687,7 +785,7 @@ def get_build_env() -> Dict[str, str]:
     return caa_env.initialize()
 
 
-def get_build_command(workspace_path: str, options: str = "-u") -> Tuple[list, str]:
+def get_build_command(workspace_path: str, options: str = "-u -a") -> Tuple[list, str]:
     """Quick helper to get the full Build Time command"""
     caa_env = CAAEnvironment()
     return caa_env.build_time_command(workspace_path, options)

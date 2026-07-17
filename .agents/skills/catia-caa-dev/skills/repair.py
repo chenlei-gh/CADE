@@ -303,8 +303,11 @@ class RepairLoop:
             from build import build_workspace
             from parser import parse_mkmk_output
 
-            # Run incremental build to find errors
-            result = build_workspace(self.workspace_root, options="-u", timeout=300)
+            # Run incremental build to find errors. "-a" is required for mkmk
+            # to correctly discover workspace frameworks (mkmk -u alone can
+            # fail with "must be executed in a workspace containing at least
+            # one framework" even when .edu directories exist).
+            result = build_workspace(self.workspace_root, options="-u -a", timeout=300)
 
             # Diagnose exactly this invocation. Reading build.json here can
             # accidentally report errors from an older build.

@@ -149,6 +149,10 @@ ck("3.3 line inserted", "Inserted line" in content4, content4.strip())
 # ═══════════════════════════════════════════════════════════════════
 print("\n[4] diagnose_and_fix — full cycle")
 
+# Create a genuine auto-fixable diagnostic. Command dictionary entries and
+# explicit SOURCES lists are not required by B28 and must not be used merely
+# to make this executor test produce a ChangeSet.
+(nls_dir / "TestFW.CATNls").unlink()
 ctx.refresh()
 result = diagnose_and_fix(ctx, auto_only=True, dry_run=True)
 ck("4.1 status ok", result["status"] == "ok")
@@ -202,3 +206,4 @@ shutil.rmtree(ws, ignore_errors=True)
 print(f"\n{'=' * 60}")
 print(f"  FixPlan Executor: {passed}/{total} ({passed / total * 100:.0f}%)")
 print(f"{'=' * 60}")
+sys.exit(0 if passed == total else 1)

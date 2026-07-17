@@ -167,10 +167,19 @@ def start_catia_runtime(
 
         # Use NamedTemporaryFile for safe temp file creation (P2-008 fix)
         rv = f"{workspace_path}\\{arch}"
+        # tck_profile.bat requires a TCK identifier as its first positional
+        # argument (e.g. "V5_6R2018_B28"), never a workspace path — passing
+        # none/invalid args here silently degrades to a partial license env.
+        tck_id = caa_env.resolve_tck_id()
+        tck_profile_line = (
+            f'call "{tck_profile}" {tck_id} > NUL 2>&1\r\n'
+            if tck_profile.exists() and tck_id
+            else ""
+        )
         bat_content = (
             "@echo off\r\n"
             f'call "{tck_init}" > NUL 2>&1\r\n'
-            f'call "{tck_profile}" > NUL 2>&1\r\n'
+            f"{tck_profile_line}"
             f'call "{mkinit}" > NUL 2>&1\r\n'
             f"set PATH={code_bin};{code_command};%PATH%\r\n"
             # Workspace Runtime View paths (prepend to CNEXT search order)
@@ -182,7 +191,10 @@ def start_catia_runtime(
             f'cd /d "{workspace_path}"\r\n'
             f"call mkrun\r\n"
         )
-        with tempfile.NamedTemporaryFile(suffix=".bat", prefix="cade_run_", delete=False, mode="w", encoding="ascii") as f:
+        # newline="" prevents text-mode \n -> \r\n translation from doubling
+        # the \r\n already embedded in bat_content (see env.py build_time_command
+        # for the full explanation of the \r\r\n corruption this caused).
+        with tempfile.NamedTemporaryFile(suffix=".bat", prefix="cade_run_", delete=False, mode="w", encoding="ascii", newline="") as f:
             f.write(bat_content)
             batfile = f.name
         cmd_args = ["cmd", "/c", f"start /min cmd /c {batfile}"]

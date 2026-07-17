@@ -124,6 +124,7 @@ class DiagnosticsEngine:
         self._check_imakefile()
         self._check_naming()
         self._check_integrity()
+        self._check_unsupported_generated_apis()
         self._check_orphaned()
         return self.diagnostics
 
@@ -173,55 +174,9 @@ class DiagnosticsEngine:
 
             dico_content = dico.read_text(encoding="utf-8", errors="replace")
 
-            for mod in fw.modules:
-                for cmd in mod.commands:
-                    entry = cmd.dictionary_entry()
-                    if cmd.name not in dico_content:
-                        self.diagnostics.append(
-                            Diagnostic(
-                                severity=Severity.ERROR,
-                                problem=f"Dictionary entry missing for {cmd.name}",
-                                reason=f"{cmd.name} exists but is not registered in {dico.name}",
-                                category="dictionary",
-                                entity=cmd.name,
-                                fix_plan=FixPlan(
-                                    action=FixAction.APPEND_LINE,
-                                    file=str(dico),
-                                    line=entry,
-                                    entity_name=cmd.name,
-                                    description=f"Register {cmd.name} in dictionary",
-                                ),
-                                auto_fixable=True,
-                            )
-                        )
-
-                # Check for stale entries (commands that no longer exist)
-                existing_names = {c.name for c in mod.commands}
-                for line in dico_content.split("\n"):
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    parts = line.split()
-                    if len(parts) >= 3 and parts[0] not in existing_names:
-                        registered_name = parts[0]
-                        # Only flag if it looks like a command entry
-                        if parts[1] in ("CATCommand", "CATStateCommand"):
-                            self.diagnostics.append(
-                                Diagnostic(
-                                    severity=Severity.WARNING,
-                                    problem=f"Stale dictionary entry for {registered_name}",
-                                    reason=f"{registered_name} is registered but no longer exists",
-                                    category="dictionary",
-                                    entity=registered_name,
-                                    fix_plan=FixPlan(
-                                        action=FixAction.DELETE_LINE,
-                                        file=str(dico),
-                                        delete_target=registered_name,
-                                        description=f"Remove stale entry for {registered_name}",
-                                    ),
-                                    auto_fixable=True,
-                                )
-                            )
+            # Command headers are registered by the module addin. Individual
+            # commands must not be emitted as CATIAfrGeneralWksAddin entries;
+            # doing so creates invalid duplicate registrations.
 
     def _check_catalog_nls(self):
         """Check NLS catalog for missing entries"""
@@ -286,29 +241,9 @@ class DiagnosticsEngine:
                     )
                     continue
 
-                imake_content = imake.read_text(encoding="utf-8", errors="replace")
-
-                for cmd in mod.commands:
-                    sources = f"src/{cmd.name}.cpp"
-                    if sources not in imake_content:
-                        self.diagnostics.append(
-                            Diagnostic(
-                                severity=Severity.ERROR,
-                                problem=f"Imakefile missing SOURCES for {cmd.name}",
-                                reason=f"{cmd.name}.cpp not in SOURCES list of {mod.name}/Imakefile.mk",
-                                category="imakefile",
-                                entity=cmd.name,
-                                fix_plan=FixPlan(
-                                    action=FixAction.INSERT_LINE,
-                                    file=str(imake),
-                                    line=cmd.imakefile_sources(),
-                                    after_line="SOURCES = \\",
-                                    entity_name=cmd.name,
-                                    description=f"Add {cmd.name} sources to Imakefile",
-                                ),
-                                auto_fixable=True,
-                            )
-                        )
+                # CAA mkmk discovers C++ sources in the module src directory.
+                # A SOURCES variable is not required and is absent from valid
+                # B28 wizard-generated modules.
 
     def _check_naming(self):
         """Check CAA naming conventions"""
@@ -429,6 +364,54 @@ class DiagnosticsEngine:
                                 auto_fixable=False,
                             )
                         )
+
+    def _check_unsupported_generated_apis(self):
+        """Detect generated C++ patterns known to be invalid for supported CATIA releases."""
+        invalid_patterns = (
+            (
+                "CATTestCase.h",
+                "Unsupported CATTestCase API",
+                "CATTestCase.h is not available in B28; regenerate the test fixture with the current template",
+            ),
+            (
+                "CATBeginTestSuite(",
+                "Unsupported CAT test-suite macros",
+                "CATBeginTestSuite/CATAddTest are not available in B28; regenerate the test fixture with the current template",
+            ),
+            (
+                "CATImplementHeaderResources(",
+                "CommandHeader class is not declared",
+                "CATImplementHeaderResources does not declare the header class; use MacDeclareHeader in the addin .cpp",
+            ),
+        )
+        for fw in self.snapshot.frameworks:
+            for mod in fw.modules:
+                source_dirs = [mod.path / "src", mod.path / "LocalInterfaces", mod.path / "PublicInterfaces"]
+                for source_dir in source_dirs:
+                    if not source_dir.exists():
+                        continue
+                    for path in source_dir.rglob("*"):
+                        if not path.is_file() or path.suffix.lower() not in (".h", ".cpp"):
+                            continue
+                        content = path.read_text(encoding="utf-8", errors="replace")
+                        for marker, problem, reason in invalid_patterns:
+                            if marker in content:
+                                self.diagnostics.append(
+                                    Diagnostic(
+                                        severity=Severity.ERROR,
+                                        problem=f"{problem}: {path.name}",
+                                        reason=reason,
+                                        category="compile_contract",
+                                        entity=path.stem,
+                                        fix_plan=FixPlan(
+                                            action=FixAction.REGENERATE,
+                                            file=str(path),
+                                            entity_name=path.stem,
+                                            description="Regenerate this file using supported CADE templates",
+                                        ),
+                                        auto_fixable=False,
+                                    )
+                                )
 
     def _check_orphaned(self):
         """Check for orphaned files"""
@@ -627,6 +610,7 @@ def apply_all_fixplans(ctx, auto_only: bool = True) -> dict:
             "applied": 0,
             "skipped": len(diagnostics),
             "changeset": None,
+            "details": [],
         }
 
     # Execute all FixPlans, merging into one ChangeSet

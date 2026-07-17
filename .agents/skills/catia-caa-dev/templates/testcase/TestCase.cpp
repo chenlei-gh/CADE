@@ -5,14 +5,7 @@
 #include <iostream>
 using namespace std;
 
-// Test Suite Registration
-CATBeginTestSuite(TestCaseName)
-    CATAddTest(TestMethod1)
-    CATAddTest(TestMethod2)
-    CATAddTest(TestMethod3)
-CATEndTestSuite(TestCaseName)
-
-TestCaseName::TestCaseName() : CATTestCase("TestCaseName")
+TestCaseName::TestCaseName()
 {
     cout << "TestCaseName::TestCaseName" << endl;
 }
@@ -32,22 +25,31 @@ void TestCaseName::TearDown()
     cout << "TestCaseName::TearDown" << endl;
 }
 
+void TestCaseName::RunAll()
+{
+    SetUp();
+    TestMethod1();
+    TestMethod2();
+    TestMethod3();
+    TearDown();
+}
+
 void TestCaseName::TestMethod1()
 {
     cout << "TestCaseName::TestMethod1" << endl;
     int expected = 10;
     int actual = 5 + 5;
-    CATAssertEquals(expected, actual, "Addition test failed");
+    CATAssert(expected == actual);
 }
 
 void TestCaseName::TestMethod2()
 {
     cout << "TestCaseName::TestMethod2" << endl;
-    CATAssertTrue(TRUE, "Should pass");
+    CATAssert(1);
 }
 
 void TestCaseName::TestMethod3()
 {
     cout << "TestCaseName::TestMethod3" << endl;
-    CATAssertNotNull(this, "Object should not be null");
+    CATAssert(this != NULL);
 }

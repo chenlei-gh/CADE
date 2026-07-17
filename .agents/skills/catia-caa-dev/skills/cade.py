@@ -68,12 +68,12 @@ SKILL_ROOT = Path(__file__).parent
 sys.path.insert(0, str(SKILL_ROOT))
 
 
-def _kernel(capability: str, text: str) -> dict:
-    """Route CLI command through Kernel."""
+def _kernel(capability: str, text: str, workspace: str = None) -> dict:
+    """Route CLI command through Kernel for the explicitly selected workspace."""
     from kernel import Kernel, KernelMode
     mode_map = {"develop": KernelMode.DEVELOP, "analyze": KernelMode.ANALYZE, "repair": KernelMode.REPAIR}
-    # Find workspace from --workspace flag or use default
-    ws = _get_default_ws()
+    # Explicit positional workspace takes priority, then --workspace, then default.
+    ws = workspace or _get_default_ws()
     for i, a in enumerate(sys.argv):
         if a in ("--workspace", "-w") and i + 1 < len(sys.argv):
             ws = sys.argv[i + 1]
@@ -95,6 +95,16 @@ def _print_kernel(r: dict):
             for q in questions:
                 opts = "/".join(q.get("options", []))
                 print(f"  ? {q.get('question', '')} [{opts}]")
+    # Show structured diagnostics. Kernel nests the diagnostics summary under
+    # data.diagnostics; direct callers may return the summary as data itself.
+    data = r.get("data", {})
+    diag = r.get("diagnostics")
+    if diag is None and isinstance(data, dict):
+        diag = data.get("diagnostics", data)
+    if isinstance(diag, dict):
+        for item in diag.get("diagnostics", []):
+            if isinstance(item, dict):
+                print(f"  [{item.get('severity', 'info')}] {item.get('problem') or item.get('message', '')}")
     # Show verification results
     verify = r.get("verification", {})
     if verify:
@@ -388,7 +398,7 @@ def cmd_diagnose(args):
     """Diagnose via Kernel — routes through analyze()."""
     ws = _get_ws(args)
     text = f"diagnose the workspace {ws}" if ws else "diagnose the workspace"
-    result = _kernel("analyze", text)
+    result = _kernel("analyze", text, workspace=ws)
     _print_kernel(result)
 
 

@@ -2,21 +2,22 @@
 #ifndef TestCaseName_h
 #define TestCaseName_h
 
-// System Framework
-#include "CATTestCase.h"
-
 /**
- * @brief TestCaseName - CAA unit test case
+ * @brief TestCaseName - CAA test fixture
+ *
+ * B28 does not expose a CATTestCase framework. This fixture deliberately
+ * uses only public C++ methods; assertions are implemented with CATAssert.
  */
-class TestCaseName : public CATTestCase
+class TestCaseName
 {
 public:
     TestCaseName();
-    virtual ~TestCaseName();
+    ~TestCaseName();
 
-    virtual void SetUp();
-    virtual void TearDown();
+    void SetUp();
+    void TearDown();
 
+    void RunAll();
     void TestMethod1();
     void TestMethod2();
     void TestMethod3();

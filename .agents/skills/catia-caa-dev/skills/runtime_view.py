@@ -149,9 +149,12 @@ def create_runtime_view(
 
         logger.write(f"Command: {cmd_str}")
 
-        # Write batch file
+        # Write batch file. newline="" prevents write_text's default
+        # \n -> \r\n translation from doubling the \r\n already embedded in
+        # bat_content, which produces malformed \r\r\n line endings that can
+        # corrupt the CATIA TCK/mkmk batch chain (see env.py build_time_command).
         bat_content = f'@echo off\r\n{cmd_str} > "{tmpfile}" 2>&1\r\necho EXIT_CODE=%ERRORLEVEL% >> "{tmpfile}"\r\n'
-        batfile.write_text(bat_content, encoding="ascii")
+        batfile.write_text(bat_content, encoding="ascii", newline="")
 
         result = subprocess.run(
             ["cmd", "/c", str(batfile)],

@@ -61,14 +61,15 @@ class MkmkParser:
         "fatal": re.compile(
             r"fatal\s+(?P<severity>error)\s+(?P<code>\w+)\s*:\s*(?P<message>.+)"
         ),
-        # mkmk wrapper errors: # make-ERROR: path/to/file
+        # mkmk wrapper errors. B28 emits mkmk-ERROR; make-ERROR is retained
+        # for compatibility with output observed from other toolchain layers.
         "mkmk_error": re.compile(
-            r"#\s*make-(?P<severity>ERROR)\s*:\s*(?P<file>.+?)\s*$"
+            r"^\s*#?\s*(?P<code>(?:mkmk|make)-(?P<severity>ERROR))\s*:\s*(?P<file>.+?)\s*$"
         ),
         # Require whitespace after the separator so a Windows drive colon is
         # not mistaken for the file/message boundary.
         "syst_error": re.compile(
-            r"#\s*syst-(?P<severity>ERROR)\s*:\s*(?P<file>.+?)(?::\s+|\s+-\s+)(?P<message>.+?)\s*$"
+            r"^\s*#?\s*(?P<code>syst-(?P<severity>ERROR))\s*:\s*(?P<file>.+?)(?::\s+|\s+-\s+)(?P<message>.+?)\s*$"
         ),
         # Generic error/warning
         "generic": re.compile(
@@ -216,6 +217,8 @@ _ERROR_ADVICE = {
     "LNK2001": "未解析的外部符号 — 检查 Imakefile.mk 的 LINK_WITH 是否缺少依赖模块",
     "LNK2019": "未解析的外部符号 — 同上，检查模块链接配置",
     "mkmk-ERROR": "mkmk 配置错误 — 检查 workspace 是否有 .edu 框架目录",
+    "make-ERROR": "mkmk 构建步骤错误 — 检查对应文件和前序编译输出",
+    "syst-ERROR": "构建系统错误 — 检查文件访问、路径和工具链环境",
 }
 
 

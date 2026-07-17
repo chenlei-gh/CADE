@@ -7,6 +7,7 @@ import sys
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 SKILL_ROOT = Path(__file__).parent.parent
@@ -14,8 +15,12 @@ sys.path.insert(0, str(SKILL_ROOT / "skills"))
 
 from actions import ActionContext, create_framework
 from analyzer import WorkspaceAnalyzer
+import build as build_module
+import cade as cade_module
 from build import verify_build
 from changeset import ChangeSet, Patch, merge_changesets
+from diagnostics import DiagnosticsEngine
+from generator import TemplateGenerator
 from parser import parse_mkmk_output
 from repair import RepairLoop, RepairState
 from utils import Cache
@@ -73,6 +78,42 @@ try:
     check("framework with modules applies", framework_apply["status"] == "applied", str(framework_apply.get("errors", [])))
     check("framework module exists", (workspace / "CombinedFramework.edu" / "CoreModule.m" / "Imakefile.mk").exists())
 
+    # Generated tests must use APIs available in B28, not an invented test framework.
+    generated_tests = workspace / "generated_tests"
+    testcase_result = TemplateGenerator().generate("testcase", "GeneratedTest", generated_tests)
+    generated_header = (generated_tests / "GeneratedTest.h").read_text(encoding="utf-8")
+    generated_source = (generated_tests / "GeneratedTest.cpp").read_text(encoding="utf-8")
+    check("testcase generation succeeds", testcase_result.get("status") == "success", str(testcase_result))
+    check("testcase omits unavailable CATTestCase", '#include "CATTestCase.h"' not in generated_header and "public CATTestCase" not in generated_header and ": CATTestCase(" not in generated_source)
+    check("testcase uses supported CATAssert", "CATAssert(" in generated_source)
+    check("testcase omits unavailable suite macros", "CATBeginTestSuite" not in generated_source and "CATAddTest" not in generated_source)
+
+    # Static diagnostics must reject the legacy patterns found by the real TTEST build.
+    legacy_source = workspace / "CombinedFramework.edu" / "CoreModule.m" / "src" / "LegacyTest.h"
+    legacy_source.write_text('#include "CATTestCase.h"\n', encoding="utf-8")
+    legacy_addin = legacy_source.with_name("LegacyAddin.cpp")
+    legacy_addin.write_text("CATImplementHeaderResources(LegacyHdr, CATCommandHeader, LegacyHdr);\n", encoding="utf-8")
+    legacy_snapshot = WorkspaceAnalyzer(workspace).analyze()
+    legacy_diagnostics = DiagnosticsEngine(legacy_snapshot)
+    legacy_diagnostics.run_all()
+    compile_problems = [d.problem for d in legacy_diagnostics.diagnostics if d.category == "compile_contract"]
+    check("diagnostics detect unavailable CATTestCase", any("CATTestCase" in p for p in compile_problems), str(compile_problems))
+    check("diagnostics detect invalid header macro", any("CommandHeader" in p for p in compile_problems), str(compile_problems))
+
+    # The documented direct `build.py <workspace> -a` CLI form must remain valid.
+    cli_calls = []
+    with patch.object(sys, "argv", ["build.py", str(workspace), "-a"]), \
+            patch.object(build_module, "build_workspace", side_effect=lambda ws, opts, timeout: cli_calls.append((ws, opts, timeout)) or {"status": "success"}), \
+            patch.object(build_module, "output_json", return_value=None):
+        build_module.main()
+    check("build CLI accepts direct -a", bool(cli_calls) and cli_calls[0][1] == "-a", str(cli_calls))
+
+    kernel_calls = []
+    with patch.object(cade_module, "_kernel", side_effect=lambda mode, text, workspace=None: kernel_calls.append((mode, text, workspace)) or {"status": "ok", "message": "mock"}), \
+            patch.object(cade_module, "_print_kernel", return_value=None):
+        cade_module.cmd_diagnose([str(workspace)])
+    check("diagnose CLI uses positional workspace", bool(kernel_calls) and kernel_calls[0][2] == str(workspace), str(kernel_calls))
+
     # Conflicting merge must not silently select the last writer.
     conflict_path = workspace / "conflict.txt"
     first = ChangeSet(action="first", description="first")
@@ -84,15 +125,31 @@ try:
     check("merge conflict blocks apply", conflict_apply["status"] == "rejected", str(conflict_apply.get("errors", [])))
     check("merge conflict writes no file", not conflict_path.exists())
 
-    # Wrapper/system errors must count even when mkmk returns zero.
+    # Wrapper/system errors must count even when mkmk returns zero. B28 uses
+    # mkmk-ERROR; make-ERROR remains a compatibility variant.
     wrapper_output = (
-        "# make-ERROR: C:\\Build Output\\BrokenModule.m\n"
-        "# syst-ERROR: C:\\Program Files\\Dassault Systemes\\broken.obj: access denied\n"
+        "   # mkmk-ERROR: C:\\Build Output\\Broken Module.m\n"
+        "mkmk-ERROR: C:\\Build Output\\Second Module.m\n"
+        "# make-ERROR: C:\\Build Output\\Legacy Module.m\n"
+        "  # syst-ERROR: C:\\Program Files\\Dassault Systemes\\broken.obj: access denied\n"
     )
     parsed_wrapper = parse_mkmk_output(wrapper_output)
-    check("make/syst errors are parsed", parsed_wrapper["error_count"] == 2, str(parsed_wrapper))
+    check("mkmk/make/syst errors are parsed", parsed_wrapper["error_count"] == 4, str(parsed_wrapper))
+    wrapper_codes = [e.get("code") for e in parsed_wrapper["errors"]]
+    check("mkmk wrapper code is preserved", wrapper_codes.count("mkmk-ERROR") == 2, str(wrapper_codes))
     syst_errors = [e for e in parsed_wrapper["errors"] if e.get("message") == "access denied"]
-    check("syst error preserves message", len(syst_errors) == 1, str(parsed_wrapper["errors"]))
+    check("syst error preserves message", len(syst_errors) == 1 and syst_errors[0].get("code") == "syst-ERROR", str(parsed_wrapper["errors"]))
+    check("wrapper Windows path with spaces is parsed", any(e.get("file") == "Broken Module.m" for e in parsed_wrapper["errors"]), str(parsed_wrapper["errors"]))
+
+    prose_output = (
+        "Documentation says mkmk-ERROR: this is only an example.\n"
+        "prefix # syst-ERROR: C:\\Build\\broken.obj: not a real record\n"
+        "mkmk completed successfully\n"
+    )
+    parsed_prose = parse_mkmk_output(prose_output)
+    check("wrapper tokens in prose are ignored", parsed_prose["error_count"] == 0, str(parsed_prose))
+    single_wrapper = parse_mkmk_output("# mkmk-ERROR: C:\\Build Output\\OnlyOnce.m")
+    check("one wrapper line is counted once", single_wrapper["error_count"] == 1, str(single_wrapper))
 
     # Build verification must reject stale or implausible target DLLs.
     bin_dir = workspace / "win_b64" / "code" / "bin"
@@ -119,6 +176,101 @@ try:
         build_start_time=build_start,
     )
     check("tiny target DLL fails verification", not tiny_verify["ok"], str(tiny_verify["issues"]))
+
+    # Mixed module results must identify only stale/missing targets.
+    fresh_dll = bin_dir / "FreshModule.dll"
+    stale_dll = bin_dir / "StaleModule.dll"
+    fresh_dll.write_bytes(b"f" * 2048)
+    stale_dll.write_bytes(b"s" * 2048)
+    os.utime(fresh_dll, (fresh_time, fresh_time))
+    os.utime(stale_dll, (stale_time, stale_time))
+    mixed_verify = verify_build(
+        workspace,
+        expected_modules=["FreshModule", "StaleModule", "MissingModule"],
+        build_start_time=build_start,
+    )
+    mixed_issues = mixed_verify["issues"]
+    check("mixed module verification fails", not mixed_verify["ok"], str(mixed_issues))
+    check("mixed verification identifies stale module", any("StaleModule.dll" in issue and "stale" in issue for issue in mixed_issues), str(mixed_issues))
+    check("mixed verification accepts fresh module", not any("FreshModule.dll" in issue for issue in mixed_issues), str(mixed_issues))
+    check("mixed verification identifies missing module", any("missingmodule.dll" in issue.lower() and "not found" in issue.lower() for issue in mixed_issues), str(mixed_issues))
+
+    # The final cache and log must reflect post-build verification, not pre-verification success.
+    build_ws = workspace / "mock_build"
+    build_fw = build_ws / "MockFramework.edu"
+    build_mod = build_fw / "MockModule.m"
+    (build_fw / "IdentityCard").mkdir(parents=True)
+    (build_fw / "IdentityCard" / "IdentityCard.h").write_text("// identity", encoding="utf-8")
+    (build_fw / "Imakefile.mk").write_text("", encoding="utf-8")
+    build_mod.mkdir()
+    (build_mod / "Imakefile.mk").write_text("BUILT_OBJECT_TYPE=SHARED LIBRARY", encoding="utf-8")
+
+    class MemoryLogger:
+        instances = []
+
+        def __init__(self, *_args, **_kwargs):
+            self.lines = []
+            self.__class__.instances.append(self)
+
+        def clear(self):
+            self.lines.clear()
+
+        def write(self, message):
+            self.lines.append(str(message))
+
+    class MemoryCache:
+        instances = []
+
+        def __init__(self, *_args, **_kwargs):
+            self.data = {}
+            self.__class__.instances.append(self)
+
+        def load(self):
+            return dict(self.data)
+
+        def save(self, data):
+            self.data = dict(data)
+
+    class FakeEnvironment:
+        _build_bat = None
+
+        def load_config(self):
+            return True
+
+        def build_time_command(self, _workspace, _options):
+            return ["fake-build"], "fake-build"
+
+    fake_process = SimpleNamespace(returncode=0, stdout="build completed", stderr="")
+    failed_verification = {"ok": False, "issues": ["MockModule.dll: stale DLL"]}
+    with patch.object(build_module, "Logger", MemoryLogger), \
+            patch.object(build_module, "Cache", MemoryCache), \
+            patch.object(build_module, "CAAEnvironment", FakeEnvironment), \
+            patch.object(build_module, "setup_prerequisite_path", return_value={"status": "success"}), \
+            patch.object(build_module.subprocess, "run", return_value=fake_process), \
+            patch.object(build_module, "verify_build", return_value=failed_verification), \
+            patch.object(build_module, "sync_runtime_view", return_value={"synced": [], "errors": [], "ok": True}):
+        mocked_build = build_module.build_workspace(build_ws)
+
+    final_cache = MemoryCache.instances[-1].data
+    final_log = MemoryLogger.instances[-1].lines
+    check("verification failure changes returned build status", mocked_build["status"] == "failed_verification", str(mocked_build))
+    check("final cache stores verification failure", final_cache.get("status") == "failed_verification", str(final_cache))
+    check("final cache preserves prerequisite workspace", final_cache.get("prereq_workspace") == str(build_ws), str(final_cache))
+    check("final build log stores verification failure", any("Status: failed_verification" in line for line in final_log), str(final_log))
+
+    successful_verification = {"ok": True, "issues": [], "dll_count": 1, "dlls": [{"name": "MockModule.dll"}]}
+    MemoryLogger.instances.clear()
+    MemoryCache.instances.clear()
+    with patch.object(build_module, "Logger", MemoryLogger), \
+            patch.object(build_module, "Cache", MemoryCache), \
+            patch.object(build_module, "CAAEnvironment", FakeEnvironment), \
+            patch.object(build_module, "setup_prerequisite_path", return_value={"status": "success"}), \
+            patch.object(build_module.subprocess, "run", return_value=fake_process), \
+            patch.object(build_module, "verify_build", return_value=successful_verification), \
+            patch.object(build_module, "sync_runtime_view", return_value={"synced": [], "errors": [], "ok": True}):
+        successful_build = build_module.build_workspace(build_ws)
+    check("successful build returns verification evidence", successful_build.get("verification") == successful_verification, str(successful_build))
+    check("successful cache stores verification evidence", MemoryCache.instances[-1].data.get("verification") == successful_verification, str(MemoryCache.instances[-1].data))
 
     # Repair must diagnose the output returned by this build, not stale cache data.
     repair_ws = workspace / "repair"

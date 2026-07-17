@@ -1166,16 +1166,23 @@ python skills/runtime_view.py [workspace_path]
 
 详细测试文档: [TEST_DOCUMENTATION.md](docs/TEST_DOCUMENTATION.md)
 
-### 测试覆盖率: 100%
+### 当前验证范围
 
-**单元测试**: 49/49 通过 ✅
+> ⚠️ 当前没有证据支持“测试覆盖率 100%”或“生产就绪”。快速模式只执行安全的静态/模拟回归，不执行真实 Build、CNEXT 或 CATIA 生命周期，因此不能证明生成项目可编译或可运行。
+
+**Full Integration**: 49/49 通过
 ```bash
-python test_full_integration.py
+python tests/test_full_integration.py
 ```
 
-**端到端测试**: 7/7 场景通过 ✅
+**Full Regression quick**: 394/398，剩余 4 项为精确 quarantine
 ```bash
-python test_e2e_integration.py
+python tests/test_full_regression.py --quick
+```
+
+**Master quick**: 39 套中执行 38 套，跳过 1 套 CATIA 生命周期测试
+```bash
+python tests/test_master.py --quick
 ```
 
 **测试分组**:
@@ -1552,11 +1559,22 @@ result = delete_command(ctx, name="MyCmd", module="TestModule.m")
 |------|-----------|------|
 | CNEXT 无工具栏按钮 | `MacDeclareHeader` 在 .cpp 中？ | `knowledge/ui/toolbar.md` |
 | 编译成功但 DLL 未生成 | `build.py` false positive？ | `BestPractices.md → 编译输出完整性审计` |
+| 输出含 `mkmk-ERROR` / `syst-ERROR` | 即使 mkmk 返回 0，也必须判 Build 失败 | `skills/parser.py` wrapper 解析规则 |
 | mkmk 报 License 错误 | TCK 未注册？CATEnv 回退 | `BestPractices.md → TCK 回退策略` |
 | 编译无 make 输出 | `mkGetPreq` 缺 `call` 前缀 | `BestPractices.md → mkGetPreq 静默退出` |
 | CNEXT 找不到 addin | `CATDictionaryPath` 指向 Runtime View？ | `BestPractices.md → CNEXT 环境变量` |
 | Runtime View 缺资源 | 编译后是否同步 dico/NLS/icons？ | `BestPractices.md → Runtime View 同步` |
 | Dialog LNK2001 错误 | 误用 `CATImplementClass`？ | `knowledge/ui/dialog.md` |
+
+### Build 结果判定
+
+B28 的正式错误前缀是 `mkmk-ERROR`，构建系统错误使用 `syst-ERROR`；`make-ERROR` 仅作为历史兼容变体保留。parser 支持带或不带 `#`、带前导缩进的行首 wrapper，但不会把普通正文中的同名字符串误判为错误。
+
+不能只依据 mkmk 进程返回码判定成功。Build 成功必须同时满足：
+
+1. parser 的错误数为 0，且输出不含 `mkmk-ERROR`、`make-ERROR` 或 `syst-ERROR`；
+2. 预期 DLL 存在且大小大于 0；
+3. DLL 修改时间不早于本次 Build 开始时间，不能接受旧缓存产物。
 
 ### 常见问题
 
@@ -1621,36 +1639,29 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 ---
 
-## 🚀 生产就绪状态
+## 🚧 生产就绪评估
 
-### ✅ 验收标准
+### 当前判定：尚未恢复生产就绪
 
-- [x] 单元测试通过（快速模式：35/37 套件，2 套慢速测试跳过）
-- [x] 端到端模板生成验证通过
-- [x] 所有模板可用
-- [x] 已知问题已跟踪（参见 `CHANGELOG.md` 和 `BestPractices.md`）
-- [x] P0/P1/P2 缺陷已修复（2026-07-17：23/33 项已解决）
-- [x] 架构设计验证通过
-- [x] 文档完整
-- [x] 关键缺陷已修复（23 项 P0-P2 已完成审计）
-- [x] 其余 10 项 P3 测试质量项正在跟踪中
+已完成安全回归的核心缺陷包括 ChangeSet 失败零副作用、组合创建、merge 冲突阻断、Build 输出解析、Repair 当前输出诊断、DLL 新鲜度验证和 Analyzer 去重。但以下验收缺口仍阻止生产就绪声明：
 
-### 📊 质量指标
+- Full Regression quick 仍有 4 项精确 quarantine，尚未全部关闭。
+- quick 模式不执行真实 Build、CNEXT 或 CATIA 生命周期。
+- 原始 `TTEST` 含旧版生成产物，真实 Build 仍会因 `CATTestCase.h` 和错误 CommandHeader 宏失败；诊断现可明确识别这些问题。
+- 当前 TestCase/Addin 模板已在 `TTEST` 隔离副本上完成真实 B28 Build，parser 0 error 且新鲜 DLL 校验通过；但模板全集和 CATIA 运行时仍无完整验收证据。
 
-- **测试套件**: 39 套（快速模式执行 38 套，1 套 CATIA 生命周期测试跳过）
-- **代码质量**: Python 代码库维护良好，已通过 P0-P2 安全审计
-- **性能**: 优秀（~50ms 模板生成）
-- **可维护性**: 高（模块化设计）
-- **可扩展性**: 高（插件式模板系统）
+### 已验证范围
 
-### 🎯 使用建议
+- **测试套件**: 39 套；快速模式执行 38 套，跳过 1 套 CATIA 生命周期测试。
+- **Full Integration**: 49/49 通过。
+- **Full Regression quick**: 394/398；4 项 quarantine 不计作通过。
+- **适用场景**: 静态分析、预览、受控生成和模拟回归；生成结果仍须人工审查并通过真实 Build 验证。
 
-该技能已准备好用于：
-- ✅ 日常 CAA 开发工作
-- ✅ 快速原型开发
-- ✅ 大规模项目开发
-- ✅ AI 辅助开发
-- ✅ CADE CLI 替代所有脚本
+### 使用限制
+
+- 不应将 quick 测试结果解释为 CAA 项目可编译、可加载或可运行。
+- 不应在未审查 ChangeSet 和生成代码的情况下用于生产项目。
+- CLI、MCP 和 Python API 各有用途，不能笼统宣称 CLI 可替代所有脚本。
 
 ---
 
@@ -1667,7 +1678,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 **当前版本**: 3.2.1
 - **发布日期**: 2026-07-15
-- **状态**: 生产就绪
+- **状态**: 活跃开发 / 受限使用（尚未恢复生产就绪）
 - **Python 版本**: 3.7+
 - **CATIA 版本**: V5 R19+
 

@@ -191,7 +191,7 @@ def diagnose_environment() -> dict:
 
 
 def build_workspace(
-    workspace_path: Path, options: str = "-u", timeout: int = 600
+    workspace_path: Path, options: str = "-u -a", timeout: int = 600
 ) -> dict:
     """
     Build CAA workspace using mkmk with full Build Time environment.
@@ -349,7 +349,10 @@ def build_workspace(
         if tck_guidance:
             build_result["tck_guidance"] = tck_guidance
 
-        cache.save(build_result)
+        # Preserve prerequisite state in the final cache entry. The completed
+        # build result is cached only after post-build verification has had a
+        # chance to change its status.
+        build_result["prereq_workspace"] = str(workspace_path)
 
         # Post-build verification (P1-005 fix)
         # Discover expected module names from frameworks
@@ -365,8 +368,8 @@ def build_workspace(
             expected_modules=expected_mods if expected_mods else None,
             build_start_time=start_time,
         )
+        build_result["verification"] = verify
         if verify["issues"]:
-            build_result["verification"] = verify
             if status == "success" and not verify["ok"]:
                 build_result["status"] = "failed_verification"
                 build_result["message"] = f"Build compiled but verification failed: {'; '.join(verify['issues'])}"
@@ -378,8 +381,9 @@ def build_workspace(
                 logger.write(f"Runtime View synced: {len(sync['synced'])} files")
         except Exception:
             pass
+        cache.save(build_result)
         logger.write(
-            f"Status: {status} | Errors: {parsed['error_count']} | Duration: {format_duration(duration)}"
+            f"Status: {build_result['status']} | Errors: {parsed['error_count']} | Duration: {format_duration(duration)}"
         )
         return build_result
 
@@ -647,7 +651,12 @@ def _exec_build_cmd(command: str, workspace_path: Path, timeout: int = 300) -> d
 
     try:
         bat_content = f'@echo off\r\n{cmd_display} > "{tmpfile}" 2>&1\r\necho EXIT_CODE=%ERRORLEVEL% >> "{tmpfile}"\r\n'
-        batfile.write_text(bat_content, encoding="ascii")
+        # newline="" prevents Path.write_text's default \n -> \r\n translation
+        # from doubling the \r\n already embedded in bat_content, which
+        # produces malformed \r\r\n line endings (see env.py build_time_command
+        # for the full explanation of the corruption this caused).
+        with open(batfile, "w", encoding="ascii", newline="") as bf:
+            bf.write(bat_content)
 
         result = subprocess.run(
             ["cmd", "/c", str(batfile)],
@@ -705,12 +714,19 @@ def main():
         "workspace", nargs="?", default=".", help="Workspace path (default: current)"
     )
     parser.add_argument(
-        "options", nargs="?", default="-u", help="mkmk options (default: -u)"
+        "options", nargs="?", default="-u -a", help="mkmk options (default: -u -a)"
     )
     parser.add_argument(
         "--timeout", type=int, default=600, help="Timeout in seconds (default: 600)"
     )
-    args = parser.parse_args()
+    # mkmk options are positional values that begin with '-'. parse_known_args
+    # keeps the documented `build.py <workspace> -a` form usable without
+    # requiring callers to know argparse's `--` escape convention.
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        if args.options != "-u -a" or len(unknown) != 1:
+            parser.error("unrecognized arguments: " + " ".join(unknown))
+        args.options = unknown[0]
 
     result = build_workspace(Path(args.workspace).resolve(), args.options, args.timeout)
     output_json(result, exit_code=0 if result["status"] == "success" else 1)
