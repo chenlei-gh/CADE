@@ -10,7 +10,9 @@ Contract:
 """
 
 import sys
+from contextlib import ExitStack
 from pathlib import Path
+from unittest.mock import patch
 
 SKILL = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL / "skills"))
@@ -89,16 +91,31 @@ ROUTES = {
 
 print(f"\nTotal old tools: {len(ROUTES)}")
 
-for tool_name, (mode, query) in ROUTES.items():
-    r = k.execute(mode, query)
-    status = r.get("status", "?")
-    # Accept any status except a hard crash (exception)
-    has_route = status != "?"
-    ck(
-        f"{tool_name} → {mode.value}",
-        has_route,
-        f"status={status}" if not has_route else "",
-    )
+# Routing tests must never invoke the real Build Time toolchain or CATIA lifecycle.
+with ExitStack() as mocks:
+    build_result = {"status": "success", "message": "mocked build"}
+    for name in [
+        "incremental_build", "full_build", "clean_build", "build_with_threads",
+        "create_runtime_view", "setup_prerequisite_path",
+    ]:
+        mocks.enter_context(patch(f"build.{name}", return_value=build_result.copy()))
+    mocks.enter_context(patch("run.start_catia_runtime", return_value={"status": "started"}))
+    mocks.enter_context(patch("run.stop_catia", return_value={"status": "stopped"}))
+    mocks.enter_context(patch("run.check_catia_running", return_value={"status": "not_running"}))
+    mocks.enter_context(patch("run.run_catia_macro", return_value={"status": "success"}))
+    mocks.enter_context(patch("run.run_catia_batch", return_value={"status": "success"}))
+    mocks.enter_context(patch("docgen.generate_all", return_value={"status": "ok"}))
+
+    for tool_name, (mode, query) in ROUTES.items():
+        r = k.execute(mode, query)
+        status = r.get("status", "?")
+        # Accept any routed status, including a structured validation error.
+        has_route = status != "?"
+        ck(
+            f"{tool_name} → {mode.value}",
+            has_route,
+            f"status={status}" if not has_route else "",
+        )
 
 print(f"\n{'='*60}")
 print(f"  Total: {passed}/{total} passed")

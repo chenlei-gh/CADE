@@ -300,7 +300,16 @@ class ChangeSet:
             }
             return result
 
-        # 0a. Path validation against workspace_root (P0-001)
+        # 0a. A merged ChangeSet with unresolved conflicts is never applicable.
+        merge_conflicts = self.metadata.get("merge_conflicts", [])
+        if merge_conflicts:
+            result["status"] = "rejected"
+            result["errors"] = [
+                "Unresolved ChangeSet merge conflicts: " + "; ".join(merge_conflicts)
+            ]
+            return result
+
+        # 0b. Path validation against workspace_root (P0-001)
         if workspace_root:
             violations = self._validate_paths(workspace_root)
             if violations:
@@ -308,14 +317,14 @@ class ChangeSet:
                 result["errors"] = violations
                 return result
 
-        # 0b. Pre-validate file states (P0-003)
+        # 0c. Pre-validate file states (P0-003)
         file_errors = self._pre_validate_files()
         if file_errors:
             result["status"] = "rejected"
             result["errors"] = file_errors
             return result
 
-        # 0c. Create backup if workspace_root provided
+        # 0d. Create backup if workspace_root provided
         if workspace_root:
             try:
                 from backup import BackupManager
@@ -510,10 +519,13 @@ class ChangeSet:
 
         if patch.operation == "insert_after":
             matches = 0
-            for i, line in enumerate(lines):
+            new_lines = []
+            for line in lines:
+                new_lines.append(line)
                 if patch.target in line:
-                    lines.insert(i + 1, patch.content)
+                    new_lines.append(patch.content)
                     matches += 1
+            lines = new_lines
             if matches == 0:
                 raise ValueError(
                     f"Patch insert_after: target '{patch.target[:60]}' "
@@ -607,15 +619,17 @@ def merge_changesets(*changesets: ChangeSet) -> ChangeSet:
         for path_str in cs.created:
             if path_str in seen_created or path_str in seen_modified:
                 conflicts.append(f"Created conflict on {path_str}")
+            else:
+                merged.created[path_str] = cs.created[path_str]
             seen_created.add(path_str)
-            merged.created[path_str] = cs.created[path_str]
 
         # Detect modified-path conflicts
         for path_str in cs.modified:
             if path_str in seen_modified or path_str in seen_created:
                 conflicts.append(f"Modified conflict on {path_str}")
+            else:
+                merged.modified[path_str] = cs.modified[path_str]
             seen_modified.add(path_str)
-            merged.modified[path_str] = cs.modified[path_str]
 
         # Merge patches — track per file for conflict detection
         for patch in cs.patches:
@@ -629,6 +643,7 @@ def merge_changesets(*changesets: ChangeSet) -> ChangeSet:
         merged.warnings.extend(cs.warnings)
 
     if conflicts:
+        merged.metadata["merge_conflicts"] = conflicts
         merged.add_warning(
             "Merge conflicts detected: " + "; ".join(conflicts[:5])
             + ("..." if len(conflicts) > 5 else "")

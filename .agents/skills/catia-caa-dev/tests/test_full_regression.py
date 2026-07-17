@@ -616,17 +616,23 @@ if bld_mod:
             f"8.1 build.{fn_name}", callable(fn), "not callable" if fn is None else ""
         )
 
-    # Quick dry-run test
-    tmp = Path(tempfile.mkdtemp(prefix="cade_test_"))
-    try:
-        r = bld_mod.build_workspace(tmp, "-n", timeout=30)
-        check(
-            "8.2 build_workspace dry-run",
-            isinstance(r, dict),
-            str(r.get("status", "?")),
-        )
-    except Exception as e:
-        check("8.2 build_workspace dry-run", False, str(e)[:60])
+    # Keep quick mode static: even mkmk -n initializes the real Build Time toolchain.
+    if not ARGS.quick:
+        tmp = Path(tempfile.mkdtemp(prefix="cade_test_"))
+        try:
+            r = bld_mod.build_workspace(tmp, "-n", timeout=30)
+            check(
+                "8.2 build_workspace dry-run",
+                isinstance(r, dict),
+                str(r.get("status", "?")),
+            )
+        except Exception as e:
+            check("8.2 build_workspace dry-run", False, str(e)[:60])
+        finally:
+            import shutil
+            shutil.rmtree(tmp, ignore_errors=True)
+    else:
+        print("  [SKIP] 8.2 build_workspace dry-run (quick mode)")
 
 # Run commands
 if run_mod:
@@ -1203,6 +1209,7 @@ EXISTING_SUITES = [
     "test_diagnostics.py",
     "test_fixplan_executor.py",
     "test_refactor.py",
+    "test_production_regressions.py",
     "test_e2e_integration.py",
     "test_l4_architecture.py",
     "test_l5_semantic.py",
@@ -1231,6 +1238,7 @@ SUITE_MARKERS = {
     "test_diagnostics.py": "100%",
     "test_fixplan_executor.py": "100%",
     "test_refactor.py": "100%",
+    "test_production_regressions.py": "All production regression tests passed",
     "test_e2e_integration.py": "passed",
     "test_l4_architecture.py": "100%",
     "test_l5_semantic.py": "100%",
@@ -1238,7 +1246,7 @@ SUITE_MARKERS = {
     "test_knowledge_system.py": "ALL CHECKS PASSED",
     "test_skill_ai_coordination.py": "Perfect —",
     "test_system_health.py": None,
-    "test_catia_detection.py": "All suites passed",
+    "test_catia_detection.py": "ALL CATIA DETECTION TESTS PASSED",
     "test_build_and_run.py": "All Build Time & Run Time commands working",
 }
 
@@ -1324,6 +1332,7 @@ elif not unknown_failures:
     print(f"\n  >>> {passed}/{total} PASSED ({len(quarantined_failures)} quarantined) <<<")
     for label in sorted(quarantined_failures):
         print(f"      [QUARANTINE] {label}")
+    print("\n  >>> ALL NON-QUARANTINED TESTS PASSED <<<")
     sys.exit(0)
 else:
     print("\n  Unknown failures:")

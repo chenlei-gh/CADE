@@ -504,7 +504,13 @@ def setup_prerequisite_path(workspace_path: Path, catia_install: str = None) -> 
     if not catia_install:
         return error_result("CATIA installation path not configured")
     cmd = f'mkGetPreq -p "{catia_install};"'
-    return _exec_build_cmd(cmd, workspace_path)
+    result = _exec_build_cmd(cmd, workspace_path)
+    # Exit code 5 means already configured — non-fatal
+    if result.get("status") == "failed" and result.get("exit_code") == 5:
+        result["status"] = "success"
+        result["message"] = "Prerequisite already configured"
+        result["exit_code"] = 0
+    return result
 
 
 def print_prerequisite(workspace_path: Path, target: str = "") -> dict:

@@ -8,12 +8,17 @@ Verifies response format, token efficiency, and error consistency.
 Run: python test_ai_integration.py
 """
 
+import argparse
 import json
 import sys
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL_ROOT / "skills"))
+
+_parser = argparse.ArgumentParser(description="AI response integration test")
+_parser.add_argument("--quick", action="store_true", help="Do not invoke Build Time tools")
+ARGS = _parser.parse_args()
 
 from actions import ActionContext
 from token_optimizer import optimize
@@ -153,9 +158,17 @@ print("  7. AI: 'build my workspace'")
 print("=" * 70)
 
 try:
-    from build import build_workspace
-    w = Path(".").resolve()
-    r = build_workspace(w, "-n", timeout=30)
+    if ARGS.quick:
+        r = {
+            "status": "success",
+            "message": "mocked quick build",
+            "output": "large build output omitted by optimizer",
+        }
+        print("  [SKIP] real Build Time invocation (quick mode)")
+    else:
+        from build import build_workspace
+        w = Path(".").resolve()
+        r = build_workspace(w, "-n", timeout=30)
     check("build returns dict", isinstance(r, dict))
     check("has status", "status" in r)
 

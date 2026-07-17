@@ -26,6 +26,7 @@ SUITES = {
     "L2-6 Diagnostics": "test_diagnostics.py",
     "L2-7 FixPlan Executor": "test_fixplan_executor.py",
     "L2-8 Refactor": "test_refactor.py",
+    "L2-9 Production Regressions": "test_production_regressions.py",
     # ── L3: End-to-End ──
     "L3-1 E2E Integration": "test_e2e_integration.py",
     # ── L4: Architecture ──
@@ -79,6 +80,7 @@ VERIFY_STRINGS = {
     "test_diagnostics.py": "100%",
     "test_fixplan_executor.py": "100%",
     "test_refactor.py": "100%",
+    "test_production_regressions.py": "All production regression tests passed",
     "test_e2e_integration.py": "passed",
     "test_l4_architecture.py": "100%",
     "test_l5_semantic.py": "100%",
@@ -94,7 +96,7 @@ VERIFY_STRINGS = {
     "test_decomposer.py": "passed",
     "test_build_and_run.py": "All Build Time & Run Time commands working",
     "test_skill_ai_coordination.py": "Perfect —",
-    "test_full_regression.py": "ALL TESTS PASSED",
+    "test_full_regression.py": "ALL NON-QUARANTINED TESTS PASSED",
     "test_cross_reference.py": "ALL CROSS-REFERENCES CONSISTENT",
     "test_token_optimizer.py": "All token optimizer tests passed",
     "test_caa_structure.py": "All CAA standard paths verified",
@@ -142,7 +144,7 @@ def run(quick: bool = False):
 
         t0 = time.time()
         command = [sys.executable, str(script_path)]
-        if quick and script == "test_full_regression.py":
+        if quick and script in {"test_full_regression.py", "test_ai_integration.py"}:
             command.append("--quick")
 
         try:

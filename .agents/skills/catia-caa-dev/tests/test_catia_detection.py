@@ -76,6 +76,8 @@ class TestRunner:
                     print(f"  - {name}")
                     if error:
                         print(f"    {error}")
+        else:
+            print("\nALL CATIA DETECTION TESTS PASSED")
 
         return self.failed == 0
 
