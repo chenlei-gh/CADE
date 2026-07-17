@@ -25,6 +25,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from changeset import ChangeSet, Patch
+
 
 # ─── RepairState ──────────────────────────────────────────────────
 
@@ -196,15 +198,27 @@ class RepairLoop:
         for attempt in range(1, self.MAX_RETRIES + 1):
             self._attempts = attempt
 
-            # Apply auto-fixes
+            # Apply auto-fixes via ChangeSet (P0-006 fix)
             fixed_count = 0
             for d in auto_fixable:
                 if d.get("fix_plan"):
                     try:
-                        self._execute_fix_plan(d["fix_plan"])
-                        fixed_count += 1
-                    except Exception:
-                        pass
+                        cs = self._build_fix_changeset(d["fix_plan"])
+                        if not cs.is_empty:
+                            apply_result = cs.apply(workspace_root=self.workspace_root)
+                            if apply_result.get("status") == "applied":
+                                fixed_count += 1
+                            else:
+                                self._details.append({
+                                    "attempt": attempt,
+                                    "fix_plan_failed": d["fix_plan"],
+                                    "apply_result": apply_result,
+                                })
+                    except Exception as e:
+                        self._details.append({
+                            "attempt": attempt,
+                            "fix_plan_error": str(e),
+                        })
 
             self._fixes_applied += fixed_count
             self._details.append({
@@ -368,9 +382,13 @@ class RepairLoop:
 
     # ─── Fix Execution ─────────────────────────────────────────────
 
-    def _execute_fix_plan(self, fix_plan: dict) -> None:
-        """Execute a single FixPlan"""
-        action = fix_plan.get("action", "")
+    def _build_fix_changeset(self, fix_plan: dict) -> ChangeSet:
+        """Build a ChangeSet from a FixPlan (P0-006 fix).
+
+        No direct file writes — all changes are collected into a ChangeSet
+        and applied safely with path validation, backup, and rollback support.
+        """
+        action_name = fix_plan.get("action", "")
         file = fix_plan.get("file", "")
         line = fix_plan.get("line", "")
         after_line = fix_plan.get("after_line", "")
@@ -379,27 +397,67 @@ class RepairLoop:
         if not file_path.is_absolute():
             file_path = self.workspace_root / file_path
 
-        if action == "create_file":
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            file_path.write_text(line or "", encoding="utf-8")
-        elif action == "append_line":
-            content = file_path.read_text(encoding="utf-8", errors="replace")
-            if line and line not in content:
-                file_path.write_text(
-                    content.rstrip() + "\n" + line + "\n", encoding="utf-8"
-                )
-        elif action == "insert_line":
-            content = file_path.read_text(encoding="utf-8", errors="replace")
-            if after_line and after_line in content and line and line not in content:
-                new_content = content.replace(after_line, after_line + "\n" + line)
-                file_path.write_text(new_content, encoding="utf-8")
-        elif action == "delete_line":
-            content = file_path.read_text(encoding="utf-8", errors="replace")
-            delete_target = fix_plan.get("delete_target", "")
-            if delete_target and delete_target in content:
-                new_content = content.replace(delete_target + "\n", "")
-                new_content = new_content.replace(delete_target, "")
-                file_path.write_text(new_content, encoding="utf-8")
+        cs = ChangeSet(
+            action=f"repair:{action_name}",
+            description=fix_plan.get("description", f"Auto-fix: {action_name} on {file}"),
+        )
+
+        if action_name == "create_file":
+            if not file_path.exists():
+                cs.add_create(file_path, line or "")
+
+        elif action_name == "append_line":
+            if file_path.exists() and line:
+                content = file_path.read_text(encoding="utf-8", errors="replace")
+                if line not in content:
+                    cs.add_patch(Patch(
+                        file=file_path,
+                        operation="append",
+                        target="",
+                        content=line,
+                    ))
+
+        elif action_name == "insert_line":
+            if file_path.exists() and after_line and line:
+                content = file_path.read_text(encoding="utf-8", errors="replace")
+                if after_line in content and line not in content:
+                    cs.add_patch(Patch(
+                        file=file_path,
+                        operation="insert_after",
+                        target=after_line,
+                        content=line,
+                    ))
+
+        elif action_name == "delete_line":
+            if file_path.exists():
+                delete_target = fix_plan.get("delete_target", "")
+                if delete_target:
+                    content = file_path.read_text(encoding="utf-8", errors="replace")
+                    lines = content.split("\n")
+                    for i, ln in enumerate(lines, start=1):
+                        if delete_target in ln:
+                            cs.add_patch(Patch(
+                                file=file_path,
+                                operation="delete_lines",
+                                target=delete_target,
+                                content="",
+                                line_start=i,
+                                line_end=i,
+                            ))
+                            break
+
+        return cs
+
+    def _execute_fix_plan(self, fix_plan: dict) -> None:
+        """Execute a single FixPlan — deprecated, use _build_fix_changeset + apply.
+
+        Kept for backward compatibility. New code should use the ChangeSet path.
+        """
+        cs = self._build_fix_changeset(fix_plan)
+        if not cs.is_empty:
+            apply_result = cs.apply(workspace_root=self.workspace_root)
+            if apply_result.get("status") != "applied":
+                raise RuntimeError(f"FixPlan apply failed: {apply_result}")
 
     # ─── Backup ────────────────────────────────────────────────────
 

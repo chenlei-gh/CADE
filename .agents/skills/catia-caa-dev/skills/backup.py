@@ -100,7 +100,7 @@ class BackupManager:
         Rollback to a specific backup.
 
         Args:
-            backup_id: Backup identifier
+            backup_id: Backup identifier (validated for safety — P0-002)
 
         Returns:
             {
@@ -109,6 +109,10 @@ class BackupManager:
                 "restored": {...}
             }
         """
+        err = self._validate_backup_id(backup_id)
+        if err:
+            return {"status": "error", "message": err}
+
         backup_path = self.backup_dir / backup_id
 
         if not backup_path.exists():
@@ -200,16 +204,46 @@ class BackupManager:
         backups.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         return backups
 
+    def _validate_backup_id(self, backup_id: str) -> Optional[str]:
+        """Validate backup_id is safe — rejects path traversal (P0-002 fix).
+
+        Returns error message string if invalid, None if valid.
+        """
+        import re
+
+        # Must match timestamp-like format: repair_YYYYMMDD_HHMMSS
+        # or numeric timestamp YYYYMMDD_HHMMSS[_micro]
+        if not re.match(r'^[a-zA-Z0-9_.]{8,40}$', backup_id):
+            return f"Invalid backup_id format: '{backup_id}'. Expected: timestamp pattern."
+
+        # Reject path separators and traversal
+        if "/" in backup_id or "\\" in backup_id or ".." in backup_id:
+            return f"Invalid backup_id (path separators): '{backup_id}'"
+
+        # Ensure resolved path is within backup_dir
+        backup_path = (self.backup_dir / backup_id).resolve()
+        try:
+            if not backup_path.is_relative_to(self.backup_dir.resolve()):
+                return f"Invalid backup_id (outside backup dir): '{backup_id}'"
+        except ValueError:
+            return f"Invalid backup_id (cross-drive): '{backup_id}'"
+
+        return None
+
     def delete_backup(self, backup_id: str) -> Dict:
         """
         Delete a specific backup.
 
         Args:
-            backup_id: Backup identifier
+            backup_id: Backup identifier (timestamp format only)
 
         Returns:
             {"status": "success" | "error", "message": "..."}
         """
+        err = self._validate_backup_id(backup_id)
+        if err:
+            return {"status": "error", "message": err}
+
         backup_path = self.backup_dir / backup_id
 
         if not backup_path.exists():

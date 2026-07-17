@@ -17,6 +17,7 @@ import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from typing import List, Optional
 
 from env import CAAEnvironment
 from parser import parse_mkmk_output
@@ -53,8 +54,14 @@ def validate_workspace(workspace_path: Path) -> dict:
     return {"can_build": can_build, "issues": issues, "warnings": warnings}
 
 
-def verify_build(workspace_path: Path) -> dict:
-    """Post-build verification: check DLLs were produced."""
+def verify_build(workspace_path: Path, expected_modules: List[str] = None) -> dict:
+    """Post-build verification: check DLLs were produced (P1-006 fix).
+
+    Args:
+        workspace_path: Workspace root
+        expected_modules: Optional list of module names (e.g. ['TTModule']) to verify.
+                          If provided, each is checked individually.
+    """
     arch = "win_b64"
     try:
         from env import CAAEnvironment
@@ -69,6 +76,15 @@ def verify_build(workspace_path: Path) -> dict:
 
     if not dlls:
         issues.append(f"No DLLs found in {bin_dir}")
+
+    # Check target module DLLs (P1-006)
+    if expected_modules:
+        dll_names = {d.name.lower() for d in dlls}
+        for mod_name in expected_modules:
+            expected_dll = f"{mod_name.lower()}.dll"
+            if expected_dll not in dll_names:
+                issues.append(f"Expected DLL not found: {expected_dll}")
+
     for dll in dlls:
         size = dll.stat().st_size
         if size < 1024:
@@ -122,7 +138,6 @@ def sync_runtime_view(workspace_path: Path, arch: str = "win_b64") -> dict:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(f, dst)
                 synced.append(f"icons/{rel.as_posix()}")
-        break
     return {"synced": synced, "errors": errors, "ok": len(errors) == 0}
 
 
@@ -294,19 +309,29 @@ def build_workspace(
 
         cache.save(build_result)
 
-        # Post-build verification
-        if status == "success":
-            verify = verify_build(workspace_path)
-            if verify["issues"]:
-                build_result["verification"] = verify
-                logger.write(f"Post-build: {verify['issues']}")
-            # Sync framework resources to Runtime View for CNEXT visibility
-            try:
-                sync = sync_runtime_view(workspace_path)
-                if sync["synced"]:
-                    logger.write(f"Runtime View synced: {len(sync['synced'])} files")
-            except Exception:
-                pass
+        # Post-build verification (P1-005 fix)
+        # Discover expected module names from frameworks
+        expected_mods = []
+        for fw_dir in workspace_path.iterdir():
+            if fw_dir.is_dir() and fw_dir.name.endswith(".edu"):
+                for mod_dir in fw_dir.iterdir():
+                    if mod_dir.is_dir() and mod_dir.name.endswith(".m"):
+                        expected_mods.append(mod_dir.name.replace(".m", ""))
+
+        verify = verify_build(workspace_path, expected_modules=expected_mods if expected_mods else None)
+        if verify["issues"]:
+            build_result["verification"] = verify
+            if status == "success" and not verify["ok"]:
+                build_result["status"] = "failed_verification"
+                build_result["message"] = f"Build compiled but verification failed: {'; '.join(verify['issues'])}"
+            logger.write(f"Post-build: {verify['issues']}")
+        # Sync framework resources to Runtime View for CNEXT visibility (P2-005 fix: all frameworks)
+        try:
+            sync = sync_runtime_view(workspace_path)
+            if sync["synced"]:
+                logger.write(f"Runtime View synced: {len(sync['synced'])} files")
+        except Exception:
+            pass
         logger.write(
             f"Status: {status} | Errors: {parsed['error_count']} | Duration: {format_duration(duration)}"
         )

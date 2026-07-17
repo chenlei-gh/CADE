@@ -111,15 +111,16 @@ def _print_kernel(r: dict):
 def main():
     if len(sys.argv) < 2:
         print_help()
-        return
+        sys.exit(0)
 
     cmd = sys.argv[1].lower()
     args = sys.argv[2:]
+    rc = 0
 
     if cmd == "build":
-        cmd_build(args)
+        rc = cmd_build(args)
     elif cmd == "dev":
-        cmd_dev(args)
+        rc = cmd_dev(args)
     elif cmd == "develop":
         cmd_develop(args)
     elif cmd == "run":
@@ -161,14 +162,17 @@ def main():
     elif cmd == "version":
         cmd_version()
     elif cmd == "health":
-        cmd_health(args)
+        rc = cmd_health(args)
     elif cmd == "test":
-        cmd_test(args)
+        rc = cmd_test(args)
     elif cmd in ("help", "-h", "--help"):
         print_help()
     else:
         print(f"Unknown command: {cmd}")
         print_help()
+        rc = 1
+
+    sys.exit(rc)
 
 
 # ─── Develop ───────────────────────────────────────────────────────
@@ -253,10 +257,7 @@ def cmd_build(args):
     else:
         result = incremental_build(Path(ws))
 
-    _print_result(result)
-
-
-# ─── Dev (Build + Run) ───────────────────────────────────────────
+    return _print_result(result)
 
 
 def cmd_dev(args):
@@ -269,15 +270,15 @@ def cmd_dev(args):
     ws = _get_ws(args)
     if not ws:
         print("Error: workspace path required")
-        return
+        return 1
 
     print(f"[build] {ws}")
     build_result = incremental_build(Path(ws))
     if build_result.get("status") != "success":
         _print_result(build_result)
-        return
+        return 1
     print(f"[run] {ws}")
-    _print_result(start_catia_runtime(workspace_path=ws))
+    return _print_result(start_catia_runtime(workspace_path=ws))
 
 
 # ─── Run ──────────────────────────────────────────────────────────
@@ -308,7 +309,7 @@ def cmd_run(args):
     else:
         result = start_catia_runtime(workspace_path=ws)
 
-    _print_result(result)
+        return _print_result(result)
 
 
 # ─── Create ───────────────────────────────────────────────────────
@@ -415,7 +416,7 @@ def cmd_docs(args):
         idx = args.index("-o")
         output = args[idx + 1] if idx + 1 < len(args) else None
     result = generate_all(ws, output)
-    _print_result(result)
+    return _print_result(result)
 
 
 # ─── Runtime View ─────────────────────────────────────────────────
@@ -426,7 +427,7 @@ def cmd_runtime_view(args):
 
     ws = _get_ws(args)
     result = create_runtime_view(Path(ws))
-    _print_result(result)
+    return _print_result(result)
 
 
 # ─── Refactor ─────────────────────────────────────────────────────
@@ -563,7 +564,7 @@ def cmd_get_prereq(args):
     ws = _get_ws(args)
     target = args[0] if args else ""
     result = get_prerequisite(Path(ws), target=target)
-    _print_result(result)
+    return _print_result(result)
 
 
 def cmd_setup(args):
@@ -703,14 +704,21 @@ def _parse_flag(args, *names) -> str:
     return ""
 
 
-def _print_result(result):
-    """Pretty-print result"""
+def _print_result(result) -> int:
+    """Pretty-print result and return exit code (P2-003 fix)."""
     if isinstance(result, dict):
         import json
-
         print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
+        # Derive exit code from status
+        status = result.get("status", "")
+        if status in ("success", "passed", "ok", "applied", "rolled_back", "no_issues"):
+            return 0
+        if status == "preview" or status == "dry_run":
+            return 0
+        return 1
     else:
         print(result)
+        return 0
 
 
 def print_help():

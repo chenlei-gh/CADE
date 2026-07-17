@@ -7,11 +7,11 @@
 
 #include "<ClassName>.h"
 #include "CATIAfrGeneralWksAddin.h"
-#include "CATCommandHeader.h"
 #include "CATCreateWorkshop.h"
 
-// Command header — uses CATImplementHeaderResources for icon support
-CATImplementHeaderResources(<CommandClassName>Hdr, CATCommandHeader, <CommandClassName>Hdr);
+// ⭐ CommandHeader — MacDeclareHeader in .cpp (not .h!) to avoid linker errors
+#include "CATCommandHeader.h"
+MacDeclareHeader(<CommandClassName>Hdr);
 
 CATImplementClass(<ClassName>,DataExtension,CATBaseUnknown,<ClassName>);
 

@@ -360,8 +360,7 @@ def create_command(
 
     src = mod.src_dir or mod.path / "src"
     li = mod.path / "LocalInterfaces"
-    src.mkdir(parents=True, exist_ok=True)
-    li.mkdir(parents=True, exist_ok=True)
+    # Directories are created inside ChangeSet.apply() — no premature writes (P0-004 fix)
 
     # --- 1. Command.h (LocalInterfaces) ---
     cs.add_create_file(
@@ -434,7 +433,7 @@ def create_command(
     fw = mod.framework
     if fw:
         dico_file = fw.path / "CNext" / "code" / "dictionary" / f"{fw.name.replace('.edu', '')}.dico"
-        dico_file.parent.mkdir(parents=True, exist_ok=True)
+        # Directory created in ChangeSet.apply() — no premature writes (P0-004 fix)
         entry = f"{addin_name} CATIAfrGeneralWksAddin lib{module_base}\n"
         if dico_file.exists():
             old = dico_file.read_text(encoding="utf-8", errors="replace")
@@ -445,7 +444,6 @@ def create_command(
             cs.add_create(dico_file, entry)
         # Also write to Runtime View location so CATIA finds it after mkCreateRuntimeView
         rv_dico = ctx.workspace_root / "win_b64" / "code" / "dictionary" / dico_file.name
-        rv_dico.parent.mkdir(parents=True, exist_ok=True)
         cs.add_create(rv_dico, entry)
 
     # --- 7. Dialog files (when dialog_name is provided) ---
@@ -478,7 +476,7 @@ def create_command(
 
         # NLS
         nls_file = fw.path / "CNext" / "resources" / "msgcatalog" / f"{fw_base}.CATNls"
-        nls_file.parent.mkdir(parents=True, exist_ok=True)
+        # Directory created in ChangeSet.apply() — no premature writes (P0-004 fix)
         # NLS — use tooltip param if provided
         if tpl_nls.exists():
             nls_title = tooltip if tooltip else name
@@ -498,7 +496,7 @@ def create_command(
         # CATRsc — in msgcatalog/ (where CNEXT reads it via CATMsgCatalogPath)
         # Named after header class, format: HeaderClass.HeaderID.Icon.Normal
         rsc_file = fw.path / "CNext" / "resources" / "msgcatalog" / f"{name}Hdr.CATRsc"
-        rsc_file.parent.mkdir(parents=True, exist_ok=True)
+        # Directory created in ChangeSet.apply() — no premature writes (P0-004 fix)
         if tpl_rsc.exists():
             icon_name = icon if icon else name.lower()
             rsc_category = category if category else "Commands"
@@ -510,17 +508,17 @@ def create_command(
             else:
                 cs.add_create(rsc_file, rsc_content)
 
-        # --- 8c. Icon file — resolve via icon_provider, copy to framework ---
+        # --- 8c. Icon file — resolve via icon_provider, add to ChangeSet (P0-004 fix) ---
         if fw and icon:
             try:
                 from icon_provider import get_icon
-                import shutil as _shutil
                 ico_path = get_icon(icon)
                 if ico_path and ico_path.exists():
                     icons_dir = fw.path / "CNext" / "resources" / "graphic" / "icons" / "normal"
-                    icons_dir.mkdir(parents=True, exist_ok=True)
                     ico_name = f"I_{icon.replace(' ', '_')}.bmp"
-                    _shutil.copy(ico_path, icons_dir / ico_name)
+                    target = icons_dir / ico_name
+                    if not target.exists():
+                        cs.add_create_binary(target, ico_path.read_bytes())
             except Exception:
                 pass  # icon failure never blocks generation
 
@@ -567,8 +565,7 @@ def create_workbench(ctx: ActionContext, name: str, framework: str = None) -> Di
     cs = ChangeSet(action="create_workbench", description=f"Create workbench '{name}'")
     src = mod.src_dir or mod.path / "src"
     li = mod.path / "LocalInterfaces"
-    src.mkdir(parents=True, exist_ok=True)
-    li.mkdir(parents=True, exist_ok=True)
+    # Directories created in ChangeSet.apply() — no premature writes (P0-004 fix)
 
     tpl_wb = ctx.tpl("workbench")
     cs.add_create_file(
@@ -600,8 +597,7 @@ def create_dialog(
     cs = ChangeSet(action="create_dialog", description=f"Create dialog '{name}'")
     src = mod.src_dir or mod.path / "src"
     li = mod.path / "LocalInterfaces"
-    src.mkdir(parents=True, exist_ok=True)
-    li.mkdir(parents=True, exist_ok=True)
+    # Directories created in ChangeSet.apply() — no premature writes (P0-004 fix)
 
     tpl = ctx.tpl("dialog")
     cs.add_create_file(
@@ -644,8 +640,7 @@ def create_interface(
     cs = ChangeSet(action="create_interface", description=f"Create interface '{name}'")
     li = mod.path / "LocalInterfaces"
     src = mod.src_dir or mod.path / "src"
-    li.mkdir(parents=True, exist_ok=True)
-    src.mkdir(parents=True, exist_ok=True)
+    # Directories created in ChangeSet.apply() — no premature writes (P0-004 fix)
 
     cs.add_create_file(li / f"{name}.h", ctx.tpl("IInterface.h"), _r(name))
     cs.add_create_file(src / f"{name}.cpp", ctx.tpl("IInterface.cpp"), _r(name))
@@ -656,6 +651,7 @@ def create_interface(
             ctx.tpl("idl", "InterfaceName.idl"),
             _r(name, IIDLInterfaceName=name),
         )
+        pi = mod.path / "PublicInterfaces"
         cs.add_create_file(
             pi / f"{name}IDL.h", ctx.tpl("idl", "IDLInterface.h"), _r(name)
         )
@@ -681,8 +677,7 @@ def create_component(
     cs = ChangeSet(action="create_component", description=f"Create component '{name}'")
     li = mod.local_interfaces_dir()
     src = mod.src_dir_path()
-    src.mkdir(parents=True, exist_ok=True)
-    li.mkdir(parents=True, exist_ok=True)
+    # Directories created in ChangeSet.apply() — no premature writes (P0-004 fix)
 
     extra = {"IInterfaceName": implements} if implements else {}
     cs.add_create_file(li / f"{name}.h", ctx.tpl("Component.h"), _r(name, **extra))
