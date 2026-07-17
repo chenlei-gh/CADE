@@ -278,8 +278,15 @@ def create_framework(
                 content="\n" + "\n".join(lines),
             ))
 
-    # Auto-configure prerequisite paths (best-effort — requires Build Time env)
-    cs.metadata = {"setup_prereq": _try_setup_prereq(ctx.workspace_root)}
+    # NOTE: Prerequisite path setup (mkGetPreq) is a real side-effecting build
+    # command and must NOT run here — this function only returns a preview
+    # ChangeSet (status="pending") and callers may discard it without ever
+    # calling apply(). Running mkGetPreq eagerly wrote CATIAV5Level.lvl /
+    # Install_config_win_b64 to the workspace before apply(), which then
+    # collided with this ChangeSet's own CATIAV5Level.lvl create and caused
+    # apply() to reject with "Created file already exists" (P0-004 class bug).
+    # build_workspace() already calls setup_prerequisite_path() itself before
+    # invoking mkmk, so no explicit setup is needed here.
     return _result(cs)
 
 
@@ -1226,16 +1233,6 @@ def cleanup_old_backups(ctx: ActionContext, keep_count: int = 10) -> Dict:
 # ══════════════════════════════════════════════════════════════════
 #  HELPERS
 # ══════════════════════════════════════════════════════════════════
-
-
-def _try_setup_prereq(workspace_root: Path) -> str:
-    """Attempt to run mkGetPreq (best-effort — requires Build Time env)."""
-    try:
-        from build import setup_prerequisite_path
-        result = setup_prerequisite_path(workspace_root)
-        return result.get("message", "ok") if result.get("status") == "success" else "skipped"
-    except Exception:
-        return "skipped (no Build Time environment)"
 
 
 def _r(

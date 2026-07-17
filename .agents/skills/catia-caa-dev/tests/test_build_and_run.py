@@ -106,9 +106,11 @@ print("=" * 70)
 try:
     cmd, display = env.build_time_command(WORKSPACE, "-u")
     check("2.1 build_time_command(-u) len", len(cmd) > 0, f"len={len(cmd)}")
-    check("2.2 mkinit in command", any("mkinit" in str(a).lower() for a in cmd))
+    # cmd is ["cmd", "/c", <path to generated .bat>] — the actual chain lives
+    # inside the temp .bat file, summarized by `display`, not in argv itself.
+    check("2.2 mkinit in command", "mkinit" in display.lower())
     # CRITICAL: tck_profile must be in the chain — absence causes RADE license errors
-    check("2.3 tck_profile in command", any("tck_profile" in str(a) for a in cmd), "REQUIRED for build")
+    check("2.3 tck_profile in command", "tck_profile" in display, "REQUIRED for build")
 except Exception as e:
     check("2.1 build_time_command()", False, str(e)[:80])
 
