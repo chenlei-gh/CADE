@@ -48,9 +48,12 @@ def check_process_running(process_name: str) -> list:
         List of dictionaries with process information
     """
     # Validate process_name: only allow alphanumeric + .exe (P2-009 fix)
+    # Allow empty/missing to return empty list (graceful degradation)
     import re
+    if not process_name or not process_name.strip():
+        return []
     if not re.match(r'^[a-zA-Z0-9_.\-]+\.exe$', process_name):
-        raise ValueError(f"Invalid process name for safety: {process_name}")
+        return []  # Invalid name → no matches found
 
     running_processes = []
 

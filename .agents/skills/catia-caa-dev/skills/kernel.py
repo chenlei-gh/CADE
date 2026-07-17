@@ -1063,7 +1063,7 @@ class Kernel:
         if "version" in request:
             self._state = KernelState.COMPLETED
             return KernelResult(status="ok", mode="develop", state=self._state.value,
-                message="CADE v3.2.0", data={"version": "3.2.0"}).to_dict()
+                message="CADE v3.2.1", data={"version": "3.2.1"}).to_dict()
         if any(kw in request for kw in ("docs", "documentation", "generate doc")):
             try:
                 from docgen import generate_all

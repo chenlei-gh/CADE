@@ -40,7 +40,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 > 🟢 **CI Status**: `35/35 suites (100%)` | **~600 checks** | *2026-07-16*
 
-> **v3.2.0** — Generate → Build → Run closed loop | `cade dev` one-command cycle
+> **v3.2.1** — Generate → Build → Run closed loop | `cade dev` one-command cycle
 
 ---
 
