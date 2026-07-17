@@ -265,7 +265,8 @@ AI 只知道 3 个 Mode:
 | 🎯 **只有 3 个工具** | CADE v3.0 只有三个工具：`develop`（创建/生成）、`analyze`（查询/诊断）、`repair`（修复/重构）。永远不需要知道内部实现。 |
 | 🔌 **用 MCP 调用** | 所有 CADE 功能通过 MCP 工具调用，不要用 CLI。响应已自动 Token 优化。 |
 | 📊 **信 status 不信 output** | API 返回 `{"status": "ok", "error_count": 0}` 就够了，忽略 `output`/`stderr` 字段。 |
-| 🆕 **模糊需求用 develop()** | 用户说"我想做一个..."、"能不能..."时直接调用 `develop()`。Kernel 自动做需求澄清 → 分解增强（Playbook/Capability/依赖）→ 规划 → 生成 → 代码验证。如果返回 `needs_clarification`，把问题展示给用户。 |
+| 🆕 **模糊需求用 develop()** | 用户说"我想做一个..."、"能不能..."时直接调用 `develop()`。Kernel 自动做需求澄清 → 分解增强（Playbook/Capability/依赖）→ 规划 → 生成 → **自动写入磁盘（auto-apply）** → 代码验证。如果返回 `needs_clarification`，把问题展示给用户。 |
+| ✅ **develop() 一次调用即完成，不要等"确认"** | `develop()` 会自动把生成结果写入磁盘并自带备份（`result.apply_result.rollback_id`），不存在"生成预览 → 再手动 apply"的第二步。返回 `status: "ok"` 就代表文件已经真实存在；只有意图无法解析（如模块不存在）才会停在 `status: "pending"`，此时也没有文件被写入。需要撤销时用 `repair()` 的 rollback，而不是去找一个不存在的 confirm 接口。 |
 | 🔍 **只读操作用 analyze()** | 所有查询、诊断、分析用 `analyze()`。它永不会修改文件，无需确认。 |
 | 🔧 **修复用 repair()** | 修复诊断问题、重构（重命名/移动）、回滚用 `repair()`。Kernel 内部运行 diagnose → fix → verify 最多重试 3 次。 |
 | ⚡ **永远不需要判断"走哪个"** | 用户说"创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`。基于自然语言的动词分类，不需要思考。 |
@@ -418,7 +419,11 @@ result = list_modules(ctx)
 }
 ```
 
-### 3. 创建命令（预览模式）
+### 3. 创建命令（预览模式，仅适用于直接调用 `actions.py` 底层 API）
+
+> ⚠️ **这是底层 `actions.py` 函数的行为，不是 `develop()` 的行为。**
+> 如果你通过 MCP/CLI 的 `develop()`（推荐路径）调用，Kernel 会在返回前自动完成 `ChangeSet.apply()`，最终 `status` 是 `"ok"` 而不是 `"pending"`，文件已经写入磁盘。
+> 下面的 `pending`/`changeset` 返回值只会在你绕过 Kernel、直接调用 `actions.create_command()` 本身时出现（如需手动应用，参考本文件后面的 Python API 章节）。
 
 ```python
 from actions import create_command
@@ -446,6 +451,11 @@ result = create_command(
   },
   "changeset": {...}
 }
+
+# 手动应用（仅在直接调用 actions.py 时需要；develop() 已自动完成这一步）：
+from changeset import ChangeSet
+cs = ChangeSet.from_dict(result["changeset"])
+apply_result = cs.apply(workspace_root=ctx.workspace_root)
 ```
 
 ### 4. 删除命令（级联删除）
@@ -1480,7 +1490,7 @@ workbenches = list_workbenches(ctx)
 create_command(ctx, name="MyCmd", module=modules[0]["name"])
 ```
 
-### 2. 使用预览模式
+### 2. 使用预览模式（仅适用于直接调用 `actions.py`；通过 `develop()` 则无需手动 apply）
 ```python
 # 创建命令（自动返回预览）
 result = create_command(ctx, name="MyCmd", module="TestModule.m")
@@ -1490,8 +1500,16 @@ if result["status"] == "pending":
     preview = result["preview"]
     print(f"将创建 {len(preview['will_create'])} 个文件")
     print(f"将修改 {len(preview['will_modify'])} 个文件")
-    
-    # 用户确认后应用（由 ChangeSet 处理）
+
+    # 确认后应用
+    from changeset import ChangeSet
+    cs = ChangeSet.from_dict(result["changeset"])
+    cs.apply(workspace_root=ctx.workspace_root)
+
+# 若使用 Kernel 的 develop()（MCP/CLI 推荐路径），上面的 apply 步骤已由
+# Kernel 自动完成，无需手动处理：
+# result = kernel.execute(KernelMode.DEVELOP, "create command MyCmd in TestModule.m")
+# result["status"] == "ok"  # 文件已存在，已自动备份（result["apply_result"]["rollback_id"]）
 ```
 
 ### 3. 处理错误
@@ -1649,7 +1667,9 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 - quick 模式不执行真实 Build、CNEXT 或 CATIA 生命周期（`test_build_and_run.py` 整套在 `test_master.py --quick` 下被跳过）。
 - 模板全集和 CATIA 运行时仍无完整验收证据（目前仅覆盖 `TTEST` 单一工作区的一个模块）。
 
-**2026-07-17 修复**：`build.py` 的 `incremental_build()` / `clean_build()` / `debug_build()` / `build_with_threads()` 此前只传递修饰符标志（如 `-u`、`-g`、`-j N`），未附带 mkmk 强制要求的目标选择器 `-a`，导致对任意真实工作区调用都会失败，报出误导性的"must be executed in a workspace containing, at least, one framework"错误（实际是缺少 `-a`，与许可证/环境无关）。已修复为始终包含 `-a`；`dry_run_build()` 改用 `-a -nobuild`（mkmk 无 `-n` 选项，会被拒绝为非法参数）。新增 `test_build_and_run.py` Part 4.5（Tier B，opt-in、不启停 CATIA）对 `D:/Vault/FSWorkspaces/TTEST` 执行真实 `incremental_build()`，验证 0 编译错误、DLL 新鲜度校验通过、DLL mtime 确实刷新。
+**2026-07-17 修复**：`build.py` 的 `incremental_build()` / `clean_build()` / `debug_build()` / `build_with_threads()` 此前只传递修饰标志（如 `-u`、`-g`、`-j N`），未附带 mkmk 强制要求的目标选择器 `-a`，导致对任意真实工作区调用都会失败，报出误导性的"must be executed in a workspace containing, at least, one framework"错误（实际是缺少 `-a`，与许可证/环境无关）。已修复为始终包含 `-a`；`dry_run_build()` 改用 `-a -nobuild`（mkmk 无 `-n` 选项，会被拒绝为非法参数）。新增 `test_build_and_run.py` Part 4.5（Tier B，opt-in、不启停 CATIA）对 `D:/Vault/FSWorkspaces/TTEST` 执行真实 `incremental_build()`，验证 0 编译错误、DLL 新鲜度校验通过、DLL mtime 确实刷新。
+
+**2026-07-17 修复（develop 模式自动应用）**：`kernel.py` 的 `_execute_develop_plan()` 以前仅把 `actions.py`/`intents/*` 返回的 `status="pending"` + 序列化 `changeset` 原样返回，从未调用 `ChangeSet.from_dict().apply()`。结果：通过文档推荐的 MCP/CLI `develop()` 路径发出的请求永远停在 "pending"，没有任何公开接口可以完成应用；后续的 Phase 2.5（extras）、Phase 3（静态验证）、Phase 3.5（IdentityCard）因文件不存在而静默无操作。已修复：`_execute_develop_plan()` 在拿到 `pending` + `changeset` 后，新方法 `_apply_changeset_dict()` 会立即 `ChangeSet.from_dict(...).apply(workspace_root=...)`，并将最终 `status` 改为 `"ok"`（失败则 `"error"`）。`ModePolicy` 中 `DEVELOP` 的 `auto_apply` 已从 `False` 改为 `True`（与 `REPAIR` 同模式：备份终断应用，可通过 `repair()` 回滚）。同时修复了 `mcp_server.py` 中 `develop` 工具的 `description`，明确说明“一次调用即完成，不要等待确认步骤”。回归：`test_kernel_edge_cases.py`（ModePolicy 断言）、`test_ui_scenario.py`（Section 3 不再手动 apply）已同步更新。
 
 ### 已验证范围
 

@@ -39,7 +39,7 @@ from typing import Any, Dict, List, Optional
 
 class KernelMode(Enum):
     """Public API mode — determines execution policy"""
-    DEVELOP = "develop"    # May modify files, needs preview→confirm
+    DEVELOP = "develop"    # Creates/modifies files, auto-applies (backup+rollback safety)
     ANALYZE = "analyze"    # Read-only, never writes
     REPAIR = "repair"      # May modify with rollback safety
 
@@ -79,8 +79,13 @@ class ModePolicy:
 
 POLICIES = {
     KernelMode.DEVELOP: ModePolicy(
-        read_only=False, needs_preview=True, needs_confirm=True,
-        needs_rollback=True, auto_apply=False,
+        # Auto-applies with backup/rollback safety (same model as REPAIR).
+        # A ChangeSet is still generated first (needs_preview stays True so
+        # callers can inspect result["apply_result"]["preview"] after the
+        # fact), but nothing is left sitting in "pending" state — see
+        # _execute_develop_plan()/_apply_changeset_dict().
+        read_only=False, needs_preview=True, needs_confirm=False,
+        needs_rollback=True, auto_apply=True,
     ),
     KernelMode.ANALYZE: ModePolicy(
         read_only=True, needs_preview=False, needs_confirm=False,
@@ -604,9 +609,48 @@ class Kernel:
                     "message": f"Plan generated: {result.get('message', '')}",
                     "preview": {"plan_steps": plan.get("steps", 0), "intent": intent_data},
                 }
-            return result if isinstance(result, dict) else {"status": "ok", "message": str(result)}
+            if not isinstance(result, dict):
+                return {"status": "ok", "message": str(result)}
+
+            # DEVELOP mode auto-applies by default (same safety model as REPAIR:
+            # backup-then-apply, see backup.BackupManager). Actions return
+            # status="pending" with a serialized ChangeSet — that is a preview
+            # format, not a final state. Applying here is what actually turns
+            # generated code into files on disk; without this step every
+            # develop request via CLI/MCP would silently stop at "pending"
+            # and downstream phases (extras, verification, IdentityCard) would
+            # no-op because the files never existed.
+            if result.get("status") == "pending" and result.get("changeset"):
+                apply_result = self._apply_changeset_dict(result["changeset"])
+                result["apply_result"] = apply_result
+                if apply_result.get("status") == "applied":
+                    result["status"] = "ok"
+                    result["message"] = result.get("message", "") + " (applied)"
+                else:
+                    result["status"] = "error"
+                    result["message"] = (
+                        "Generated but failed to apply: "
+                        + "; ".join(apply_result.get("errors", []) or [apply_result.get("status", "unknown")])
+                    )
+
+            return result
         except ImportError:
             return {"status": "pending", "message": f"Plan ready: {intent_type} {name} in {module}"}
+
+    def _apply_changeset_dict(self, changeset_dict: dict) -> dict:
+        """Reconstruct a serialized ChangeSet and apply it to the workspace.
+
+        This is the step that turns a 'pending' preview (as returned by
+        actions.py/intents/*) into real files on disk, with the same
+        backup-before-apply / rollback-on-failure safety as REPAIR mode
+        (see backup.BackupManager, changeset.ChangeSet.apply).
+        """
+        try:
+            from changeset import ChangeSet
+            cs = ChangeSet.from_dict(changeset_dict)
+            return cs.apply(workspace_root=self.workspace_root)
+        except Exception as e:
+            return {"status": "error", "errors": [str(e)]}
 
     # ─── Intent Detection ──────────────────────────────────────
 

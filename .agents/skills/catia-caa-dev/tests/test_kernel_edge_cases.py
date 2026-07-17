@@ -144,9 +144,9 @@ print("=" * 70)
 dp = POLICIES[KernelMode.DEVELOP]
 check("DEVELOP: read_only=False", dp.READ_ONLY is False)
 check("DEVELOP: needs_preview=True", dp.NEEDS_PREVIEW is True)
-check("DEVELOP: needs_confirm=True", dp.NEEDS_CONFIRM is True)
+check("DEVELOP: needs_confirm=False", dp.NEEDS_CONFIRM is False)
 check("DEVELOP: needs_rollback=True", dp.NEEDS_ROLLBACK is True)
-check("DEVELOP: auto_apply=False", dp.AUTO_APPLY is False)
+check("DEVELOP: auto_apply=True", dp.AUTO_APPLY is True)
 
 # ANALYZE policy
 ap = POLICIES[KernelMode.ANALYZE]

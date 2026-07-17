@@ -109,12 +109,15 @@ print(f"\n{'='*65}")
 print("  SECTION 3: DEVELOP — Single Intents")
 print("=" * 65)
 
+# DEVELOP mode auto-applies (backup+rollback safety, same as REPAIR) —
+# see kernel.Kernel._execute_develop_plan()/_apply_changeset_dict(). The
+# ChangeSet is generated AND written to disk in a single kernel.execute()
+# call; there is no separate manual-apply step for callers to perform.
 r = k.execute(KernelMode.DEVELOP, "create command SettingsCmd in TestModule.m TestUI.edu")
-check("first command → pending", r["status"] == "pending", r.get("message", "")[:60])
-first_cs = ChangeSet.from_dict(r.get("changeset", {}))
-first_apply = first_cs.apply(dry_run=False, workspace_root=ws)
-check("first command changeset → applied", first_apply["status"] == "applied",
-      "; ".join(first_apply.get("errors", []))[:100])
+check("first command → ok (auto-applied)", r["status"] == "ok", r.get("message", "")[:60])
+check("first command apply_result → applied",
+      r.get("apply_result", {}).get("status") == "applied",
+      "; ".join(r.get("apply_result", {}).get("errors", []))[:100])
 check("SettingsCmd header exists",
       (ws / "TestUI.edu" / "TestModule.m" / "LocalInterfaces" / "SettingsCmd.h").exists())
 check("SettingsCmd source exists",
@@ -122,18 +125,21 @@ check("SettingsCmd source exists",
 
 k = Kernel(workspace_root=str(ws))
 r = k.execute(KernelMode.DEVELOP, "create command ExportCmd in TestModule.m TestUI.edu")
-check("second command → pending", r["status"] == "pending", r.get("message", "")[:60])
-second_cs = ChangeSet.from_dict(r.get("changeset", {}))
+check("second command → ok (auto-applied)", r["status"] == "ok", r.get("message", "")[:60])
+# The changeset dict is still attached to the result (pre-apply snapshot,
+# not re-appliable) so we can inspect what it *would have* created without
+# touching the filesystem again.
+second_cs_dict = r.get("changeset", {})
 addin_h = ws / "TestUI.edu" / "TestModule.m" / "LocalInterfaces" / "TestModuleAddin.h"
 addin_cpp = ws / "TestUI.edu" / "TestModule.m" / "src" / "TestModuleAddin.cpp"
 dico = ws / "TestUI.edu" / "CNext" / "code" / "dictionary" / "TestUI.dico"
 shared_paths = {str(addin_h), str(addin_cpp), str(dico)}
-recreated = shared_paths & set(second_cs.created)
+recreated = shared_paths & set(second_cs_dict.get("created", {}))
 check("second command does not recreate shared Addin/dico", not recreated,
       str(sorted(recreated)))
-second_apply = second_cs.apply(dry_run=False, workspace_root=ws)
-check("second command changeset → applied", second_apply["status"] == "applied",
-      "; ".join(second_apply.get("errors", []))[:100])
+check("second command apply_result → applied",
+      r.get("apply_result", {}).get("status") == "applied",
+      "; ".join(r.get("apply_result", {}).get("errors", []))[:100])
 check("ExportCmd header exists",
       (ws / "TestUI.edu" / "TestModule.m" / "LocalInterfaces" / "ExportCmd.h").exists())
 check("ExportCmd source exists",

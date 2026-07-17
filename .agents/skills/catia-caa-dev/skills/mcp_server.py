@@ -48,7 +48,13 @@ TOOLS = [
             "workbenches, interfaces, extensions, modules, frameworks. "
             "Also handles: builds, CATIA startup, documentation, workspace prerequisites. "
             "The Kernel handles requirement clarification, intent detection (CN+EN), "
-            "planning, code generation, static verification, and IdentityCard setup. "
+            "planning, code generation, AUTO-APPLY to disk, static verification, and "
+            "IdentityCard setup — files are written in this single call, with an "
+            "automatic backup taken first (see result.apply_result.rollback_id) so the "
+            "change can be undone via the 'repair' tool's rollback if needed. "
+            "A final status of 'ok' means files now exist on disk; 'pending' only occurs "
+            "if the intent could not be resolved (e.g. module not found) and nothing was "
+            "written. Do not expect or wait for a separate confirm/apply step. "
             'Examples: "create command ExportBOM in MyModule.m", '
             '"创建一个设置命令SettingsCmd，放在TestModule模块中", '
             '"build the workspace", "start CATIA".'
