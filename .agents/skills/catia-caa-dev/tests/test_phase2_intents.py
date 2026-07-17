@@ -6,6 +6,7 @@ Test high-level intent functions.
 """
 
 import sys
+import tempfile
 from pathlib import Path
 
 # Add skills to path
@@ -19,8 +20,8 @@ from intents import (
     expose_service,
 )
 
-# Test configuration
-WORKSPACE = "D:/test"
+# P3-006 fix: Use temp workspace instead of hardcoded D:/test
+WORKSPACE = Path(tempfile.mkdtemp(prefix="cade_test_intents_"))
 
 print("=" * 80)
 print("Phase 2 Intent Layer Tests")
@@ -344,3 +345,12 @@ print("  [OK] Default Value Generation")
 print("  [OK] Tooltip Generation")
 print("  [OK] ChangeSet Merging")
 print("\nIntent Layer implementation verified!")
+
+# P3-006 fix: Cleanup temp workspace
+import shutil
+try:
+    if WORKSPACE.exists():
+        shutil.rmtree(WORKSPACE, ignore_errors=True)
+        print(f"[Cleanup] Removed temp workspace: {WORKSPACE}")
+except Exception:
+    pass

@@ -648,9 +648,12 @@ def cmd_test(args):
         cmd = [sys.executable, str(runner)]
         if quick:
             cmd.append("--quick")
-        subprocess.run(cmd)
+        # P3-005 fix: propagate return code
+        result = subprocess.run(cmd)
+        return result.returncode
     else:
         print("Test runner not found")
+        return 1
 
 
 # ─── Helpers ──────────────────────────────────────────────────────

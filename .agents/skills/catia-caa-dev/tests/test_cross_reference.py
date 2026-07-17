@@ -325,17 +325,7 @@ if docs_dir.is_dir():
     check(f"Documentation files >= 10 (actual={len(docs_md)})", len(docs_md) >= 10)
 
 # ═══════════════════════════════════════════════════════════
-# Summary
-# ═══════════════════════════════════════════════════════════
-print("\n" + "=" * 70)
-print(f"  CROSS-REFERENCE AUDIT: {passed}/{total}")
-if total:
-    pct = passed / total * 100
-    print(f"  Pass rate: {pct:.1f}%")
-print("=" * 70)
-
-# ═══════════════════════════════════════════════════════════
-# 8. Knowledge gaps — CAADoc unresolved gaps
+# 8. Knowledge gaps — CAADoc unresolved gaps (P3-009 fix: before summary)
 # ═══════════════════════════════════════════════════════════
 print("\n" + "=" * 70)
 print("  8. Knowledge Gaps (CAADoc unresolved)")
@@ -345,9 +335,21 @@ gaps_dir = SKILL_ROOT / "knowledge" / "gaps"
 gap_files = [f for f in gaps_dir.glob("*.md") if f.name != "README.md"] if gaps_dir.is_dir() else []
 if gap_files:
     for gf in gap_files:
+        total += 1
         check(f"Unresolved gap: {gf.name}", False, "Must create formal knowledge file")
 else:
+    total += 1
     check("No unresolved knowledge gaps", True)
+
+# ═══════════════════════════════════════════════════════════
+# Summary (P3-009 fix: after all checks including gaps)
+# ═══════════════════════════════════════════════════════════
+print("\n" + "=" * 70)
+print(f"  CROSS-REFERENCE AUDIT: {passed}/{total}")
+if total:
+    pct = passed / total * 100
+    print(f"  Pass rate: {pct:.1f}%")
+print("=" * 70)
 
 
 if passed == total:

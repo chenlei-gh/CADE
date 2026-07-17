@@ -1277,11 +1277,9 @@ if passed == total:
     sys.exit(0)
 else:
     fail_pct = (total - passed) / total * 100 if total > 0 else 100
-    if fail_pct <= 2.0:
-        print(
-            f"\n  >>> ALL TESTS PASSED (NEAR-COMPLETE) ({passed}/{total}) — {fail_pct:.1f}% minor issues <<<"
-        )
-        sys.exit(0)  # Accept 98%+ pass
-    else:
-        print(f"\n  >>> {total - passed} TEST(S) FAILED ({fail_pct:.1f}%) <<<")
-        sys.exit(1)
+    # P3-008 fix: only 100% success returns 0. Partial failures must exit non-zero.
+    # Known-quarantine tests can be listed here with explicit justification.
+    print(f"\n  >>> {total - passed} TEST(S) FAILED ({fail_pct:.1f}%) <<<")
+    if (total - passed) <= 2 and fail_pct <= 2.0:
+        print("  WARNING: Minor failures detected. Review quarantine justification above.")
+    sys.exit(1)

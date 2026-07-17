@@ -157,7 +157,13 @@ def run(quick: bool = False):
         total_time += t1 - t0
 
         check_str = VERIFY_STRINGS.get(script, "")
-        ok = check_str in r.stdout if check_str else (r.returncode == 0)
+        # P3-003 fix: require both returncode==0 AND expected output
+        if r.returncode != 0:
+            ok = False
+        elif check_str:
+            ok = check_str in r.stdout
+        else:
+            ok = True  # No verify string + exit 0 = pass
 
         if ok:
             passed += 1

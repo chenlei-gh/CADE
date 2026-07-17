@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """
-Build Time & Run Time — Merged Full Test Suite
-================================================
-合并自: test_build_run_time.py + test_all_build_run_commands.py
-覆盖所有 build.py / run.py / env.py 功能。
+Build Time & Run Time — Integrated Test Suite
+===============================================
+Covers build.py, run.py, env.py APIs and CATIA lifecycle.
+
+P3-001/002 fix: Clearly separated test tiers.
+  Tier A (fast): Command generation, env detection, API validation.
+  Tier B (slow): Actual mkmk compilation — requires real CAA workspace.
+  Tier C (manual): CATIA start/stop lifecycle — interactive only.
+
+When run in quick mode (--quick), only Tier A is executed.
+Tier A does NOT run mkmk or launch CNEXT.exe.
 """
 
 import sys

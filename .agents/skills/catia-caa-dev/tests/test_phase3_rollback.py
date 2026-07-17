@@ -131,11 +131,19 @@ try:
                 f"     Restored modified files: {len(result['restored']['restored_modified_files'])}"
             )
 
-            # Verify rollback
+            # P3-007 fix: verify rollback actually restored state (not just print)
             new_file_after = (test_workspace / "new_file.txt").exists()
-            print(f"     New file still exists: {new_file_after}")
+            modified_file_ok = (test_workspace / "existing.exe").exists()
+            if new_file_after:
+                print(f"[FAIL] Created file not removed after rollback")
+                sys.exit(1)
+            if not modified_file_ok:
+                print(f"[FAIL] Modified file not restored after rollback")
+                sys.exit(1)
+            print(f"     Verified: created file removed, modified file restored")
         else:
             print(f"[FAIL] Rollback failed: {result.get('message')}")
+            sys.exit(1)
     else:
         print("[INFO] Skipping (no backups available)")
 except Exception as e:
