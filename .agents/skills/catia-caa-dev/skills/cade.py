@@ -631,7 +631,7 @@ def cmd_version():
     env = CAAEnvironment()
     env.load_config()
     info = env.get_info()
-    print(f"CADE v3.2.0 — CATIA CAA Development Kernel")
+    print(f"CADE v3.2.1 — CATIA CAA Development Kernel")
     print(f"  CATIA: {info.get('catia_version', 'unknown')}")
     print(f"  Install: {info.get('catia_install', 'unknown')}")
     print(f"  Architecture: {info.get('caa_platform', 'unknown')}")

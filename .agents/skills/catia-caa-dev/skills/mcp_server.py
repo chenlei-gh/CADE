@@ -149,7 +149,7 @@ def main():
                     "result": {
                         "protocolVersion": "2024-11-05",
                         "capabilities": {"tools": {}},
-                        "serverInfo": {"name": "cade", "version": "3.2.0"}
+                        "serverInfo": {"name": "cade", "version": "3.2.1"}
                     },
                 }
                 sys.stdout.write(json.dumps(response) + "\n")

@@ -335,10 +335,8 @@ gaps_dir = SKILL_ROOT / "knowledge" / "gaps"
 gap_files = [f for f in gaps_dir.glob("*.md") if f.name != "README.md"] if gaps_dir.is_dir() else []
 if gap_files:
     for gf in gap_files:
-        total += 1
         check(f"Unresolved gap: {gf.name}", False, "Must create formal knowledge file")
 else:
-    total += 1
     check("No unresolved knowledge gaps", True)
 
 # ═══════════════════════════════════════════════════════════

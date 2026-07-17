@@ -60,12 +60,12 @@ try:
     # Create a test changeset
     cs = ChangeSet(action="test_action", description="Test backup creation")
 
-    # Add some test files
+    # Add some test files (use workspace_root-relative paths)
     test_file = test_workspace / "test.txt"
     test_file.write_text("original content")
 
-    cs.created["new_file.txt"] = "new content"
-    cs.modified[str(test_file)] = "modified content"
+    cs.add_create(test_workspace / "new_file.txt", "new content")
+    cs.add_modify(test_file, "modified content")
 
     # Create backup
     backup_mgr = BackupManager(test_workspace)
@@ -112,8 +112,8 @@ print("-" * 80)
 
 try:
     if len(backups) > 0:
-        # Apply the changeset first
-        cs.apply(dry_run=False)
+        # Apply the changeset with workspace_root for proper path isolation
+        cs.apply(dry_run=False, workspace_root=test_workspace)
 
         # Verify files were created/modified
         new_file_exists = (test_workspace / "new_file.txt").exists()
@@ -133,13 +133,19 @@ try:
 
             # P3-007 fix: verify rollback actually restored state (not just print)
             new_file_after = (test_workspace / "new_file.txt").exists()
-            modified_file_ok = (test_workspace / "existing.exe").exists()
+            modified_file_ok = (test_workspace / "test.txt").exists()
             if new_file_after:
                 print(f"[FAIL] Created file not removed after rollback")
                 sys.exit(1)
             if not modified_file_ok:
                 print(f"[FAIL] Modified file not restored after rollback")
                 sys.exit(1)
+            # Also verify content was restored
+            if test_workspace / "test.txt":
+                restored_content = (test_workspace / "test.txt").read_text()
+                if restored_content != "original content":
+                    print(f"[FAIL] Modified file content not restored: '{restored_content}'")
+                    sys.exit(1)
             print(f"     Verified: created file removed, modified file restored")
         else:
             print(f"[FAIL] Rollback failed: {result.get('message')}")
@@ -184,10 +190,10 @@ try:
     cs2 = ChangeSet(action="test_action_2", description="Second test")
     test_file2 = test_workspace / "test2.txt"
     test_file2.write_text("test content")
-    cs2.created[str(test_file2)] = "test content"
+    cs2.add_create(test_file2, "test content")
 
     backup_id2 = backup_mgr.create_backup(cs2)
-    cs2.apply(dry_run=False)
+    cs2.apply(dry_run=False, workspace_root=test_workspace)
 
     # Verify file exists
     if test_file2.exists():
@@ -263,13 +269,13 @@ try:
 
     # Create changeset that modifies it
     cs_mod = ChangeSet(action="modify_test", description="Modify file")
-    cs_mod.modified[str(mod_file)] = "modified"
+    cs_mod.add_modify(mod_file, "modified")
 
     # Create backup
     backup_id_mod = backup_mgr.create_backup(cs_mod)
 
     # Apply changes
-    cs_mod.apply(dry_run=False)
+    cs_mod.apply(dry_run=False, workspace_root=test_workspace)
 
     # Verify modification
     if mod_file.read_text() == "modified":
