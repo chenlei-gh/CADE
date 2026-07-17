@@ -289,6 +289,7 @@ def build_workspace(
             "options": options,
             "timestamp": start_time.isoformat(),
             "return_code": exit_code,
+            "output": output,  # Raw mkmk output for repair loop to parse
         }
 
         cache.save(build_result)

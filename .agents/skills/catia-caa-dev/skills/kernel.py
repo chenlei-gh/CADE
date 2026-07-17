@@ -384,10 +384,18 @@ class Kernel:
                 pass
 
         # ── Default: Diagnose + Fix loop ──
+        # Check if user wants preview mode
+        preview_mode = any(kw in request_lower for kw in ("preview", "dry-run", "dry_run", "--preview"))
+        # Check if user wants build diagnosis
+        with_build = any(kw in request_lower for kw in ("build", "compile", "mkmk", "--build"))
 
         try:
             from repair import RepairLoop
-            loop = RepairLoop(workspace_root=self.workspace_root)
+            loop = RepairLoop(
+                workspace_root=self.workspace_root,
+                preview=preview_mode,
+                with_build=with_build,
+            )
             repair_result = loop.run()
             self._state = KernelState.COMPLETED
             return KernelResult(
