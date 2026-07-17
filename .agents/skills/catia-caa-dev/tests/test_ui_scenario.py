@@ -14,6 +14,7 @@ from pathlib import Path
 SKILL = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL / "skills"))
 
+from changeset import ChangeSet
 from kernel import Kernel, KernelMode
 
 total = passed = 0
@@ -37,8 +38,11 @@ def make_workspace(base: Path) -> Path:
     (fw / "Imakefile.mk").write_text(
         'SOURCES =\nLINK_WITH = System ObjectModelerBase\n', encoding="utf-8")
     (fw / "CNext" / "code" / "dictionary").mkdir(parents=True)
+    (fw / "CNext" / "resources" / "msgcatalog").mkdir(parents=True)
+    (fw / "CNext" / "resources" / "graphic" / "icons" / "normal").mkdir(parents=True)
     (fw / "CNext" / "code" / "dictionary" / "TestUI.dico").write_text(
         'TestUI CNext\n', encoding="utf-8")
+    (ws / "win_b64" / "code" / "dictionary").mkdir(parents=True)
 
     mod = fw / "TestModule.m"
     for sub in ["src", "LocalInterfaces", "PublicInterfaces",
@@ -106,11 +110,40 @@ print("  SECTION 3: DEVELOP — Single Intents")
 print("=" * 65)
 
 r = k.execute(KernelMode.DEVELOP, "create command SettingsCmd in TestModule.m TestUI.edu")
-check("create command → pending (no CAA install)", r["status"] == "pending",
-      r.get("message", "")[:60])
+check("first command → pending", r["status"] == "pending", r.get("message", "")[:60])
+first_cs = ChangeSet.from_dict(r.get("changeset", {}))
+first_apply = first_cs.apply(dry_run=False, workspace_root=ws)
+check("first command changeset → applied", first_apply["status"] == "applied",
+      "; ".join(first_apply.get("errors", []))[:100])
+check("SettingsCmd header exists",
+      (ws / "TestUI.edu" / "TestModule.m" / "LocalInterfaces" / "SettingsCmd.h").exists())
+check("SettingsCmd source exists",
+      (ws / "TestUI.edu" / "TestModule.m" / "src" / "SettingsCmd.cpp").exists())
 
+k = Kernel(workspace_root=str(ws))
 r = k.execute(KernelMode.DEVELOP, "create command ExportCmd in TestModule.m TestUI.edu")
-check("create another → no crash", r["status"] in ("ok", "pending"))
+check("second command → pending", r["status"] == "pending", r.get("message", "")[:60])
+second_cs = ChangeSet.from_dict(r.get("changeset", {}))
+addin_h = ws / "TestUI.edu" / "TestModule.m" / "LocalInterfaces" / "TestModuleAddin.h"
+addin_cpp = ws / "TestUI.edu" / "TestModule.m" / "src" / "TestModuleAddin.cpp"
+dico = ws / "TestUI.edu" / "CNext" / "code" / "dictionary" / "TestUI.dico"
+shared_paths = {str(addin_h), str(addin_cpp), str(dico)}
+recreated = shared_paths & set(second_cs.created)
+check("second command does not recreate shared Addin/dico", not recreated,
+      str(sorted(recreated)))
+second_apply = second_cs.apply(dry_run=False, workspace_root=ws)
+check("second command changeset → applied", second_apply["status"] == "applied",
+      "; ".join(second_apply.get("errors", []))[:100])
+check("ExportCmd header exists",
+      (ws / "TestUI.edu" / "TestModule.m" / "LocalInterfaces" / "ExportCmd.h").exists())
+check("ExportCmd source exists",
+      (ws / "TestUI.edu" / "TestModule.m" / "src" / "ExportCmd.cpp").exists())
+if dico.exists():
+    dico_text = dico.read_text(encoding="utf-8", errors="replace")
+    check("dico has one Addin registration", dico_text.count("TestModuleAddin") == 1,
+          f"count={dico_text.count('TestModuleAddin')}")
+else:
+    check("dico has one Addin registration", False, "dico missing")
 
 # ═══════════════════════════════════════════════════════════════
 # SECTION 4: DEVELOP — Multi-Intent

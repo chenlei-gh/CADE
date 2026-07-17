@@ -141,9 +141,13 @@ def run(quick: bool = False):
                 pass
 
         t0 = time.time()
+        command = [sys.executable, str(script_path)]
+        if quick and script == "test_full_regression.py":
+            command.append("--quick")
+
         try:
             r = subprocess.run(
-                [sys.executable, str(script_path)],
+                command,
                 capture_output=True,
                 text=True,
                 timeout=300,

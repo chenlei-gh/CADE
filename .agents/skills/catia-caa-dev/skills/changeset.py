@@ -253,8 +253,10 @@ class ChangeSet:
             if not p.exists():
                 errors.append(f"Deleted file not found: {p}")
 
+        # Patch targets: skip if they're in the created list (will be created first)
+        created_paths = set(self.created.keys())
         for patch in self.patches:
-            if not patch.file.exists():
+            if str(patch.file) not in created_paths and not patch.file.exists():
                 errors.append(f"Patch target file not found: {patch.file}")
 
         return errors
@@ -356,6 +358,7 @@ class ChangeSet:
             # 3. Create new files
             for path_str, content in self.created.items():
                 p = Path(path_str)
+                p.parent.mkdir(parents=True, exist_ok=True)
                 if path_str in self._binary:
                     p.write_bytes(self._binary[path_str])
                 elif content == "[BINARY]":

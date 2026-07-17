@@ -205,9 +205,13 @@ class WorkspaceAnalyzer:
                 if "CATDeclareInterface" in content:
                     is_interface = True
                 elif "CATDeclareClass" in content:
-                    # Could be interface or component — components have CATDeclareClass too
-                    # But components typically have CATExt (extension class) patterns
-                    if ("CATBaseUnknown" in content
+                    # Could be interface or component — addins also have CATDeclareClass
+                    # Exclude Addin headers (contain toolbar/workbench patterns)
+                    is_addin = any(kw in content for kw in (
+                        "CATCmd", "CreateToolbars", "CreateCommands",
+                        "CATIAfrGeneralWksAddin", "CATDlg"
+                    ))
+                    if not is_addin and ("CATBaseUnknown" in content
                             and "CATExt" not in content
                             and "CATImplementClass" not in content):
                         is_interface = True

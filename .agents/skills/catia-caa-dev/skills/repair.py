@@ -121,7 +121,7 @@ class RepairLoop:
         """
         if not self.workspace_root.exists():
             return RepairResult(
-                state=RepairState.NO_ISSUES,
+                state=RepairState.FAILED,
                 attempts=0,
                 message=f"Workspace does not exist: {self.workspace_root}",
             )
@@ -146,10 +146,16 @@ class RepairLoop:
 
         if total_issues == 0:
             self._state = RepairState.NO_ISSUES
+            note = ""
+            if not self._with_build:
+                note = (
+                    " (static analysis only — run with --with-build to check "
+                    "real mkmk compilation)"
+                )
             return RepairResult(
                 state=RepairState.NO_ISSUES,
                 attempts=1,
-                message="No issues found (static + build). Workspace is healthy.",
+                message=f"No issues found{note}",
             )
 
         # ── Build preview ──

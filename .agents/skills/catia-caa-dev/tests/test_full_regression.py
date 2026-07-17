@@ -46,6 +46,7 @@ QUARANTINE = {
     "test_querying",
 }
 
+import argparse
 import importlib
 import os
 import subprocess
@@ -58,10 +59,24 @@ SKILL_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL_ROOT / "skills"))
 sys.path.insert(0, str(SKILL_ROOT))
 
+_parser = argparse.ArgumentParser(description="CADE full regression suite")
+_parser.add_argument(
+    "--quick",
+    action="store_true",
+    help="Exclude real Build/Run and all CATIA lifecycle suites",
+)
+_parser.add_argument(
+    "--allow-catia-lifecycle",
+    action="store_true",
+    help="Explicitly allow suites that may start or stop CATIA",
+)
+ARGS = _parser.parse_args()
+
 # ─── Test infrastructure ───────────────────────────────────────────
 
 total = 0
 passed = 0
+failed_labels: list = []
 _import_warnings: list = []
 
 
@@ -70,6 +85,8 @@ def check(label: str, ok: bool, detail: str = ""):
     total += 1
     if ok:
         passed += 1
+    else:
+        failed_labels.append(label)
     mark = "PASS" if ok else "FAIL"
     trailer = f" — {detail}" if detail else ""
     print(f"  [{mark}] {label}{trailer}")
@@ -1191,12 +1208,39 @@ EXISTING_SUITES = [
     "test_l5_semantic.py",
     "test_l6_fault_injection.py",
     "test_knowledge_system.py",
-    "test_build_and_run.py",
     "test_skill_ai_coordination.py",
     "test_system_health.py",
     # Additional suites:
     "test_catia_detection.py",
 ]
+
+LIFECYCLE_SUITES = ["test_build_and_run.py"]
+if ARGS.allow_catia_lifecycle and not ARGS.quick:
+    EXISTING_SUITES.extend(LIFECYCLE_SUITES)
+else:
+    reason = "quick mode" if ARGS.quick else "requires --allow-catia-lifecycle"
+    print(f"  [SKIP] CATIA lifecycle suites ({reason}): {', '.join(LIFECYCLE_SUITES)}")
+
+SUITE_MARKERS = {
+    "test_full_integration.py": "ALL TESTS PASSED",
+    "test_phase1_enhancements.py": "Phase 1 Enhancement Tests Complete",
+    "test_phase2_intents.py": "Intent Layer implementation verified",
+    "test_phase3_rollback.py": "Rollback system verified",
+    "test_phase4_enhanced.py": "Phase 4 enhancements verified",
+    "test_specification.py": "100%",
+    "test_diagnostics.py": "100%",
+    "test_fixplan_executor.py": "100%",
+    "test_refactor.py": "100%",
+    "test_e2e_integration.py": "passed",
+    "test_l4_architecture.py": "100%",
+    "test_l5_semantic.py": "100%",
+    "test_l6_fault_injection.py": "100%",
+    "test_knowledge_system.py": "ALL CHECKS PASSED",
+    "test_skill_ai_coordination.py": "Perfect —",
+    "test_system_health.py": None,
+    "test_catia_detection.py": "All suites passed",
+    "test_build_and_run.py": "All Build Time & Run Time commands working",
+}
 
 _suite_passed = 0
 _suite_failed = 0
@@ -1226,27 +1270,9 @@ for script in EXISTING_SUITES:
     err = r.stderr or ""
     combined = out + err
 
-    # Check for success markers
-    success_markers = [
-        "ALL TESTS PASSED",
-        "100%",
-        "Phase 1 Enhancement Tests Complete",
-        "Intent Layer implementation verified",
-        "Rollback system verified",
-        "Phase 4 enhancements verified",
-        "所有核心功能验证通过",
-        "ALL CHECKS PASSED",
-        "All Build Time & Run Time commands working",
-        "Perfect —",
-        "All suites passed",
-        ">>> ALL SUITES PASSED",
-        "OK",
-        "PASSED",
-    ]
-
-    is_ok = any(marker in combined for marker in success_markers)
-    if not is_ok and r.returncode == 0:
-        is_ok = True  # zero exit code is also a pass
+    expected_marker = SUITE_MARKERS[script]
+    marker_ok = expected_marker is None or expected_marker in combined
+    is_ok = r.returncode == 0 and marker_ok
 
     if is_ok:
         _suite_passed += 1
@@ -1287,16 +1313,26 @@ if _import_warnings:
 
 print("=" * 70)
 
-if passed == total:
+actual_failures = set(failed_labels)
+unknown_failures = actual_failures - QUARANTINE
+quarantined_failures = actual_failures & QUARANTINE
+
+if not actual_failures:
     print("\n  >>> ALL TESTS PASSED <<<")
     sys.exit(0)
-elif total - passed <= len(QUARANTINE) and total - passed > 0:
-    # P3-008: Allow quarantined failures (explicitly listed above)
-    print(f"\n  >>> {passed}/{total} PASSED ({total-passed} quarantined) <<<")
-    for qt in QUARANTINE:
-        print(f"      [QUARANTINE] {qt}")
+elif not unknown_failures:
+    print(f"\n  >>> {passed}/{total} PASSED ({len(quarantined_failures)} quarantined) <<<")
+    for label in sorted(quarantined_failures):
+        print(f"      [QUARANTINE] {label}")
     sys.exit(0)
 else:
+    print("\n  Unknown failures:")
+    for label in sorted(unknown_failures):
+        print(f"      [FAIL] {label}")
+    if quarantined_failures:
+        print("  Actual quarantined failures:")
+        for label in sorted(quarantined_failures):
+            print(f"      [QUARANTINE] {label}")
     fail_pct = (total - passed) / total * 100 if total > 0 else 100
     print(f"\n  >>> {total - passed} TEST(S) FAILED ({fail_pct:.1f}%) <<<")
     if (total - passed) <= 2 and fail_pct <= 2.0:

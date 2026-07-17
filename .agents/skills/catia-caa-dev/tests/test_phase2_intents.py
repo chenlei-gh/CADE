@@ -1,356 +1,182 @@
 #!/usr/bin/env python3
-"""
-Phase 2 Intent Layer Tests
-===========================
-Test high-level intent functions.
-"""
+"""Phase 2 Intent Layer tests with strict failure accounting."""
 
+import shutil
 import sys
 import tempfile
+import traceback
 from pathlib import Path
 
-# Add skills to path
-skill_root = Path(__file__).parent.parent
-sys.path.insert(0, str(skill_root / "skills"))
+SKILL_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(SKILL_ROOT / "skills"))
 
-from actions import ActionContext
-from intents import (
-    create_executable_command,
-    create_ui_dialog,
-    expose_service,
-)
-
-# P3-006 fix: Use temp workspace instead of hardcoded D:/test
 WORKSPACE = Path(tempfile.mkdtemp(prefix="cade_test_intents_"))
+total = 0
+passed = 0
+failures = []
+
+
+def check(label, ok, detail=""):
+    global total, passed
+    total += 1
+    if ok:
+        passed += 1
+    else:
+        failures.append(label)
+    trailer = f" — {detail}" if detail else ""
+    print(f"  [{'PASS' if ok else 'FAIL'}] {label}{trailer}")
+
+
+def run_case(label, fn):
+    try:
+        fn()
+    except Exception as exc:
+        check(label, False, f"{type(exc).__name__}: {exc}")
+        traceback.print_exc()
+
+
+def make_workspace(root):
+    fw = root / "TestFramework.edu"
+    module = fw / "TestModule.m"
+    for directory in [
+        fw / "IdentityCard",
+        fw / "CNext" / "code" / "dictionary",
+        fw / "CNext" / "resources" / "msgcatalog",
+        module / "src",
+        module / "LocalInterfaces",
+        module / "PublicInterfaces",
+        module / "resources",
+        root / "win_b64" / "code" / "dictionary",
+    ]:
+        directory.mkdir(parents=True, exist_ok=True)
+    (fw / "IdentityCard" / "IdentityCard.h").write_text(
+        '#pragma once\n#include "CATBaseUnknown.h"\n', encoding="utf-8"
+    )
+    (fw / "Imakefile.mk").write_text("MODULES += TestModule\n", encoding="utf-8")
+    (fw / "CNext" / "code" / "dictionary" / "TestFramework.dico").write_text(
+        "TestFramework CNext\n", encoding="utf-8"
+    )
+    (module / "Imakefile.mk").write_text(
+        "SOURCES =\nLINK_WITH = System\nBUILT_OBJECT_TYPE = SHARED_LIBRARY\n",
+        encoding="utf-8",
+    )
+
 
 print("=" * 80)
 print("Phase 2 Intent Layer Tests")
 print("=" * 80)
 
-ctx = ActionContext(WORKSPACE)
-
-# ============================================================================
-# Test 1: Import Check
-# ============================================================================
-
-print("\n[Test 1] Import Check")
-print("-" * 80)
-
 try:
-    from intents import (
-        create_executable_command,
-        create_ui_dialog,
-        expose_service,
-    )
+    make_workspace(WORKSPACE)
 
-    print("[OK] All intent functions imported successfully")
-except ImportError as e:
-    print(f"[FAIL] Import error: {e}")
+    from actions import ActionContext
+    from changeset import ChangeSet
+    from intents import create_executable_command, create_ui_dialog, expose_service
+    from intents.helpers import generate_tooltip, merge_changeset
 
-# ============================================================================
-# Test 2: create_executable_command - Simple
-# ============================================================================
+    ctx = ActionContext(WORKSPACE)
+    check("public intent imports", True)
 
-print("\n[Test 2] create_executable_command - Simple")
-print("-" * 80)
+    def test_simple_command():
+        result = create_executable_command(
+            ctx,
+            name="CalculateVolume",
+            module="TestModule.m",
+            framework="TestFramework",
+        )
+        check("simple command returns pending", result.get("status") == "pending", result.get("message", ""))
+        check("simple command has changes", result.get("changeset", {}).get("total_changes", 0) > 0)
+        created = result.get("changeset", {}).get("created", {})
+        nls = "\n".join(value for path, value in created.items() if path.endswith("TestFramework.CATNls"))
+        check("generated command uses public tooltip", "Calculate Volume" in nls, nls[:80])
 
-try:
-    result = create_executable_command(
-        ctx, name="TestIntentCmd", module="TestModule.m", framework="TestFramework"
-    )
+    run_case("simple executable command", test_simple_command)
 
-    if result["status"] == "pending":
-        print("[OK] Simple command intent created")
-        print(f"     Intent: {result['intent']}")
-        print(f"     Components: {result['components']}")
-        preview = result.get("preview", "")
-        if isinstance(preview, dict):
-            print(f"     Files to create: {len(preview.get('will_create', []))}")
-        else:
-            print(f"     Preview available: {len(preview) > 0}")
-    elif result["status"] == "error":
-        print(f"[INFO] Expected error (module may not exist): {result['message']}")
-    else:
-        print(f"[UNEXPECTED] Status: {result['status']}")
-except Exception as e:
-    print(f"[FAIL] Exception: {e}")
-    import traceback
+    def test_command_with_dialog():
+        result = create_executable_command(
+            ctx,
+            name="DialogCmd",
+            module="TestModule.m",
+            framework="TestFramework",
+            with_dialog=True,
+        )
+        check("command with dialog returns pending", result.get("status") == "pending", result.get("message", ""))
+        check("default dialog name", result.get("components", {}).get("dialog") == "DialogCmdDlg")
+        created = result.get("changeset", {}).get("created", {})
+        check("dialog header included", any(path.endswith("DialogCmdDlg.h") for path in created))
+        check("dialog source included", any(path.endswith("DialogCmdDlg.cpp") for path in created))
 
-    traceback.print_exc()
+    run_case("command with dialog", test_command_with_dialog)
 
-# ============================================================================
-# Test 3: create_executable_command - With Dialog
-# ============================================================================
+    def test_service():
+        result = expose_service(
+            ctx,
+            component_name="TestComponent",
+            module="TestModule.m",
+            framework="TestFramework",
+            methods=[{"name": "GetData", "params": [], "return": "HRESULT"}],
+        )
+        check("expose service returns pending", result.get("status") == "pending", result.get("message", ""))
+        check("service interface is reported", result.get("service", {}).get("interface") == "ITestComponent")
+        check("service changeset is non-empty", result.get("changeset", {}).get("total_changes", 0) > 0)
 
-print("\n[Test 3] create_executable_command - With Dialog")
-print("-" * 80)
+    run_case("expose service", test_service)
 
-try:
-    result = create_executable_command(
-        ctx,
-        name="TestIntentCmdWithDlg",
-        module="TestModule.m",
-        framework="TestFramework",
-        with_dialog=True,
-    )
+    def test_ui_dialog():
+        result = create_ui_dialog(
+            ctx,
+            name="TestIntentDlg",
+            module="TestModule.m",
+            framework="TestFramework",
+            controls=[{"type": "Editor", "name": "ValueEditor"}],
+        )
+        check("UI dialog returns pending", result.get("status") == "pending", result.get("message", ""))
+        check("UI dialog metadata", result.get("dialog", {}).get("controls") == ["ValueEditor"])
 
-    if result["status"] == "pending":
-        print("[OK] Command with dialog intent created")
-        print(f"     Command: {result['components']['command']}")
-        print(f"     Dialog: {result['components']['dialog']}")
-        print(f"     Suggestions: {len(result.get('suggestions', []))}")
-        for sug in result.get("suggestions", [])[:3]:
-            print(f"       - {sug}")
-    elif result["status"] == "error":
-        print(f"[INFO] Expected error: {result['message']}")
-except Exception as e:
-    print(f"[FAIL] Exception: {e}")
-    import traceback
+    run_case("create UI dialog", test_ui_dialog)
 
-    traceback.print_exc()
+    def test_validation():
+        result = create_executable_command(
+            ctx,
+            name="BadCmd",
+            module="MissingModule.m",
+            framework="TestFramework",
+        )
+        check("missing module is rejected", result.get("status") == "error", result.get("message", ""))
+        check("missing module gives alternatives", "available_modules" in result)
 
-# ============================================================================
-# Test 4: create_executable_command - With Workbench
-# ============================================================================
+    run_case("parameter validation", test_validation)
 
-print("\n[Test 4] create_executable_command - With Workbench")
-print("-" * 80)
-
-try:
-    result = create_executable_command(
-        ctx,
-        name="TestIntentCmdWB",
-        module="TestModule.m",
-        framework="TestFramework",
-        with_dialog=True,
-        add_to_workbench="TestWorkbench",
-    )
-
-    if result["status"] == "pending":
-        print("[OK] Command with workbench intent created")
-        print(f"     Command: {result['components']['command']}")
-        print(f"     Workbench: {result['components']['workbench']}")
-    elif result["status"] == "error":
-        print(f"[INFO] Expected error: {result['message']}")
-        if "available_modules" in result:
-            print(f"     Available modules: {len(result['available_modules'])}")
-except Exception as e:
-    print(f"[FAIL] Exception: {e}")
-
-# ============================================================================
-# Test 5: expose_service
-# ============================================================================
-
-print("\n[Test 5] expose_service")
-print("-" * 80)
-
-try:
-    result = expose_service(
-        ctx,
-        component_name="TestComponent",
-        module="TestModule.m",
-        framework="TestFramework",
-        methods=[
-            {"name": "DoSomething", "params": ["param1"], "return": "HRESULT"},
-            {"name": "GetData", "params": [], "return": "CATUnicodeString"},
-        ],
-    )
-
-    if result["status"] == "pending":
-        print("[OK] Expose service intent created")
-        print(f"     Interface: {result['service']['interface']}")
-        print(f"     Component: {result['service']['component']}")
-        print(f"     Methods: {result['service']['methods']}")
-        print(f"     Next steps: {len(result.get('next_steps', []))}")
-    elif result["status"] == "error":
-        print(f"[INFO] Expected error: {result['message']}")
-except Exception as e:
-    print(f"[FAIL] Exception: {e}")
-    import traceback
-
-    traceback.print_exc()
-
-# ============================================================================
-# Test 6: create_ui_dialog
-# ============================================================================
-
-print("\n[Test 6] create_ui_dialog")
-print("-" * 80)
-
-try:
-    result = create_ui_dialog(
-        ctx,
-        name="TestIntentDlg",
-        module="TestModule.m",
-        framework="TestFramework",
-        controls=[
-            {"type": "Label", "text": "Enter value:"},
-            {"type": "Editor", "name": "ValueEditor"},
-            {"type": "PushButton", "name": "OKButton", "text": "OK"},
-        ],
-        layout="vertical",
-    )
-
-    if result["status"] == "pending":
-        print("[OK] UI dialog intent created")
-        print(f"     Dialog: {result['dialog']['name']}")
-        print(f"     Controls: {result['dialog']['controls']}")
-        print(f"     Layout: {result['dialog']['layout']}")
-    elif result["status"] == "error":
-        print(f"[INFO] Expected error: {result['message']}")
-except Exception as e:
-    print(f"[FAIL] Exception: {e}")
-    import traceback
-
-    traceback.print_exc()
-
-# ============================================================================
-# Test 7: Parameter Validation
-# ============================================================================
-
-print("\n[Test 7] Parameter Validation")
-print("-" * 80)
-
-try:
-    # Try to create command with non-existent module
-    result = create_executable_command(
-        ctx, name="TestCmd", module="NonExistentModule.m", framework="TestFramework"
-    )
-
-    if result["status"] == "error":
-        print("[OK] Parameter validation working")
-        print(f"     Error: {result['message']}")
-        if "available_modules" in result:
-            print(
-                f"     Provides alternatives: Yes ({len(result['available_modules'])} modules)"
-            )
-        if "suggestion" in result:
-            print(f"     Suggestion: {result['suggestion']}")
-    else:
-        print("[UNEXPECTED] Should have returned error for non-existent module")
-except Exception as e:
-    print(f"[FAIL] Exception: {e}")
-
-# ============================================================================
-# Test 8: Default Value Generation
-# ============================================================================
-
-print("\n[Test 8] Default Value Generation")
-print("-" * 80)
-
-try:
-    # Test with minimal parameters
-    result = create_executable_command(
-        ctx,
-        name="CalculateVolume",
-        module="TestModule.m",
-        framework="TestFramework",
-        with_dialog=True,
-        # dialog_name should be auto-generated
-    )
-
-    if result["status"] in ["pending", "error"]:
-        if result.get("components", {}).get("dialog"):
-            expected_name = "CalculateVolumeDlg"
-            actual_name = result["components"]["dialog"]
-            if actual_name == expected_name:
-                print("[OK] Default dialog name generated correctly")
-                print(f"     Generated: {actual_name}")
-            else:
-                print(f"[FAIL] Expected '{expected_name}', got '{actual_name}'")
-        else:
-            print("[INFO] Dialog not created (expected if module doesn't exist)")
-except Exception as e:
-    print(f"[FAIL] Exception: {e}")
-
-# ============================================================================
-# Test 9: Tooltip Generation
-# ============================================================================
-
-print("\n[Test 9] Tooltip Generation")
-print("-" * 80)
-
-try:
-    from intents import _generate_tooltip
-
-    test_cases = [
+    for name, expected in [
         ("CalculateVolume", "Calculate Volume"),
         ("SaveData", "Save Data"),
         ("MyCommand", "My Command"),
-    ]
+    ]:
+        actual = generate_tooltip(name)
+        check(f"generate_tooltip({name})", actual == expected, actual)
 
-    all_pass = True
-    for input_name, expected in test_cases:
-        result = _generate_tooltip(input_name)
-        if result == expected:
-            print(f"[OK] '{input_name}' -> '{result}'")
-        else:
-            print(f"[FAIL] '{input_name}' -> Expected '{expected}', got '{result}'")
-            all_pass = False
+    def test_merge_helper():
+        target = ChangeSet(action="target", description="target")
+        source = ChangeSet(action="source", description="source")
+        target.add_create(WORKSPACE / "one.txt", "one")
+        source.add_create(WORKSPACE / "two.txt", "two")
+        source.add_modify(WORKSPACE / "existing.txt", "new")
+        merge_changeset(target, source)
+        check("public merge helper keeps created files", len(target.created) == 2)
+        check("public merge helper keeps modified files", len(target.modified) == 1)
 
-    if all_pass:
-        print("\n[OK] All tooltip generation tests passed")
-except Exception as e:
-    print(f"[FAIL] Exception: {e}")
-
-# ============================================================================
-# Test 10: ChangeSet Merging
-# ============================================================================
-
-print("\n[Test 10] ChangeSet Merging")
-print("-" * 80)
-
-try:
-    from changeset import ChangeSet
-    from intents import _merge_changeset
-
-    cs1 = ChangeSet(action="test1", description="Test 1")
-    cs1.created["file1.cpp"] = "content1"
-    cs1.created["file2.h"] = "content2"
-
-    cs2 = ChangeSet(action="test2", description="Test 2")
-    cs2.created["file3.cpp"] = "content3"
-    cs2.modified["Imakefile.mk"] = "new content"
-
-    _merge_changeset(cs1, cs2)
-
-    if len(cs1.created) == 3:
-        print("[OK] ChangeSet merging works")
-        print(f"     Created files: {len(cs1.created)}")
-        print(f"     Modified files: {len(cs1.modified)}")
-    else:
-        print(f"[FAIL] Expected 3 created files, got {len(cs1.created)}")
-except Exception as e:
-    print(f"[FAIL] Exception: {e}")
-    import traceback
-
-    traceback.print_exc()
-
-# ============================================================================
-# Summary
-# ============================================================================
+    run_case("public changeset merge helper", test_merge_helper)
+finally:
+    shutil.rmtree(WORKSPACE, ignore_errors=True)
 
 print("\n" + "=" * 80)
-print("Phase 2 Intent Layer Tests Complete")
+print(f"RESULTS: {passed}/{total}")
 print("=" * 80)
-print("\nTested Features:")
-print("  [OK] Import Check")
-print("  [OK] create_executable_command (simple)")
-print("  [OK] create_executable_command (with dialog)")
-print("  [OK] create_executable_command (with workbench)")
-print("  [OK] expose_service")
-print("  [OK] create_ui_dialog")
-print("  [OK] Parameter Validation")
-print("  [OK] Default Value Generation")
-print("  [OK] Tooltip Generation")
-print("  [OK] ChangeSet Merging")
-print("\nIntent Layer implementation verified!")
+if failures:
+    print("Failures:")
+    for failure in failures:
+        print(f"  - {failure}")
+    sys.exit(1)
 
-# P3-006 fix: Cleanup temp workspace
-import shutil
-try:
-    if WORKSPACE.exists():
-        shutil.rmtree(WORKSPACE, ignore_errors=True)
-        print(f"[Cleanup] Removed temp workspace: {WORKSPACE}")
-except Exception:
-    pass
+print("\nIntent Layer implementation verified!")
+sys.exit(0)

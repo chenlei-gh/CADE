@@ -376,23 +376,51 @@ def create_command(
         _r(name, fw_name, module, CommandClassName=name),
     )
 
-    # --- 3. Addin.h (LocalInterfaces) — registers command with workbench ---
+    # --- 3. Addin.h (LocalInterfaces) — skip if exists (shared across commands) ---
     addin_name = f"{module_base}Addin"
-    cs.add_create_file(
-        li / f"{addin_name}.h",
-        ctx.tpl("module", "AddinClass.h"),
-        _r(addin_name, fw_name, module, CommandClassName=name, ModuleName=module_base),
-    )
+    addin_h = li / f"{addin_name}.h"
+    if not addin_h.exists():
+        cs.add_create_file(
+            addin_h,
+            ctx.tpl("module", "AddinClass.h"),
+            _r(addin_name, fw_name, module, CommandClassName=name, ModuleName=module_base),
+        )
 
     # --- 4. Addin.cpp (src) — toolbar + command registration ---
     toolbar_pos = "Right"  # default position
     toolbar_pri = "1"       # default priority
-    cs.add_create_file(
-        src / f"{addin_name}.cpp",
-        ctx.tpl("module", "AddinClass.cpp") if (ctx.tpl("module") / "AddinClass.cpp").exists() else ctx.tpl("command", "CommandClass.cpp"),
-        _r(addin_name, fw_name, module, CommandClassName=name, ModuleName=module_base,
-           ToolbarPriority=toolbar_pri, ToolbarPosition=toolbar_pos),
-    )
+    addin_cpp = src / f"{addin_name}.cpp"
+    if not addin_cpp.exists():
+        cs.add_create_file(
+            addin_cpp,
+            ctx.tpl("module", "AddinClass.cpp") if (ctx.tpl("module") / "AddinClass.cpp").exists() else ctx.tpl("command", "CommandClass.cpp"),
+            _r(addin_name, fw_name, module, CommandClassName=name, ModuleName=module_base,
+               ToolbarPriority=toolbar_pri, ToolbarPosition=toolbar_pos),
+        )
+    else:
+        # Addin.cpp already exists — patch to register new command (P3 fix: multi-command support)
+        cpp_base = module.replace(".m", "")
+        # 4a. Add MacDeclareHeader
+        cs.add_patch(Patch(
+            file=addin_cpp,
+            operation="insert_after",
+            target='#include "CATCommandHeader.h"',
+            content=f'MacDeclareHeader({name}Hdr);',
+        ))
+        # 4b. Register in CreateCommands()
+        cs.add_patch(Patch(
+            file=addin_cpp,
+            operation="insert_after",
+            target="void " + addin_name + "::CreateCommands()",
+            content=f'    new {name}Hdr("{cpp_base}.{name}", "{cpp_base}", "{name}", (void*)NULL);',
+        ))
+        # 4c. Add to CreateToolbars()
+        cs.add_patch(Patch(
+            file=addin_cpp,
+            operation="insert_after",
+            target=f'SetAccessChild(pToolbar',
+            content=f'    NewAccess(CATCmdStarter, p{name}Cmd, {name});\n    SetAccessCommand(p{name}Cmd, "{cpp_base}.{name}");\n    SetAccessChild(pToolbar, p{name}Cmd);',
+        ))
 
     # --- 5. Ensure Imakefile has WIZARD_LINK_MODULES (append, don't overwrite) ---
     if mod.imakefile_path().exists():
@@ -444,7 +472,12 @@ def create_command(
             cs.add_create(dico_file, entry)
         # Also write to Runtime View location so CATIA finds it after mkCreateRuntimeView
         rv_dico = ctx.workspace_root / "win_b64" / "code" / "dictionary" / dico_file.name
-        cs.add_create(rv_dico, entry)
+        if rv_dico.exists():
+            old_rv = rv_dico.read_text(encoding="utf-8", errors="replace")
+            if addin_name not in old_rv:
+                cs.add_modify(rv_dico, old_rv.rstrip() + "\n" + entry)
+        else:
+            cs.add_create(rv_dico, entry)
 
     # --- 7. Dialog files (when dialog_name is provided) ---
     if dialog_name:
