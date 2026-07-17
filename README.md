@@ -38,7 +38,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `35/35 suites (100%)` | **~600 checks** | *2026-07-16*
+> 🟢 **CI Status**: `38/38 suites (quick, 100%)` | **650+ checks** | *2026-07-17*
 
 > **v3.2.1** — Generate → Build → Run closed loop | `cade dev` one-command cycle
 
@@ -275,27 +275,29 @@ cade test                         # full: 32 suites (~60s)
 ### ⚡ Test Results
 
 <details>
-<summary>34/34 suites (100%) · 36 files · ~650 checks · 2026-07-15</summary>
+<summary>39 suites (38 quick + 1 CATIA lifecycle) · 40 files · 650+ checks · 2026-07-17</summary>
 
 | | | |
 |---|---|---|
-| L1 Unit(49) ✅ | L1-2 Decomposer(21) ✅ | L2 DepGraph ✅ |
-| L2 Intent ✅ | L2 Rollback ✅ | L2 Enhanced ✅ |
-| L2 Spec ✅ | L2 Diag ✅ | L2 FixPlan ✅ |
-| L2 Refactor ✅ | L3-1 E2E ✅ |
-| L4 Arch(29) ✅ | L5 Sem(40) ✅ | L6 Fault(16) ✅ |
-| L7 Know(16) ✅ | L0-1 Kernel(16) ✅ | L0-2 Req(21) ✅ |
-| L0-3 Repair(20) ✅ | L0-4 Routing(41) ✅ | L0-5 Verifier(15) ✅ |
-| L0-6 Token(29) ✅ | L0-7 SKILL(17) ✅ | Int1 Build ✅ |
-| Int2 Skill ✅ | FullSys ✅ | CrossRef ✅ |
-| Token Opt ✅ | CAA Struct ✅ | Intent Plan ✅ |
-| AI Integ ✅ | DeepAudit ✅ | SysHealth ✅ |
+| L1-1 Unit(49) ✅ | L1-2 Icons(14) ✅ | L1-3 Token Audit ✅ |
+| L2-1 DepGraph ✅ | L2-2 Intent ✅ | L2-3 Rollback ✅ |
+| L2-4 Enhanced Intents ✅ | L2-5 Spec ✅ | L2-6 Diagnostics ✅ |
+| L2-7 FixPlan ✅ | L2-8 Refactor ✅ | L2-9 Prod Regressions ✅ |
+| L3-1 E2E ✅ | L4-1 Arch(39) ✅ | L5-1 Semantic(40) ✅ |
+| L6-1 Fault(16) ✅ | L7-1 Knowledge(16) ✅ | L0-1 Kernel API ✅ |
+| L0-2 Requirements ✅ | L0-3 Repair Loop ✅ | L0-4 Routing ✅ |
+| L0-5 Verifier ✅ | L0-6 Token Status ✅ | L0-7 SKILL YAML ✅ |
+| Decomposer ✅ | Int-1 Build & Run ✅ | Sys-1 CATIA Detect ✅ |
+| Int-2 Skill-AI ✅ | Full System ✅ | Cross-Ref Audit ✅ |
+| Token Optimizer ✅ | CAA Structure ✅ | Intent Planner ✅ |
+| AI Integration ✅ | Deep Audit ✅ | System Health ✅ |
+| Multi-Intent ✅ | Kernel Edges ✅ | UI Scenario ✅ |
 
 </details>
 
 ```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 31 suites (~8s)
-python .agents/skills/catia-caa-dev/tests/test_master.py           # 32 suites (~60s)
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 38 suites (~60s)
+python .agents/skills/catia-caa-dev/tests/test_master.py           # 39 suites (starts CATIA)
 ```
 
 ---
@@ -351,37 +353,19 @@ graph TD
 
 | | |
 |---|---|
-| Suites | 34 (L0-L7 + Integration + Audit) |
-| Files | 36 (34 suites + 2 standalone) |
-| Checks | ~650 |
+| Suites | 39 (38 quick + 1 CATIA lifecycle) |
+| Files | 40 |
+| Checks | 650+ |
 | Pass Rate | 100% |
-| Templates | 17+ |
+| Templates | 75 (16 types) |
 | APIs | 15 (Intent + Action) |
 | CLI Commands | 22 |
 | MCP Modes | 3 (develop / analyze / repair) |
-| Build Commands | 35 |
-| Domain Entities | 10 |
-| Knowledge Assets | 240+ (29K + 14P + 13C + 14PB + 149FW + 6PH + 3FP + 3DT) |
-| Checks | ~650 |
-| Pass Rate | 100% |
-| Templates | 17+ |
-| APIs | 15 (Intent + Action) |
-| CLI Commands | 22 |
-| MCP Modes | 3 (develop / analyze / repair) |
-| Build Commands | 35 |
-| Domain Entities | 10 |
-| Knowledge Assets | 240+ (29K + 14P + 13C + 14PB + 149FW + 6PH + 3FP + 3DT) |
-| Checks | ~600 |
-| Pass Rate | 100% |
-| Templates | 17+ |
-| APIs | 15 (Intent + Action) |
-| CLI Commands | 22 |
-| MCP Modes | 3 |
 | Build Commands | 35 |
 | Spec Types | 8 |
 | Refactor Ops | 3 |
 | Domain Entities | 10 |
-| Knowledge Assets | 234 (29K + 13P + 13C + 14PB + 149FW + 1E + 6PH + 3FP) |
+| Knowledge Assets | 240+ (29K + 14P + 13C + 14PB + 149FW + 6PH + 3FP + 3DT) |
 
 ---
 
@@ -406,7 +390,7 @@ your_project/
 │   │   ├── intent/                 ← Intent Engine (Planner + Impact + Optimizer)
 │   │   ├── intents/                ← Intent-specific handlers
 │   │   └── ...
-│   ├── templates/                  ← 82 code templates (16 types)
+│   ├── templates/                  ← 75 code templates (16 types)
 │   ├── capabilities/               ← CAA capability docs
 │   ├── playbooks/                  ← Solution playbooks
 │   ├── knowledge/                  ← CAA knowledge base
@@ -549,22 +533,23 @@ cade test                           # 32 套件全量测试 (~60s)
 ### ⚡ 测试结果
 
 <details>
-<summary>34/34 套件 (100%) · 35 文件 · ~600 检查 · 2026-07-15</summary>
+<summary>39 套件（快速模式 38 套 + 1 套 CATIA 生命周期）· 40 文件 · 650+ 检查 · 2026-07-17</summary>
 
 | | | |
 |---|---|---|
-| L1 单元(49) ✅ | L1-2 分解器(21) ✅ | L2 依赖图 ✅ |
-| L2 Intent ✅ | L2 回滚 ✅ | L2 增强 ✅ |
-| L2 Spec ✅ | L2 诊断 ✅ | L2 FixPlan ✅ |
-| L2 重构 ✅ | L3-1 E2E ✅ |
-| L4 架构(29) ✅ | L5 语义(40) ✅ | L6 故障(16) ✅ |
-| L7 知识(16) ✅ | L0-1 核心(16) ✅ | L0-2 Req(21) ✅ |
-| L0-3 修复(20) ✅ | L0-4 路由(41) ✅ | L0-5 验证器(15) ✅ |
-| L0-6 Token(29) ✅ | L0-7 SKILL(17) ✅ | Int1 构建 ✅ |
-| Int2 协同 ✅ | 全系统 ✅ | CrossRef ✅ |
-| Token优化 ✅ | CAA结构 ✅ | Intent ✅ |
-| AI集成 ✅ | 深度审计 ✅ | 系统健康 ✅ |
-| 学习系统 ✅ | 多意图 ✅ |
+| L1-1 单元(49) ✅ | L1-2 图标(14) ✅ | L1-3 Token 审计 ✅ |
+| L2-1 依赖图 ✅ | L2-2 Intent ✅ | L2-3 回滚 ✅ |
+| L2-4 增强 Intent ✅ | L2-5 规格 ✅ | L2-6 诊断 ✅ |
+| L2-7 FixPlan ✅ | L2-8 重构 ✅ | L2-9 生产回归 ✅ |
+| L3-1 E2E ✅ | L4-1 架构(39) ✅ | L5-1 语义(40) ✅ |
+| L6-1 故障注入(16) ✅ | L7-1 知识(16) ✅ | L0-1 Kernel API ✅ |
+| L0-2 需求澄清 ✅ | L0-3 修复闭环 ✅ | L0-4 路由 ✅ |
+| L0-5 验证器 ✅ | L0-6 Token 状态 ✅ | L0-7 SKILL YAML ✅ |
+| 分解器 ✅ | Int-1 构建运行 ✅ | Sys-1 CATIA 检测 ✅ |
+| Int-2 协同 ✅ | 全系统 ✅ | Cross-Ref 审计 ✅ |
+| Token 优化 ✅ | CAA 结构 ✅ | Intent 规划 ✅ |
+| AI 集成 ✅ | 深度审计 ✅ | 系统健康 ✅ |
+| 多意图 ✅ | Kernel 边界 ✅ | UI 场景 ✅ |
 
 </details>
 
@@ -586,11 +571,11 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 
 | | |
 |---|---|
-| **测试套件** | 34（L0-L7 + Integration + Audit） |
-| **测试文件** | 36（34 套件 + 2 独立） |
-| **检查项** | ~650 |
+| **测试套件** | 39（快速模式  38 套 + 1 套 CATIA 生命周期） |
+| **测试文件** | 40 |
+| **检查项** | 650+ |
 | **通过率** | 100% |
-| **模板** | 25+ |
+| **模板** | 75（16 类型） |
 | **API** | 15（Intent + Action） |
 | **CLI 命令** | 22 |
 | **MCP 模式** | 3（develop / analyze / repair） |
