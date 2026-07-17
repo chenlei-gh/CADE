@@ -616,11 +616,13 @@ if bld_mod:
             f"8.1 build.{fn_name}", callable(fn), "not callable" if fn is None else ""
         )
 
-    # Keep quick mode static: even mkmk -n initializes the real Build Time toolchain.
+    # Keep quick mode static: even a dry-run build initializes the real
+    # Build Time toolchain. Note: mkmk has no '-n' option (it's rejected
+    # as illegal); '-a -nobuild' is the real dry-run equivalent.
     if not ARGS.quick:
         tmp = Path(tempfile.mkdtemp(prefix="cade_test_"))
         try:
-            r = bld_mod.build_workspace(tmp, "-n", timeout=30)
+            r = bld_mod.build_workspace(tmp, "-a -nobuild", timeout=30)
             check(
                 "8.2 build_workspace dry-run",
                 isinstance(r, dict),

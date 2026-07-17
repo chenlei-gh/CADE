@@ -415,9 +415,29 @@ def error_result(message: str, **kwargs) -> dict:
 # ─── Named Build Functions (AI-Friendly) ──────────────────────────
 
 
+# NOTE: mkmk's usage line is:
+#   mkmk [-W WSPath] [-a|-lFW FWlist|framework [framework]|module [module]]
+#        [[-g|-ge]|-w|-dev] [-u] ...
+# '-a' (or an explicit framework/module name) is a MANDATORY target
+# selector, not optional. Flags like '-u' (reset persistent options) and
+# '-g' (debug mode) are modifiers only — passing them alone, without a
+# target selector, makes mkmk print the misleading
+# "must be executed in a workspace containing, at least, one framework"
+# error (it's actually a missing-target error, not a real "no framework"
+# problem). All whole-workspace build helpers below must therefore always
+# include '-a'. Also note mkmk 5.28's documented 'mkmk -help' usage line has
+# no '-n' (dry-run) or '-c' (clean) option; '-n' is rejected outright as an
+# illegal option ('illegal option -- n'). '-c' is silently accepted (no
+# error) but does not appear in the documented option list, so its actual
+# effect is unverified/undocumented — clean_build() below therefore relies
+# on '-u' (reset persistent compile options) for a full rebuild instead of
+# depending on '-c'. dry_run_build() uses '-a -nobuild' (parse/graph update only,
+# no actual compilation) to achieve the same effect.
+
+
 def incremental_build(workspace_path: Path, timeout: int = 600) -> dict:
-    """Incremental build (mkmk -u) — most common"""
-    return build_workspace(workspace_path, "-u", timeout)
+    """Incremental build (mkmk -u -a) — most common"""
+    return build_workspace(workspace_path, "-u -a", timeout)
 
 
 def full_build(workspace_path: Path, timeout: int = 1200) -> dict:
@@ -426,18 +446,19 @@ def full_build(workspace_path: Path, timeout: int = 1200) -> dict:
 
 
 def clean_build(workspace_path: Path, timeout: int = 1200) -> dict:
-    """Clean then build (mkmk -c)"""
-    return build_workspace(workspace_path, "-c", timeout)
+    """Clean then build (mkmk -a -u) — '-u' resets persistent compile options"""
+    return build_workspace(workspace_path, "-a -u", timeout)
 
 
 def debug_build(workspace_path: Path, timeout: int = 600) -> dict:
-    """Debug mode build (mkmk -g)"""
-    return build_workspace(workspace_path, "-g", timeout)
+    """Debug mode build (mkmk -a -g)"""
+    return build_workspace(workspace_path, "-a -g", timeout)
 
 
 def dry_run_build(workspace_path: Path, timeout: int = 60) -> dict:
-    """Dry run — show what would be built (mkmk -n)"""
-    return build_workspace(workspace_path, "-n", timeout)
+    """Dry run — update mkmk data/graph without compiling (mkmk -a -nobuild).
+    mkmk has no '-n' flag; '-nobuild' is the real equivalent."""
+    return build_workspace(workspace_path, "-a -nobuild", timeout)
 
 
 def create_runtime_view(workspace_path: Path) -> dict:
@@ -619,8 +640,8 @@ def register_vs(workspace_path: Path) -> dict:
 def build_with_threads(
     workspace_path: Path, threads: int = 8, timeout: int = 1200
 ) -> dict:
-    """Multi-threaded build (mkmk -j N)"""
-    return build_workspace(workspace_path, f"-j {threads}", timeout)
+    """Multi-threaded build (mkmk -a -j N) — '-a' is the mandatory target selector"""
+    return build_workspace(workspace_path, f"-a -j {threads}", timeout)
 
 
 def _exec_build_cmd(command: str, workspace_path: Path, timeout: int = 300) -> dict:

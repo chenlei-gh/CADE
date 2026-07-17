@@ -6,13 +6,24 @@ Covers build.py, run.py, env.py APIs and CATIA lifecycle.
 
 P3-001/002 fix: Clearly separated test tiers.
   Tier A (fast): Command generation, env detection, API validation.
-  Tier B (slow): Actual mkmk compilation — requires real CAA workspace.
+  Tier B (real, opt-in): Actual mkmk compilation against a real CAA
+                         workspace — no CATIA process is started or
+                         stopped, so it's safe to run alongside a
+                         running CATIA session. Skipped (not failed)
+                         if no real workspace is configured/found.
   Tier C (manual): CATIA start/stop lifecycle — interactive only.
 
 When run in quick mode (--quick), only Tier A is executed.
 Tier A does NOT run mkmk or launch CNEXT.exe.
+
+Tier B looks for a real workspace at, in order:
+  1. $CADE_REAL_WORKSPACE env var
+  2. D:/Vault/FSWorkspaces/TTEST (default dev test workspace)
+If neither exists, Tier B checks are skipped (counted separately,
+not as pass/fail) so CI/sandboxes without that workspace still work.
 """
 
+import os
 import sys
 import tempfile
 import time
@@ -33,6 +44,7 @@ from build import (
     impact_analysis,
     incremental_build,
     update_framework,
+    validate_workspace,
     workspace_config,
     workspace_info,
     workspace_module_info,
@@ -152,6 +164,97 @@ check(
     "4.3 dict items have keys",
     not procs or any("pid" in p or "name" in p for p in procs),
 )
+
+# ═══ Part 4.5: Real mkmk Build (Tier B — opt-in, no CATIA start/stop) ═══
+print("\n" + "=" * 70)
+print("  Part 4.5: Real mkmk Build (safe — does not start/stop CATIA)")
+print("=" * 70)
+
+real_ws_str = os.environ.get("CADE_REAL_WORKSPACE", r"D:\Vault\FSWorkspaces\TTEST")
+real_ws = Path(real_ws_str)
+tier_b_total = tier_b_passed = 0
+
+
+def check_b(label, ok, detail=""):
+    global tier_b_total, tier_b_passed
+    tier_b_total += 1
+    if ok:
+        tier_b_passed += 1
+    s = "PASS" if ok else "FAIL"
+    print(f"  [{s}] {label}" + (f" — {detail}" if detail else ""))
+
+
+if not real_ws.exists():
+    print(f"  [SKIP] No real workspace at {real_ws} — set CADE_REAL_WORKSPACE to enable Tier B")
+else:
+    health = validate_workspace(real_ws)
+    check_b("4.5.1 real workspace validates", health["can_build"], str(health["issues"])[:80])
+
+    if health["can_build"]:
+        # Snapshot existing DLL mtimes so we can prove the build actually
+        # refreshed them, not just that old artifacts happen to exist.
+        arch = env.get_architecture() if hasattr(env, "get_architecture") else "win_b64"
+        bin_dir = real_ws / arch / "code" / "bin"
+        before_mtimes = {}
+        if bin_dir.exists():
+            before_mtimes = {p.name: p.stat().st_mtime for p in bin_dir.glob("*.dll")}
+
+        # An incremental build with zero source changes legitimately does
+        # NOT touch any DLL (mkmk has nothing to recompile). To make the
+        # 'DLL refreshed' check meaningful, touch one real source file's
+        # mtime forward so mkmk sees it as changed, then restore it after.
+        touched_src = None
+        src_files = list(real_ws.glob("*.edu/*.m/src/*.cpp"))
+        if src_files:
+            touched_src = src_files[0]
+            _orig_content = touched_src.read_text(encoding="utf-8", errors="replace")
+            touched_src.write_text(_orig_content, encoding="utf-8")
+            import time as _time
+            _time.sleep(1)
+            touched_src.touch()
+
+        try:
+            # Exercise the real named helper (not a raw flag string) so this
+            # test catches regressions in incremental_build()'s actual args,
+            # e.g. missing the mandatory '-a' target selector mkmk requires.
+            result = incremental_build(real_ws, timeout=900)
+            check_b(
+                "4.5.2 incremental_build() returns dict",
+                isinstance(result, dict) and "status" in result,
+            )
+            check_b(
+                "4.5.3 build status is success",
+                result.get("status") == "success",
+                f"status={result.get('status')} errors={result.get('error_count')}",
+            )
+            check_b(
+                "4.5.4 zero compile errors",
+                result.get("error_count", -1) == 0,
+                f"error_count={result.get('error_count')}",
+            )
+            verify = result.get("verification", {})
+            check_b(
+                "4.5.5 post-build DLL verification ok",
+                bool(verify.get("ok", False)),
+                str(verify.get("issues", []))[:80],
+            )
+
+            # Confirm at least one DLL is fresh (mtime advanced or newly created)
+            after_mtimes = {}
+            if bin_dir.exists():
+                after_mtimes = {p.name: p.stat().st_mtime for p in bin_dir.glob("*.dll")}
+            refreshed = any(
+                name not in before_mtimes or after_mtimes[name] > before_mtimes[name]
+                for name in after_mtimes
+            )
+            check_b("4.5.6 at least one DLL refreshed", refreshed, f"dlls={list(after_mtimes)}")
+        except Exception as e:
+            check_b("4.5.2 incremental_build()", False, str(e)[:100])
+
+    # Fold Tier B results into the main tally so they count in the suite total.
+    total += tier_b_total
+    passed += tier_b_passed
+    print(f"  Tier B: {tier_b_passed}/{tier_b_total}")
 
 # ═══ Part 5: CATIA Lifecycle ═══
 print("\n" + "=" * 70)

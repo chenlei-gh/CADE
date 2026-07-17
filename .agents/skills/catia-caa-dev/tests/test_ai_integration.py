@@ -168,7 +168,9 @@ try:
     else:
         from build import build_workspace
         w = Path(".").resolve()
-        r = build_workspace(w, "-n", timeout=30)
+        # mkmk has no '-n' option (it's rejected as illegal); '-a -nobuild'
+        # is the real dry-run equivalent (parse/graph update, no compile).
+        r = build_workspace(w, "-a -nobuild", timeout=30)
     check("build returns dict", isinstance(r, dict))
     check("has status", "status" in r)
 

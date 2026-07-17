@@ -1646,16 +1646,18 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 已完成安全回归的核心缺陷包括 ChangeSet 失败零副作用、组合创建、merge 冲突阻断、Build 输出解析、Repair 当前输出诊断、DLL 新鲜度验证和 Analyzer 去重。但以下验收缺口仍阻止生产就绪声明：
 
 - Full Regression quick 仍有 4 项精确 quarantine，尚未全部关闭。
-- quick 模式不执行真实 Build、CNEXT 或 CATIA 生命周期。
-- 原始 `TTEST` 含旧版生成产物，真实 Build 仍会因 `CATTestCase.h` 和错误 CommandHeader 宏失败；诊断现可明确识别这些问题。
-- 当前 TestCase/Addin 模板已在 `TTEST` 隔离副本上完成真实 B28 Build，parser 0 error 且新鲜 DLL 校验通过；但模板全集和 CATIA 运行时仍无完整验收证据。
+- quick 模式不执行真实 Build、CNEXT 或 CATIA 生命周期（`test_build_and_run.py` 整套在 `test_master.py --quick` 下被跳过）。
+- 模板全集和 CATIA 运行时仍无完整验收证据（目前仅覆盖 `TTEST` 单一工作区的一个模块）。
+
+**2026-07-17 修复**：`build.py` 的 `incremental_build()` / `clean_build()` / `debug_build()` / `build_with_threads()` 此前只传递修饰符标志（如 `-u`、`-g`、`-j N`），未附带 mkmk 强制要求的目标选择器 `-a`，导致对任意真实工作区调用都会失败，报出误导性的"must be executed in a workspace containing, at least, one framework"错误（实际是缺少 `-a`，与许可证/环境无关）。已修复为始终包含 `-a`；`dry_run_build()` 改用 `-a -nobuild`（mkmk 无 `-n` 选项，会被拒绝为非法参数）。新增 `test_build_and_run.py` Part 4.5（Tier B，opt-in、不启停 CATIA）对 `D:/Vault/FSWorkspaces/TTEST` 执行真实 `incremental_build()`，验证 0 编译错误、DLL 新鲜度校验通过、DLL mtime 确实刷新。
 
 ### 已验证范围
 
 - **测试套件**: 39 套；快速模式执行 38 套，跳过 1 套 CATIA 生命周期测试。
 - **Full Integration**: 49/49 通过。
 - **Full Regression quick**: 394/398；4 项 quarantine 不计作通过。
-- **适用场景**: 静态分析、预览、受控生成和模拟回归；生成结果仍须人工审查并通过真实 Build 验证。
+- **真实 mkmk Build（Tier B，非 quick 模式）**: 对 `TTEST` 工作区执行 `incremental_build()`，0 error，DLL 校验通过且已刷新（`Int-1 Build & Run` 套件，约 33s）。
+- **适用场景**: 静态分析、预览、受控生成、模拟回归，以及对已知测试工作区的真实增量 Build 验证；新生成的项目仍须人工审查并在自己的真实工作区跑一次 Build 确认。
 
 ### 使用限制
 
