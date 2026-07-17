@@ -217,25 +217,64 @@ class CAAEnvironment:
         return None
 
     def _find_vcvars(self) -> Path:
-        """Find vcvarsall.bat for VS compiler environment.
+        """Find vcvarsall.bat for VS compiler environment (P2-006 fix).
 
-        Searches common VS 2012 (VC11) install locations.
+        Uses environment variables before falling back to hardcoded paths.
+        Supports VS 2012 (VC11) through VS 2022.
         Raises FileNotFoundError if not found.
         """
+        import os
+
+        # Use environment variables for program files (supports non-C drives)
+        prog_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+        prog = os.environ.get("ProgramFiles", r"C:\Program Files")
+
         candidates = [
-            Path(r"C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat"),
-            Path(r"C:\Program Files\Microsoft Visual Studio 11.0\VC\vcvarsall.bat"),
+            # VS 2012 (VC11) — required by CATIA B28
+            Path(prog_x86) / "Microsoft Visual Studio 11.0" / "VC" / "vcvarsall.bat",
+            Path(prog) / "Microsoft Visual Studio 11.0" / "VC" / "vcvarsall.bat",
+            # VS 2013 (VC12)
+            Path(prog_x86) / "Microsoft Visual Studio 12.0" / "VC" / "vcvarsall.bat",
+            Path(prog) / "Microsoft Visual Studio 12.0" / "VC" / "vcvarsall.bat",
         ]
+
+        # Check common VS 2012/2013 locations first
         for p in candidates:
             if p.exists():
                 return p
-        # Also check newer VS versions that mkinit might support
-        for ver in ["12.0", "14.0", "2017", "2019", "2022"]:
-            for base in ["C:\\Program Files (x86)\\Microsoft Visual Studio", "C:\\Program Files\\Microsoft Visual Studio"]:
-                p = Path(base) / ver / "VC\\Auxiliary\\Build\\vcvarsall.bat" if ver in ("2017", "2019", "2022") else Path(base) / ver / "VC\\vcvarsall.bat"
+
+        # Try vswhere.exe for VS 2017+ (installed with VS Build Tools)
+        vswhere = Path(prog_x86) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+        if vswhere.exists():
+            try:
+                import subprocess
+                result = subprocess.run(
+                    [str(vswhere), "-latest", "-property", "installationPath"],
+                    capture_output=True, text=True, timeout=10
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    vs_path = Path(result.stdout.strip())
+                    vcvars = vs_path / "VC" / "Auxiliary" / "Build" / "vcvarsall.bat"
+                    if vcvars.exists():
+                        return vcvars
+            except Exception:
+                pass
+
+        # Fallback: scan known version patterns on both program file roots
+        for ver in ["14.0", "2017", "2019", "2022"]:
+            for base in [prog_x86, prog]:
+                base_p = Path(base) / "Microsoft Visual Studio"
+                if ver in ("2017", "2019", "2022"):
+                    p = base_p / ver / "VC" / "Auxiliary" / "Build" / "vcvarsall.bat"
+                else:
+                    p = base_p / ver / "VC" / "vcvarsall.bat"
                 if p.exists():
                     return p
-        raise FileNotFoundError("vcvarsall.bat not found. Install Visual Studio 2012+")
+
+        raise FileNotFoundError(
+            f"vcvarsall.bat not found. Searched: {prog_x86}, {prog}. "
+            f"Install Visual Studio 2012 (VC11) or newer with C++ tools."
+        )
 
     def get_mkmk_path(self) -> Optional[Path]:
         """Get full path to mkmk executable"""
@@ -566,10 +605,11 @@ class CAAEnvironment:
 
         bat_content = "\r\n".join(lines) + "\r\n"
 
-        # Write to temp .bat for cmd.exe execution
+        # Write to temp .bat for cmd.exe execution (P2-008 fix)
         import tempfile
-        self._build_bat = Path(tempfile.mktemp(suffix=".bat", prefix="cade_build_"))
-        self._build_bat.write_text(bat_content, encoding="ascii")
+        with tempfile.NamedTemporaryFile(suffix=".bat", prefix="cade_build_", delete=False, mode="w", encoding="ascii") as f:
+            f.write(bat_content)
+            self._build_bat = Path(f.name)
 
         display = f"tck_init → tck_profile → [fallback if TCK missing] → mkinit → mkmk {mkmk_options}"
         return ["cmd", "/c", str(self._build_bat)], display

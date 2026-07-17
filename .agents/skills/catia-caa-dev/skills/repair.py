@@ -299,7 +299,7 @@ class RepairLoop:
 
             # Parse errors from build output (stored in cache)
             from utils import Cache
-            cache = Cache("build.json")
+            cache = Cache("build.json", workspace_root=self.workspace_root)
             cached = cache.load()
             output = cached.get("output", "")
 

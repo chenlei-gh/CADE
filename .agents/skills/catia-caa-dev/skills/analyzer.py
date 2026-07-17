@@ -176,6 +176,7 @@ class WorkspaceAnalyzer:
     # ─── Phase 3: Entities ──────────────────────────────────
 
     def _discover_interfaces(self, mod: Module):
+        """Discover interfaces in public and local interface directories (P2-001 fix)."""
         # Public interfaces
         for h in mod.public_interfaces:
             name = h.stem
@@ -186,15 +187,44 @@ class WorkspaceAnalyzer:
                 iface.is_idl = True
                 iface.idl_file = idl_file
             mod.interfaces.append(iface)
+            self.logger.write(f"      Interface (public): {name}")
 
-        # Local interfaces (check for interface patterns)
+        # Local interfaces — detect CAA interface patterns
         for h in mod.local_interfaces:
             name = h.stem
             try:
                 content = h.read_text(encoding="utf-8", errors="replace")
-                # Check if it derives from CATBaseUnknown (likely an interface or component)
-                if "CATBaseUnknown" in content and "CATDeclareInterface" not in content:
-                    continue  # Probably a component header, not an interface
+
+                # CAA interface markers:
+                # 1. CATDeclareInterface — explicit interface declaration
+                # 2. CATDeclareClass + CATBaseUnknown — extension point class
+                # 3. class X : public CATBaseUnknown (not a component)
+                is_interface = False
+                is_component = False
+
+                if "CATDeclareInterface" in content:
+                    is_interface = True
+                elif "CATDeclareClass" in content:
+                    # Could be interface or component — components have CATDeclareClass too
+                    # But components typically have CATExt (extension class) patterns
+                    if ("CATBaseUnknown" in content
+                            and "CATExt" not in content
+                            and "CATImplementClass" not in content):
+                        is_interface = True
+                    else:
+                        is_component = True
+                elif "class" in content and "CATBaseUnknown" in content:
+                    # Simple extension class — check if it's not a component
+                    if "CATImplementClass" not in content and "CATExt" not in content:
+                        # But avoid Addins (they have CATBaseUnknown too)
+                        if "CATCmd" not in content and "CATDlg" not in content:
+                            is_interface = True
+
+                if is_interface:
+                    iface = Interface(name=name, path=h, header=h, module=mod)
+                    mod.interfaces.append(iface)
+                    self.logger.write(f"      Interface (local): {name}")
+
             except Exception:
                 pass
 
@@ -310,27 +340,60 @@ class WorkspaceAnalyzer:
     # ─── Phase 4: Workbenches & Resources ────────────────────
 
     def _discover_workbenches(self, fw: Framework):
-        # Look in modules for workbench files
+        """Discover workbenches in modules (P2-002 fix — expanded patterns)."""
         for mod in fw.modules:
             if not mod.src_dir:
                 continue
             for cpp in mod.src_dir.glob("*.cpp"):
                 try:
                     content = cpp.read_text(encoding="utf-8", errors="replace")
+                    # Root workbench patterns:
+                    # - CATIWorkbench / CreateWorkbench (legacy)
+                    # - CATCmdWorkbench (modern template)
+                    # - CATIAfrGeneralWksAddin with CreateCommands+CreateToolbars
+                    is_wb = False
                     if "CATIWorkbench" in content or "CreateWorkbench" in content:
-                        name = cpp.stem
-                        wb = Workbench(name=name, path=cpp, framework=fw)
-                        wb.header = self._find_matching_header(name, mod)
-                        fw.workbenches.append(wb)
-                        self.logger.write(f"    Workbench: {name}")
+                        is_wb = True
+                    elif "CATCmdWorkbench" in content:
+                        is_wb = True
+                    elif ("CATIAfrGeneralWksAddin" in content
+                          and "CreateCommands" in content
+                          and "CreateToolbars" in content):
+                        is_wb = True
+                    elif ("CreateCommands" in content
+                          and "CreateToolbars" in content
+                          and "SetAccessCommand" in content):
+                        # Generic workbench/addin with toolbar commands
+                        is_wb = True
 
-                        # Find Addin
+                    if not is_wb:
+                        continue
+
+                    name = cpp.stem
+                    # Strip "Addin" suffix for workbench name if it's an addin
+                    if name.endswith("Addin"):
+                        wb_name = name.replace("Addin", "")
+                    else:
+                        wb_name = name
+
+                    wb = Workbench(name=wb_name, path=cpp, framework=fw)
+                    wb.header = self._find_matching_header(name, mod)
+                    fw.workbenches.append(wb)
+                    self.logger.write(f"    Workbench: {wb_name} (from {name})")
+
+                    # Find Addin if this is the workbench source
+                    if not name.endswith("Addin"):
                         addin_cpp = mod.src_dir / f"{name}Addin.cpp"
                         if addin_cpp.exists():
                             wb.addin_source = addin_cpp
                             wb.addin_header = self._find_matching_header(
                                 f"{name}Addin", mod
                             )
+                    else:
+                        # This IS the addin — source is self, header matches
+                        wb.addin_source = cpp
+                        wb.addin_header = self._find_matching_header(name, mod)
+
                 except Exception:
                     pass
 

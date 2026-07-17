@@ -184,8 +184,8 @@ def build_workspace(
     The Build Time environment must be initialized inside cmd.exe (via mkinit.bat),
     so we execute the entire build chain through cmd /c and capture output to a temp file.
     """
-    logger = Logger("build.log")
-    cache = Cache("build.json")
+    logger = Logger("build.log", workspace_root=workspace_path)
+    cache = Cache("build.json", workspace_root=workspace_path)
     logger.clear()
 
     start_time = datetime.now()
@@ -223,6 +223,14 @@ def build_workspace(
                 cache_data["prereq_workspace"] = str(workspace_path)
                 cache.save(cache_data)
                 logger.write("Prerequisites configured")
+            else:
+                # P2-004 fix: Don't silently continue — report and abort
+                prereq_err = prereq_result.get("message", "Unknown prereq error")
+                logger.write(f"Prerequisite setup failed: {prereq_err}")
+                return error_result(
+                    f"Prerequisite setup failed: {prereq_err}",
+                    prereq=prereq_result,
+                )
         else:
             logger.write("Prerequisites already configured (cached)")
 
@@ -587,8 +595,11 @@ def _exec_build_cmd(command: str, workspace_path: Path, timeout: int = 300) -> d
     except FileNotFoundError as e:
         return error_result(str(e))
 
-    tmpfile = Path(tempfile.mktemp(suffix=".tmp", prefix="mkmk_cmd_"))
-    batfile = Path(tempfile.mktemp(suffix=".bat", prefix="mkmk_cmd_"))
+    # Use NamedTemporaryFile for atomic temp file creation (P2-008 fix)
+    tmpf = tempfile.NamedTemporaryFile(suffix=".tmp", prefix="mkmk_cmd_", delete=False)
+    batf = tempfile.NamedTemporaryFile(suffix=".bat", prefix="mkmk_cmd_", delete=False)
+    tmpfile = Path(tmpf.name); batfile = Path(batf.name)
+    tmpf.close(); batf.close()  # Close handles — we'll read/write manually
 
     try:
         bat_content = f'@echo off\r\n{cmd_display} > "{tmpfile}" 2>&1\r\necho EXIT_CODE=%ERRORLEVEL% >> "{tmpfile}"\r\n'

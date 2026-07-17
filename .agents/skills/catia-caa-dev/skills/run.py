@@ -39,20 +39,25 @@ def _clean_cnext_sessions():
 
 def check_process_running(process_name: str) -> list:
     """
-    Check if a process is running using Windows native commands
+    Check if a process is running using Windows native commands (P2-009 fix).
 
     Args:
-        process_name: Process name (e.g., "CNEXT.exe")
+        process_name: Process name (e.g., "CNEXT.exe") — validated for safety.
 
     Returns:
         List of dictionaries with process information
     """
+    # Validate process_name: only allow alphanumeric + .exe (P2-009 fix)
+    import re
+    if not re.match(r'^[a-zA-Z0-9_.\-]+\.exe$', process_name):
+        raise ValueError(f"Invalid process name for safety: {process_name}")
+
     running_processes = []
 
     try:
-        # Use pipe approach (more reliable than /FI on Chinese Windows)
+        # Use /FI filter (no shell pipe injection risk)
         result = subprocess.run(
-            ["cmd", "/c", f"tasklist | findstr {process_name}"],
+            ["tasklist", "/FI", f"IMAGENAME eq {process_name}"],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -157,12 +162,9 @@ def start_catia_runtime(
         code_bin = catia_path / arch / "code" / "bin"
         code_command = catia_path / arch / "code" / "command"
 
-        batfile = Path(tempfile.mktemp(suffix=".bat", prefix="cade_run_"))
-        # Build environment with workspace Runtime View paths.
-        # mkrun sets Mkmk*_PATH from mkinit (CATIA install), but we must
-        # also inject the workspace's own paths so CNEXT finds its addins.
+        # Use NamedTemporaryFile for safe temp file creation (P2-008 fix)
         rv = f"{workspace_path}\\{arch}"
-        batfile.write_text(
+        bat_content = (
             "@echo off\r\n"
             f'call "{tck_init}" > NUL 2>&1\r\n'
             f'call "{tck_profile}" > NUL 2>&1\r\n'
@@ -175,9 +177,11 @@ def start_catia_runtime(
             f"set CATReffilesPath={rv}\\reffiles;%CATReffilesPath%\r\n"
             f"set CATGraphicPath={rv}\\resources\\graphic;%CATGraphicPath%\r\n"
             f'cd /d "{workspace_path}"\r\n'
-            f"call mkrun\r\n",
-            encoding="ascii",
+            f"call mkrun\r\n"
         )
+        with tempfile.NamedTemporaryFile(suffix=".bat", prefix="cade_run_", delete=False, mode="w", encoding="ascii") as f:
+            f.write(bat_content)
+            batfile = f.name
         cmd_args = ["cmd", "/c", f"start /min cmd /c {batfile}"]
         logger.write(f"Using mkrun (workspace): {workspace_path}")
     else:

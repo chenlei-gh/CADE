@@ -4,7 +4,9 @@ CATIA CAA Development Utilities
 Purpose: Common utilities for all skills
 """
 
+import hashlib
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -12,26 +14,60 @@ from typing import Any, Dict, Optional
 
 
 class Logger:
-    """Simple logger for skills"""
+    """Simple logger for skills (P2-007 fix: optional workspace-scoped logging)"""
 
-    def __init__(self, log_file: str):
+    def __init__(self, log_file: str, workspace_root: Path = None):
         """
         Initialize logger
 
         Args:
             log_file: Path to log file (in logs/ directory)
+            workspace_root: If provided, isolates logs per workspace
         """
         self.skill_root = Path(__file__).parent.parent
-        self.log_path = self.skill_root / "logs" / log_file
+        if workspace_root:
+            ws_hash = hashlib.md5(str(workspace_root.resolve()).encode()).hexdigest()[:8]
+            self.log_path = self.skill_root / "logs" / ws_hash / log_file
+        else:
+            self.log_path = self.skill_root / "logs" / log_file
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock_file = str(self.log_path) + ".lock"
+
+    def _acquire_lock(self) -> bool:
+        """Simple file-based lock to prevent concurrent writes (P2-007 fix)."""
+        try:
+            # Use O_CREAT | O_EXCL for atomic lock creation
+            fd = os.open(self._lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            return True
+        except (OSError, FileExistsError):
+            return False
+
+    def _release_lock(self):
+        try:
+            os.unlink(self._lock_file)
+        except OSError:
+            pass
 
     def write(self, message: str, level: str = "INFO"):
-        """Write log entry"""
+        """Write log entry with file locking (P2-007 fix)"""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_entry = f"[{timestamp}] [{level}] {message}\n"
 
-        with open(self.log_path, "a", encoding="utf-8") as f:
-            f.write(log_entry)
+        # Retry with lock
+        waited = 0
+        while not self._acquire_lock():
+            import time
+            time.sleep(0.01)
+            waited += 0.01
+            if waited > 2.0:  # Timeout after 2s
+                break
+
+        try:
+            with open(self.log_path, "a", encoding="utf-8") as f:
+                f.write(log_entry)
+        finally:
+            self._release_lock()
 
     def clear(self):
         """Clear log file"""
@@ -40,28 +76,55 @@ class Logger:
 
 
 class Cache:
-    """Simple cache manager for skills"""
+    """Simple cache manager for skills (P2-007 fix: optional workspace isolation)"""
 
-    def __init__(self, cache_file: str):
+    def __init__(self, cache_file: str, workspace_root: Path = None):
         """
         Initialize cache
 
         Args:
             cache_file: Cache filename (in cache/ directory)
+            workspace_root: If provided, isolates cache per workspace
         """
         self.skill_root = Path(__file__).parent.parent
-        self.cache_path = self.skill_root / "cache" / cache_file
+        if workspace_root:
+            ws_hash = hashlib.md5(str(workspace_root.resolve()).encode()).hexdigest()[:8]
+            self.cache_path = self.skill_root / "cache" / ws_hash / cache_file
+        else:
+            self.cache_path = self.skill_root / "cache" / cache_file
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock_file = str(self.cache_path) + ".lock"
+
+    def _acquire_lock(self) -> bool:
+        """File lock for cache writes (P2-007 fix)."""
+        try:
+            fd = os.open(self._lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            return True
+        except (OSError, FileExistsError):
+            return False
+
+    def _release_lock(self):
+        try:
+            os.unlink(self._lock_file)
+        except OSError:
+            pass
 
     def save(self, data: Dict[str, Any]):
-        """
-        Save data to cache (overwrites)
-
-        Args:
-            data: Dictionary to save as JSON
-        """
-        with open(self.cache_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        """Save data to cache with atomic write (P2-007 fix)"""
+        # Write to temp file, then rename (atomic on same filesystem)
+        tmp = self.cache_path.with_suffix(self.cache_path.suffix + ".tmp")
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, self.cache_path)
+        except Exception:
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+            raise
 
     def load(self) -> Dict[str, Any]:
         """
