@@ -254,7 +254,10 @@ class RepairLoop:
                     state=RepairState.FIXED,
                     attempts=attempt,
                     fixes_applied=self._fixes_applied,
-                    message=f"Applied {fixed_count} fix(es) in {attempt} attempt(s).",
+                    message=(
+                        f"Applied {fixed_count} fix(es) in {attempt} attempt(s). "
+                        "Static verification only; build verification was not run."
+                    ),
                     details=self._details,
                     backup_id=backup_id,
                 )
@@ -298,19 +301,15 @@ class RepairLoop:
         """
         try:
             from build import build_workspace
-            from parser import parse_mkmk_output, diagnose_errors
+            from parser import parse_mkmk_output
 
             # Run incremental build to find errors
             result = build_workspace(self.workspace_root, options="-u", timeout=300)
 
-            # Parse errors from build output (stored in cache)
-            from utils import Cache
-            cache = Cache("build.json", workspace_root=self.workspace_root)
-            cached = cache.load()
-            output = cached.get("output", "")
-
+            # Diagnose exactly this invocation. Reading build.json here can
+            # accidentally report errors from an older build.
+            output = result.get("output", "")
             parsed = parse_mkmk_output(output)
-            suggestions = diagnose_errors(parsed)
 
             # Convert to diagnostic format
             diagnostics = []
@@ -330,6 +329,18 @@ class RepairLoop:
                     ),
                 }
                 diagnostics.append(d)
+
+            if not diagnostics and result.get("status") not in ("success", "ok"):
+                diagnostics.append({
+                    "severity": "error",
+                    "category": "build",
+                    "file": "",
+                    "line": 0,
+                    "code": "",
+                    "message": result.get("message", "Build failed without parseable output"),
+                    "auto_fixable": False,
+                    "fix_plan": None,
+                })
 
             return {
                 "total": len(diagnostics),

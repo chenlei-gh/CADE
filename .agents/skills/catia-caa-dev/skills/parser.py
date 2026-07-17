@@ -63,11 +63,12 @@ class MkmkParser:
         ),
         # mkmk wrapper errors: # make-ERROR: path/to/file
         "mkmk_error": re.compile(
-            r"#\s*make-(?P<severity>ERROR)\s*:\s*(?P<file>\S+)"
+            r"#\s*make-(?P<severity>ERROR)\s*:\s*(?P<file>.+?)\s*$"
         ),
-        # System errors: # syst-ERROR: path: message
+        # Require whitespace after the separator so a Windows drive colon is
+        # not mistaken for the file/message boundary.
         "syst_error": re.compile(
-            r"#\s*syst-(?P<severity>ERROR)\s*:\s*(?P<file>\S+)\s*[:\-]\s*(?P<message>.*)"
+            r"#\s*syst-(?P<severity>ERROR)\s*:\s*(?P<file>.+?)(?::\s+|\s+-\s+)(?P<message>.+?)\s*$"
         ),
         # Generic error/warning
         "generic": re.compile(

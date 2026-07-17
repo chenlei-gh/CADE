@@ -175,6 +175,14 @@ class WorkspaceAnalyzer:
 
     # ─── Phase 3: Entities ──────────────────────────────────
 
+    @staticmethod
+    def _is_addin(name: str, content: str) -> bool:
+        """Identify CAA addins from their type name or implementation markers."""
+        return name.endswith("Addin") or any(kw in content for kw in (
+            "CATIAfrGeneralWksAddin", "CreateToolbars", "CreateCommands",
+            "SetAccessCommand",
+        ))
+
     def _discover_interfaces(self, mod: Module):
         """Discover interfaces in public and local interface directories (P2-001 fix)."""
         # Public interfaces
@@ -207,10 +215,9 @@ class WorkspaceAnalyzer:
                 elif "CATDeclareClass" in content:
                     # Could be interface or component — addins also have CATDeclareClass
                     # Exclude Addin headers (contain toolbar/workbench patterns)
-                    is_addin = any(kw in content for kw in (
-                        "CATCmd", "CreateToolbars", "CreateCommands",
-                        "CATIAfrGeneralWksAddin", "CATDlg"
-                    ))
+                    is_addin = self._is_addin(name, content) or any(
+                        kw in content for kw in ("CATCmd", "CATDlg")
+                    )
                     if not is_addin and ("CATBaseUnknown" in content
                             and "CATExt" not in content
                             and "CATImplementClass" not in content):
@@ -241,7 +248,7 @@ class WorkspaceAnalyzer:
             name = h.stem
             try:
                 content = h.read_text(encoding="utf-8", errors="replace")
-                if "CATDeclareClass" in content:
+                if "CATDeclareClass" in content and not self._is_addin(name, content):
                     comp = Component(name=name, path=h, header=h, module=mod)
 
                     # Find matching .cpp
@@ -345,6 +352,7 @@ class WorkspaceAnalyzer:
 
     def _discover_workbenches(self, fw: Framework):
         """Discover workbenches in modules (P2-002 fix — expanded patterns)."""
+        by_name = {workbench.name: workbench for workbench in fw.workbenches}
         for mod in fw.modules:
             if not mod.src_dir:
                 continue
@@ -380,10 +388,18 @@ class WorkspaceAnalyzer:
                     else:
                         wb_name = name
 
-                    wb = Workbench(name=wb_name, path=cpp, framework=fw)
-                    wb.header = self._find_matching_header(name, mod)
-                    fw.workbenches.append(wb)
-                    self.logger.write(f"    Workbench: {wb_name} (from {name})")
+                    wb = by_name.get(wb_name)
+                    if wb is None:
+                        wb = Workbench(name=wb_name, path=cpp, framework=fw)
+                        wb.header = self._find_matching_header(name, mod)
+                        fw.workbenches.append(wb)
+                        by_name[wb_name] = wb
+                        self.logger.write(f"    Workbench: {wb_name} (from {name})")
+                    elif not name.endswith("Addin"):
+                        # Prefer the actual workbench source over an addin that
+                        # happened to be discovered first.
+                        wb.path = cpp
+                        wb.header = self._find_matching_header(name, mod)
 
                     # Find Addin if this is the workbench source
                     if not name.endswith("Addin"):

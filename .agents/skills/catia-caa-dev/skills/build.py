@@ -54,13 +54,19 @@ def validate_workspace(workspace_path: Path) -> dict:
     return {"can_build": can_build, "issues": issues, "warnings": warnings}
 
 
-def verify_build(workspace_path: Path, expected_modules: List[str] = None) -> dict:
-    """Post-build verification: check DLLs were produced (P1-006 fix).
+def verify_build(
+    workspace_path: Path,
+    expected_modules: Optional[List[str]] = None,
+    build_start_time: Optional[datetime] = None,
+) -> dict:
+    """Post-build verification: check that fresh, plausible DLLs were produced.
 
     Args:
         workspace_path: Workspace root
         expected_modules: Optional list of module names (e.g. ['TTModule']) to verify.
                           If provided, each is checked individually.
+        build_start_time: Start of the current build. DLLs older than this time
+                          cannot prove that this build produced them.
     """
     arch = "win_b64"
     try:
@@ -79,16 +85,25 @@ def verify_build(workspace_path: Path, expected_modules: List[str] = None) -> di
 
     # Check target module DLLs (P1-006)
     if expected_modules:
-        dll_names = {d.name.lower() for d in dlls}
+        dll_by_name = {d.name.lower(): d for d in dlls}
         for mod_name in expected_modules:
             expected_dll = f"{mod_name.lower()}.dll"
-            if expected_dll not in dll_names:
+            dll = dll_by_name.get(expected_dll)
+            if dll is None:
                 issues.append(f"Expected DLL not found: {expected_dll}")
-
-    for dll in dlls:
-        size = dll.stat().st_size
-        if size < 1024:
-            issues.append(f"{dll.name}: suspicious size ({size} bytes)")
+                continue
+            size = dll.stat().st_size
+            if size < 1024:
+                issues.append(f"{dll.name}: suspicious size ({size} bytes)")
+            if build_start_time and dll.stat().st_mtime < build_start_time.timestamp():
+                issues.append(f"{dll.name}: stale DLL (older than current build start)")
+    else:
+        for dll in dlls:
+            size = dll.stat().st_size
+            if size < 1024:
+                issues.append(f"{dll.name}: suspicious size ({size} bytes)")
+            if build_start_time and dll.stat().st_mtime < build_start_time.timestamp():
+                issues.append(f"{dll.name}: stale DLL (older than current build start)")
 
     return {
         "dll_count": len(dlls),
@@ -288,6 +303,23 @@ def build_workspace(
         if exit_code == 0 and "#ERR#" in output:
             exit_code = -1  # mkmk sometimes returns 0 even with errors
 
+        # Detect TCK/license errors and provide actionable guidance
+        tck_guidance = None
+        if "at least, one framework" in output or "at least one framework" in output:
+            tck_guidance = (
+                "mkmk cannot find workspace frameworks. This typically occurs when "
+                "the TCK environment is not properly initialized. "
+                "Workaround: Use Visual Studio + RADE plugin for compilation "
+                "(see TROUBLESHOOTING_FLOWCHART.md > mkmk Issues > License error)."
+            )
+        elif "RADE" in output and ("license" in output.lower() or "licensing" in output.lower()):
+            tck_guidance = (
+                "RADE license not available for CLI compilation. "
+                "This is expected without a registered TCK. "
+                "Workaround: Use Visual Studio manual compilation "
+                "(see SKILL.md Method 3 or FAQ.md Q8)."
+            )
+
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
 
@@ -314,6 +346,8 @@ def build_workspace(
             "return_code": exit_code,
             "output": output,  # Raw mkmk output for repair loop to parse
         }
+        if tck_guidance:
+            build_result["tck_guidance"] = tck_guidance
 
         cache.save(build_result)
 
@@ -326,7 +360,11 @@ def build_workspace(
                     if mod_dir.is_dir() and mod_dir.name.endswith(".m"):
                         expected_mods.append(mod_dir.name.replace(".m", ""))
 
-        verify = verify_build(workspace_path, expected_modules=expected_mods if expected_mods else None)
+        verify = verify_build(
+            workspace_path,
+            expected_modules=expected_mods if expected_mods else None,
+            build_start_time=start_time,
+        )
         if verify["issues"]:
             build_result["verification"] = verify
             if status == "success" and not verify["ok"]:
