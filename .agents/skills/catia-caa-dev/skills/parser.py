@@ -61,6 +61,14 @@ class MkmkParser:
         "fatal": re.compile(
             r"fatal\s+(?P<severity>error)\s+(?P<code>\w+)\s*:\s*(?P<message>.+)"
         ),
+        # mkmk wrapper errors: # make-ERROR: path/to/file
+        "mkmk_error": re.compile(
+            r"#\s*make-(?P<severity>ERROR)\s*:\s*(?P<file>\S+)"
+        ),
+        # System errors: # syst-ERROR: path: message
+        "syst_error": re.compile(
+            r"#\s*syst-(?P<severity>ERROR)\s*:\s*(?P<file>\S+)\s*[:\-]\s*(?P<message>.*)"
+        ),
         # Generic error/warning
         "generic": re.compile(
             r"(?P<severity>error|warning)\s+(?P<code>\w+)\s*:\s*(?P<message>.+)"

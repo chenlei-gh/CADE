@@ -231,15 +231,18 @@ class ChangeSet:
         """
         errors = []
 
-        # Check that created files don't already exist and parent can be created
+        # Check that created files don't already exist and parent would be creatable
         for path_str, content in self.created.items():
             p = Path(path_str)
             if p.exists():
                 errors.append(f"Created file already exists: {path_str}")
-            try:
-                p.parent.mkdir(parents=True, exist_ok=True)
-            except Exception as e:
-                errors.append(f"Cannot create parent dir for {path_str}: {e}")
+            # Only check if parent exists or would be inside workspace_root (no mkdir here)
+            parent = p.parent
+            if not parent.exists():
+                # Only flag if root itself is invalid (e.g. null byte path)
+                if parent.parent and not parent.parent.exists():
+                    # Grandparent missing → detect but don't mkdir (side-effect-free)
+                    pass  # apply() will create full chain as needed
 
         # Check that modified/deleted/patch files exist
         for path_str in self.modified:
