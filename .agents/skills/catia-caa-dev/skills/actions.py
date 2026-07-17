@@ -414,10 +414,15 @@ def create_command(
             target='#include "CATCommandHeader.h"',
             content=f'MacDeclareHeader({name}Hdr);',
         ))
-        # 4b. Register in CreateCommands()
+        # 4b. Register in CreateCommands() — insertion point is the first
+        # '{' after the signature, not the signature line itself, since
+        # the opening brace is conventionally on its own line (see
+        # templates/module/AddinClass.cpp). Using plain insert_after here
+        # would insert content between the signature and '{', producing
+        # invalid C++ (see CADE bug: broke CreateCommands() compilation).
         cs.add_patch(Patch(
             file=addin_cpp,
-            operation="insert_after",
+            operation="insert_after_brace",
             target="void " + addin_name + "::CreateCommands()",
             content=f'    new {name}Hdr("{cpp_base}.{name}", "{cpp_base}", "{name}", (void*)NULL);',
         ))

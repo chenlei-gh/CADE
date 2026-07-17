@@ -533,6 +533,50 @@ class ChangeSet:
                     f"not found in {patch.file}"
                 )
 
+        elif patch.operation == "insert_after_brace":
+            # Like insert_after, but the insertion point is the first '{'
+            # found on or after the target line — not necessarily the same
+            # line as target. Needed for C++ function signatures where the
+            # opening brace is conventionally placed on its own line (e.g.
+            # "void Foo::Bar()\n{\n"). Using plain insert_after in that case
+            # would insert content BETWEEN the signature and '{', producing
+            # invalid C++ (C2447/C3646/C2761 compiler errors).
+            matches = 0
+            new_lines = []
+            i = 0
+            n = len(lines)
+            while i < n:
+                line = lines[i]
+                new_lines.append(line)
+                if patch.target in line:
+                    # Search forward (including this line) for the brace.
+                    j = i
+                    found_brace_at = None
+                    while j < n and j <= i + 5:  # small lookahead window
+                        if "{" in lines[j]:
+                            found_brace_at = j
+                            break
+                        j += 1
+                    if found_brace_at is not None and found_brace_at > i:
+                        # Emit the lines between target and the brace line,
+                        # then the brace line itself, then the content.
+                        for k in range(i + 1, found_brace_at + 1):
+                            new_lines.append(lines[k])
+                        new_lines.append(patch.content)
+                        i = found_brace_at + 1
+                        matches += 1
+                        continue
+                    elif found_brace_at == i:
+                        new_lines.append(patch.content)
+                        matches += 1
+                i += 1
+            lines = new_lines
+            if matches == 0:
+                raise ValueError(
+                    f"Patch insert_after_brace: target '{patch.target[:60]}' "
+                    f"(or its opening brace) not found in {patch.file}"
+                )
+
         elif patch.operation == "append":
             lines.append(patch.content)
 
