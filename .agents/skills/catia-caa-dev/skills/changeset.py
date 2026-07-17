@@ -29,6 +29,7 @@ Safety guarantees (v3.2.1+):
 
 from __future__ import annotations
 
+import base64
 import difflib
 import json
 import re
@@ -570,6 +571,17 @@ class ChangeSet:
             "warnings": list(self.warnings),
             "metadata": dict(self.metadata),
             "total_changes": self.total_changes,
+            # Binary payloads (icons, etc.) must round-trip through
+            # to_dict()/from_dict() — otherwise a create_command() result
+            # that's serialized (e.g. returned as a "pending" preview,
+            # then reconstructed via from_dict() before apply()) silently
+            # loses the icon bytes. apply() would then see the "[BINARY]"
+            # placeholder with no matching _binary entry and skip writing
+            # the file while still reporting it under "created".
+            "_binary": {
+                path: base64.b64encode(data).decode("ascii")
+                for path, data in self._binary.items()
+            },
         }
 
     @classmethod
@@ -584,6 +596,10 @@ class ChangeSet:
         cs.patches = [Patch.from_dict(p) for p in d.get("patches", [])]
         cs.warnings = list(d.get("warnings", []))
         cs.metadata = dict(d.get("metadata", {}))
+        cs._binary = {
+            path: base64.b64decode(b64)
+            for path, b64 in d.get("_binary", {}).items()
+        }
         return cs
 
     def to_json(self) -> str:

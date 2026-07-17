@@ -537,8 +537,11 @@ def create_command(
         # Named after header class, format: HeaderClass.HeaderID.Icon.Normal
         rsc_file = fw.path / "CNext" / "resources" / "msgcatalog" / f"{name}Hdr.CATRsc"
         # Directory created in ChangeSet.apply() — no premature writes (P0-004 fix)
+        # Computed unconditionally so the icon-file generation block below
+        # (8c) can always see the same name the .CATRsc reference uses,
+        # even if tpl_rsc happens to be missing.
+        icon_name = icon if icon else name.lower()
         if tpl_rsc.exists():
-            icon_name = icon if icon else name.lower()
             rsc_category = category if category else "Commands"
             rsc_content = f'{name}Hdr.{module_base}.{name}.Icon.Normal = "I_{icon_name}";\n'
             if rsc_file.exists():
@@ -549,13 +552,19 @@ def create_command(
                 cs.add_create(rsc_file, rsc_content)
 
         # --- 8c. Icon file — resolve via icon_provider, add to ChangeSet (P0-004 fix) ---
-        if fw and icon:
+        # NOTE: the .CATRsc block above always writes an "I_{icon_name}"
+        # reference (falling back to the command name in lowercase when no
+        # explicit `icon=` is given). This block MUST use the same fallback,
+        # otherwise a command created without an explicit icon gets a
+        # dangling icon reference — CNEXT shows the toolbar button with no
+        # logo because the referenced .bmp was never generated.
+        if fw:
             try:
                 from icon_provider import get_icon
-                ico_path = get_icon(icon)
+                ico_path = get_icon(icon_name)
                 if ico_path and ico_path.exists():
                     icons_dir = fw.path / "CNext" / "resources" / "graphic" / "icons" / "normal"
-                    ico_name = f"I_{icon.replace(' ', '_')}.bmp"
+                    ico_name = f"I_{icon_name.replace(' ', '_')}.bmp"
                     target = icons_dir / ico_name
                     if not target.exists():
                         cs.add_create_binary(target, ico_path.read_bytes())
