@@ -5,8 +5,8 @@ category: playbook
 domain: product
 keywords: [color, auto, random, visualization, graphic properties, material, shade]
 capabilities: [cap.visualization, cap.geometry_query, cap.assembly_tree]
-apis: [CATIVisProperties, CATIVisManager, CATISpecObject, CATIProduct]
-frameworks: [CATGraphicProperties, Visualisation, CATAssemblyInterfaces]
+apis: [CATIVisProperties, CATVisPropertiesValues, CATIProduct]
+frameworks: [Visualization, CATAssemblyInterfaces]
 difficulty: beginner
 effort: small
 release: [R19, R28]
@@ -36,43 +36,50 @@ tags: [playbook, color, automation]
 
 ## 实现步骤
 
-1. **获取根 Product**：`CATISpecObject_var spRoot = ...`
-2. **遍历子零件**：`CATIPrdIterator` 或递归遍历 Children
-3. **获取每个零件的几何体**：`QueryInterface(CATIPartRequest) → GetBody()`
-4. **分配颜色**：`CATIVisProperties::SetPropertiesColor(R, G, B)`
-5. **Update**：`CATIModelEvents::Dispatch()`
+1. **获取根 Product**：`CATIProduct_var spRoot = ...`
+2. **遍历子零件**：`CATIProduct::GetChildren()`/`GetAllChildren()`
+3. **获取每个零件上的 `CATIVisProperties`**：QueryInterface 得到（该接口管理图形属性）
+4. **分配颜色**：先向 `CATVisPropertiesValues::SetColor(r, g, b)` 写入颜色，再调用
+   `CATIVisProperties::SetPropertiesAtt(values, CATVPColor, geomType)` 应用
+5. **刷新显示**：提交后由 CATIA 自行刷新视图，无需手动 Dispatch
+
+> ⚠️ **修正**：`CATIVisProperties` 接口没有 `SetPropertiesColor(R,G,B)` 方法。真实接口的颜色
+> 修改方法需两步：1) 创建 `CATVisPropertiesValues` 对象并调用 `SetColor(r,g,b)`；
+> 2) 将其作为参数传入 `SetPropertiesAtt(iValues, CATVPColor, iGeomType)`（定义在基接口
+> `CATIVisPropertiesAbstract` 中，官方样例见 `CAAGviApplyProperties.cpp`）。
 
 ## 完整代码
 
 ```cpp
-HRESULT AutoColorParts(CATISpecObject *iRoot) {
-    CATIPrtContainer_var spContainer = iRoot;
-    if (NULL_var == spContainer) return E_FAIL;
+HRESULT AutoColorParts(CATIProduct *iRoot) {
+    if (NULL == iRoot) return E_FAIL;
 
-    CATListValCATISpecObject children;
-    spContainer->ListChildren(children);
+    CATListValCATBaseUnknown_var *pChildren = iRoot->GetChildren();
+    if (NULL == pChildren) return S_OK;
 
-    for (int i = 1; i <= children.Size(); i++) {
-        CATISpecObject_var spChild = children[i];
-        
+    for (int i = 1; i <= pChildren->Size(); i++) {
+        CATIVisProperties_var spVis = (*pChildren)[i];
+        if (NULL_var == spVis) continue;
+
         // 随机颜色
-        int r = rand() % 256;
-        int g = rand() % 256;
-        int b = rand() % 256;
+        unsigned int r = rand() % 256;
+        unsigned int g = rand() % 256;
+        unsigned int b = rand() % 256;
 
-        // 应用到几何
-        CATIVisProperties_var spVis = spChild;
-        if (NULL_var != spVis) {
-            spVis->SetPropertiesColor(r, g, b);
-        }
+        // 先写入 CATVisPropertiesValues，再通过 SetPropertiesAtt 应用
+        CATVisPropertiesValues values;
+        values.SetColor(r, g, b);
+        HRESULT rc = spVis->SetPropertiesAtt(values, CATVPColor, CATVPGlobalType);
+        if (FAILED(rc)) continue;
     }
+    delete pChildren;
     return S_OK;
 }
 ```
 
 ## 注意事项
 
-- 颜色应用后需调用 `Update()` 或 `CATIModelEvents::Dispatch()`
+- `SetPropertiesAtt` 返回 `HRESULT`，失败请检查 `iGeomType` 是否与实际几何类型匹配
 - 大装配建议用进度条
 - 可预先定义调色板（按零件类型/材质匹配颜色）
 - 装配体中 Reference/Instance 共用几何体，着色影响所有实例

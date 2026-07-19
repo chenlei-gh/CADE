@@ -6,7 +6,7 @@ domain: ui
 keywords: [viewer, 3D, visualization, CATNavigation3DViewer, render, camera]
 capabilities: [cap.visualization, cap.selection]
 apis: [CATNavigation3DViewer, CAT3DViewpoint, CATVisManager, CATViewer]
-frameworks: [Visualisation, CATVisItf, ApplicationFrame]
+frameworks: [Visualization, VisualizationBase, ApplicationFrame]
 difficulty: advanced
 effort: large
 release: [R19, R28]

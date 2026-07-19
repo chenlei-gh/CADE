@@ -5,8 +5,8 @@ category: playbook
 domain: product
 keywords: [BOM, export, Excel, JSON, CSV, product tree, assembly, instance, reference]
 capabilities: [cap.assembly_tree, cap.document_export, cap.parameter_system]
-apis: [CATIProduct, CATIPrtContainer, CATIChildren, CATIProductOccurrence]
-frameworks: [CATAssemblyInterfaces, CATProductStructure]
+apis: [CATIProduct, CATListValCATBaseUnknown_var]
+frameworks: [ProductStructure, CATAssemblyInterfaces]
 difficulty: intermediate
 effort: medium
 release: [R19, R28]
@@ -58,20 +58,26 @@ struct BOMRow {
 ## 关键代码
 
 ```cpp
-void TraverseBOM(CATISpecObject *iProduct, int level, CATListValBOMRow &oRows) {
+void TraverseBOM(CATIProduct *iProduct, int level, CATListValBOMRow &oRows) {
     BOMRow row;
     row.level = level;
-    row.name = GetInstanceName(iProduct);
-    row.partNumber = GetAttribute(iProduct, "PartNumber");
+
+    CATUnicodeString instName;
+    iProduct->GetPrdInstanceName(instName);
+    row.name = instName;
+    row.partNumber = iProduct->GetPartNumber();
     oRows.Append(row);
 
-    // 遍历子节点
-    CATIPrtContainer_var spContainer = iProduct;
-    CATListValCATISpecObject children;
-    spContainer->ListChildren(children);
-
-    for (int i = 1; i <= children.Size(); i++) {
-        TraverseBOM(children[i], level + 1, oRows);
+    // 遍历子节点（CATIProduct::GetChildren 直接返回列表，无需 CATIPrtContainer）
+    CATListValCATBaseUnknown_var *pChildren = iProduct->GetChildren();
+    if (NULL != pChildren) {
+        for (int i = 1; i <= pChildren->Size(); i++) {
+            CATIProduct_var spChild = (*pChildren)[i];
+            if (NULL_var != spChild) {
+                TraverseBOM(spChild, level + 1, oRows);
+            }
+        }
+        delete pChildren;
     }
 }
 
