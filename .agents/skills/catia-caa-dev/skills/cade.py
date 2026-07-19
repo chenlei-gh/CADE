@@ -313,13 +313,13 @@ def cmd_run(args):
     elif "--macro" in opts:
         idx = args.index("--macro")
         path = args[idx + 1] if idx + 1 < len(args) else ""
-        result = run_catia_macro(path)
+        result = run_catia_macro(path, workspace_path=ws)
     elif "--batch" in opts:
         result = run_catia_batch()
     else:
         result = start_catia_runtime(workspace_path=ws)
 
-        return _print_result(result)
+    return _print_result(result)
 
 
 # ─── Create ───────────────────────────────────────────────────────

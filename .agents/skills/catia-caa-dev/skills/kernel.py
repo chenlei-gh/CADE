@@ -592,8 +592,12 @@ class Kernel:
             ctx = ActionContext(str(self.workspace_root))
 
             if "Command" in intent_type:
-                result = create_executable_command(ctx, name=name, module=module,
-                                                   framework=framework)
+                # CreateCommandWithDialog must actually generate the dialog
+                # (files + BuildGraph wiring); otherwise the button opens nothing.
+                result = create_executable_command(
+                    ctx, name=name, module=module, framework=framework,
+                    with_dialog="Dialog" in intent_type,
+                )
             elif "Feature" in intent_type:
                 result = create_feature(ctx, name=name, module=module, framework=framework)
             elif "Extension" in intent_type:
@@ -657,6 +661,14 @@ class Kernel:
     def _detect_intent_type(self, request: str) -> str:
         """Detect IntentType from natural language request (EN + CN)"""
         import re
+
+        # Modifiers that sit AFTER the module separator (e.g.
+        # "create command X in M with dialog") are lost when splitting into
+        # intent_part — check the full request for them first.
+        if ("with dialog" in request or "with a dialog" in request or "带对话框" in request) and (
+            "command" in request or "命令" in request
+        ):
+            return "CreateCommandWithDialog"
 
         # Extract intent-relevant portion (before module/framework specification)
         # "创建X命令在Y模块" → intent part is "创建X命令"

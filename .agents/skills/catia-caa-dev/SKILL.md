@@ -1671,6 +1671,14 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 **2026-07-17 修复（develop 模式自动应用）**：`kernel.py` 的 `_execute_develop_plan()` 以前仅把 `actions.py`/`intents/*` 返回的 `status="pending"` + 序列化 `changeset` 原样返回，从未调用 `ChangeSet.from_dict().apply()`。结果：通过文档推荐的 MCP/CLI `develop()` 路径发出的请求永远停在 "pending"，没有任何公开接口可以完成应用；后续的 Phase 2.5（extras）、Phase 3（静态验证）、Phase 3.5（IdentityCard）因文件不存在而静默无操作。已修复：`_execute_develop_plan()` 在拿到 `pending` + `changeset` 后，新方法 `_apply_changeset_dict()` 会立即 `ChangeSet.from_dict(...).apply(workspace_root=...)`，并将最终 `status` 改为 `"ok"`（失败则 `"error"`）。`ModePolicy` 中 `DEVELOP` 的 `auto_apply` 已从 `False` 改为 `True`（与 `REPAIR` 同模式：备份终断应用，可通过 `repair()` 回滚）。同时修复了 `mcp_server.py` 中 `develop` 工具的 `description`，明确说明“一次调用即完成，不要等待确认步骤”。回归：`test_kernel_edge_cases.py`（ModePolicy 断言）、`test_ui_scenario.py`（Section 3 不再手动 apply）已同步更新。
 
+**2026-07-19 修复（对话框命令生成的 3 个根因 —— 生成的“打开对话框”命令实机不可用）**：在 `TTEST` 工作区手动实机验证 `--dialog` 命令时，发现按钮完全无响应或对话框打不开/关不掉。逐一定位到 `actions.py` 的 `create_command()`（`--dialog` 分支）里 3 处独立根因，均已修复并通过官方 CAADoc 样例（`CAADialogEngine.edu\CAADegGeoCommands.m\src\CAADegAnalysisNumericCmd.cpp`、`CAAApplicationFrame.edu\CAAAfrGeometryWshop.m\src\CAAAfrGeometryWks.cpp`）交叉核对，并在真实 CATIA（B28）里逐一点击验证：
+
+1. **对话框父窗口为 NULL → 完全不可见**：`BuildGraph()` 原来用 `new XxxDlg(NULL)` 创建对话框。在 B28 下，无父窗口的顶层 `CATDlgDialog` 永远不会被窗口管理器映射（既不报错也不显示）。已修复为始终传入 `CATApplicationFrame::GetFrame()->GetMainWindow()` 作为父窗口。
+2. **多个命令挂同一个工具栏时，只有最后一个按钮可点击**：`CreateToolbars()` 生成代码对每个命令都调用 `SetAccessChild(pToolbar, X)`——这个 API 是“设置唯一子节点”，每次调用都会**覆盖**前一个，不是追加。结果是同一工具栏里先注册的命令按钮全部失效（不可见/不可点）。已修复：第一个 Starter 用 `SetAccessChild`，之后每个新增的 Starter 改用 `SetAccessNext(prev, new)` 链接成单链表（与官方 `CAAAfrGeometryWks.cpp` 的写法一致）。
+3. **对话框打开后点击“关闭”没有任何反应**：生成的 `AddTransition(pDlgState, NULL, IsOutputSetCondition(_pDlgAgent))` 这种“回到 NULL 结束态”写法，在对话框被关闭时框架实际调用的是 **`Cancel()`**，不是 `Desactivate()`（通过在 `Activate`/`Desactivate`/`Cancel` 里加日志实机追踪确认）。之前生成的代码只在 `Desactivate()` 里隐藏/销毁对话框，`Cancel()` 是空的，所以点击关闭没有效果。已修复为与官方样例一致的模式：`Desactivate()` 和 `Cancel()` 都只调用 `_pDialog->SetVisibility(CATDlgHide)`（隐藏，不销毁），真正的 `_pDialog->RequestDelayedDestruction()` 只放在析构函数里。**切勿在 `Cancel()`/`Desactivate()` 里直接 `delete _pDialog` 或调用非 delayed 的销毁——对话框可能仍在处理待发的通知，直接销毁会导致崩溃或悬空指针。**
+
+这 3 处修复目前只覆盖生成器对 `--dialog` 分支的代码模板；已存在的旧生成代码（在本次修复之前创建的项目）需要手工按上述模式回填，生成器不会自动迁移历史文件。回归：`test_master.py --quick` 38/38 通过（含修复前后各一次基线对比）。诊断脚本已归档到 `skills/debug_tools/`（`cade_enumwin.ps1`/`cade_findbtn.ps1` 等，用于从进程外部检查 CATIA 窗口/工具栏；详见该目录的 README）。
+
 ### 已验证范围
 
 - **测试套件**: 39 套；快速模式执行 38 套，跳过 1 套 CATIA 生命周期测试。

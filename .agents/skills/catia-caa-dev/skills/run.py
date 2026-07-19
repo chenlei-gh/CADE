@@ -394,7 +394,12 @@ def check_catia_running() -> dict:
 # ─── Named Run Functions (AI-Friendly) ────────────────────────────
 
 
-def run_catia_macro(macro_path: str, env_name: str = None, timeout: int = 300) -> dict:
+def run_catia_macro(
+    macro_path: str,
+    env_name: str = None,
+    timeout: int = 300,
+    workspace_path: str = None,
+) -> dict:
     """
     Run a CATScript macro in CATIA (CNEXT -macro)
 
@@ -402,6 +407,9 @@ def run_catia_macro(macro_path: str, env_name: str = None, timeout: int = 300) -
         macro_path: Path to .CATScript file
         env_name: CATIA environment name
         timeout: Timeout in seconds
+        workspace_path: Optional workspace path whose Runtime View DLLs/
+            addins/commands should be visible to CNEXT (mirrors the env
+            injection done by start_catia_runtime for `cade run`).
 
     Returns:
         Dictionary with execution result
@@ -433,6 +441,36 @@ def run_catia_macro(macro_path: str, env_name: str = None, timeout: int = 300) -
         str(macro_path),
     ]
 
+    # Inject workspace Runtime View paths (same vars as start_catia_runtime)
+    # so addins/commands built in the workspace are visible to the macro.
+    env_vars = os.environ.copy()
+    if workspace_path:
+        caa_env.load_config()
+        arch = caa_env.get_architecture()
+        runtime_view = Path(workspace_path) / arch if arch else None
+        if runtime_view and runtime_view.exists():
+            rv = str(runtime_view)
+            existing = env_vars.get("CATDLLPath", "")
+            env_vars["CATDLLPath"] = os.path.join(rv, "code", "bin") + (
+                os.pathsep + existing if existing else ""
+            )
+            existing = env_vars.get("CATDictionaryPath", "")
+            env_vars["CATDictionaryPath"] = os.path.join(rv, "code", "dictionary") + (
+                os.pathsep + existing if existing else ""
+            )
+            existing = env_vars.get("CATMsgCatalogPath", "")
+            env_vars["CATMsgCatalogPath"] = os.path.join(rv, "resources", "msgcatalog") + (
+                os.pathsep + existing if existing else ""
+            )
+            existing = env_vars.get("CATReffilesPath", "")
+            env_vars["CATReffilesPath"] = os.path.join(rv, "reffiles") + (
+                os.pathsep + existing if existing else ""
+            )
+            existing = env_vars.get("CATGraphicPath", "")
+            env_vars["CATGraphicPath"] = os.path.join(rv, "resources", "graphic") + (
+                os.pathsep + existing if existing else ""
+            )
+
     try:
         result = subprocess.run(
             cmd_args,
@@ -441,6 +479,7 @@ def run_catia_macro(macro_path: str, env_name: str = None, timeout: int = 300) -
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=env_vars,
         )
         return {
             "status": "success" if result.returncode == 0 else "failed",

@@ -50,6 +50,7 @@ Note: This is a Facade module - intentionally consolidated for unified API.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -406,33 +407,82 @@ def create_command(
         )
     else:
         # Addin.cpp already exists — patch to register new command (P3 fix: multi-command support)
+        # Idempotency guard: patches whose content is already present must be
+        # skipped, otherwise re-generating the same command inserts duplicate
+        # MacDeclareHeader/registration lines and breaks compilation (C2011).
         cpp_base = module.replace(".m", "")
+        addin_text = addin_cpp.read_text(encoding="utf-8", errors="replace")
         # 4a. Add MacDeclareHeader
-        cs.add_patch(Patch(
-            file=addin_cpp,
-            operation="insert_after",
-            target='#include "CATCommandHeader.h"',
-            content=f'MacDeclareHeader({name}Hdr);',
-        ))
+        if f"MacDeclareHeader({name}Hdr);" not in addin_text:
+            cs.add_patch(Patch(
+                file=addin_cpp,
+                operation="insert_after",
+                target='#include "CATCommandHeader.h"',
+                content=f'MacDeclareHeader({name}Hdr);',
+            ))
         # 4b. Register in CreateCommands() — insertion point is the first
         # '{' after the signature, not the signature line itself, since
         # the opening brace is conventionally on its own line (see
         # templates/module/AddinClass.cpp). Using plain insert_after here
         # would insert content between the signature and '{', producing
         # invalid C++ (see CADE bug: broke CreateCommands() compilation).
-        cs.add_patch(Patch(
-            file=addin_cpp,
-            operation="insert_after_brace",
-            target="void " + addin_name + "::CreateCommands()",
-            content=f'    new {name}Hdr("{cpp_base}.{name}", "{cpp_base}", "{name}", (void*)NULL);',
-        ))
+        if f'"{cpp_base}.{name}"' not in addin_text:
+            cs.add_patch(Patch(
+                file=addin_cpp,
+                operation="insert_after_brace",
+                target="void " + addin_name + "::CreateCommands()",
+                content=f'    new {name}Hdr("{cpp_base}.{name}", "{cpp_base}", "{name}", (void*)NULL);',
+            ))
         # 4c. Add to CreateToolbars()
-        cs.add_patch(Patch(
-            file=addin_cpp,
-            operation="insert_after",
-            target=f'SetAccessChild(pToolbar',
-            content=f'    NewAccess(CATCmdStarter, p{name}Cmd, {name});\n    SetAccessCommand(p{name}Cmd, "{cpp_base}.{name}");\n    SetAccessChild(pToolbar, p{name}Cmd);',
-        ))
+        #
+        # IMPORTANT: SetAccessChild(pToolbar, X) is `pToolbar->SetChild(X)` —
+        # it sets the container's SOLE child pointer, it does NOT append.
+        # Calling it once per command (as a naive generator would) silently
+        # overwrites the previous binding, so only the LAST-registered
+        # command ever gets attached to the toolbar; earlier starters are
+        # created but never linked in, making their buttons invisible and
+        # unclickable (verified against official CAADoc samples, e.g.
+        # CAAAfrGeometryWks.cpp, which chain siblings with SetAccessNext).
+        #
+        # Correct pattern: the FIRST starter in a container uses
+        # SetAccessChild(container, first); every subsequent sibling must be
+        # linked with SetAccessNext(previous, next) instead.
+        if f'p{name}Cmd' not in addin_text:
+            existing_starters = re.findall(
+                r'NewAccess\(CATCmdStarter,\s*(\w+),', addin_text
+            )
+            new_var = f'p{name}Cmd'
+            if existing_starters:
+                prev_var = existing_starters[-1]
+                link_line = f'    SetAccessNext({prev_var}, {new_var});'
+                # Anchor on whichever statement actually linked prev_var into
+                # the toolbar/chain (either the first SetAccessChild call, or
+                # a SetAccessNext call if prev_var was itself a later
+                # sibling). Using the exact linking statement — rather than
+                # the NewAccess declaration line — guarantees the new
+                # SetAccessNext is appended immediately after the current
+                # end of the linked list, regardless of how many commands
+                # already exist.
+                link_match = re.search(
+                    r'(?:SetAccessChild\(pToolbar,\s*' + re.escape(prev_var) + r'\);'
+                    r'|SetAccessNext\(\w+,\s*' + re.escape(prev_var) + r'\);)',
+                    addin_text,
+                )
+                if not link_match:
+                    raise ValueError(
+                        f"Could not locate linking statement for existing "
+                        f"toolbar starter '{prev_var}' in {addin_cpp}"
+                    )
+                anchor_target = link_match.group(0)
+            else:
+                link_line = f'    SetAccessChild(pToolbar, {new_var});'
+                anchor_target = 'SetAccessChild(pToolbar'
+            cs.add_patch(Patch(
+                file=addin_cpp,
+                operation="insert_after",
+                target=anchor_target,
+                content=f'    NewAccess(CATCmdStarter, {new_var}, {name});\n    SetAccessCommand({new_var}, "{cpp_base}.{name}");\n{link_line}',
+            ))
 
     # --- 5. Ensure Imakefile has WIZARD_LINK_MODULES (append, don't overwrite) ---
     if mod.imakefile_path().exists():
@@ -512,6 +562,124 @@ def create_command(
                 target='#include "CATStateCommand.h"',
                 content=f'#include "{dialog_name}.h"',
             ))
+            # Dialog member in command class (created + shown in BuildGraph)
+            cs.add_patch(Patch(
+                file=li / f"{name}.h",
+                operation="insert_after",
+                target="CATDialogAgent      *_pDlgAgent;",
+                content=f"    {dialog_name}          *_pDialog;",
+            ))
+            # Framework includes needed to open/show the dialog.
+            # CATApplicationFrame.h is required so the dialog can be parented
+            # to the app main window (see BuildGraph fix below) — a
+            # NULL-parent top-level CATDlgDialog never gets mapped to the
+            # window manager in B28's Dialog framework and stays invisible
+            # (verified against official CAADoc sample
+            # CAADegAnalysisNumericCmd.cpp).
+            cs.add_patch(Patch(
+                file=src / f"{name}.cpp",
+                operation="insert_after",
+                target='#include "CATCommandGlobalUndo.h"',
+                content='#include "CATDialogAgent.h"\n#include "CATDialogState.h"\n#include "CATApplicationFrame.h"',
+            ))
+            # Member initializer in constructor
+            cs.add_patch(Patch(
+                file=src / f"{name}.cpp",
+                operation="insert_after",
+                target=", _pDlgAgent(NULL)",
+                content="    , _pDialog(NULL)",
+            ))
+            # BuildGraph: create + show dialog, end command when dialog closes
+            # (official CATStateCommand + CATDialogAgent pattern; clicking the
+            # toolbar button must open the dialog, not silently no-op).
+            #
+            # IMPORTANT: the dialog MUST be parented to the app main window.
+            # `new {dialog_name}(NULL)` builds a top-level CATDlgDialog with
+            # a NULL parent, which in B28's Dialog framework never gets
+            # mapped to the window manager — the dialog object is created
+            # but stays invisible/unmapped, so clicking the toolbar button
+            # silently does nothing. Fix verified against official CAADoc
+            # sample CAADegAnalysisNumericCmd.cpp, which parents its dialog
+            # to CATApplicationFrame::GetFrame()->GetMainWindow(). Also
+            # subscribe to both close notifications (Dia CLOSE + window
+            # close), matching official samples, so the command ends
+            # correctly whichever way the user closes the dialog (OK/Cancel
+            # button vs. the window's [x] close box).
+            cs.add_patch(Patch(
+                file=src / f"{name}.cpp",
+                operation="insert_after_brace",
+                target=f"void {name}::BuildGraph()",
+                content=(
+                    "    CATApplicationFrame *pFrame = CATApplicationFrame::GetFrame();\n"
+                    "    CATDialog *pDlgParent = (CATDialog *)(pFrame ? pFrame->GetMainWindow() : NULL);\n"
+                    f"    _pDialog = new {dialog_name}(pDlgParent);\n"
+                    "    _pDialog->Build();\n"
+                    "    _pDialog->SetVisibility(CATDlgShow);\n"
+                    "\n"
+                    '    _pDlgAgent = new CATDialogAgent("DlgAgentId");\n'
+                    "    _pDlgAgent->AcceptOnNotify(_pDialog, _pDialog->GetDiaCLOSENotification());\n"
+                    "    _pDlgAgent->AcceptOnNotify(_pDialog, _pDialog->GetWindCloseNotification());\n"
+                    "\n"
+                    '    CATDialogState *pDlgState = GetInitialState("DlgStateId");\n'
+                    "    pDlgState->AddDialogAgent(_pDlgAgent);\n"
+                    "\n"
+                    "    AddTransition(pDlgState, NULL, IsOutputSetCondition(_pDlgAgent));"
+                ),
+            ))
+            # Hide the dialog whenever the command ends.
+            #
+            # IMPORTANT (confirmed via debug tracing + official CAADoc
+            # sample CAADegAnalysisNumericCmd.cpp): when the end-user closes
+            # the dialog (Close button OR window [x]), the state machine's
+            # `AddTransition(pDlgState, NULL, ...)` reaches the NULL state,
+            # and the framework calls **Cancel()**, not Desactivate(), to
+            # tear down the command. The official sample therefore hides
+            # the dialog in BOTH Cancel() and Desactivate() (they can be
+            # reached via different paths — Cancel for user-driven end,
+            # Desactivate for programmatic/focus-loss end); relying on only
+            # one of them leaves the dialog window stuck on screen even
+            # though its Close button was clicked (its click is consumed
+            # by the state transition, not by any code that hides the
+            # window). The dialog is only actually destroyed in the
+            # command destructor via RequestDelayedDestruction() — never a
+            # raw `delete`, and never inside Cancel/Desactivate themselves
+            # (the command object, and therefore _pDialog, may still be
+            # queried afterwards).
+            cs.add_patch(Patch(
+                file=src / f"{name}.cpp",
+                operation="insert_after_brace",
+                target=f"CATStatusChangeRC {name}::Desactivate(",
+                content=(
+                    "    if (_pDialog)\n"
+                    "    {\n"
+                    "        _pDialog->SetVisibility(CATDlgHide);\n"
+                    "    }"
+                ),
+            ))
+            cs.add_patch(Patch(
+                file=src / f"{name}.cpp",
+                operation="insert_after_brace",
+                target=f"CATStatusChangeRC {name}::Cancel(",
+                content=(
+                    "    if (_pDialog)\n"
+                    "    {\n"
+                    "        _pDialog->SetVisibility(CATDlgHide);\n"
+                    "    }"
+                ),
+            ))
+            # Destructor: safely destroy the dialog (never a raw `delete`).
+            cs.add_patch(Patch(
+                file=src / f"{name}.cpp",
+                operation="insert_after_brace",
+                target=f"{name}::~{name}(",
+                content=(
+                    "    if (_pDialog)\n"
+                    "    {\n"
+                    "        _pDialog->RequestDelayedDestruction();\n"
+                    "        _pDialog = NULL;\n"
+                    "    }"
+                ),
+            ))
 
     # --- 8. NLS + CATRsc Resources — use templates for UI display ---
     if fw:
@@ -531,6 +699,13 @@ def create_command(
                 "CommandTitle": nls_title,
                 "FrameworkName": fw_base,
             })
+            # Dialog NLS: window title + control labels (used by DeclareResource)
+            if dialog_name:
+                nls_content += (
+                    f'\n// Dialog window titles\n'
+                    f'{dialog_name}.Title = "{dialog_name}";\n'
+                    f'{dialog_name}Id.Title = "{dialog_name}";\n'
+                )
             if nls_file.exists():
                 old = nls_file.read_text(encoding="utf-8", errors="replace")
                 if name not in old:
