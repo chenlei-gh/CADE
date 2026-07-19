@@ -41,7 +41,7 @@ The document I/O and export capability covers CATIA document lifecycle operation
 | `CATDocumentServices` | Static services for opening documents by path, creating new documents, and session management |
 | `CATIDoc` | COM interface on the document session; provides root container and document ID |
 | `CATIStorage` | Persistent storage interface; read/write raw data streams to/from the document store |
-| `CATIPrtContainer` | Entry point for CATProduct documents; provides `GetRootProduct()` for assembly tree traversal |
+| `CATInit` / `CATIDocRoots` | Entry point for CATProduct documents; `CATInit::GetRootContainer(IID_CATIProduct)` or `CATIDocRoots::GiveDocRoots()` for assembly tree traversal (see [cap.assembly_tree](assembly-tree.md)) |
 | `CATIPrtPart` | Entry point for CATPart documents; provides `GetMainBody()`, feature containers, and parameters |
 | `CATFile` | Platform-independent file system utilities: path construction, exists check, directory creation |
 | `CATUnicodeString` | Unicode-aware string class for file paths, data values, and identifier names |
