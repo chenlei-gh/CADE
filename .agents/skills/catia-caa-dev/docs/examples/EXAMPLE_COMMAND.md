@@ -151,21 +151,21 @@ public:
      * Activate the command
      * Called when command starts
      */
-    virtual CATStatusChangeRCBehavior Activate(CATCommand* iFromClient,
+    virtual CATStatusChangeRC Activate(CATCommand* iFromClient,
                                                CATNotification* iNotification);
 
     /**
      * Deactivate the command
      * Called when command ends
      */
-    virtual CATStatusChangeRCBehavior Desactivate(CATCommand* iFromClient,
+    virtual CATStatusChangeRC Desactivate(CATCommand* iFromClient,
                                                    CATNotification* iNotification);
 
     /**
      * Cancel the command
      * Called when user presses ESC
      */
-    virtual CATStatusChangeRCBehavior Cancel(CATCommand* iFromClient,
+    virtual CATStatusChangeRC Cancel(CATCommand* iFromClient,
                                              CATNotification* iNotification);
 
 private:
@@ -501,7 +501,7 @@ CATBoolean MySelectCommand::ProcessSelection(void* iData)
 #### Activate/Desactivate/Cancel
 
 ```cpp
-CATStatusChangeRCBehavior MySelectCommand::Activate(
+CATStatusChangeRC MySelectCommand::Activate(
     CATCommand* iFromClient,
     CATNotification* iNotification)
 {
@@ -513,7 +513,7 @@ CATStatusChangeRCBehavior MySelectCommand::Activate(
     return CATStatusChangeRCCompleted;
 }
 
-CATStatusChangeRCBehavior MySelectCommand::Desactivate(
+CATStatusChangeRC MySelectCommand::Desactivate(
     CATCommand* iFromClient,
     CATNotification* iNotification)
 {
@@ -525,7 +525,7 @@ CATStatusChangeRCBehavior MySelectCommand::Desactivate(
     return CATStatusChangeRCCompleted;
 }
 
-CATStatusChangeRCBehavior MySelectCommand::Cancel(
+CATStatusChangeRC MySelectCommand::Cancel(
     CATCommand* iFromClient,
     CATNotification* iNotification)
 {

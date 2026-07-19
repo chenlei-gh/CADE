@@ -621,7 +621,7 @@ CATDialogState* pState3 = AddDialogState("State3");
 ### Activate - Command Starts
 
 ```cpp
-CATStatusChangeRCBehavior MyCommand::Activate(
+CATStatusChangeRC MyCommand::Activate(
     CATCommand* iFromClient,
     CATNotification* iNotification)
 {
@@ -639,7 +639,7 @@ CATStatusChangeRCBehavior MyCommand::Activate(
 ### Desactivate - Command Ends
 
 ```cpp
-CATStatusChangeRCBehavior MyCommand::Desactivate(
+CATStatusChangeRC MyCommand::Desactivate(
     CATCommand* iFromClient,
     CATNotification* iNotification)
 {
@@ -657,7 +657,7 @@ CATStatusChangeRCBehavior MyCommand::Desactivate(
 ### Cancel - User Presses ESC
 
 ```cpp
-CATStatusChangeRCBehavior MyCommand::Cancel(
+CATStatusChangeRC MyCommand::Cancel(
     CATCommand* iFromClient,
     CATNotification* iNotification)
 {

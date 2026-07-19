@@ -159,15 +159,18 @@ CATStatusChangeRC MyCmd::Activate(...) {
         AddAnalyseNotificationCB(this, pBtn->GetPushNotification(),
             (CATCommandMethod)&MyCmd::OnApply, NULL);
     }
-    return CATStatusChangeContinue;
+    return CATStatusChangeRCCompleted;
 }
 
-CATStatusChangeRC MyCmd::OnApply(void *iData, CATNotification *iNotif,
-                                   CATCommandClientInfo *iInfo) {
+// ⚠️ 重要修正：回调方法的真实类型是 CATCommandMethod（CATCommand.h）：
+// typedef void (CATBaseUnknown::*CATCommandMethod)(CATCommand*, CATNotification*, CATCommandClientData)
+// 返回值是 void（不是 CATStatusChangeRC），第三参数是 CATCommandClientData（实际上是 void*），不存在 CATCommandClientInfo 这个类型
+void MyCmd::OnApply(CATCommand *iCmd, CATNotification *iNotif,
+                     CATCommandClientData iUsefulData) {
     CATUnicodeString name = _pDlg->GetNewName();
     // 执行操作...
-    return CATStatusChangeContinue;
 }
+```
 
 ## 实时预览模式
 
@@ -188,15 +191,14 @@ void MyDlg::Build() {
         (CATCommandMethod)&MyDlg::OnPreviewUpdate, NULL);
 }
 
-CATStatusChangeRC MyDlg::OnPreviewUpdate(void *iData, CATNotification *iNotif,
-                                           CATCommandClientInfo *iInfo) {
+void MyDlg::OnPreviewUpdate(CATCommand *iCmd, CATNotification *iNotif,
+                             CATCommandClientData iUsefulData) {
     CATUnicodeString name = _pNameEditor->GetText();
     int width = _pWidthSpinner->GetValue();
     CATUnicodeString preview;
     preview.BuildFromNum(width);
     preview = name + " (" + preview + "mm)";
     _pPreviewLabel->SetTitle(preview);
-    return CATStatusChangeContinue;
 }
 ```
 

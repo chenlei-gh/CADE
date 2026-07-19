@@ -19,60 +19,58 @@ tags: [infrastructure, lifecycle, command]
 ```
 用户点击命令
     ↓
-① GetState()          ← 检查激活条件（返回 CATStaEnable/CATStaDisable）
-    ↓
-② Condition()         ← 检查输入参数有效性 → 返回 S_OK/S_FALSE
-    ↓
-③ Activate()          ← 命令激活，开始交互（setup agent, 启动事件监听）
+① Activate()          ← 命令激活，开始交互（setup agent, 启动事件监听）
     ↓
    [用户操作中...]
     ↓
-④ Desactivate()       ← 命令结束，清理资源
+② Desactivate()       ← 命令正常结束，清理资源
     ↓
-⑤ Cancel()            ← 用户取消（ESC），中间状态清理
+③ Cancel()            ← 用户取消（ESC / 关闭按钮），中间状态清理
 ```
 
-### GetState()
+> ⚠️ 上一个版本的图里还列了 `GetState()` 和 `Condition()` 作为命令激活前的前置步骤，但这两个方法并不是 `CATCommand`/`CATStateCommand` 生命周期的部分（见下方说明），已从主流程图中删除，避免误导。
+
+### GetState() — ⚠️ 未在 CAADoc 中找到官方依据，谨慎使用
+
+> **注意**：在 `CAADoc` 官方参考手册中未找到任何 `GetState(CATNotification*, ...)` 类似签名的方法，也未找到 `CATStaEnable`/`CATStaDisable`/`CATStaMenuBar`/`CATStaDialogAvailable`/`CATCommandCompletion` 这些符号。这些符号目前无法验证其真实性，**不要直接使用下面的示例代码**。若需控制命令头的可用/不可用状态，已确认的官方机制是 `CATCommandHeader` 的 `BecomeAvailable()` / `BecomeUnavailable()` 方法，以及构造函数的 `iState` 参数（合法值 `CATFrmAvailable` / `CATFrmUnavailable`，定义在 `CATCommandHeader.h`）。
 
 ```cpp
-CATStatusChangeRC ATAutoRenameCmd::GetState(CATNotification *iNotif,
-                                              CATCommandCompletion *iCompl) {
-    // 检查是否有选中对象
+// ✅ 已确认的官方控制命令可用性的方式（CATCommandHeader 方法）
+void ATAutoRenameCmdHeader::UpdateAvailability() {
     CATFrmEditor *pEditor = CATFrmEditor::GetCurrentEditor();
-    if (!pEditor) return CATStaDisable;
-    
-    CATPathElement path = pEditor->GetUIActiveObject();
-    if (path.GetSize() == 0) return CATStaDisable;
-    
-    return CATStaEnable;  // 或者是 CATStaMenuBar / CATStaDialogAvailable
+    if (!pEditor) {
+        BecomeUnavailable();
+        return;
+    }
+    BecomeAvailable();
 }
 ```
 
 **法则**：
-- `CATStaDisable` — 不显示或灰掉
-- `CATStaEnable` — 可点击
-- `CATStaMenuBar` — 仅在菜单栏显示
-- 不要在 GetState 里做耗时操作
+- 不要在此类方法里做耗时操作
+- 若需要在命令头上实现动态启用/灰掉逻辑，优先参考 `CATCmdHeaderSensitivityMngt::SetSensitivity()`（`ApplicationFrame` 框架）
 
-### Condition()
+### Condition() — ⚠️ 同样未在 CAADoc 中找到作为 `CATCommand` 方法的依据
+
+> **注意**：`Condition()` 在 CAADoc 中确实存在，但它是 `CATStateCommand::Condition(ConditionMethod, void*)`——用于**注册一个条件方法地址**以创建 `CATStateCondition` 对象（给 `AddTransition()` 用），**不是**一个你自己重写的无参无返回值方法。真实用法是：
 
 ```cpp
-CATBoolean ATAutoRenameCmd::Condition() {
-    // 验证输入参数是否合法
-    CATFrmEditor *pEditor = CATFrmEditor::GetCurrentEditor();
-    if (!pEditor) return FALSE;
-    
-    CATPathElement *pPath = pEditor->GetUIActiveObject();
-    if (!pPath || pPath->GetSize() == 0) return FALSE;
-    
-    return TRUE;  // 条件满足，进入 Activate
+// ✅ 真实用法：在 BuildGraph() 中用 Condition() 包装一个条件回调方法
+CATBoolean ATAutoRenameCmd::CheckHasSelection(void *iUsefulData) {
+    CATPathElementAgent *pAgent = (CATPathElementAgent*)iUsefulData;
+    return pAgent && pAgent->GetPathElement() ? TRUE : FALSE;
+}
+
+void ATAutoRenameCmd::BuildGraph() {
+    // ...
+    AddTransition(pStateA, pStateB,
+        Condition((ConditionMethod)&ATAutoRenameCmd::CheckHasSelection, (void*)_pAgent));
 }
 ```
 
 **法则**：
-- 返回 `TRUE` → 进入 `Activate()`
-- 返回 `FALSE` → 命令不启动
-- 此处可做轻量验证（不要长时间操作）
+- `ConditionMethod` 方法的真实签名是 `CATBoolean (CATCommand::*)(void *iData)`
+- 返回 `TRUE`/`FALSE` 用于控制状态转换是否发生，不是控制命令是否启动
 
 ### Activate()
 
@@ -93,7 +91,7 @@ CATStatusChangeRC ATAutoRenameCmd::Activate(CATCommand *iFromClient,
                               (CATCommandMethod)&ATAutoRenameCmd::OnApply,
                               NULL);
     
-    return CATStatusChangeContinue;
+    return CATStatusChangeRCCompleted;
 }
 ```
 
@@ -101,7 +99,7 @@ CATStatusChangeRC ATAutoRenameCmd::Activate(CATCommand *iFromClient,
 - 创建 Agent（选择器）
 - 创建和显示 Dialog
 - 绑定事件回调
-- 返回 `CATStatusChangeContinue`
+- 返回 `CATStatusChangeRCCompleted`（`CATStatusChangeRC` 只有两个合法值：`CATStatusChangeRCCompleted` / `CATStatusChangeRCAborted`，不存在 "Continue" 这个值）
 
 ### Desactivate()
 
@@ -122,7 +120,7 @@ CATStatusChangeRC ATAutoRenameCmd::Desactivate(CATCommand *iFromClient,
         _pAgent = NULL;
     }
     
-    return CATStatusChangeCompleted;
+    return CATStatusChangeRCCompleted;
 }
 ```
 
@@ -130,7 +128,7 @@ CATStatusChangeRC ATAutoRenameCmd::Desactivate(CATCommand *iFromClient,
 - 释放 Dialog（RequestDelayedDestruction）
 - 释放 Agent（Release）
 - 置空指针
-- 返回 `CATStatusChangeCompleted`
+- 返回 `CATStatusChangeRCCompleted`
 
 ### Cancel()
 
@@ -139,14 +137,14 @@ CATStatusChangeRC ATAutoRenameCmd::Cancel(CATCommand *iFromClient,
                                             CATNotification *iNotif) {
     // 取消 = 清理 + 不保存结果
     Desactivate(iFromClient, iNotif);
-    return CATStatusChangeCanceled;
+    return CATStatusChangeRCCompleted;
 }
 ```
 
 **法则**：
 - 通常直接调用 `Desactivate()`
 - 如果 Desactivate 有副作用（写入了数据），Cancel 需要额外清理
-- 返回 `CATStatusChangeCanceled`
+- 返回 `CATStatusChangeRCCompleted`（`CATStatusChangeRC` 只有 Completed/Aborted 两个合法值，官方样例 `CAADegAnalysisNumericCmd::Cancel()` 返回的也是 `CATStatusChangeRCCompleted`）
 - **⚠️ 用户点击 Dialog 的关闭/取消按钮时，框架实际调用的是 `Cancel()`，不是 `Desactivate()`**——两者都必须隐藏 Dialog（`SetVisibility(CATDlgHide)`），否则关闭按钮会没有反应，详见 [fp_dialog_cancel_not_desactivate.md](../failure_patterns/fp_dialog_cancel_not_desactivate.md)
 
 ## 常见生命周期模式
@@ -180,8 +178,6 @@ Activate → Show modal dialog → 用户确认/logic → Desactivate
 
 生成命令代码时必须包含：
 
-- [ ] `GetState()` 方法（至少返回 `CATStaEnable`）
-- [ ] `Condition()` 方法
 - [ ] `Activate()` 方法
 - [ ] `Desactivate()` 方法
 - [ ] `Cancel()` 方法（通常委托给 Desactivate）

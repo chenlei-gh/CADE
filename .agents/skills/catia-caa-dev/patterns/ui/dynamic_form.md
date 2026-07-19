@@ -61,13 +61,13 @@ void DynamicFormDlg::Build() {
     OnModeChanged(NULL, NULL, NULL);  // 手动触发一次
 }
 
-// 切换逻辑
-CATStatusChangeRC DynamicFormDlg::OnModeChanged(...) {
+// 切换逻辑（回调方法签名为 CATCommandMethod，无返回值，非 CATStatusChangeRC）
+void DynamicFormDlg::OnModeChanged(CATCommand *iCmd, CATNotification *iNotif,
+                                    CATCommandClientData iUsefulData) {
     int sel = _pModeCombo->GetSelect();
     _pPrefixPanel->SetVisibility(sel == 0 ? CATDlgShow : CATDlgHide);
     _pSuffixPanel->SetVisibility(sel == 1 ? CATDlgShow : CATDlgHide);
     _pReplacePanel->SetVisibility(sel == 2 ? CATDlgShow : CATDlgHide);
-    return CATStatusChangeContinue;
 }
 ```
 

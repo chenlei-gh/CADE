@@ -206,10 +206,14 @@ CATUnicodeString MyDlg::GetNewName() {
 }
 
 // Command 执行业务逻辑
-CATStatusChangeRC MyCmd::OnApply(...) {
+// 注意：回调方法（CATCommandMethod 签名）无返回值，不能用 CATStatusChangeRC 控制状态
+void MyCmd::OnApply(CATCommand *iCmd, CATNotification *iNotif,
+                     CATCommandClientData iUsefulData) {
     CATUnicodeString name = _pDlg->GetNewName();
     HRESULT hr = RenameFeature(name);  // 业务在 Command
-    return SUCCEEDED(hr) ? CATStatusChangeCompleted : CATStatusChangeContinue;
+    if (SUCCEEDED(hr)) {
+        RequestDelayedDestruction();  // 成功后主动关闭
+    }
 }
 ```
 
@@ -254,7 +258,7 @@ CATDlgFrame *pSunken = new CATDlgFrame(this, "S",
 
 ```cpp
 CATStatusChangeRC MyCmd::Desactivate(...) {
-    return CATStatusChangeCompleted;  // 什么都没清理
+    return CATStatusChangeRCCompleted;  // 什么都没清理
 }
 ```
 
@@ -272,7 +276,7 @@ CATStatusChangeRC MyCmd::Desactivate(...) {
         _pAgent->Release();
         _pAgent = NULL;
     }
-    return CATStatusChangeCompleted;
+    return CATStatusChangeRCCompleted;
 }
 ```
 

@@ -47,7 +47,7 @@ CATStatusChangeRC MyCmd::Activate(CATCommand *iFromClient,
     _pDialog->Build();
     _pDialog->SetVisibility(CATDlgShow);
 
-    return CATStatusChangeContinue;
+    return CATStatusChangeRCCompleted;
 }
 ```
 

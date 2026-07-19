@@ -88,8 +88,10 @@ void ListDetailDlg::Build() {
 }
 
 // 选择联动：列表选中 → 更新右侧详情
-CATStatusChangeRC OnListSelectionChanged(void *iData,
-    CATNotification *iNotif, CATCommandClientInfo *iInfo) {
+// 注意：回调真实类型为 CATCommandMethod（void (CATBaseUnknown::*)(CATCommand*, CATNotification*, CATCommandClientData)），
+// 无返回值，且不存在 CATCommandClientInfo 类型
+void OnListSelectionChanged(CATCommand *iCmd,
+    CATNotification *iNotif, CATCommandClientData iUsefulData) {
     int sel = _pList->GetSelect(NULL);
     if (sel >= 0) {
         ItemData data = _itemData[sel];
@@ -100,7 +102,6 @@ CATStatusChangeRC OnListSelectionChanged(void *iData,
         _pNameEditor->SetText("");
         _pRemoveBtn->SetSensitivity(CATDlgDisable);
     }
-    return CATStatusChangeContinue;
 }
 ```
 
@@ -162,8 +163,8 @@ void DynamicFormDlg::Build() {
     _pReplaceEditor = new CATDlgEditor(_pReplacePanel, "ReplEdt");
 }
 
-CATStatusChangeRC DynamicFormDlg::OnModeChanged(void *iData,
-    CATNotification *iNotif, CATCommandClientInfo *iInfo) {
+void DynamicFormDlg::OnModeChanged(CATCommand *iCmd,
+    CATNotification *iNotif, CATCommandClientData iUsefulData) {
     int mode = _pModeCombo->GetSelect();
 
     // 全部隐藏
@@ -177,7 +178,6 @@ CATStatusChangeRC DynamicFormDlg::OnModeChanged(void *iData,
         case 1: _pSuffixPanel->SetVisibility(CATDlgShow);  break;
         case 2: _pReplacePanel->SetVisibility(CATDlgShow); break;
     }
-    return CATStatusChangeContinue;
 }
 ```
 
@@ -256,12 +256,11 @@ void TreeNavDlg::Build() {
         (CATCommandMethod)&TreeNavDlg::OnTreeSelection, NULL);
 }
 
-CATStatusChangeRC TreeNavDlg::OnTreeSelection(void *iData,
-    CATNotification *iNotif, CATCommandClientInfo *iInfo) {
+void TreeNavDlg::OnTreeSelection(CATCommand *iCmd,
+    CATNotification *iNotif, CATCommandClientData iUsefulData) {
     CATDlgTreeItem *pSelected = _pTree->GetSelect();
     int pageIndex = GetPageIndexForNode(pSelected);
     _pContentTabs->SetCurrentTab(pageIndex);
-    return CATStatusChangeContinue;
 }
 ```
 

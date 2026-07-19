@@ -29,13 +29,13 @@ CATStatusChangeRC MyCmd::Desactivate(CATCommand *iFromClient,
         _pDialog->RequestDelayedDestruction();
         _pDialog = NULL;
     }
-    return CATStatusChangeCompleted;
+    return CATStatusChangeRCCompleted;
 }
 
 CATStatusChangeRC MyCmd::Cancel(CATCommand *iFromClient,
                                   CATNotification *iNotif) {
     // 空实现——点击对话框关闭按钮时框架实际调的是这里！
-    return CATStatusChangeCanceled;
+    return CATStatusChangeRCAborted;
 }
 ```
 
@@ -51,7 +51,7 @@ CATStatusChangeRC MyCmd::Desactivate(CATCommand *iFromClient,
     if (_pDialog) {
         _pDialog->SetVisibility(CATDlgHide);   // 隐藏，不销毁
     }
-    return CATStatusChangeCompleted;
+    return CATStatusChangeRCCompleted;
 }
 
 CATStatusChangeRC MyCmd::Cancel(CATCommand *iFromClient,
@@ -59,7 +59,7 @@ CATStatusChangeRC MyCmd::Cancel(CATCommand *iFromClient,
     if (_pDialog) {
         _pDialog->SetVisibility(CATDlgHide);   // 隐藏，不销毁
     }
-    return CATStatusChangeCanceled;
+    return CATStatusChangeRCAborted;
 }
 
 MyCmd::~MyCmd() {

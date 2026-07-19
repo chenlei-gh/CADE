@@ -107,7 +107,7 @@ CATStatusChangeRC MyCmd::Desactivate(...) {
         _prefs.mode = _pDlg->GetMode();
         _prefs.counter = _pDlg->GetCounterValue();
     }
-    return CATStatusChangeCompleted;
+    return CATStatusChangeRCCompleted;
 }
 
 // 恢复偏好（在 Activate 中）
@@ -117,9 +117,11 @@ CATStatusChangeRC MyCmd::Activate(...) {
     _pDlg->SetCurrentName(_prefs.name);      // 恢复上次输入
     _pDlg->SetMode(_prefs.mode);
     _pDlg->SetVisibility(CATDlgShow);
-    return CATStatusChangeContinue;
+    return CATStatusChangeRCCompleted;
 }
 ```
+
+> ⚠️ **重要修正**：`CATStatusChangeRC` 只有两个合法值：`CATStatusChangeRCCompleted` 与 `CATStatusChangeRCAborted`（定义于 `CATCommand.h`）。不存在 `CATStatusChangeContinue`/`CATStatusChangeCompleted`/`CATStatusChangeCanceled` 这些值。`Activate()` 返回 `CATStatusChangeRCCompleted` 表示激活成功完成（即使对话框仍在显示，命令已进入等待交互的“完成”状态，与对话框是否关闭无关）。
 
 ## NLS 国际化
 
