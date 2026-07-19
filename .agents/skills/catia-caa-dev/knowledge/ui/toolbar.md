@@ -61,6 +61,28 @@ CATCmdContainer* TTModuleAddin::CreateToolbars()
 }
 ```
 
+### 多个命令挂同一工具栏（⚠️ 易错点）
+
+第一个 Starter 用 `SetAccessChild`，**之后每个新增的 Starter 必须改用 `SetAccessNext(prev, new)` 链接**——`SetAccessChild` 是"设置唯一子节点"，重复调用会覆盖前一个，导致先注册的按钮全部失效（图标仍显示，但点击无反应）。详见 [fp_toolbar_setaccesschild_overwrite.md](../failure_patterns/fp_toolbar_setaccesschild_overwrite.md)。
+
+```cpp
+CATCmdContainer* TTModuleAddin::CreateToolbars()
+{
+    NewAccess(CATCmdContainer, pToolbar, TTModuleTlb);
+    AddToolbarView(pToolbar, 1, Right);
+
+    NewAccess(CATCmdStarter, pCmd1, FirstCmd);
+    SetAccessCommand(pCmd1, "TTModule.FirstCmd");
+    SetAccessChild(pToolbar, pCmd1);      // 只调一次：挂第一个
+
+    NewAccess(CATCmdStarter, pCmd2, SecondCmd);
+    SetAccessCommand(pCmd2, "TTModule.SecondCmd");
+    SetAccessNext(pCmd1, pCmd2);          // 第二个起：链接到前一个
+
+    return pToolbar;
+}
+```
+
 ## 为什么不能在 .h 中使用 MacDeclareHeader
 
 ```
@@ -94,3 +116,4 @@ MacDeclareHeader(QuickCmdHdr);
 5. ☐ `win_b64/resources/graphic/icons/normal/` 有图标 .bmp？
 6. ☐ CNEXT 启动时 `CATDictionaryPath` 指向 Runtime View？
 7. ☐ Dictioanry 内容：`TTModuleAddin CATIAfrGeneralWksAddin libTTModule`
+8. ☐ 多个命令挂同一 Toolbar 时只有最后一个可点击？→ 检查是否误用了多次 `SetAccessChild`（应改为 `SetAccessNext` 链接），详见 [fp_toolbar_setaccesschild_overwrite.md](../failure_patterns/fp_toolbar_setaccesschild_overwrite.md)

@@ -8,6 +8,19 @@
 
 ---
 
+## [未发布]
+
+### 📝 知识沉淀 (2026-07-19)
+
+- 新增 knowledge/failure_patterns/fp_dialog_null_parent.md — 来源: 实机调试 + CAADoc/CAADialogEngine.edu/CAADegGeoCommands.m
+- 新增 knowledge/failure_patterns/fp_toolbar_setaccesschild_overwrite.md — 来源: 实机调试 + CAADoc/CAAApplicationFrame.edu/CAAAfrGeometryWshop.m
+- 新增 knowledge/failure_patterns/fp_dialog_cancel_not_desactivate.md — 来源: 实机调试 + CAADoc/CAADialogEngine.edu/CAADegGeoCommands.m
+- 更新 knowledge/ui/dialog_patterns.md：AI 生成规则补充 Cancel/Desactivate 都需隐藏 Dialog、禁止在其中直接 delete、父窗口禁止传 NULL
+- 更新 knowledge/ui/toolbar.md：补充多命令挂同一工具栏的 SetAccessNext 链接示例与排查清单条目
+- 更新 knowledge/infrastructure/lifecycle_patterns.md：Cancel() 章节补充“对话框关闭走 Cancel 而非 Desactivate”提示
+
+---
+
 ## [3.2.1] - 2026-07-17
 
 ### 已修复

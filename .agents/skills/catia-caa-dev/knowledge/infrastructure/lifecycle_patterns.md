@@ -147,6 +147,7 @@ CATStatusChangeRC ATAutoRenameCmd::Cancel(CATCommand *iFromClient,
 - 通常直接调用 `Desactivate()`
 - 如果 Desactivate 有副作用（写入了数据），Cancel 需要额外清理
 - 返回 `CATStatusChangeCanceled`
+- **⚠️ 用户点击 Dialog 的关闭/取消按钮时，框架实际调用的是 `Cancel()`，不是 `Desactivate()`**——两者都必须隐藏 Dialog（`SetVisibility(CATDlgHide)`），否则关闭按钮会没有反应，详见 [fp_dialog_cancel_not_desactivate.md](../failure_patterns/fp_dialog_cancel_not_desactivate.md)
 
 ## 常见生命周期模式
 

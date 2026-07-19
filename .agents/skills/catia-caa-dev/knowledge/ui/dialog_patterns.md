@@ -214,6 +214,8 @@ CATStatusChangeRC MyDlg::OnPreviewUpdate(void *iData, CATNotification *iNotif,
 - [ ] 同 Frame 内控件 ID 必须唯一
 - [ ] 必须设默认按钮 `SetDefaultPushButton`
 - [ ] Frame 风格必须显式指定（`CATDlgFraNoFrame` 等）
-- [ ] Desactivate 必须清理 Dialog 和 Agent
+- [ ] Desactivate **和** Cancel 都必须隐藏 Dialog（`SetVisibility(CATDlgHide)`）——用户关闭对话框时框架实际调用的是 `Cancel()`，只写 Desactivate 会导致关闭按钮无效，详见 [fp_dialog_cancel_not_desactivate.md](../failure_patterns/fp_dialog_cancel_not_desactivate.md)
+- [ ] 真正的销毁（`RequestDelayedDestruction()`）只放在析构函数里，禁止在 Cancel/Desactivate 里直接 delete
+- [ ] Dialog 构造函数的父窗口参数禁止传 NULL，否则对话框静默不可见，详见 [fp_dialog_null_parent.md](../failure_patterns/fp_dialog_null_parent.md)
 - [ ] 复杂布局先查 [决策索引](#决策索引) 匹配模式
 - [ ] 不确定时查 [layout_anti_patterns.md](layout_anti_patterns.md) 排除错误做法
