@@ -3,9 +3,9 @@ id: cap.update_mechanism
 title: Update Mechanism / CATIA 更新机制
 category: capability
 domain: infrastructure
-keywords: [update, compute, build, dirty, CATIUpdate, model_events, dispatch]
-apis: [CATIUpdate, CATIModelEvents, CATIMechanicalUpdate, Dispatch]
-frameworks: [ObjectModelerBase, CATMecModInterfaces]
+keywords: [update, compute, build, dirty, CATISpecObject, model_events, dispatch, CATIOsmUpdate]
+apis: [CATISpecObject, CATIOsmUpdate, CATIModelEvents]
+frameworks: [ObjectSpecsLegacy, Visualization]
 difficulty: intermediate
 release: [R19, R28]
 tags: [capability]
@@ -13,6 +13,8 @@ tags: [capability]
 # Update Mechanism Capability
 
 控制 CATIA 的增量更新和计算传播。
+
+> ⚠️ `CATIUpdate`/`CATIMechanicalUpdate` 接口不存在，已修正为真实 API，详见 [philo.updates](../knowledge/philosophy/updates.md)。
 
 ## 应用场景
 
