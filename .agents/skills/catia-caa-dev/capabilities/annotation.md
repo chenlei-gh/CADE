@@ -29,8 +29,8 @@ Creating and querying 3D PMI (Product Manufacturing Information) annotations —
 | `CATITPSCapture::Activate()`/`SetViewDirection()`/`AddAnnotation()`/`RemoveAnnotation()` | 均不存在。激活当前 Capture 用 **`SetCurrent(TRUE)`**；相机用 **`SetCamera(CATI3DCamera*)`**；管理其标注用 **`SetTPSs(CATITPSList*)`**/`GetTPSs()`（整体替换列表，非逐个 Add/Remove） |
 | `pTPSFactory->CreateCaptureView()` / `pTPSSet->CreateCapture()` | **不存在**。`CATITPSSet` 本身**没有** `CreateCapture()`/`CreateView()` 方法（它只有 Get/Set 存取方法）。真实创建方式：对同一个 `CATITPSSet` 实例做 `QueryInterface(IID_CATITPSCaptureFactory, ...)` 拿到 **`CATITPSCaptureFactory`**，再调用其 **`CreateCapture(CATITPSCapture**)`**；`CATITPSView` 同理，通过 `QueryInterface(IID_CATITPSViewFactory, ...)` 拿到 **`CATITPSViewFactory::CreateView(...)`**。三个工厂接口（`CATITPSFactoryElementary`/`CATITPSCaptureFactory`/`CATITPSViewFactory`）都是这种“挂在 Set 上、QueryInterface 获取”的模式，与全局单例工厂（`CATITPSFactoryAdvanced`/`CATITPSFactoryTTRS`）的获取方式不同 |
 | `CATITPSDimension::SetNominalValue()`/`SetUpperTolerance()`/`SetLowerTolerance()` | `CATITPSDimension` 本身是纯类型标记接口（无方法）。实际数值方法在 **`CATITPSDimensionLimits`** 接口上：`GetNominalValue()`、`SetLimits(bottom, up)`、`SetSingleLimit()`、`SetModifier()` 等 |
-| `pTPSFactory->CreateLinearDimension(face1, face2)` | 不存在这种便捷签名。真实流程：先用 `CATITPSFactoryTTRS::GetTTRS()`（全局单例工厂）把几何包装成 `CATITTRS`，再对 `CATITPSSet` 实例 QueryInterface 到 `CATITPSFactoryElementary`，用 `CreateSemanticDimension(ttrs, CATTPSDimensionType, CATTPSLinearDimensionSubType, &dimension)` 创建 |
-| `pTPSFactory->CreateGeometricTolerance(face)` + `SetSymbol()`/`AddDatumReference()`/`SetModifier(MMC)` | 不存在。真实创建是 **`CreateToleranceWithDRF(CATTPSTypeWithDRF, ttrs, refFrame, &tol)`**（带基准参考框）或 **`CreateToleranceWithoutDRF(CATTPSTypeWithoutDRF, ttrs, &tol)`**（形位公差，如平面度）；材料条件修饰符（MMC等）通过独立的 **`CATITPSMaterialCondition::SetModifier()`** 接口设置 |
+| `pTPSFactory->CreateLinearDimension(face1, face2)` | 不存在这种便捷签名。真实流程：先用 `CATITPSFactoryTTRS::GetTTRS()`（全局单例工厂）把几何包装成 `CATITTRS`，再对 `CATITPSSet` 实例 QueryInterface 到 `CATITPSFactoryElementary`，用 `CreateSemanticDimension(ttrs, CATTPSDimensionType, CATTPSLinearDimensionSubType, &dimension)` 创建。两个枚举参数的真实成员与推断命名完全不同：`CATTPSDimensionType` 的真实成员是 **`CATTPSLinearDimension`/`CATTPSAngularDimension`/`CATTPSSecondLinearDim`/`CATTPSChamferDimension`/...**（没有 `CATTPSDimensionType` 前缀）；`CATTPSLinearDimensionSubType` 的真实成员是 **`CATTPSDistanceDimension`/`CATTPSDiameterDimension`/`CATTPSRadiusDimension`/`CATTPSThreadDimension`/...**（没有 `CATTPSLinearDimensionSubType` 前缀） |
+| `pTPSFactory->CreateGeometricTolerance(face)` + `SetSymbol()`/`AddDatumReference()`/`SetModifier(MMC)` | 不存在。真实创建是 **`CreateToleranceWithDRF(CATTPSTypeWithDRF, ttrs, refFrame, &tol)`**（带基准参考框）或 **`CreateToleranceWithoutDRF(CATTPSTypeWithoutDRF, ttrs, &tol)`**（形位公差，如平面度）；材料条件修饰符（MMC等）通过独立的 **`CATITPSMaterialCondition::SetModifier()`** 接口设置。两个公差枚举的真实成员都带 **`CATTPSWithDRFType`/`CATTPSWithOutDRFType`** 前缀（注意与接口名 `CATTPSTypeWithDRF`/`CATTPSTypeWithoutDRF` 的词序不同），如平面度是 **`CATTPSWithOutDRFTypeFlatness`**（不是 `CATTPSTypeWithoutDRFFlatness`），平行度是 **`CATTPSWithDRFTypeParallelism`**；`CATITPSMaterialCondition::SetModifier` 的枚举参数 `CATTPSMaterialCondition` 真实成员是 **`CATTPSMCMaximumMaterialCondition`（MMC）/`CATTPSMCLeastMaterialCondition`（LMC）/`CATTPSMCRegardlessOfFeatureSize`（RFS）/`CATTPSMCNoModifier`**（没有 `CATTPSMaterialConditionMMC` 这种写法） |
 | `pTPSFactory->CreateDatum(plane)` + `pDatum->SetLabel()` | `CreateDatum()` 存在但返回 `CATITPSDatumSimple`（不是泛型 `CATITPSDatum`——`CATITPSDatum` 也是纯类型标记接口）。`SetLabel()`/`GetTargets()` 等真实数据方法都在 `CATITPSDatumSimple` 上 |
 | `pAnnot->IsATypeOf(CATITPSDimension::ClassName())` | 类型判断应通过 **`QueryInterface(IID_CATITPSDimension, ...)`** 到具体的类型标记接口，而不是字符串比较 |
 | `pAnnot->GetType()`/`pAnnot->GetName()` | 不存在于任何 TPS 接口。名字通过 QueryInterface 到 **`CATIAlias`** 后调用 `GetAlias()` 获取 |
@@ -73,6 +73,8 @@ Creating and querying 3D PMI (Product Manufacturing Information) annotations —
 | `CATITPSRetrieveServices::RetrieveTPSsFromPath()` | Finds all TPS annotations linked to a selected `CATPathElement` |
 | `CATITPSList` / `CATCreateCATITPSList()` | Generic 0-based collection (`Count()`, `Item()`, `Add()`, `Remove()`); instantiated via the global function `CATCreateCATITPSList(CATITPSList* iCopy, CATITPSList** oList)`, not a factory |
 
+> ⚠️ **枚举成员命名不跟接口/枚举名本身的前缀规则**，写时先用 `--query <枚举名>` 确认具体成员：`CATTPSDimensionType` 的成员是 `CATTPSLinearDimension`/`CATTPSAngularDimension`/... （无 `Type` 前缀）；`CATTPSLinearDimensionSubType` 的成员是 `CATTPSDistanceDimension`/`CATTPSDiameterDimension`/`CATTPSRadiusDimension`/...；`CATTPSTypeWithDRF`/`CATTPSTypeWithoutDRF` 的成员分别带 `CATTPSWithDRFType`/`CATTPSWithOutDRFType` 前缀（注意词序与接口名不同）；`CATTPSMaterialCondition` 的成员是 `CATTPSMCMaximumMaterialCondition`（MMC）/`CATTPSMCLeastMaterialCondition`（LMC）/`CATTPSMCRegardlessOfFeatureSize`（RFS）/`CATTPSMCNoModifier`。
+
 ## 4. Common Patterns
 
 ### 4.1 Retrieve the TPS Factories
@@ -106,8 +108,8 @@ pFactTTRS->GetTTRS(pGeometrySelected, &pTTRS);
 
 // 2) Create the semantic dimension on that reference
 CATITPSDimension* pDimension = NULL;
-rc = pFactElem->CreateSemanticDimension(pTTRS, CATTPSDimensionTypeLinear,
-                                         CATTPSLinearDimensionSubTypeStandard,
+rc = pFactElem->CreateSemanticDimension(pTTRS, CATTPSLinearDimension,
+                                         CATTPSDistanceDimension,
                                          &pDimension);
 
 // 3) CATITPSDimension itself has no data methods -- query the data interface
@@ -130,7 +132,7 @@ pFactTTRS->GetTTRS(pTargetFaceSelected, &pTTRS);
 
 // Flatness has no Datum Reference Frame
 CATITPSForm* pFlatness = NULL;
-rc = pFactElem->CreateToleranceWithoutDRF(CATTPSTypeWithoutDRFFlatness, pTTRS, &pFlatness);
+rc = pFactElem->CreateToleranceWithoutDRF(CATTPSWithOutDRFTypeFlatness, pTTRS, &pFlatness);
 
 // The tolerance zone value itself is read/written through CATITPSDimensionLimits
 CATITPSDimensionLimits* pLimits = NULL;
@@ -160,7 +162,7 @@ pDatum->SetLabel(L"A");
 CATITPSMaterialCondition* pMatCond = NULL;
 pTolerance->QueryInterface(IID_CATITPSMaterialCondition, (void**)&pMatCond);
 if (pMatCond) {
-    pMatCond->SetModifier(CATTPSMaterialConditionMMC, pDatum);
+    pMatCond->SetModifier(CATTPSMCMaximumMaterialCondition, pDatum);
     pMatCond->Release();
 }
 
