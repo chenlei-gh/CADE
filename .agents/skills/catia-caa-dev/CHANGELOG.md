@@ -10,6 +10,18 @@
 
 ## [未发布]
 
+### 🛠 工具 (2026-07-20 第二批)
+
+- `tools/build_caadoc_index.py` 新增 SDK 头文件扫描与交叉核实能力。因为 CAADoc 的 refman `.htm` 页面其实是从同一套 CATIA 安装里的 SDK 头文件（`<Framework>/PublicInterfaces/*.h`）自动生成的文档子集，并且存在生成缺失，所以头文件比 refman htm 更权威。新工具能力：
+  - 扫描 CATIA 安装目录下所有 `*/PublicInterfaces/*.h`（约 5614 个文件），提取接口纯虚方法列表以及枚举定义（含行内 `// CATIXxx` 注释），得到 3974 个 SDK header classes 与 822 个 SDK header enums
+  - `--query <name>`：对比 refman 方法列表与 SDK 头文件方法列表，不一致时打印 `*** SDK/refman mismatch ***` 提示；命中枚举时展示完整枚举值列表+注释
+  - `--search <pattern>`：新增 "SDK header enum value matches" 板块，可子串搜索枚举值名/注释内容
+  - 新增 `--no-headers` 参数，跳过头文件扫描，仅做 refman+dico 更快
+  - 全量扫描（refman+dico+headers）耗时约 3.5 秒，缓存命中仍约 0.3 秒
+- **本次改造发现的两个真实文档错误**（已验证，待修复 `capabilities/annotation.md`）：
+  - `CATITPSSet` 并不实现 `CreateCapture()`。真实接口是独立的 `CATITPSCaptureFactory::CreateCapture(CATITPSCapture**)`，需对 `CATITPSSet` 实例做 `QueryInterface` 才能获取（refman 原始 htm 确认该接口页面未发生 Public/Protected/Private 视图分裂，排除了索引工具漏抓的可能性）
+  - `annotation.md` 引用的枚举值 `DfTPS_ItfTPSFactoryElementary` 在真实 `CATTPSComponent` 枚举（46 个值，由 `CATTPSInstantiateComponent.h` 确认）中不存在。`CATITPSFactoryElementary` 接口本身是真实的（14 个方法，refman 与 SDK 头文件一致），但其真实获取方式尚未查明（已全量搜索教学样例/SDK 头文件/.dico 均未发现调用入口）
+
 ### 🐛 Bug 修复 (2026-07-20)
 
 - 修复 `tools/scan_frameworks.py`：扫描 CAADoc `refman/*.htm` 时未排除 `visidx.txt.htm`（全局 API 索引页，非某个 framework 的说明页），导致生成了一个虚假的 "visidx.txt" framework 条目，其 5 个 "关键词" 实为从索引正文里随机抓取的、分属 `CATAnalysisInterfaces`/`CATAnalysisResources`/`VPMInterfaces` 三个不同 framework 的接口名，与 "visidx.txt" 本身无关。已删除 `knowledge/frameworks/visidx.txt.md`，framework 导航文件总数由 149 修正为 148（与 CAADoc `refman/` 目录下真实的 148 个 framework `.htm` 页面一一对应），并同步更新 SKILL.md/README.md/CHANGELOG.md/ARCHITECTURE.md 中的计数。

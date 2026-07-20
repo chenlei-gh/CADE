@@ -81,6 +81,10 @@ Step 0: 核实——用 `python tools/build_caadoc_index.py --query <name>` /
         CAADoc（cache 命中约 0.3 秒）。查无结果时不要直接当作
         "CAADoc 没收录"沉淀下来，先用 --search 排查是否拼写/别名
         问题；仍确认不存在则说明这是 AI 幻觉，不能沉淀。
+        若 `--query` 输出中出现 `*** SDK/refman mismatch ***`，以它交叉
+        比对结果里的 SDK 头文件方法列表为准（头文件是 refman 的生成源，
+        比 refman htm 页面更权威）；枚举类型要确认具体枚举值真实存在，
+        不要只凭接口名存在就假定枚举值存在。
     ↓
 Step 1: 在 knowledge/gaps/ 创建 gap 文件（记录：来源URL、涉及API、建议路径）
     ↓
