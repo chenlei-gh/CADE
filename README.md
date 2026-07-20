@@ -49,14 +49,17 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 ## ⚡ Quick Start
 
 ```bash
-# 1. Clone into your CAA project
+# 1. Clone CADE anywhere (this creates a ./CADE folder here)
 git clone https://github.com/chenlei-gh/CADE.git
-cp -r CADE/.agents /path/to/your/caa/project/
 
-# 2. Install the only Python dependency
+# 2. Copy the .agents folder into your CAA project (use the full path
+#    from step 1, e.g. ./CADE/.agents if you didn't cd elsewhere)
+cp -r ./CADE/.agents /path/to/your/caa/project/
+
+# 3. Install the only Python dependency
 pip install Pillow
 
-# 3. That's it. Open in your editor.
+# 4. That's it. Open your CAA project in your editor.
 #    CADE auto-detects CATIA. Zero config.
 ```
 
@@ -425,14 +428,17 @@ cade create command 我的命令 我的模块 --dialog --wb 我的工作台
 ### ⚡ 快速开始
 
 ```bash
-# 1. 克隆到你的 CAA 项目
+# 1. 先克隆 CADE 到任意位置（会在当前目录下生成 ./CADE 文件夹）
 git clone https://github.com/chenlei-gh/CADE.git
-cp -r CADE/.agents /你的/CAA/项目/路径/
 
-# 2. 安装唯一的 Python 依赖
+# 2. 将 .agents 文件夹拷贝到你的 CAA 项目里（使用第1步产生的完整路径，
+#    若未切换到其他目录则为 ./CADE/.agents）
+cp -r ./CADE/.agents /你的/CAA/项目/路径/
+
+# 3. 安装唯一的 Python 依赖
 pip install Pillow
 
-# 3. 用编辑器打开项目。CADE 自动检测 CATIA，零配置。
+# 4. 用编辑器打开你的 CAA 项目。CADE 自动检测 CATIA，零配置。
 ```
 
 **前置条件：** CATIA V5 B28 + Visual Studio（含 RADE 插件）已安装。
