@@ -212,7 +212,7 @@ Changeset 应用 → 文件写入
 ```
 catalog/index.yaml ── 全局索引
   │
-  ├── knowledge/frameworks/   (149 CAADoc 框架)
+  ├── knowledge/frameworks/   (148 CAADoc 框架)
   ├── knowledge/mecmod/       (机械设计)
   ├── knowledge/part/         (零件设计)
   ├── knowledge/product/      (装配设计)

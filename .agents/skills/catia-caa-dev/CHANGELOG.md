@@ -10,6 +10,11 @@
 
 ## [未发布]
 
+### 🐛 Bug 修复 (2026-07-20)
+
+- 修复 `tools/scan_frameworks.py`：扫描 CAADoc `refman/*.htm` 时未排除 `visidx.txt.htm`（全局 API 索引页，非某个 framework 的说明页），导致生成了一个虚假的 "visidx.txt" framework 条目，其 5 个 "关键词" 实为从索引正文里随机抓取的、分属 `CATAnalysisInterfaces`/`CATAnalysisResources`/`VPMInterfaces` 三个不同 framework 的接口名，与 "visidx.txt" 本身无关。已删除 `knowledge/frameworks/visidx.txt.md`，framework 导航文件总数由 149 修正为 148（与 CAADoc `refman/` 目录下真实的 148 个 framework `.htm` 页面一一对应），并同步更新 SKILL.md/README.md/CHANGELOG.md/ARCHITECTURE.md 中的计数。
+- 核实 `knowledge/frameworks/*.md`（148 个）其余文件：均由脚本从 CAADoc 官方 `.htm` 文件名及正文中的真实接口名（含编号后缀，如 `CATIUdfFeature_28696`）自动抓取生成，抽样交叉核对 CAADoc 目录确认无虚构内容。
+
 ### 📝 知识沉淀 (2026-07-19)
 
 - 新增 knowledge/failure_patterns/fp_dialog_null_parent.md — 来源: 实机调试 + CAADoc/CAADialogEngine.edu/CAADegGeoCommands.m

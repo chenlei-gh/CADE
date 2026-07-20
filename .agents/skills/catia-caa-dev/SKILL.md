@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（29K+14P+13Capability+15Playbook+149Framework+6Philosophy+3Failure+3DecisionTree），107几何图标+RGBA多色、75模板(16类型)、39测试套件、cade dev一键闭环。"
+description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（29K+14P+13Capability+15Playbook+148Framework+6Philosophy+3Failure+3DecisionTree），107几何图标+RGBA多色、75模板(16类型)、39测试套件、cade dev一键闭环。"
 triggers:
   - CAA component
   - CATIA component
@@ -1327,7 +1327,7 @@ python tests/test_master.py --quick
 │   │   └── surface_basics.md
 │   ├── fta/                        # FTA: 3D标注、公差
 │   │   └── fta_basics.md
-│   ├── frameworks/                  # Framework 导航 (149 个 CAADoc Framework)
+│   ├── frameworks/                  # Framework 导航 (148 个 CAADoc Framework)
 │   │   └── infrastructure/               # 基础设施: Selection、CodeStyle、Memory
 │   ├── philosophy/               # CAA 底层哲学 (v3.0, 6 篇)
 │   │   ├── updates.md

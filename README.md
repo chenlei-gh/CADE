@@ -181,7 +181,7 @@ CADE now organizes knowledge in **5 layers** — AI finds answers 10x faster:
 🎯 Capability (10)  → "What can CATIA do?"        AI entry point
 📋 Playbook   (2)   → "How to accomplish this?"    Battle-tested recipes
 📚 Knowledge  (29)  → "How to use this API?"       Code reference
-🗂 Framework  (149) → "Which framework?"           CAADoc navigation
+🗂 Framework  (148) → "Which framework?"           CAADoc navigation
 📖 CAADoc          → "What's the exact API?"      Official docs
 ```
 
@@ -315,7 +315,7 @@ User Intent
     ↓
 📚 Knowledge     "How to use this API?"  29 files
     ↓
-🗂 Framework     "Which framework?"      149 files
+🗂 Framework     "Which framework?"      148 files
     ↓
 📖 CAADoc        "Exact API signature"   Official
 ```
@@ -394,7 +394,7 @@ your_project/
 │   ├── capabilities/               ← CAA capability docs
 │   ├── playbooks/                  ← Solution playbooks
 │   ├── knowledge/                  ← CAA knowledge base
-│   │   ├── frameworks/             ← 149 CAADoc framework indexes
+│   │   ├── frameworks/             ← 148 CAADoc framework indexes
 │   │   ├── philosophy/             ← 6 CAA philosophy docs
 │   │   ├── failure_patterns/       ← 3 failure patterns
 │   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
@@ -608,7 +608,7 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 │   ├── capabilities/               ← CAA 能力文档
 │   ├── playbooks/                  ← 解决方案手册
 │   ├── knowledge/                  ← CAA 知识库
-│   │   ├── frameworks/             ← 149 个 CAADoc 框架索引
+│   │   ├── frameworks/             ← 148 个 CAADoc 框架索引
 │   │   ├── philosophy/             ← 6 篇 CAA 哲学
 │   │   ├── failure_patterns/       ← 3 个失败模式
 │   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/

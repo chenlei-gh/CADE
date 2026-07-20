@@ -39,6 +39,11 @@ def scan():
         return []
     fws = []
     for hf in sorted(refman.glob("*.htm")):
+        # visidx.txt.htm is CAADoc's global API index page, not a framework
+        # manual page. Scanning it produces bogus "framework" entries whose
+        # keywords are random API names pulled from across many frameworks.
+        if hf.stem.lower() == "visidx.txt":
+            continue
         info = extract_framework_info(hf)
         if info:
             fws.append(info)
