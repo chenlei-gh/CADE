@@ -38,7 +38,9 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `38/38 suites (quick, 100%)` | **650+ checks** | *2026-07-17*
+> 🟢 **CI Status**: `38/38 suites (quick, 100%)` | **650+ checks** | *2026-07-20*
+
+> ✅ **Production readiness**: Conditional GO — see [SKILL.md § Production Readiness](.agents/skills/catia-caa-dev/SKILL.md#-生产就绪评估) before deploying
 
 > **v3.2.1** — Generate → Build → Run closed loop | `cade dev` one-command cycle
 
@@ -275,7 +277,7 @@ cade test                         # full: 32 suites (~60s)
 ### ⚡ Test Results
 
 <details>
-<summary>39 suites (38 quick + 1 CATIA lifecycle) · 40 files · 650+ checks · 2026-07-17</summary>
+<summary>39 suites (38 quick + 1 CATIA lifecycle) · 40 files · 650+ checks · 2026-07-20</summary>
 
 | | | |
 |---|---|---|
@@ -435,6 +437,8 @@ pip install Pillow
 
 **前置条件：** CATIA V5 B28 + Visual Studio（含 RADE 插件）已安装。
 
+> ✅ **生产就绪状态**：条件性生产就绪（Conditional GO）——部署前请先阅读 [SKILL.md「生产就绪评估」章节](.agents/skills/catia-caa-dev/SKILL.md#-生产就绪评估) 及部署前检查清单。
+
 > [!TIP]
 > **Zed** — 开箱即用。
 > **Claude / Cursor / VS Code / Windsurf** — 运行 `python .agents/skills/catia-caa-dev/tools/setup_mcp.py`
@@ -533,7 +537,7 @@ cade test                           # 32 套件全量测试 (~60s)
 ### ⚡ 测试结果
 
 <details>
-<summary>39 套件（快速模式 38 套 + 1 套 CATIA 生命周期）· 40 文件 · 650+ 检查 · 2026-07-17</summary>
+<summary>39 套件（快速模式 38 套 + 1 套 CATIA 生命周期）· 40 文件 · 650+ 检查 · 2026-07-20</summary>
 
 | | | |
 |---|---|---|
