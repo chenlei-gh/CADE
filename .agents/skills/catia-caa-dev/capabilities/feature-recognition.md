@@ -3,9 +3,9 @@ id: cap.feature_recognition
 title: Feature Recognition
 category: capability
 domain: infrastructure
-keywords: [feature, recognition, IsATypeOf, late type, StartUp, hole, pocket, pad, fillet, catalog]
-apis: [CATISpecObject, CATICatalog, StartUp, CATISpecAccess, CATIPrtPart]
-frameworks: [CATMecModUseItf, ObjectModelerBase]
+keywords: [feature, recognition, IsSubTypeOf, late type, GetType, hole, pocket, pad, fillet, startup]
+apis: [CATISpecObject, CATIPrtPart]
+frameworks: [MecModInterfaces, ObjectSpecsLegacy]
 playbooks: [analyzer.geometry, analyzer.rule, block.visitor]
 requires: [mecmod.feature, mecmod.topology]
 release: [R19, R28]
@@ -14,7 +14,20 @@ tags: [capability]
 
 # Feature Recognition (特征识别)
 
-Identifying CATIA feature types at runtime — distinguishing Pad from Pocket, Hole from Fillet — using `IsATypeOf`, late type binding, and StartUp catalog lookups.
+Identifying CATIA feature types at runtime — distinguishing Pad from Pocket, Hole from Fillet — using `IsSubTypeOf`, `GetType`, and StartUp lookups.
+
+## ⚠️ 重要修正
+
+旧版本文档中的多个 API 和方法名经 CAADoc（`ObjectSpecsLegacy`/`MecModInterfaces` 框架）核实修正：
+
+| 旧写法（虚构） | 真实情况 |
+|---------------|---------|
+| `CATISpecObject::GetParent()` | 不存在。真实方法是 **`GetFather()`** |
+| `CATISpecObject::GetChildren()` | 不存在。真实方法是 **`ListComponents()`**（返回 `CATListValCATISpecObject_var*`，需 `delete`） |
+| `CATISpecObject::IsATypeOf(name)` | `CATISpecObject` 无此方法。真实类型检查方法是 **`IsSubTypeOf(CATUnicodeString&)`** |
+| `CATICatalog` | **不存在**。没有裸 `CATICatalog` 接口用于 "late type 绑定"。只有 `ComponentsCatalogsInterfaces` 中的具体子接口（`CATICatalogChapter`、`CATICatalogQuery` 等） |
+| `CATISpecAccess` | **不存在**，CAADoc 零匹配，纯虚构 |
+| `StartUp`（独立 API） | 不存在独立接口。`StartUp` 只是一个概念，通过 `CATISpecObject::GetStartUp()`（返回 `CATISpecObject*`）使用 |
 
 ## 1. Summary
 
@@ -22,9 +35,9 @@ Feature recognition is the capability to programmatically determine what type of
 
 ## 2. Core Concepts
 
-- **IsATypeOf vs. late type**: `IsATypeOf("Pad")` checks the C++ class hierarchy; late type via `CATICatalog` checks the StartUp registration regardless of C++ inheritance
-- **StartUp catalog**: The feature type registry that maps StartUp names (e.g., "Pad") to implementation classes
-- **Feature tree context**: A feature's type often determines which children it can have (e.g., a Sketch under a Pad)
+- **`IsSubTypeOf` vs. `GetType`**: `IsSubTypeOf("Pad")` checks the type system via the StartUp chain; `GetType()` returns the late type string directly for comparison
+- **StartUp**: The feature template that defines type identity, obtained via `CATISpecObject::GetStartUp()`
+- **Feature tree navigation**: Navigate up to parent via `GetFather()`, navigate down to children via `ListComponents()` (returns `CATListValCATISpecObject_var*`, caller must `delete`)
 - **Generative vs. dress-up**: Generative features (Pad, Pocket, Shaft) create new geometry; dress-up features (Fillet, Chamfer, Draft) modify existing geometry
 - **Boolean features**: `SolidCombine` represents Add/Remove/Intersect operations that combine bodies
 - **Reference features**: `GeometricalSet`, `OrderedGeometricalSet` contain wireframe and surface reference geometry
@@ -35,30 +48,28 @@ Feature recognition is the capability to programmatically determine what type of
 
 | API | Purpose |
 |-----|---------|
-| `CATISpecObject::IsATypeOf(name)` | Check if the feature is of a specific C++ class type |
-| `CATISpecObject::GetType()` | Returns the StartUp type string (e.g., "Pad", "Hole") |
-| `CATICatalog` | Late type binding — match a StartUp name to its implementation |
-| `CATISpecAccess` | Provides access to the spec object model from the document |
+| `CATISpecObject::GetType()` | Returns the late type string (e.g., "Pad", "Hole") |
+| `CATISpecObject::IsSubTypeOf(name)` | Check if the feature derives from a given StartUp type |
+| `CATISpecObject::GetStartUp()` | Returns the StartUp object (the template/factory ancestor) |
+| `CATISpecObject::GetFather()` | Navigate up to the aggregating parent feature or body |
+| `CATISpecObject::ListComponents()` | Navigate down to child features (returns `CATListValCATISpecObject_var*`, must `delete`) |
 | `CATIPrtPart` | Entry point for the Part container, the root of the feature tree |
-| `CATISpecObject::GetParent()` | Navigate up to the parent feature or body |
-| `CATISpecObject::GetChildren()` | Navigate down to child features (e.g., Sketch under Pad) |
-| StartUp lookup | Resolve feature StartUp name to its factory for instantiation |
 
 ## 4. Common Patterns
 
-### 4.1 C++ Type Check with IsATypeOf
+### 4.1 Type Check with IsSubTypeOf
 
 ```cpp
 CATISpecObject_var pFeature = ...;
 
-if (pFeature->IsATypeOf("Pad")) {
+if (pFeature->IsSubTypeOf("Pad")) {
     // Process pad-specific logic
     double height = GetPadHeight(pFeature);
-} else if (pFeature->IsATypeOf("Pocket")) {
+} else if (pFeature->IsSubTypeOf("Pocket")) {
     double depth = GetPocketDepth(pFeature);
-} else if (pFeature->IsATypeOf("Hole")) {
+} else if (pFeature->IsSubTypeOf("Hole")) {
     double diameter = GetHoleDiameter(pFeature);
-} else if (pFeature->IsATypeOf("EdgeFillet")) {
+} else if (pFeature->IsSubTypeOf("EdgeFillet")) {
     double radius = GetFilletRadius(pFeature);
 }
 ```
