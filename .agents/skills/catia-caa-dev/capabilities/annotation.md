@@ -1,172 +1,225 @@
 ---
 id: cap.annotation
-title: 3D Annotation (FTA / PMI)
+title: 3D Annotation (TPS / FTA / PMI)
 category: capability
 domain: infrastructure
-keywords: [annotation, PMI, FTA, dimension, tolerance, datum, capture, 3D view, TPS, GD&T, semantic]
-apis: [CATITPSView, CATITPSAnnotation, CATITPSDimension, CATITPSTolerance, CATITPSDatum, CATITPSCapture, CATITPSFactory]
-frameworks: [CATAnalysisGPSInterfaces]
+keywords: [annotation, PMI, FTA, TPS, dimension, tolerance, datum, roughness, capture, 3D view, GD&T, semantic]
+apis: [CATITPS, CATITPSComponent, CATITPSFactoryElementary, CATITPSFactoryAdvanced, CATITPSFactoryTTRS, CATITPSDocument, CATITPSSet, CATITPSCapture, CATITPSView, CATITPSList, CATITPSRetrieveServices]
+frameworks: [CATTPSInterfaces]
 playbooks: [analyzer.rule, analyzer.geometry, ui.result_dialog]
 requires: [mecmod.feature, mecmod.topology]
 release: [R19, R28]
 tags: [capability]
 ---
 
-# 3D Annotation / FTA (三维标注)
+# 3D Annotation / TPS / FTA (三维标注)
 
-Creating and managing 3D PMI (Product Manufacturing Information) annotations — dimensions, tolerances, datums, GD&T frames, and capture views — within the FTA (Functional Tolerancing & Annotation) workbench.
+Creating and querying 3D PMI (Product Manufacturing Information) annotations — dimensions, tolerances, datums, roughness symbols, flag notes — through the TPS (Technological Product Specification) object model used by the FTA (Functional Tolerancing & Annotation) workbench.
+
+## ⚠️ 重要修正
+
+旧版本文档中几乎所有接口名/方法名/工作流程均为虚构，经 CAADoc（`CATTPSInterfaces` 框架）和官方 `CAATpiXxx` 教学用例核实修正：
+
+| 旧写法（虚构） | 真实情况 |
+|---------------|---------|
+| Framework `CATAnalysisGPSInterfaces` | 真实框架是 **`CATTPSInterfaces`**（`CATAnalysisGPSInterfaces` 是完全不同的模块，用于 GPS 传感器/结构模板分析，与 3D 标注无关） |
+| `CATITPSFactory`（单一工厂接口） | **不存在**。标注创建拆分为三个工厂接口：**`CATITPSFactoryElementary`**（基础创建，产出未完全赋值的标注）、**`CATITPSFactoryAdvanced`**（直接对几何选择创建标注，如 `CreateTextOnGeometry`）、**`CATITPSFactoryTTRS`**（从几何选择构造 `CATITTRS` 参考面） |
+| `pTPSFactory = pTPSContainer`（直接类型转换获取工厂） | 工厂通过全局函数 **`CATTPSInstantiateComponent(CATTPSComponent iComp, void** opiComp)`** 获取（`iComp` 取值如 `DfTPS_ItfTPSFactoryElementary`/`DfTPS_ItfTPSFactoryAdvanced`/`DfTPS_ItfTPSFactoryTTRS`/`DfTPS_ItfRetrieveServices`），不是对容器做 QueryInterface |
+| `CATITPSAnnotation`（作为公共基接口） | **不存在**。多态基接口是 **`CATITPSComponent`**（纯标记接口，无任何方法）；真正携带数据的公共接口是 **`CATITPS`**（只有 `GetSet()`/`GetTTRS()`/`SetTTRS()`），名字/类型需通过 `CATIAlias`（名字）和 QueryInterface 到具体子接口（类型判断） |
+| `CATITPSCapture::Activate()`/`SetViewDirection()`/`AddAnnotation()`/`RemoveAnnotation()` | 均不存在。激活当前 Capture 用 **`SetCurrent(TRUE)`**；相机用 **`SetCamera(CATI3DCamera*)`**；管理其标注用 **`SetTPSs(CATITPSList*)`**/`GetTPSs()`（整体替换列表，非逐个 Add/Remove） |
+| `pTPSFactory->CreateCaptureView()` | **不存在**。Capture 由 **`CATITPSSet::CreateCapture(CATITPSCapture**)`** 在一个 Set 内创建 |
+| `CATITPSDimension::SetNominalValue()`/`SetUpperTolerance()`/`SetLowerTolerance()` | `CATITPSDimension` 本身是纯类型标记接口（无方法）。实际数值方法在 **`CATITPSDimensionLimits`** 接口上：`GetNominalValue()`、`SetLimits(bottom, up)`、`SetSingleLimit()`、`SetModifier()` 等 |
+| `pTPSFactory->CreateLinearDimension(face1, face2)` | 不存在这种便捷签名。真实流程：先用 `CATITPSFactoryTTRS::GetTTRS()` 把几何包装成 `CATITTRS`，再用 `CATITPSFactoryElementary::CreateSemanticDimension(ttrs, CATTPSDimensionType, CATTPSLinearDimensionSubType, &dimension)` 创建 |
+| `pTPSFactory->CreateGeometricTolerance(face)` + `SetSymbol()`/`AddDatumReference()`/`SetModifier(MMC)` | 不存在。真实创建是 **`CreateToleranceWithDRF(CATTPSTypeWithDRF, ttrs, refFrame, &tol)`**（带基准参考框）或 **`CreateToleranceWithoutDRF(CATTPSTypeWithoutDRF, ttrs, &tol)`**（形位公差，如平面度）；材料条件修饰符（MMC等）通过独立的 **`CATITPSMaterialCondition::SetModifier()`** 接口设置 |
+| `pTPSFactory->CreateDatum(plane)` + `pDatum->SetLabel()` | `CreateDatum()` 存在但返回 `CATITPSDatumSimple`（不是泛型 `CATITPSDatum`——`CATITPSDatum` 也是纯类型标记接口）。`SetLabel()`/`GetTargets()` 等真实数据方法都在 `CATITPSDatumSimple` 上 |
+| `pAnnot->IsATypeOf(CATITPSDimension::ClassName())` | 类型判断应通过 **`QueryInterface(IID_CATITPSDimension, ...)`** 到具体的类型标记接口，而不是字符串比较 |
+| `pAnnot->GetType()`/`pAnnot->GetName()` | 不存在于任何 TPS 接口。名字通过 QueryInterface 到 **`CATIAlias`** 后调用 `GetAlias()` 获取 |
+| `pCapture->GetAllAnnotations(list)` 返回 `CATListValCATITPSAnnotation_var` | 不存在这种模板列表类型。真实容器是 **`CATITPSList`**（`Count(&n)`/`Item(pos, &item)`——**0-based** 索引/`Add()`/`Remove()`），元素是 `CATITPSComponent*` |
+| 查询"哪些标注关联某几何"没有对应 API | 真实方法是 **`CATITPSRetrieveServices::RetrieveTPSsFromPath(CATPathElement*, CATIProduct*, CATITPSList**)`** |
 
 ## 1. Summary
 
-The annotation capability enables programmatic creation and query of 3D annotations (FTA/PMI): linear and angular dimensions, geometric tolerances, datum features and targets, surface texture symbols, flag notes, and capture views that organize annotations into viewable sets for downstream manufacturing and inspection.
+3D annotation (TPS) creation and query is split across three factory interfaces obtained through the global `CATTPSInstantiateComponent()` function (not QueryInterface on a container), a family of typing/marker interfaces (`CATITPSComponent`, `CATITPSDimension`, `CATITPSDatum`, `CATITPSForm`, ...) used purely for polymorphic classification via QueryInterface, and dedicated data interfaces (`CATITPSDimensionLimits`, `CATITPSDatumSimple`, `CATITPSMaterialCondition`, `CATITPSRoughness`, `CATITPSFlagNote`, ...) that carry the actual values. Annotations are organized into `CATITPSSet` (a document-level tolerancing set) containing `CATITPSCapture` (a saved 3D view of a subset of annotations) and `CATITPSView` (a support plane for annotations, associated with a drafting view).
 
 ## 2. Core Concepts
 
-- **TPS (Technological Product Specification)**: The semantic framework for 3D annotations — every annotation carries semantic meaning, not just graphical representation
-- **Capture views**: `CATITPSCapture` groups annotations into named views (e.g., "Front View", "Section A-A") that can be individually displayed and exported
-- **Annotation-View relationship**: Every annotation belongs to a capture view; annotations without a view cannot be displayed
-- **Dimension types**: Linear, angular, radial, diameter, chamfer, coordinate — each with specific reference geometry requirements
-- **Tolerance frames**: GD&T (Geometric Dimensioning & Tolerancing) frames include feature control frames with symbol, tolerance value, and datum references
-- **Datum features**: `CATITPSDatum` identifies a reference feature (plane, cylinder, etc.) used as a datum for tolerance frames
-- **Semantic references**: Annotations maintain semantic links to the geometry they describe; if geometry changes, annotations may become invalid
-- **Annotation sets**: Collections of related annotations grouped under a common parent; useful for organizing by manufacturing stage
-- **Standards compliance**: Annotations follow ASME Y14.5 or ISO 1101 standards; the standard determines symbol appearance and interpretation
-- **View orientation**: Each capture view has an associated 3D camera position; activating a view reframes the viewer accordingly
+- **TTRS (Tolerant Topological Reference Surface)**: The geometry-agnostic reference object every TPS annotation attaches to; built from a `CATSO` (Selected Object) geometry selection via `CATITPSFactoryTTRS::GetTTRS()`, or created implicitly by `CATITPSFactoryAdvanced`'s `*OnGeometry` methods
+- **Typing (marker) interfaces vs. data interfaces**: `CATITPSComponent` (root), `CATITPSDimension`, `CATITPSDatum`, `CATITPSForm` are pure "is-a" markers with no methods — always QueryInterface further to a data-bearing interface (`CATITPSDimensionLimits`, `CATITPSDatumSimple`, `CATITPSFlatness`, ...) to read/write values
+- **CATITPS**: The minimal common data interface shared by (almost) all annotations — links an annotation to its owning `CATITPSSet` and to the `CATITTRS` list it is applied on
+- **Factory split**: `CATITPSFactoryElementary` creates a bare, not-yet-fully-valuated annotation attached to a pre-built `CATITTRS`; `CATITPSFactoryAdvanced` is the convenience layer used by interactive commands — it takes a `CATSO*` + `CATMathPlane*` directly and builds the TTRS internally
+- **CATITPSSet**: The document-level aggregation of all TPS objects for a given part/product reference; owns `CATITPSCapture` list, `CATITPSView` list, and the overall standard (ISO/ASME)
+- **CATITPSCapture**: A named, saved 3D view of a chosen subset of annotations (which `CATITPSs` are shown, the camera, clipping plane, hide/show state); exactly one capture per set can be `SetCurrent(TRUE)` at a time
+- **CATITPSView**: A support plane for annotations, tied to an associated 2D drafting view; created via `CATITPSViewFactory::CreateView()`
+- **CATITPSList**: The generic, 0-based collection type used throughout TPS APIs (`Count`/`Item`/`Add`/`Remove`) instead of `CATListValXxx_var` templates
+- **Name/type discovery**: An annotation's display name comes from `CATIAlias::GetAlias()` (via QueryInterface); its concrete kind is discovered by QueryInterface-ing to the relevant typing interface, not by a string-returning `GetType()`
 
 ## 3. Key APIs
 
 | API | Purpose |
 |-----|---------|
-| `CATITPSView` | Base interface for all annotation views and annotation sets |
-| `CATITPSCapture` | A named 3D capture view that groups annotations and stores camera orientation |
-| `CATITPSAnnotation` | Base interface for all annotation objects; provides semantic reference access |
-| `CATITPSDimension` | Linear, angular, radial, and diameter dimension annotations |
-| `CATITPSTolerance` | GD&T feature control frame with symbol, tolerance, modifiers, and datum references |
-| `CATITPSDatum` | Datum feature and datum target annotations |
-| `CATITPSFactory` | Factory for creating all annotation types within a capture view context |
-| `CATITPSComponent` | Component-level annotation access; iterate annotations, resolve semantic targets |
-| `CATITPSSet` | Annotation set container; hierarchy of related annotations |
-| `CATITPSRoughness` | Surface texture / roughness symbol annotation |
+| `CATTPSInstantiateComponent(CATTPSComponent, void**)` | Global function to retrieve any TPS factory/service singleton (e.g. `DfTPS_ItfTPSFactoryElementary`, `DfTPS_ItfTPSFactoryAdvanced`, `DfTPS_ItfTPSFactoryTTRS`, `DfTPS_ItfRetrieveServices`) |
+| `CATITPSFactoryTTRS::GetTTRS()` | Builds a `CATITTRS` reference surface from a `CATSO` geometry selection |
+| `CATITPSFactoryElementary` | Low-level creation: `CreateSemanticDimension`, `CreateNonSemanticDimension`, `CreateToleranceWithDRF`/`WithoutDRF`, `CreateDatum`, `CreateDatumTarget`, `CreateDatumReferenceFrame`, `CreateRoughness`, `CreateFlagNote`, `CreateText`, `CreateTextNOA` |
+| `CATITPSFactoryAdvanced` | High-level creation directly from a geometry selection: `CreateTextOnGeometry`, `CreateFlagNoteOnGeometry`, `CreateNOAOnGeometry`, `CreateWeldOnGeometry`, `CreateTextOnAnnotation` |
+| `CATITPSDocument` | Document-level entry point: `GetSets()`, `GetBags()`, `GetTolerancingContainer()` |
+| `CATITPSSet` | Aggregates a document's TPS objects: `CreateCapture()`, `GetCaptures()`, `GetViews()`, `GetTPSs()`, `GetActiveView()`/`SetActiveView()` |
+| `CATITPSCapture` | A saved 3D annotation view: `SetTPSs()`/`GetTPSs()`, `SetCurrent()`, `SetCamera()`, `SetClippingPlane()` |
+| `CATITPSDimensionLimits` | Numeric data of a dimension: `GetNominalValue()`, `SetLimits()`, `SetSingleLimit()`, `SetModifier()` |
+| `CATITPSDatumSimple` | Datum data: `SetLabel()`/`GetLabel()`, `SetTargets()`/`GetTargets()` |
+| `CATITPSMaterialCondition` | GD&T material condition modifier (MMC/LMC/RFS) on a tolerance or one of its datum references |
+| `CATITPSRetrieveServices::RetrieveTPSsFromPath()` | Finds all TPS annotations linked to a selected `CATPathElement` |
+| `CATITPSList` / `CATCreateCATITPSList()` | Generic 0-based collection (`Count()`, `Item()`, `Add()`, `Remove()`); instantiated via the global function `CATCreateCATITPSList(CATITPSList* iCopy, CATITPSList** oList)`, not a factory |
 
 ## 4. Common Patterns
 
-### 4.1 Create a Capture View
+### 4.1 Retrieve the TPS Factories
 
 ```cpp
-CATITPSFactory_var pTPSFactory = pTPSContainer;
-CATITPSCapture_var pCapture = pTPSFactory->CreateCaptureView();
+#include "CATTPSInstantiateComponent.h"
+#include "CATITPSFactoryTTRS.h"
+#include "CATITPSFactoryElementary.h"
 
-// Name the view
-pCapture->SetName("Front View - Machining Dimensions");
+// Factories are singletons retrieved through the global function,
+// NOT by QueryInterface on a document/container
+CATITPSFactoryTTRS* pFactTTRS = NULL;
+HRESULT rc = CATTPSInstantiateComponent(DfTPS_ItfTPSFactoryTTRS, (void**)&pFactTTRS);
 
-// Set camera orientation (optional)
-CATMathDirection viewDirection(0, 1, 0);  // Looking along Y-axis
-pCapture->SetViewDirection(viewDirection);
-
-// Activate the view for annotation creation
-pCapture->Activate();
+CATITPSFactoryElementary* pFactElem = NULL;
+rc = CATTPSInstantiateComponent(DfTPS_ItfTPSFactoryElementary, (void**)&pFactElem);
 ```
 
-### 4.2 Create a Linear Dimension
+### 4.2 Create a Semantic Linear Dimension Between Two Faces
 
 ```cpp
-CATITPSFactory_var pTPSFactory = pTPSContainer;
+// 1) Wrap the geometry selection into a CATITTRS reference
+CATSO* pGeometrySelected = ...;  // e.g. built from a face path
+CATITTRS* pTTRS = NULL;
+pFactTTRS->GetTTRS(pGeometrySelected, &pTTRS);
 
-// Reference geometry for dimension
-CATISpecObject_var pFace1 = ...;  // First reference face
-CATISpecObject_var pFace2 = ...;  // Second reference face
+// 2) Create the semantic dimension on that reference
+CATITPSDimension* pDimension = NULL;
+rc = pFactElem->CreateSemanticDimension(pTTRS, CATTPSDimensionTypeLinear,
+                                         CATTPSLinearDimensionSubTypeStandard,
+                                         &pDimension);
 
-CATITPSDimension_var pDimension =
-    pTPSFactory->CreateLinearDimension(pFace1, pFace2);
+// 3) CATITPSDimension itself has no data methods -- query the data interface
+CATITPSDimensionLimits* pLimits = NULL;
+pDimension->QueryInterface(IID_CATITPSDimensionLimits, (void**)&pLimits);
+if (pLimits) {
+    pLimits->SetLimits(-0.05, 0.1);  // lower/upper tolerance in millimeters
+    pLimits->Release();
+}
 
-// Set dimension parameters
-pDimension->SetNominalValue(25.0);       // 25 mm
-pDimension->SetUpperTolerance(0.1);      // +0.1
-pDimension->SetLowerTolerance(-0.05);    // -0.05
-
-// Add to active capture view
-pActiveCapture->AddAnnotation(pDimension);
+pTTRS->Release();
+pDimension->Release();
 ```
 
-### 4.3 Create a GD&T Tolerance Frame
+### 4.3 Create a Flatness Tolerance (Form Tolerance, No DRF)
 
 ```cpp
-CATITPSFactory_var pTPSFactory = pTPSContainer;
+CATITTRS* pTTRS = NULL;
+pFactTTRS->GetTTRS(pTargetFaceSelected, &pTTRS);
 
-// Create tolerance frame on a feature
-CATISpecObject_var pTargetFace = ...;
-CATITPSTolerance_var pTolerance =
-    pTPSFactory->CreateGeometricTolerance(pTargetFace);
+// Flatness has no Datum Reference Frame
+CATITPSForm* pFlatness = NULL;
+rc = pFactElem->CreateToleranceWithoutDRF(CATTPSTypeWithoutDRFFlatness, pTTRS, &pFlatness);
 
-// Set GD&T characteristics
-pTolerance->SetSymbol(CATITPSTolerance::Flatness);  // Flatness symbol
-pTolerance->SetToleranceValue(0.05);                 // 0.05 mm tolerance zone
+// The tolerance zone value itself is read/written through CATITPSDimensionLimits
+CATITPSDimensionLimits* pLimits = NULL;
+pFlatness->QueryInterface(IID_CATITPSDimensionLimits, (void**)&pLimits);
+if (pLimits) {
+    pLimits->SetSingleLimit(0.05);  // 0.05 mm tolerance zone
+    pLimits->Release();
+}
 
-// Add datum references
-CATITPSDatum_var pDatumA = ...;  // Previously created datum
-pTolerance->AddDatumReference(pDatumA);
-
-// Set material condition modifier
-pTolerance->SetModifier(CATITPSTolerance::MMC);  // Maximum Material Condition
-
-pActiveCapture->AddAnnotation(pTolerance);
+pTTRS->Release();
+pFlatness->Release();
 ```
 
-### 4.4 Create a Datum Feature
+### 4.4 Create a Datum and Assign It as a Material-Condition Reference
 
 ```cpp
-CATITPSFactory_var pTPSFactory = pTPSContainer;
+CATITTRS* pDatumTTRS = NULL;
+pFactTTRS->GetTTRS(pDatumPlaneSelected, &pDatumTTRS);
 
-// Create datum on a planar face
-CATISpecObject_var pDatumPlane = ...;
-CATITPSDatum_var pDatum = pTPSFactory->CreateDatum(pDatumPlane);
+CATITPSDatumSimple* pDatum = NULL;
+rc = pFactElem->CreateDatum(pDatumTTRS, &pDatum);
+pDatum->SetLabel(L"A");
 
-// Set datum label
-pDatum->SetLabel("A");  // Datum A
+// Apply a material condition modifier to a tolerance's datum reference
+// (pTolerance was created via CreateToleranceWithDRF and implements
+// CATITPSMaterialCondition on its Datum Reference Frame entries)
+CATITPSMaterialCondition* pMatCond = NULL;
+pTolerance->QueryInterface(IID_CATITPSMaterialCondition, (void**)&pMatCond);
+if (pMatCond) {
+    pMatCond->SetModifier(CATTPSMaterialConditionMMC, pDatum);
+    pMatCond->Release();
+}
 
-// Optionally set datum target type
-// pDatum->SetAsDatumTarget(TRUE);
-
-pActiveCapture->AddAnnotation(pDatum);
+pDatumTTRS->Release();
+pDatum->Release();
 ```
 
-### 4.5 Iterate All Annotations in a Capture View
+### 4.5 Organize Annotations into a Capture View
 
 ```cpp
-CATITPSCapture_var pCapture = ...;
+CATITPSSet* pTPSSet = ...;  // Retrieved from CATITPSDocument::GetSets()
 
-CATListValCATITPSAnnotation_var annotations;
-pCapture->GetAllAnnotations(annotations);
+// Create a new capture and make it the current one
+CATITPSCapture* pCapture = NULL;
+pTPSSet->CreateCapture(&pCapture);
+pCapture->SetCurrent(TRUE);
 
-for (int i = 1; i <= annotations.Size(); i++) {
-    CATITPSAnnotation_var pAnnot = annotations[i];
-    CATUnicodeString name = pAnnot->GetName();
-    CATUnicodeString type = pAnnot->GetType();
+// Populate it with a list of TPS annotations to display
+// (CATITPSList is instantiated via CATCreateCATITPSList, not a factory)
+CATITPSList* pTPSList = NULL;
+CATCreateCATITPSList(NULL, &pTPSList);
+pTPSList->Add(0, (CATITPSComponent*)pDimension);
+pTPSList->Add(1, (CATITPSComponent*)pFlatness);
+pCapture->SetTPSs(pTPSList);
 
-    if (pAnnot->IsATypeOf(CATITPSDimension::ClassName())) {
-        CATITPSDimension_var pDim = pAnnot;
-        double nominal = pDim->GetNominalValue();
-        // Process dimension...
+pCapture->Release();
+```
+
+### 4.6 Retrieve All Annotations Linked to a Selected Geometry Path
+
+```cpp
+CATITPSRetrieveServices* pRetrieveServices = NULL;
+CATTPSInstantiateComponent(DfTPS_ItfRetrieveServices, (void**)&pRetrieveServices);
+
+CATPathElement* pPathSelected = ...;  // From a selection agent
+CATITPSList* pTPSList = NULL;
+HRESULT rc = pRetrieveServices->RetrieveTPSsFromPath(pPathSelected, NULL, &pTPSList);
+
+if (SUCCEEDED(rc) && pTPSList) {
+    unsigned int count = 0;
+    pTPSList->Count(&count);
+    for (unsigned int i = 0; i < count; i++) {  // 0-based!
+        CATITPSComponent* pItem = NULL;
+        pTPSList->Item(i, &pItem);
+
+        // Name via CATIAlias, type via QueryInterface to the specific interface
+        CATIAlias* pAlias = NULL;
+        pItem->QueryInterface(IID_CATIAlias, (void**)&pAlias);
+        if (pAlias) {
+            CATUnicodeString name = pAlias->GetAlias();
+            pAlias->Release();
+        }
+
+        CATITPSDimension* pAsDimension = NULL;
+        if (SUCCEEDED(pItem->QueryInterface(IID_CATITPSDimension, (void**)&pAsDimension))) {
+            // It is a dimension tolerance; query CATITPSDimensionLimits for its value
+            pAsDimension->Release();
+        }
+
+        pItem->Release();
     }
 }
 ```
 
-### 4.6 Delete and Clean Up Annotations
-
-```cpp
-CATITPSCapture_var pCapture = ...;
-CATITPSAnnotation_var pAnnotation = ...;
-
-// Remove from capture view
-pCapture->RemoveAnnotation(pAnnotation);
-
-// If annotation has no more references, it may be garbage collected
-// or explicitly deleted from the TPS container
-```
-
 ## 5. Related Capabilities
 
-- **[cap.visualization](visualization.md)** — Highlight features that have associated annotations or missing PMI
-- **[cap.geometry_query](geometry-query.md)** — Query geometric properties for dimension reference resolution
-- **[cap.feature_recognition](feature-recognition.md)** — Identify feature types to determine recommended annotation set
-- **[cap.selection](selection.md)** — Select annotation objects in the 3D view and reframe to capture views
+- **[cap.visualization](visualization.md)** — Highlight geometry that has associated annotations or missing PMI
+- **[cap.geometry_query](geometry-query.md)** — Build the `CATSO`/`CATPathElement` geometry selection that a TPS annotation attaches to
+- **[cap.feature_recognition](feature-recognition.md)** — Identify feature types to determine which annotations are applicable
+- **[cap.selection](selection.md)** — Select geometry or existing annotation objects in the 3D view
