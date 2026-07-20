@@ -4,7 +4,7 @@ title: 3D Annotation (TPS / FTA / PMI)
 category: capability
 domain: infrastructure
 keywords: [annotation, PMI, FTA, TPS, dimension, tolerance, datum, roughness, capture, 3D view, GD&T, semantic]
-apis: [CATITPS, CATITPSComponent, CATITPSFactoryElementary, CATITPSFactoryAdvanced, CATITPSFactoryTTRS, CATITPSDocument, CATITPSSet, CATITPSCapture, CATITPSView, CATITPSList, CATITPSRetrieveServices]
+apis: [CATITPS, CATITPSComponent, CATITPSFactoryElementary, CATITPSFactoryAdvanced, CATITPSFactoryTTRS, CATITPSCaptureFactory, CATITPSViewFactory, CATITPSDocument, CATITPSSet, CATITPSCapture, CATITPSView, CATITPSList, CATITPSRetrieveServices]
 frameworks: [CATTPSInterfaces]
 playbooks: [analyzer.rule, analyzer.geometry, ui.result_dialog]
 requires: [mecmod.feature, mecmod.topology]
@@ -23,13 +23,13 @@ Creating and querying 3D PMI (Product Manufacturing Information) annotations —
 | 旧写法（虚构） | 真实情况 |
 |---------------|---------|
 | Framework `CATAnalysisGPSInterfaces` | 真实框架是 **`CATTPSInterfaces`**（`CATAnalysisGPSInterfaces` 是完全不同的模块，用于 GPS 传感器/结构模板分析，与 3D 标注无关） |
-| `CATITPSFactory`（单一工厂接口） | **不存在**。标注创建拆分为三个工厂接口：**`CATITPSFactoryElementary`**（基础创建，产出未完全赋值的标注）、**`CATITPSFactoryAdvanced`**（直接对几何选择创建标注，如 `CreateTextOnGeometry`）、**`CATITPSFactoryTTRS`**（从几何选择构造 `CATITTRS` 参考面） |
-| `pTPSFactory = pTPSContainer`（直接类型转换获取工厂） | 工厂通过全局函数 **`CATTPSInstantiateComponent(CATTPSComponent iComp, void** opiComp)`** 获取（`iComp` 取值如 `DfTPS_ItfTPSFactoryElementary`/`DfTPS_ItfTPSFactoryAdvanced`/`DfTPS_ItfTPSFactoryTTRS`/`DfTPS_ItfRetrieveServices`），不是对容器做 QueryInterface |
+| `CATITPSFactory`（单一工厂接口） | **不存在**。标注创建拆分为多个工厂接口，获取方式分两类：全局单例 **`CATITPSFactoryAdvanced`**（直接对几何选择创建标注，如 `CreateTextOnGeometry`）、**`CATITPSFactoryTTRS`**（从几何选择构造 `CATITTRS` 参考面）；挂在 `CATITPSSet` 实例上的 **`CATITPSFactoryElementary`**（基础创建，产出未完全赋值的标注）、**`CATITPSCaptureFactory`**、**`CATITPSViewFactory`** |
+| `pTPSFactory = pTPSContainer`（直接类型转换获取工厂） | **只有 `CATITPSFactoryAdvanced`/`CATITPSFactoryTTRS`/`CATITPSRetrieveServices` 是全局单例**，通过全局函数 **`CATTPSInstantiateComponent(CATTPSComponent iComp, void** opiComp)`** 获取（`iComp` 取值如 `DfTPS_ItfTPSFactoryAdvanced=13`/`DfTPS_ItfTPSFactoryTTRS=32`）。**`CATITPSFactoryElementary` 不在此列**——真实枚举 `CATTPSComponent` 里根本不存在 `DfTPS_ItfTPSFactoryElementary` 这个值；`CATITPSFactoryElementary` 实际是挂在 **`CATITPSSet`** 实例上的接口，需要对一个 Set 做 `QueryInterface(IID_CATITPSFactoryElementary, ...)` 才能拿到（发布产品字典 `CATTPSSet.dic` 证实） |
 | `CATITPSAnnotation`（作为公共基接口） | **不存在**。多态基接口是 **`CATITPSComponent`**（纯标记接口，无任何方法）；真正携带数据的公共接口是 **`CATITPS`**（只有 `GetSet()`/`GetTTRS()`/`SetTTRS()`），名字/类型需通过 `CATIAlias`（名字）和 QueryInterface 到具体子接口（类型判断） |
 | `CATITPSCapture::Activate()`/`SetViewDirection()`/`AddAnnotation()`/`RemoveAnnotation()` | 均不存在。激活当前 Capture 用 **`SetCurrent(TRUE)`**；相机用 **`SetCamera(CATI3DCamera*)`**；管理其标注用 **`SetTPSs(CATITPSList*)`**/`GetTPSs()`（整体替换列表，非逐个 Add/Remove） |
-| `pTPSFactory->CreateCaptureView()` | **不存在**。Capture 由 **`CATITPSSet::CreateCapture(CATITPSCapture**)`** 在一个 Set 内创建 |
+| `pTPSFactory->CreateCaptureView()` / `pTPSSet->CreateCapture()` | **不存在**。`CATITPSSet` 本身**没有** `CreateCapture()`/`CreateView()` 方法（它只有 Get/Set 存取方法）。真实创建方式：对同一个 `CATITPSSet` 实例做 `QueryInterface(IID_CATITPSCaptureFactory, ...)` 拿到 **`CATITPSCaptureFactory`**，再调用其 **`CreateCapture(CATITPSCapture**)`**；`CATITPSView` 同理，通过 `QueryInterface(IID_CATITPSViewFactory, ...)` 拿到 **`CATITPSViewFactory::CreateView(...)`**。三个工厂接口（`CATITPSFactoryElementary`/`CATITPSCaptureFactory`/`CATITPSViewFactory`）都是这种“挂在 Set 上、QueryInterface 获取”的模式，与全局单例工厂（`CATITPSFactoryAdvanced`/`CATITPSFactoryTTRS`）的获取方式不同 |
 | `CATITPSDimension::SetNominalValue()`/`SetUpperTolerance()`/`SetLowerTolerance()` | `CATITPSDimension` 本身是纯类型标记接口（无方法）。实际数值方法在 **`CATITPSDimensionLimits`** 接口上：`GetNominalValue()`、`SetLimits(bottom, up)`、`SetSingleLimit()`、`SetModifier()` 等 |
-| `pTPSFactory->CreateLinearDimension(face1, face2)` | 不存在这种便捷签名。真实流程：先用 `CATITPSFactoryTTRS::GetTTRS()` 把几何包装成 `CATITTRS`，再用 `CATITPSFactoryElementary::CreateSemanticDimension(ttrs, CATTPSDimensionType, CATTPSLinearDimensionSubType, &dimension)` 创建 |
+| `pTPSFactory->CreateLinearDimension(face1, face2)` | 不存在这种便捷签名。真实流程：先用 `CATITPSFactoryTTRS::GetTTRS()`（全局单例工厂）把几何包装成 `CATITTRS`，再对 `CATITPSSet` 实例 QueryInterface 到 `CATITPSFactoryElementary`，用 `CreateSemanticDimension(ttrs, CATTPSDimensionType, CATTPSLinearDimensionSubType, &dimension)` 创建 |
 | `pTPSFactory->CreateGeometricTolerance(face)` + `SetSymbol()`/`AddDatumReference()`/`SetModifier(MMC)` | 不存在。真实创建是 **`CreateToleranceWithDRF(CATTPSTypeWithDRF, ttrs, refFrame, &tol)`**（带基准参考框）或 **`CreateToleranceWithoutDRF(CATTPSTypeWithoutDRF, ttrs, &tol)`**（形位公差，如平面度）；材料条件修饰符（MMC等）通过独立的 **`CATITPSMaterialCondition::SetModifier()`** 接口设置 |
 | `pTPSFactory->CreateDatum(plane)` + `pDatum->SetLabel()` | `CreateDatum()` 存在但返回 `CATITPSDatumSimple`（不是泛型 `CATITPSDatum`——`CATITPSDatum` 也是纯类型标记接口）。`SetLabel()`/`GetTargets()` 等真实数据方法都在 `CATITPSDatumSimple` 上 |
 | `pAnnot->IsATypeOf(CATITPSDimension::ClassName())` | 类型判断应通过 **`QueryInterface(IID_CATITPSDimension, ...)`** 到具体的类型标记接口，而不是字符串比较 |
@@ -46,8 +46,8 @@ Creating and querying 3D PMI (Product Manufacturing Information) annotations —
 - **TTRS (Tolerant Topological Reference Surface)**: The geometry-agnostic reference object every TPS annotation attaches to; built from a `CATSO` (Selected Object) geometry selection via `CATITPSFactoryTTRS::GetTTRS()`, or created implicitly by `CATITPSFactoryAdvanced`'s `*OnGeometry` methods
 - **Typing (marker) interfaces vs. data interfaces**: `CATITPSComponent` (root), `CATITPSDimension`, `CATITPSDatum`, `CATITPSForm` are pure "is-a" markers with no methods — always QueryInterface further to a data-bearing interface (`CATITPSDimensionLimits`, `CATITPSDatumSimple`, `CATITPSFlatness`, ...) to read/write values
 - **CATITPS**: The minimal common data interface shared by (almost) all annotations — links an annotation to its owning `CATITPSSet` and to the `CATITTRS` list it is applied on
-- **Factory split**: `CATITPSFactoryElementary` creates a bare, not-yet-fully-valuated annotation attached to a pre-built `CATITTRS`; `CATITPSFactoryAdvanced` is the convenience layer used by interactive commands — it takes a `CATSO*` + `CATMathPlane*` directly and builds the TTRS internally
-- **CATITPSSet**: The document-level aggregation of all TPS objects for a given part/product reference; owns `CATITPSCapture` list, `CATITPSView` list, and the overall standard (ISO/ASME)
+- **Factory split**: `CATITPSFactoryElementary` creates a bare, not-yet-fully-valuated annotation attached to a pre-built `CATITTRS`; `CATITPSFactoryAdvanced` is the convenience layer used by interactive commands — it takes a `CATSO*` + `CATMathPlane*` directly and builds the TTRS internally. Two different acquisition patterns: `CATITPSFactoryAdvanced`/`CATITPSFactoryTTRS`/`CATITPSRetrieveServices` are global singletons fetched via `CATTPSInstantiateComponent()`; `CATITPSFactoryElementary`/`CATITPSCaptureFactory`/`CATITPSViewFactory` are instead implemented directly on a `CATITPSSet` instance and must be obtained via `QueryInterface` on that Set
+- **CATITPSSet**: The document-level aggregation of all TPS objects for a given part/product reference (`GetTPSs()`/`SetTPSs()`, `GetTTRSs()`, `GetViews()`, `GetCaptures()`, `GetActiveView()`/`SetActiveView()`, `GetStandard()`). It has no `CreateCapture()`/`CreateView()` methods of its own — QueryInterface it to `CATITPSCaptureFactory`/`CATITPSViewFactory` to create those
 - **CATITPSCapture**: A named, saved 3D view of a chosen subset of annotations (which `CATITPSs` are shown, the camera, clipping plane, hide/show state); exactly one capture per set can be `SetCurrent(TRUE)` at a time
 - **CATITPSView**: A support plane for annotations, tied to an associated 2D drafting view; created via `CATITPSViewFactory::CreateView()`
 - **CATITPSList**: The generic, 0-based collection type used throughout TPS APIs (`Count`/`Item`/`Add`/`Remove`) instead of `CATListValXxx_var` templates
@@ -57,12 +57,15 @@ Creating and querying 3D PMI (Product Manufacturing Information) annotations —
 
 | API | Purpose |
 |-----|---------|
-| `CATTPSInstantiateComponent(CATTPSComponent, void**)` | Global function to retrieve any TPS factory/service singleton (e.g. `DfTPS_ItfTPSFactoryElementary`, `DfTPS_ItfTPSFactoryAdvanced`, `DfTPS_ItfTPSFactoryTTRS`, `DfTPS_ItfRetrieveServices`) |
+| `CATTPSInstantiateComponent(CATTPSComponent, void**)` | Global function to retrieve the global-singleton TPS factories/services (e.g. `DfTPS_ItfTPSFactoryAdvanced`, `DfTPS_ItfTPSFactoryTTRS`, `DfTPS_ItfRetrieveServices`). Does **not** cover `CATITPSFactoryElementary`/`CATITPSCaptureFactory`/`CATITPSViewFactory` — see next row |
+| `CATITPSSet::QueryInterface(IID_CATITPSFactoryElementary/CATITPSCaptureFactory/CATITPSViewFactory, ...)` | The other acquisition path: these three factory interfaces are implemented directly on a `CATITPSSet` instance, not fetched via `CATTPSInstantiateComponent()` |
 | `CATITPSFactoryTTRS::GetTTRS()` | Builds a `CATITTRS` reference surface from a `CATSO` geometry selection |
-| `CATITPSFactoryElementary` | Low-level creation: `CreateSemanticDimension`, `CreateNonSemanticDimension`, `CreateToleranceWithDRF`/`WithoutDRF`, `CreateDatum`, `CreateDatumTarget`, `CreateDatumReferenceFrame`, `CreateRoughness`, `CreateFlagNote`, `CreateText`, `CreateTextNOA` |
-| `CATITPSFactoryAdvanced` | High-level creation directly from a geometry selection: `CreateTextOnGeometry`, `CreateFlagNoteOnGeometry`, `CreateNOAOnGeometry`, `CreateWeldOnGeometry`, `CreateTextOnAnnotation` |
+| `CATITPSFactoryElementary` | Low-level creation (obtained via QueryInterface on a `CATITPSSet`): `CreateSemanticDimension`, `CreateNonSemanticDimension`, `CreateToleranceWithDRF`/`WithoutDRF`, `CreateDatum`, `CreateDatumTarget`, `CreateDatumReferenceFrame`, `CreateRoughness`, `CreateFlagNote`, `CreateText`, `CreateTextNOA` |
+| `CATITPSFactoryAdvanced` | High-level creation directly from a geometry selection (global singleton): `CreateTextOnGeometry`, `CreateFlagNoteOnGeometry`, `CreateNOAOnGeometry`, `CreateWeldOnGeometry`, `CreateTextOnAnnotation` |
+| `CATITPSCaptureFactory::CreateCapture(CATITPSCapture**)` | Creates a capture on a `CATITPSSet` (obtained via QueryInterface on that Set) |
+| `CATITPSViewFactory::CreateView(...)` | Creates a view on a `CATITPSSet` (obtained via QueryInterface on that Set) |
 | `CATITPSDocument` | Document-level entry point: `GetSets()`, `GetBags()`, `GetTolerancingContainer()` |
-| `CATITPSSet` | Aggregates a document's TPS objects: `CreateCapture()`, `GetCaptures()`, `GetViews()`, `GetTPSs()`, `GetActiveView()`/`SetActiveView()` |
+| `CATITPSSet` | Aggregates a document's TPS objects: `GetTPSs()`/`SetTPSs()`, `GetTTRSs()`, `GetCaptures()`, `GetViews()`, `GetActiveView()`/`SetActiveView()`, `GetStandard()`. No `CreateCapture()`/`CreateView()` of its own |
 | `CATITPSCapture` | A saved 3D annotation view: `SetTPSs()`/`GetTPSs()`, `SetCurrent()`, `SetCamera()`, `SetClippingPlane()` |
 | `CATITPSDimensionLimits` | Numeric data of a dimension: `GetNominalValue()`, `SetLimits()`, `SetSingleLimit()`, `SetModifier()` |
 | `CATITPSDatumSimple` | Datum data: `SetLabel()`/`GetLabel()`, `SetTargets()`/`GetTargets()` |
@@ -79,13 +82,18 @@ Creating and querying 3D PMI (Product Manufacturing Information) annotations —
 #include "CATITPSFactoryTTRS.h"
 #include "CATITPSFactoryElementary.h"
 
-// Factories are singletons retrieved through the global function,
-// NOT by QueryInterface on a document/container
+// CATITPSFactoryTTRS is a global singleton, retrieved through the
+// global function -- NOT by QueryInterface on a document/container
 CATITPSFactoryTTRS* pFactTTRS = NULL;
 HRESULT rc = CATTPSInstantiateComponent(DfTPS_ItfTPSFactoryTTRS, (void**)&pFactTTRS);
 
+// CATITPSFactoryElementary is NOT a global singleton -- there is no
+// DfTPS_ItfTPSFactoryElementary enum value. It is implemented directly
+// on a CATITPSSet instance, so it must be obtained via QueryInterface
+// on that Set (same pattern as CATITPSCaptureFactory/CATITPSViewFactory).
+CATITPSSet* pTPSSet = ...;  // retrieved e.g. from CATITPSDocument::GetSets()
 CATITPSFactoryElementary* pFactElem = NULL;
-rc = CATTPSInstantiateComponent(DfTPS_ItfTPSFactoryElementary, (void**)&pFactElem);
+rc = pTPSSet->QueryInterface(IID_CATITPSFactoryElementary, (void**)&pFactElem);
 ```
 
 ### 4.2 Create a Semantic Linear Dimension Between Two Faces
@@ -165,10 +173,16 @@ pDatum->Release();
 ```cpp
 CATITPSSet* pTPSSet = ...;  // Retrieved from CATITPSDocument::GetSets()
 
+// CATITPSSet has no CreateCapture() of its own -- QueryInterface it to
+// CATITPSCaptureFactory, the interface that actually implements creation
+CATITPSCaptureFactory* pCaptureFactory = NULL;
+pTPSSet->QueryInterface(IID_CATITPSCaptureFactory, (void**)&pCaptureFactory);
+
 // Create a new capture and make it the current one
 CATITPSCapture* pCapture = NULL;
-pTPSSet->CreateCapture(&pCapture);
+pCaptureFactory->CreateCapture(&pCapture);
 pCapture->SetCurrent(TRUE);
+pCaptureFactory->Release();
 
 // Populate it with a list of TPS annotations to display
 // (CATITPSList is instantiated via CATCreateCATITPSList, not a factory)
