@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-"""Build a local, structured index of CAADoc + the real CAA SDK headers.
+"""Build a local, structured index of CAADoc + the real CAA SDK/shipped files.
 
 This is a *lookup accelerator* for verifying CAA API signatures against the
-official CATIA installation, not a knowledge source in itself. It scans two
+official CATIA installation, not a knowledge source in itself. It scans four
 independent sources and cross-checks them against each other:
 
 1. Doc/generated/refman/**/*.htm  (under CATIA_INSTALL/CAADoc)
@@ -12,35 +12,55 @@ independent sources and cross-checks them against each other:
       manually via `grep "^  o "` during API audits).
 
 2. **/*.dico  (under CATIA_INSTALL/CAADoc)
-   -> component -> interface implementation map (which concrete component
-      classes declare "TIE_" implementation of which interface, in which
-      library). This is the authoritative source for "does component X
-      actually implement interface Y" questions (e.g. it settled whether
-      CATIProduct implements CATIVisProperties -- it does not).
+   -> component -> interface implementation map, but only for the ~40
+      CAADoc *.edu tutorial frameworks that happen to ship a .dico file
+      (44 files, ~400 component/interface pairs). Useful, but a curated
+      subset -- see source 4 below for the real ground truth.
 
 3. */PublicInterfaces/*.h  (under CATIA_INSTALL itself, i.e. the actual SDK
    headers the refman htm pages are generated from). This is the MOST
-   authoritative source, and it carries information the generated refman
-   pages sometimes drop or never had, such as the "// CATIXxx" inline
-   comments mapping a global-instantiation enum value (e.g.
-   CATTPSComponent) to the concrete interface it produces. It also lets us
-   detect refman generation gaps: an interface documented in refman but
-   whose real header shows a different method set. --query and --search
-   report a "SDK/refman mismatch" warning whenever the two disagree, so a
-   modeled-but-missing method (or a refman method that doesn't exist in the
-   header) surfaces automatically instead of requiring a manual re-check.
+   authoritative source for method/enum signatures, and it carries
+   information the generated refman pages sometimes drop or never had, such
+   as the "// CATIXxx" inline comments mapping a global-instantiation enum
+   value (e.g. CATTPSComponent) to the concrete interface it produces. It
+   also lets us detect refman generation gaps: an interface documented in
+   refman but whose real header shows a different method set. --query and
+   --search report a "SDK/refman mismatch" warning whenever the two
+   disagree, so a modeled-but-missing method (or a refman method that
+   doesn't exist in the header) surfaces automatically instead of requiring
+   a manual re-check.
+
+4. <arch>/code/dictionary/*.dic  (under CATIA_INSTALL itself, e.g.
+   win_b64/code/dictionary -- NOT CAADoc's **/*.dico from source 2). This is
+   the shipped-product TIE dictionary: component -> interface -> library for
+   every framework actually delivered with the installation, generated at
+   build time. It is the GROUND TRUTH for "does concrete component X really
+   implement interface Y", and it is far larger than source 2 (roughly 885
+   files / 73k pairs vs. 44 files / ~400 pairs). This is what proves, for
+   example, that CATTPSSet implements CATITPSFactoryElementary (and
+   CATIACaptureFactory) even though no CAADoc tutorial .dico happens to say
+   so -- a fact that was previously undiscoverable by this tool and had to
+   be found via manual grep of the shipped dictionary files.
 
 Why this matters: during CAA API audits it's tempting to treat "not found
-by --query" as proof an API doesn't exist. That was wrong at least twice in
-this project's history: CATITPSSet::CreateCapture() genuinely isn't on
-CATITPSSet (it's on the separate CATITPSCaptureFactory interface -- refman
-and the header agree, so no mismatch there), while
-DfTPS_ItfTPSFactoryElementary (a plausible-looking enum value some
-knowledge docs invented) does not exist in the real
-CATTPSComponent enum at all -- only found by reading the SDK header itself,
-since the refman enum page has no way to show why a value is absent. The
-lesson: prefer --query's "SDK/refman mismatch" flag and the header-derived
-method list over refman alone when something looks inconsistent.
+by --query" as proof an API doesn't exist or can't be obtained. That was
+wrong at least three times in this project's history:
+  - CATITPSSet::CreateCapture() genuinely isn't on CATITPSSet (it's on the
+    separate CATITPSCaptureFactory interface -- refman and the header
+    agree, so no mismatch there).
+  - DfTPS_ItfTPSFactoryElementary (a plausible-looking enum value some
+    knowledge docs invented) does not exist in the real CATTPSComponent
+    enum at all -- only found by reading the SDK header itself, since the
+    refman enum page has no way to show why a value is absent.
+  - CATITPSFactoryElementary (a real interface, confirmed by both refman
+    and the SDK header) has no documented "how do I get an instance"
+    tutorial anywhere in CAADoc's *.edu samples -- but the shipped .dic
+    dictionary (source 4) reveals CATTPSSet implements it directly, so the
+    real access pattern is `pSet->QueryInterface(IID_CATITPSFactoryElementary, ...)`,
+    the same pattern used for CATITPSCaptureFactory and CATITPSViewFactory.
+The lesson: prefer --query's "SDK/refman mismatch" flag, the header-derived
+method/enum list, and the shipped .dic "ground truth" implementer list over
+refman/CAADoc .dico alone when something looks inconsistent or missing.
 
 A reverse method-name index is also built (which types declare a method
 with a given bare name), to answer "which interfaces have a SetColor
@@ -58,9 +78,9 @@ Output is written to cache/caadoc_index.json (gitignored, machine-local,
 since it embeds absolute paths into the user's CATIA install and CAADoc
 content itself is not redistributed). By default, --query/--search reuse
 that cache when present instead of rescanning (rescanning ~6600 refman
-files + ~5600 SDK headers takes a few seconds; loading the cached JSON
-takes a fraction of that). Use --rebuild to force a fresh scan, or --write
-to persist a fresh scan.
+files + ~5600 SDK headers + ~885 shipped .dic files takes a few seconds;
+loading the cached JSON takes a fraction of that). Use --rebuild to force a
+fresh scan, or --write to persist a fresh scan.
 
 Usage:
     python tools/build_caadoc_index.py --write
@@ -207,6 +227,65 @@ def scan_dico(caadoc_root: Path):
     return entries
 
 
+def find_dictionary_dir(catia_root: Path):
+    """Return <CATIA_INSTALL>/<arch>/code/dictionary, trying the same
+    architecture directory names catia_detector.py knows about. This is the
+    shipped-product TIE dictionary (component -> interface -> library),
+    generated at build time for every framework actually delivered with the
+    installation -- not just the ~40 CAADoc tutorial frameworks that ship a
+    **/*.dico file. It is dramatically larger (roughly 885 files / 73k
+    component/interface pairs vs. 44 files / ~400 pairs for the CAADoc
+    .dico set) and is the authoritative answer to "does shipped component X
+    really implement interface Y" -- e.g. it is what proves CATTPSSet
+    implements CATITPSFactoryElementary (and CATIACaptureFactory), which no
+    CAADoc tutorial .dico happens to mention."""
+    if catia_root is None:
+        return None
+    for arch in ("intel_a", "win_b64", "win64", "amd64_win64"):
+        d = catia_root / arch / "code" / "dictionary"
+        if d.is_dir():
+            return d
+    return None
+
+
+def scan_sdk_dictionaries(catia_root: Path):
+    """Parse the shipped product's component -> interface -> library `.dic`
+    files (NOT the CAADoc tutorial `.dico` files scanned by scan_dico).
+
+    Lines look like:
+        CATTPSSet    CATITPSFactoryElementary    libCATTPSEDITORUI
+    with occasional extra trailing tokens (a library alias, a '##' comment,
+    etc.) that are ignored -- only the first three whitespace-separated
+    tokens are taken as component/interface/library. The library field is
+    sometimes "Delegated" instead of a real lib name for compiler-generated
+    interface delegation; that is kept as-is rather than filtered out.
+    """
+    dict_dir = find_dictionary_dir(catia_root)
+    if not dict_dir:
+        return []
+    entries = []
+    for df in dict_dir.glob("*.dic"):
+        try:
+            text = df.read_text(encoding="latin-1", errors="replace")
+        except Exception:
+            continue
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or stripped.startswith("//"):
+                continue
+            parts = stripped.split()
+            if len(parts) < 3:
+                continue
+            component, interface, library = parts[0], parts[1], parts[2]
+            entries.append({
+                "component": component,
+                "interface": interface,
+                "library": library,
+                "file": str(df),
+            })
+    return entries
+
+
 # ---------------------------------------------------------------------------
 # SDK header scanning (the actual C++ headers the refman htm is generated
 # from). This is the most authoritative source available locally: it can
@@ -334,13 +413,16 @@ def build_method_index(refman_records):
     return idx
 
 
-def build_index(caadoc_root: Path, catia_root: Path = None):
+def build_index(caadoc_root: Path, catia_root=None, scan_headers: bool = True):
     t0 = time.time()
     refman_records = scan_refman(caadoc_root)
     dico_entries = scan_dico(caadoc_root)
     header_classes, header_enums = ([], [])
+    sdk_dic_entries = []
     if catia_root is not None:
-        header_classes, header_enums = scan_sdk_headers(catia_root)
+        if scan_headers:
+            header_classes, header_enums = scan_sdk_headers(catia_root)
+        sdk_dic_entries = scan_sdk_dictionaries(catia_root)
     elapsed = time.time() - t0
 
     by_name = {}
@@ -352,6 +434,18 @@ def build_index(caadoc_root: Path, catia_root: Path = None):
     for e in dico_entries:
         implements_by_interface.setdefault(e["interface"], []).append(e["component"])
         implements_by_component.setdefault(e["component"], []).append(e["interface"])
+
+    # The shipped-product dictionary is a separate, much larger source; keep
+    # it in its own maps (rather than merging into implements_by_*) so query()
+    # can label which source a hit came from -- CAADoc .dico entries are a
+    # curated subset used in official tutorials, while the shipped .dic
+    # entries are the ground truth for what's actually compiled and
+    # delivered.
+    sdk_implements_by_interface = {}
+    sdk_implements_by_component = {}
+    for e in sdk_dic_entries:
+        sdk_implements_by_interface.setdefault(e["interface"], []).append(e["component"])
+        sdk_implements_by_component.setdefault(e["component"], []).append(e["interface"])
 
     methods_by_name = build_method_index(refman_records)
 
@@ -369,6 +463,7 @@ def build_index(caadoc_root: Path, catia_root: Path = None):
             "catia_root": str(catia_root) if catia_root else None,
             "refman_type_count": len(refman_records),
             "dico_entry_count": len(dico_entries),
+            "sdk_dic_entry_count": len(sdk_dic_entries),
             "method_name_count": len(methods_by_name),
             "header_class_count": len(header_classes),
             "header_enum_count": len(header_enums),
@@ -379,6 +474,9 @@ def build_index(caadoc_root: Path, catia_root: Path = None):
         "dico_entries": dico_entries,
         "implements_by_interface": implements_by_interface,
         "implements_by_component": implements_by_component,
+        "sdk_dic_entries": sdk_dic_entries,
+        "sdk_implements_by_interface": sdk_implements_by_interface,
+        "sdk_implements_by_component": sdk_implements_by_component,
         "methods_by_name": methods_by_name,
         "header_classes": header_classes,
         "headers_by_name": headers_by_name,
@@ -462,14 +560,26 @@ def query(index: dict, name: str):
 
     implementers = index["implements_by_interface"].get(name)
     if implementers:
-        print(f"\nComponents declaring implementation of '{name}' (.dico):")
+        print(f"\nComponents declaring implementation of '{name}' (CAADoc .dico):")
         for c in sorted(set(implementers)):
             print(f"  - {c}")
 
     implemented = index["implements_by_component"].get(name)
     if implemented:
-        print(f"\nInterfaces implemented by component '{name}' (.dico):")
+        print(f"\nInterfaces implemented by component '{name}' (CAADoc .dico):")
         for i in sorted(set(implemented)):
+            print(f"  - {i}")
+
+    sdk_implementers = index.get("sdk_implements_by_interface", {}).get(name)
+    if sdk_implementers:
+        print(f"\nComponents declaring implementation of '{name}' (shipped .dic, ground truth):")
+        for c in sorted(set(sdk_implementers)):
+            print(f"  - {c}")
+
+    sdk_implemented = index.get("sdk_implements_by_component", {}).get(name)
+    if sdk_implemented:
+        print(f"\nInterfaces implemented by component '{name}' (shipped .dic, ground truth):")
+        for i in sorted(set(sdk_implemented)):
             print(f"  - {i}")
 
     # Reverse method-name lookup: is `name` itself a method name shared
@@ -499,9 +609,10 @@ def query(index: dict, name: str):
                 comment = f"  // {v['comment']}" if v["comment"] else ""
                 print(f"  {v['value']}{comment}")
 
-    if (not matches and not implementers and not implemented and not method_hits
+    if (not matches and not implementers and not implemented and not sdk_implementers
+            and not sdk_implemented and not method_hits
             and not index.get("headers_by_name", {}).get(name) and not enum_hits):
-        print("(no match in refman types, .dico entries, method index, SDK headers, or SDK enums)")
+        print("(no match in refman types, .dico/.dic entries, method index, SDK headers, or SDK enums)")
 
 
 def search(index: dict, pattern: str, limit: int = 50):
@@ -540,7 +651,7 @@ def search(index: dict, pattern: str, limit: int = 50):
     if count == 0:
         print("  (no method signature matches)")
 
-    print(f"\n--- Component/.dico matches for '{pattern}' ---")
+    print(f"\n--- Component/.dico matches for '{pattern}' (CAADoc tutorials) ---")
     count = 0
     seen_pairs = set()
     for e in index.get("dico_entries", []):
@@ -556,6 +667,23 @@ def search(index: dict, pattern: str, limit: int = 50):
                 break
     if count == 0:
         print("  (no .dico matches)")
+
+    print(f"\n--- Component/.dic matches for '{pattern}' (shipped product, ground truth) ---")
+    count = 0
+    seen_pairs = set()
+    for e in index.get("sdk_dic_entries", []):
+        if pat in e["component"].lower() or pat in e["interface"].lower():
+            key = (e["component"], e["interface"])
+            if key in seen_pairs:
+                continue
+            seen_pairs.add(key)
+            print(f"  {e['component']:35s} implements {e['interface']}")
+            count += 1
+            if count >= limit:
+                print(f"  ... (truncated at {limit}; narrow the pattern for more)")
+                break
+    if count == 0:
+        print("  (no shipped .dic matches)")
 
     print(f"\n--- SDK header enum value matches for '{pattern}' ---")
     count = 0
@@ -608,7 +736,7 @@ if __name__ == "__main__":
     p.add_argument("--query", action="append", default=[], help="Look up a type/interface/component/method/enum name (repeatable)")
     p.add_argument("--search", action="append", default=[], help="Substring search over type names, method signatures, .dico entries, and SDK enum values (repeatable)")
     p.add_argument("--repl", action="store_true", help="Enter an interactive query/search loop after loading/building the index")
-    p.add_argument("--no-headers", action="store_true", help="Skip scanning the SDK PublicInterfaces/*.h headers (refman + .dico only, faster but loses cross-checking)")
+    p.add_argument("--no-headers", action="store_true", help="Skip scanning the SDK PublicInterfaces/*.h headers (refman + .dico + shipped .dic only, faster but loses method/enum cross-checking)")
     args = p.parse_args()
 
     cache_file = cache_path()
@@ -622,6 +750,7 @@ if __name__ == "__main__":
             print(
                 f"Loaded cached index from {cache_file} "
                 f"({meta['refman_type_count']} types, {meta['dico_entry_count']} dico entries, "
+                f"{meta.get('sdk_dic_entry_count', 0)} shipped .dic entries, "
                 f"{meta.get('method_name_count', '?')} unique method names, "
                 f"{meta.get('header_class_count', 0)} SDK header classes, "
                 f"{meta.get('header_enum_count', 0)} SDK header enums)"
@@ -632,15 +761,18 @@ if __name__ == "__main__":
         if not root:
             print("ERROR: Cannot locate CAADoc (check CATIA_INSTALL config)", file=sys.stderr)
             sys.exit(1)
-        catia_root = None if args.no_headers else find_catia_root()
+        catia_root = find_catia_root()
         print(f"Scanning CAADoc at {root} ...")
         if catia_root:
-            print(f"Scanning SDK headers under {catia_root} ...")
-        index = build_index(root, catia_root)
+            if not args.no_headers:
+                print(f"Scanning SDK headers under {catia_root} ...")
+            print(f"Scanning shipped .dic dictionaries under {catia_root} ...")
+        index = build_index(root, catia_root, scan_headers=not args.no_headers)
         meta = index["meta"]
         print(
             f"Parsed {meta['refman_type_count']} refman types, "
             f"{meta['dico_entry_count']} .dico entries, "
+            f"{meta.get('sdk_dic_entry_count', 0)} shipped .dic entries, "
             f"{meta['header_class_count']} SDK header classes, and "
             f"{meta['header_enum_count']} SDK header enums in {meta['build_seconds']}s"
         )
