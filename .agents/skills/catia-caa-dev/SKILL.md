@@ -273,8 +273,10 @@ AI 只知道 3 个 Mode:
 | 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架 → 再精准打开 `<CATIA_INSTALL>/CAADoc/` 对应页面。不要跳过 Framework 直接全文搜 CAADoc。 |
 | 📝 **CAADoc 洞察沉淀** | 用 CAADoc 学到**踩坑经验/跨 API 组合/非文档化的行为**时，创建 knowledge/ 文件沉淀。纯 API 签名查询不需要沉淀——下次用 Framework 索引秒查。 |
 | 🔎 **核实 API 真实性先用索引工具** | 怀疑 playbooks/patterns/knowledge 里某接口、方法、框架名是否真实存在（尤其是“看起来很统一”的 Factory/Manager 名字，经常是虚构）时，先跑 `python tools/build_caadoc_index.py --query <name>` 或 `--search <pattern>`（cache 命中约 0.3 秒，比手动打开 CAADoc 页面或 `grep` 全量扫描快得多；连续核对多个名字用 `--repl` 交互模式，避免反复启动进程）。只有索引覆盖不到的语义性问题（官方样例怎么组合调用、设计意图是什么）才需要再去翻 `Doc/generated/refman/` 页面或 `.cpp` 样例代码。索引没查到不等于 100% 不存在（可能是拼写变体或索引未覆盖的老旧接口），但命中即可作为“确实存在”的强证据。 |
+| 📄 **批量核实整份文档用 `--check-file`** | 需要一次性核实某个 playbook/pattern/knowledge 文件里所有 API 时，不要逐个手敲 `--query`：跑 `python tools/build_caadoc_index.py --check-file <path>`，它会自动扫描文件里所有 ```cpp 代码块中的 `CAT*` 类型名和 `->`/`::` 方法调用，一次调用只打印疑点（SUSPECT），比人工逐个核对快一个数量级。`--query`/`--check-file` 都支持 `--quiet` 输出一行式 FOUND/NOT-FOUND/MISMATCH verdict，适合批量核对多个名字时减少输出体积。局限：只扫描代码块，不扫描正文反引号提及的 API 名；枚举成员/类型常量可能被误报，需人工用 `--query` 复核。 |
 | 🥇 **冲突时信 SDK 头文件** | `--query` 会自动扫描 CATIA 安装目录下所有 Framework/PublicInterfaces 的 .h 头文件，把 refman 的方法列表与头文件的方法列表交叉比对，不一致时打印 `SDK/refman mismatch` 提示。头文件是 refman 的生成源，比 refman htm 页面更权威（refman 存在生成缺失），看到 mismatch 提示时以头文件为准。同一命令还会展示查询名命中的枚举值列表及其行内注释，用于核实枚举成员是否真实存在（refman 枚举页经常遗漏这些信息）。 |
 | 🏆 **查“组件实现了哪些接口”信随产品发布的字典** | `--query <接口名>` 会自动扫描 CATIA 安装目录下 `<arch>/code/dictionary/*.dic`（比 CAADoc 自带的 44 个教学 `.dico` 大得多，约 885 个文件/7.3 万条），列出真正发布产品里哪个组件真实实现了该接口，标记为 "ground truth"。遇到“接口真实存在但不知道怎么获取实例”的情况时，先用它反查实现组件，往往能发现真实获取方式是对该组件做 `QueryInterface`（如 `CATTPSSet` 实现了 `CATITPSFactoryElementary`/`CATITPSCaptureFactory`/`CATITPSViewFactory` 三个工厂接口，都需对 Set 实例 QI 获取）。 |
+| 📋 **手写知识文档分可信度，先查审计表** | `capabilities/`、`knowledge/`、`patterns/`、`playbooks/` 里的手写教学文档**不是同等可信**——部分已用上述索引工具逐条核实过虚构 API，部分尚未核实。生成代码前先查 [`KNOWLEDGE_AUDIT_STATUS.md`](KNOWLEDGE_AUDIT_STATUS.md)：命中“已核实清单”可直接参考；命中“未核实清单”（尤其 🔴 `knowledge/drawing/*`、`patterns/drawing/batch_drawing.md`）必须先用 `--query`/`--check-file` 核实关键 API 再使用，不要直接照抄示例代码。 |
 | 🧠 **跨项目记忆库** | 遇到疑难问题（编译、运行时、工具链），先查 `D:/Vault/Memory/BestPractices.md`。症状速查表见下方 **故障排查** 章节。 |
 
 ### ✨ 核心优势
@@ -1685,6 +1687,15 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 3. **对话框打开后点击“关闭”没有任何反应**：生成的 `AddTransition(pDlgState, NULL, IsOutputSetCondition(_pDlgAgent))` 这种“回到 NULL 结束态”写法，在对话框被关闭时框架实际调用的是 **`Cancel()`**，不是 `Desactivate()`（通过在 `Activate`/`Desactivate`/`Cancel` 里加日志实机追踪确认）。之前生成的代码只在 `Desactivate()` 里隐藏/销毁对话框，`Cancel()` 是空的，所以点击关闭没有效果。已修复为与官方样例一致的模式：`Desactivate()` 和 `Cancel()` 都只调用 `_pDialog->SetVisibility(CATDlgHide)`（隐藏，不销毁），真正的 `_pDialog->RequestDelayedDestruction()` 只放在析构函数里。**切勿在 `Cancel()`/`Desactivate()` 里直接 `delete _pDialog` 或调用非 delayed 的销毁——对话框可能仍在处理待发的通知，直接销毁会导致崩溃或悬空指针。**
 
 这 3 处修复目前只覆盖生成器对 `--dialog` 分支的代码模板；已存在的旧生成代码（在本次修复之前创建的项目）需要手工按上述模式回填，生成器不会自动迁移历史文件。回归：`test_master.py --quick` 38/38 通过（含修复前后各一次基线对比）。诊断脚本已归档到 `skills/debug_tools/`（`cade_enumwin.ps1`/`cade_findbtn.ps1` 等，用于从进程外部检查 CATIA 窗口/工具栏；详见该目录的 README）。
+
+### 📚 知识库可信度（与上述 Kernel 开发流程无关的另一个维度）
+
+`develop()`/`analyze()`/`repair()` 的代码生成质量还取决于它引用的 `capabilities/`/`knowledge/`/`patterns/`/`playbooks/` 手写文档里的 API 是否真实存在。这些文档历史上曾大量包含 AI 自己“看起来合理”但 CAADoc 里不存在的虚构 API（已修复 40+ 处）。**当前核实状态**：
+
+- ✅ **完全已核实**：`capabilities/` 全部 13 个、`playbooks/` 全部 14 个（除 README），及部分 `knowledge/`/`patterns/` 文件。
+- ⚠️ **尚未核实**：`patterns/` 目录大部分手写代码示例、`knowledge/drawing/*`（🔴 高风险，疑似存在虚构 `CATIDrw*`/`CATIAnnBOM` 体系）、部分 `knowledge/mecmod|philosophy|surface|ui|infrastructure|failure_patterns` 子文件。
+- 完整清单、核实方法论、下一步入口见 **[`KNOWLEDGE_AUDIT_STATUS.md`](KNOWLEDGE_AUDIT_STATUS.md)**。
+- **实方遗：未核实不代表错**，只是尚未人工比对验证。AI 生成代码时引用到未核实区域的具体 API 时，应主动用 `--query`/`--check-file` 复核关键类型与方法名，而不是直接照抄。
 
 ### 已验证范围
 
