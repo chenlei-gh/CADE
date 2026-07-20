@@ -1,32 +1,66 @@
 #!/usr/bin/env python
-"""Build a local, structured index of CAADoc reference manual + dictionaries.
+"""Build a local, structured index of CAADoc + the real CAA SDK headers.
 
 This is a *lookup accelerator* for verifying CAA API signatures against the
-official CAADoc, not a knowledge source in itself. It scans:
+official CATIA installation, not a knowledge source in itself. It scans two
+independent sources and cross-checks them against each other:
 
-1. Doc/generated/refman/**/*.htm
+1. Doc/generated/refman/**/*.htm  (under CATIA_INSTALL/CAADoc)
    -> one record per class/interface/enum/typedef/function, with its
       framework, defining file, and full method-signature list (parsed
       from the "Method Index" -> "o <signature>" pattern also used
       manually via `grep "^  o "` during API audits).
 
-2. **/*.dico
+2. **/*.dico  (under CATIA_INSTALL/CAADoc)
    -> component -> interface implementation map (which concrete component
       classes declare "TIE_" implementation of which interface, in which
       library). This is the authoritative source for "does component X
       actually implement interface Y" questions (e.g. it settled whether
       CATIProduct implements CATIVisProperties -- it does not).
 
+3. */PublicInterfaces/*.h  (under CATIA_INSTALL itself, i.e. the actual SDK
+   headers the refman htm pages are generated from). This is the MOST
+   authoritative source, and it carries information the generated refman
+   pages sometimes drop or never had, such as the "// CATIXxx" inline
+   comments mapping a global-instantiation enum value (e.g.
+   CATTPSComponent) to the concrete interface it produces. It also lets us
+   detect refman generation gaps: an interface documented in refman but
+   whose real header shows a different method set. --query and --search
+   report a "SDK/refman mismatch" warning whenever the two disagree, so a
+   modeled-but-missing method (or a refman method that doesn't exist in the
+   header) surfaces automatically instead of requiring a manual re-check.
+
+Why this matters: during CAA API audits it's tempting to treat "not found
+by --query" as proof an API doesn't exist. That was wrong at least twice in
+this project's history: CATITPSSet::CreateCapture() genuinely isn't on
+CATITPSSet (it's on the separate CATITPSCaptureFactory interface -- refman
+and the header agree, so no mismatch there), while
+DfTPS_ItfTPSFactoryElementary (a plausible-looking enum value some
+knowledge docs invented) does not exist in the real
+CATTPSComponent enum at all -- only found by reading the SDK header itself,
+since the refman enum page has no way to show why a value is absent. The
+lesson: prefer --query's "SDK/refman mismatch" flag and the header-derived
+method list over refman alone when something looks inconsistent.
+
 A reverse method-name index is also built (which types declare a method
 with a given bare name), to answer "which interfaces have a SetColor
 method" style questions without re-grepping CAADoc by hand.
 
+KNOWN LIMITATION: refman htm pages are split into Public/Protected/Private
+views, but this tool's htm parser only reads whichever "Method Index" block
+is physically present in the page it fetched (usually Public). If a method
+exists only in the Protected/Private view of a page that also has a Public
+view section, it can be missed. The SDK header scan does not have this
+limitation (it sees every `virtual ... = 0` in the class body regardless of
+access section), so prefer the header-derived results when in doubt.
+
 Output is written to cache/caadoc_index.json (gitignored, machine-local,
 since it embeds absolute paths into the user's CATIA install and CAADoc
 content itself is not redistributed). By default, --query/--search reuse
-that cache when present instead of rescanning (rescanning ~6600 files
-takes ~2s; loading the cached JSON takes a fraction of that). Use
---rebuild to force a fresh scan, or --write to persist a fresh scan.
+that cache when present instead of rescanning (rescanning ~6600 refman
+files + ~5600 SDK headers takes a few seconds; loading the cached JSON
+takes a fraction of that). Use --rebuild to force a fresh scan, or --write
+to persist a fresh scan.
 
 Usage:
     python tools/build_caadoc_index.py --write
@@ -45,7 +79,9 @@ import time
 from pathlib import Path
 
 
-def find_caadoc_root():
+def find_catia_root():
+    """Return the CATIA_INSTALL root (parent of CAADoc, and the directory
+    under which every framework's PublicInterfaces/*.h SDK headers live)."""
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from skills.env import CAAEnvironment
 
@@ -54,8 +90,16 @@ def find_caadoc_root():
     catia = env.config.get("CATIA_INSTALL", "")
     if not catia:
         return None
-    root = Path(catia) / "CAADoc"
+    root = Path(catia)
     return root if root.is_dir() else None
+
+
+def find_caadoc_root():
+    root = find_catia_root()
+    if not root:
+        return None
+    caadoc = root / "CAADoc"
+    return caadoc if caadoc.is_dir() else None
 
 
 def cache_path():
@@ -163,6 +207,113 @@ def scan_dico(caadoc_root: Path):
     return entries
 
 
+# ---------------------------------------------------------------------------
+# SDK header scanning (the actual C++ headers the refman htm is generated
+# from). This is the most authoritative source available locally: it can
+# reveal enum-value -> interface mappings and complete method lists that the
+# generated refman pages omit or never had.
+# ---------------------------------------------------------------------------
+
+_HDR_CLASS_RE = re.compile(
+    r'class\s+(?:ExportedBy\w+\s+)?(CATI\w+|CAT\w+)\s*(?::\s*public\s+[\w:]+)?\s*\{',
+    re.MULTILINE,
+)
+# Matches "virtual <ret> Name(args) [const] = 0;" pure-virtual declarations.
+_HDR_METHOD_RE = re.compile(
+    r'virtual\s+[\w:<>*&,\s]+?\s+(\w+)\s*\(([^;{}]*?)\)\s*(?:const\s*)?=\s*0\s*;',
+    re.MULTILINE,
+)
+_HDR_ENUM_RE = re.compile(r'enum\s+(\w+)?\s*\{([^}]*)\}', re.MULTILINE)
+_HDR_ENUM_VALUE_RE = re.compile(
+    r'^\s*(\w+)\s*(?:=\s*[^,/]+)?\s*,?\s*(?://\s*(.*))?$'
+)
+
+
+def _find_matching_brace(text: str, open_brace_pos: int) -> int:
+    """Given the index right after an opening '{', return the index of the
+    matching closing '}' (naive depth counter; good enough for header decls
+    without string/char literals containing braces, which CAA headers don't
+    use in class bodies)."""
+    depth = 1
+    i = open_brace_pos
+    n = len(text)
+    while i < n and depth > 0:
+        c = text[i]
+        if c == '{':
+            depth += 1
+        elif c == '}':
+            depth -= 1
+        i += 1
+    return i
+
+
+def parse_header_file(path: Path, framework: str):
+    """Extract interface classes (name + pure-virtual method signatures) and
+    enums (name + value list, keeping any trailing '// Comment' which is
+    often the only place an enum value's real meaning is documented) from a
+    single SDK header file."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return [], []
+
+    classes = []
+    for m in _HDR_CLASS_RE.finditer(text):
+        name = m.group(1)
+        body_end = _find_matching_brace(text, m.end())
+        body = text[m.end():body_end]
+        methods = []
+        for meth_m in _HDR_METHOD_RE.finditer(body):
+            meth_name = meth_m.group(1)
+            args = " ".join(meth_m.group(2).split())
+            methods.append(f"{meth_name}({args})")
+        classes.append({
+            "name": name,
+            "framework": framework,
+            "file": str(path),
+            "methods": methods,
+        })
+
+    enums = []
+    for m in _HDR_ENUM_RE.finditer(text):
+        enum_name = m.group(1)
+        if not enum_name:
+            continue
+        values = []
+        for line in m.group(2).splitlines():
+            line = line.strip()
+            if not line or line.startswith("//"):
+                continue
+            vm = _HDR_ENUM_VALUE_RE.match(line)
+            if not vm:
+                continue
+            value_name = vm.group(1)
+            comment = (vm.group(2) or "").strip()
+            values.append({"value": value_name, "comment": comment})
+        if values:
+            enums.append({
+                "name": enum_name,
+                "framework": framework,
+                "file": str(path),
+                "values": values,
+            })
+
+    return classes, enums
+
+
+def scan_sdk_headers(catia_root: Path):
+    """Scan every */PublicInterfaces/*.h under the CATIA install for
+    interface class declarations and enum definitions."""
+    header_classes = []
+    header_enums = []
+    for hf in catia_root.glob("*/PublicInterfaces/*.h"):
+        framework = hf.parent.parent.name
+        classes, enums = parse_header_file(hf, framework)
+        header_classes.extend(classes)
+        header_enums.extend(enums)
+    return header_classes, header_enums
+
+
 def build_method_index(refman_records):
     """Reverse index: bare method name -> list of {type, kind, framework, signature}.
 
@@ -183,10 +334,13 @@ def build_method_index(refman_records):
     return idx
 
 
-def build_index(caadoc_root: Path):
+def build_index(caadoc_root: Path, catia_root: Path = None):
     t0 = time.time()
     refman_records = scan_refman(caadoc_root)
     dico_entries = scan_dico(caadoc_root)
+    header_classes, header_enums = ([], [])
+    if catia_root is not None:
+        header_classes, header_enums = scan_sdk_headers(catia_root)
     elapsed = time.time() - t0
 
     by_name = {}
@@ -201,12 +355,23 @@ def build_index(caadoc_root: Path):
 
     methods_by_name = build_method_index(refman_records)
 
+    headers_by_name = {}
+    for rec in header_classes:
+        headers_by_name.setdefault(rec["name"], []).append(rec)
+
+    enums_by_name = {}
+    for rec in header_enums:
+        enums_by_name.setdefault(rec["name"], []).append(rec)
+
     return {
         "meta": {
             "caadoc_root": str(caadoc_root),
+            "catia_root": str(catia_root) if catia_root else None,
             "refman_type_count": len(refman_records),
             "dico_entry_count": len(dico_entries),
             "method_name_count": len(methods_by_name),
+            "header_class_count": len(header_classes),
+            "header_enum_count": len(header_enums),
             "build_seconds": round(elapsed, 2),
         },
         "types": refman_records,
@@ -215,6 +380,10 @@ def build_index(caadoc_root: Path):
         "implements_by_interface": implements_by_interface,
         "implements_by_component": implements_by_component,
         "methods_by_name": methods_by_name,
+        "header_classes": header_classes,
+        "headers_by_name": headers_by_name,
+        "header_enums": header_enums,
+        "enums_by_name": enums_by_name,
     }
 
 
@@ -229,6 +398,45 @@ def load_cached_index(path: Path):
         return None
 
 
+def _method_base_names(methods):
+    return {m.split("(", 1)[0].strip() for m in methods}
+
+
+def _print_header_cross_check(index: dict, name: str, refman_methods):
+    """Compare refman-derived methods against the real SDK header (if any
+    class with this name was found there) and flag any mismatch. This is
+    what catches cases like a method the refman page's parser missed
+    (Protected/Private view) or, more importantly, a method that was
+    invented in downstream knowledge docs and never existed in either
+    source."""
+    header_recs = index.get("headers_by_name", {}).get(name)
+    if not header_recs:
+        return
+
+    for hrec in header_recs:
+        header_methods = hrec["methods"]
+        print(f"\nSDK header {hrec['file']}:")
+        if header_methods:
+            print(f"  methods ({len(header_methods)}):")
+            for m in header_methods:
+                print(f"    o {m}")
+        else:
+            print("  (no pure-virtual methods found in class body)")
+
+        refman_base = _method_base_names(refman_methods) if refman_methods else set()
+        header_base = _method_base_names(header_methods)
+        only_in_refman = refman_base - header_base
+        only_in_header = header_base - refman_base
+        if only_in_refman or only_in_header:
+            print("  *** SDK/refman mismatch ***")
+            if only_in_refman:
+                print(f"    in refman but NOT in SDK header: {sorted(only_in_refman)}")
+            if only_in_header:
+                print(f"    in SDK header but NOT in refman: {sorted(only_in_header)}")
+        else:
+            print("  (SDK header agrees with refman method list)")
+
+
 def query(index: dict, name: str):
     matches = index["types_by_name"].get(name)
     if not matches:
@@ -237,6 +445,7 @@ def query(index: dict, name: str):
         matches = [
             rec for rec in index["types"] if rec["name"].lower() == lname
         ]
+    refman_methods_for_crosscheck = None
     if matches:
         for rec in matches:
             print(f"\n=== {rec['kind']} {rec['name']}  [{rec['framework']}] ===")
@@ -247,6 +456,7 @@ def query(index: dict, name: str):
                     print(f"  o {m}")
             else:
                 print("(no methods found in index block)")
+            refman_methods_for_crosscheck = rec["methods"]
     else:
         print(f"No refman type named '{name}' found.")
 
@@ -277,8 +487,21 @@ def query(index: dict, name: str):
         for h in method_hits:
             print(f"  {h['type']:35s} [{h['framework']}] :: {h['signature']}")
 
-    if not matches and not implementers and not implemented and not method_hits:
-        print("(no match in refman types, .dico entries, or method index)")
+    # Cross-check against the real SDK header, and/or show the header alone
+    # if refman had no match for this name at all (e.g. an enum).
+    _print_header_cross_check(index, name, refman_methods_for_crosscheck)
+
+    enum_hits = index.get("enums_by_name", {}).get(name)
+    if enum_hits:
+        for erec in enum_hits:
+            print(f"\nSDK header enum {erec['name']} [{erec['framework']}] ({erec['file']}):")
+            for v in erec["values"]:
+                comment = f"  // {v['comment']}" if v["comment"] else ""
+                print(f"  {v['value']}{comment}")
+
+    if (not matches and not implementers and not implemented and not method_hits
+            and not index.get("headers_by_name", {}).get(name) and not enum_hits):
+        print("(no match in refman types, .dico entries, method index, SDK headers, or SDK enums)")
 
 
 def search(index: dict, pattern: str, limit: int = 50):
@@ -334,6 +557,22 @@ def search(index: dict, pattern: str, limit: int = 50):
     if count == 0:
         print("  (no .dico matches)")
 
+    print(f"\n--- SDK header enum value matches for '{pattern}' ---")
+    count = 0
+    for erec in index.get("header_enums", []):
+        for v in erec["values"]:
+            if pat in v["value"].lower() or pat in (v["comment"] or "").lower():
+                comment = f"  // {v['comment']}" if v["comment"] else ""
+                print(f"  {erec['name']:30s} [{erec['framework']}] :: {v['value']}{comment}")
+                count += 1
+                if count >= limit:
+                    break
+        if count >= limit:
+            print(f"  ... (truncated at {limit}; narrow the pattern for more)")
+            break
+    if count == 0:
+        print("  (no SDK header enum matches)")
+
 
 def run_repl(index: dict):
     """Interactive loop for exploring the index without relaunching the
@@ -366,9 +605,10 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--write", action="store_true", help="Rescan and write cache/caadoc_index.json")
     p.add_argument("--rebuild", action="store_true", help="Force a fresh scan even if a cache file exists")
-    p.add_argument("--query", action="append", default=[], help="Look up a type/interface/component/method name (repeatable)")
-    p.add_argument("--search", action="append", default=[], help="Substring search over type names, method signatures, and .dico entries (repeatable)")
+    p.add_argument("--query", action="append", default=[], help="Look up a type/interface/component/method/enum name (repeatable)")
+    p.add_argument("--search", action="append", default=[], help="Substring search over type names, method signatures, .dico entries, and SDK enum values (repeatable)")
     p.add_argument("--repl", action="store_true", help="Enter an interactive query/search loop after loading/building the index")
+    p.add_argument("--no-headers", action="store_true", help="Skip scanning the SDK PublicInterfaces/*.h headers (refman + .dico only, faster but loses cross-checking)")
     args = p.parse_args()
 
     cache_file = cache_path()
@@ -382,7 +622,9 @@ if __name__ == "__main__":
             print(
                 f"Loaded cached index from {cache_file} "
                 f"({meta['refman_type_count']} types, {meta['dico_entry_count']} dico entries, "
-                f"{meta.get('method_name_count', '?')} unique method names)"
+                f"{meta.get('method_name_count', '?')} unique method names, "
+                f"{meta.get('header_class_count', 0)} SDK header classes, "
+                f"{meta.get('header_enum_count', 0)} SDK header enums)"
             )
 
     if index is None:
@@ -390,12 +632,17 @@ if __name__ == "__main__":
         if not root:
             print("ERROR: Cannot locate CAADoc (check CATIA_INSTALL config)", file=sys.stderr)
             sys.exit(1)
+        catia_root = None if args.no_headers else find_catia_root()
         print(f"Scanning CAADoc at {root} ...")
-        index = build_index(root)
+        if catia_root:
+            print(f"Scanning SDK headers under {catia_root} ...")
+        index = build_index(root, catia_root)
         meta = index["meta"]
         print(
-            f"Parsed {meta['refman_type_count']} refman types and "
-            f"{meta['dico_entry_count']} .dico entries in {meta['build_seconds']}s"
+            f"Parsed {meta['refman_type_count']} refman types, "
+            f"{meta['dico_entry_count']} .dico entries, "
+            f"{meta['header_class_count']} SDK header classes, and "
+            f"{meta['header_enum_count']} SDK header enums in {meta['build_seconds']}s"
         )
 
     if args.write:
