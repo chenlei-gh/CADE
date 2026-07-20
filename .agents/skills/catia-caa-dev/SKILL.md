@@ -276,7 +276,7 @@ AI 只知道 3 个 Mode:
 | 📄 **批量核实整份文档用 `--check-file`** | 需要一次性核实某个 playbook/pattern/knowledge 文件里所有 API 时，不要逐个手敲 `--query`：跑 `python tools/build_caadoc_index.py --check-file <path>`，它会自动扫描文件里所有 ```cpp 代码块中的 `CAT*` 类型名和 `->`/`::` 方法调用，一次调用只打印疑点（SUSPECT），比人工逐个核对快一个数量级。`--query`/`--check-file` 都支持 `--quiet` 输出一行式 FOUND/NOT-FOUND/MISMATCH verdict，适合批量核对多个名字时减少输出体积。局限：只扫描代码块，不扫描正文反引号提及的 API 名；枚举成员/类型常量可能被误报，需人工用 `--query` 复核。 |
 | 🥇 **冲突时信 SDK 头文件** | `--query` 会自动扫描 CATIA 安装目录下所有 Framework/PublicInterfaces 的 .h 头文件，把 refman 的方法列表与头文件的方法列表交叉比对，不一致时打印 `SDK/refman mismatch` 提示。头文件是 refman 的生成源，比 refman htm 页面更权威（refman 存在生成缺失），看到 mismatch 提示时以头文件为准。同一命令还会展示查询名命中的枚举值列表及其行内注释，用于核实枚举成员是否真实存在（refman 枚举页经常遗漏这些信息）。 |
 | 🏆 **查“组件实现了哪些接口”信随产品发布的字典** | `--query <接口名>` 会自动扫描 CATIA 安装目录下 `<arch>/code/dictionary/*.dic`（比 CAADoc 自带的 44 个教学 `.dico` 大得多，约 885 个文件/7.3 万条），列出真正发布产品里哪个组件真实实现了该接口，标记为 "ground truth"。遇到“接口真实存在但不知道怎么获取实例”的情况时，先用它反查实现组件，往往能发现真实获取方式是对该组件做 `QueryInterface`（如 `CATTPSSet` 实现了 `CATITPSFactoryElementary`/`CATITPSCaptureFactory`/`CATITPSViewFactory` 三个工厂接口，都需对 Set 实例 QI 获取）。 |
-| 📋 **手写知识文档分可信度，先查审计表** | `capabilities/`、`knowledge/`、`patterns/`、`playbooks/` 里的手写教学文档**不是同等可信**——部分已用上述索引工具逐条核实过虚构 API，部分尚未核实。生成代码前先查 [`KNOWLEDGE_AUDIT_STATUS.md`](KNOWLEDGE_AUDIT_STATUS.md)：命中“已核实清单”可直接参考；命中“未核实清单”（尤其 🔴 `knowledge/drawing/*`、`patterns/drawing/batch_drawing.md`）必须先用 `--query`/`--check-file` 核实关键 API 再使用，不要直接照抄示例代码。 |
+| 📋 **手写知识文档分可信度，先查审计表** | `capabilities/`、`knowledge/`、`patterns/`、`playbooks/` 里的手写教学文档**不是同等可信**——部分已用上述索引工具逐条核实过虚构 API，部分尚未核实。生成代码前先查 [`KNOWLEDGE_AUDIT_STATUS.md`](KNOWLEDGE_AUDIT_STATUS.md)：命中“已核实清单”可直接参考；命中“未核实清单”（`patterns/` 目录多数文件、部分 `knowledge/mecmod|philosophy|surface|ui|infrastructure|failure_patterns`）必须先用 `--query`/`--check-file` 核实关键 API 再使用，不要直接照抄示例代码。 |
 | 🧠 **跨项目记忆库** | 遇到疑难问题（编译、运行时、工具链），先查 `D:/Vault/Memory/BestPractices.md`。症状速查表见下方 **故障排查** 章节。 |
 
 ### ✨ 核心优势
@@ -1692,8 +1692,8 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 `develop()`/`analyze()`/`repair()` 的代码生成质量还取决于它引用的 `capabilities/`/`knowledge/`/`patterns/`/`playbooks/` 手写文档里的 API 是否真实存在。这些文档历史上曾大量包含 AI 自己“看起来合理”但 CAADoc 里不存在的虚构 API（已修复 40+ 处）。**当前核实状态**：
 
-- ✅ **完全已核实**：`capabilities/` 全部 13 个、`playbooks/` 全部 14 个（除 README），及部分 `knowledge/`/`patterns/` 文件。
-- ⚠️ **尚未核实**：`patterns/` 目录大部分手写代码示例、`knowledge/drawing/*`（🔴 高风险，疑似存在虚构 `CATIDrw*`/`CATIAnnBOM` 体系）、部分 `knowledge/mecmod|philosophy|surface|ui|infrastructure|failure_patterns` 子文件。
+- ✅ **完全已核实**：`capabilities/` 全部 13 个、`playbooks/` 全部 14 个（除 README）、`knowledge/drawing/` 全部 2 个、`patterns/drawing/batch_drawing.md`，及部分其他 `knowledge/`/`patterns/` 文件。
+- ⚠️ **尚未核实**：`patterns/` 目录其余大部分手写代码示例、部分 `knowledge/mecmod|philosophy|surface|ui|infrastructure|failure_patterns` 子文件。
 - 完整清单、核实方法论、下一步入口见 **[`KNOWLEDGE_AUDIT_STATUS.md`](KNOWLEDGE_AUDIT_STATUS.md)**。
 - **实方遗：未核实不代表错**，只是尚未人工比对验证。AI 生成代码时引用到未核实区域的具体 API 时，应主动用 `--query`/`--check-file` 复核关键类型与方法名，而不是直接照抄。
 

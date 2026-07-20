@@ -64,12 +64,14 @@ parameter_editor · surface_analysis
 | product/ | assembly.md（`ce25c0a`） |
 | ui/ | dialog_dataflow.md、dialog_patterns.md、event_patterns.md（`9ac0762`+`49a26e7`）、layout_advanced.md、layout_anti_patterns.md（`9ac0762`）、toolbar.md（`af81e50`，官方MacDeclareHeader核实但未标"重要修正"，风险低） |
 | failure_patterns/ | fp_dialog_cancel_not_desactivate.md、fp_dialog_null_parent.md（`9ac0762`） |
+| drawing/ | drawing_basics.md、drawing_annotations.md（本次会话完整重写，修正虚构 `CATIDrw*` 体系为真实 `CATIDft*`，详情见各文件开头的"⚠️ 重要修正"章节与 `playbooks/pb_batch_drawing.md`） |
 
-### patterns/（已核实部分，占比很低）
+### patterns/（已核实部分）
 
 - `surface/surface_analysis.md`（联动 `pb_surface_analysis.md` 核实）
 - `ui/wizard.md`（`49a26e7` 完整重写，修正 `IsOutputSetCondition` 类型不匹配的深层机制错误）
 - `ui/dynamic_form.md`（`9ac0762` 小幅修正 `CATFeatureImportAgent` 误用）
+- `drawing/batch_drawing.md`（本次会话完整重写，修正 `CATIDrwSheet`→`CATIDftSheet`、`CATIProgressCallback`（不存在）→真实的 `CATIProgressTask`/`CATIProgressTaskUI`（`ApplicationFrame` 框架））
 
 ### frameworks/（148个自动生成索引文件，不适用本审计）
 
@@ -79,15 +81,7 @@ parameter_editor · surface_analysis
 
 ## 未核实清单（使用前建议先用 `--query`/`--check-file` 复核）
 
-### 🔴 高风险（用户已提示怀疑存在虚构 `CATIDrw*`/`CATIAnnBOM` 体系，优先处理）
-
-- `knowledge/drawing/drawing_basics.md`
-- `knowledge/drawing/drawing_annotations.md`
-- `patterns/drawing/batch_drawing.md`
-
-> 提示：`pb_batch_drawing.md`（已核实）中已记录结论——图纸内 BOM 表格对象在 CAA C++ 层无可核实文档化 API，
-> 只能通过 Automation 层 `CATIADrawingTables`/`CATIADrawingTable`（`.idl` 确认存在）实现。
-> 排查这3个文件时可直接复用此结论做交叉参照，减少重新调研成本。
+> 🔴 高风险组（`knowledge/drawing/drawing_basics.md`、`knowledge/drawing/drawing_annotations.md`、`patterns/drawing/batch_drawing.md`）已在本次会话全部核实并重写完成，已移入上方"已核实清单"，不再列于此。
 
 ### 🟡 中风险（patterns/ 目录，大量未核实的手写代码示例）
 
@@ -116,7 +110,7 @@ parameter_editor · surface_analysis
 
 ## 下次会话继续入口
 
-1. 打开本文件，从"🔴 高风险"开始，先处理 `knowledge/drawing/*` + `patterns/drawing/batch_drawing.md`（3个文件互相关联，建议一次性排查）
+1. 🔴 高风险组（drawing 相关3文件）已在本次会话全部处理完毕。下次可从"🟡 中风险"列表挑选下一批。建议优先顺序：`patterns/` 目录下9个手写代码示例文件（启用频率高）→ `knowledge/mecmod/`（核心建模概念，使用频率高）→ 其余
 2. 对每个文件跑 `python tools/build_caadoc_index.py --check-file <path>`，把输出的 SUSPECT 逐条用 `--query`/`.edu` 样例源码交叉验证
 3. 确认虚构点后，用 `write_file` 整体重写受影响段落（**不要用 `edit_file` 对含大量代码块的长 markdown 做局部编辑**——历史上多次在 `pb_parameter_editor.md`、`patterns/ui/wizard.md` 上造成截断/内容错位，即使工具返回"successfully"也不可信，写完必须 `read_file` 验证结构完整）
 4. 修完一批文件后，在本文件对应清单里把文件从"未核实"移到"已核实"，并记录 commit hash
@@ -126,6 +120,6 @@ parameter_editor · surface_analysis
 
 ## 生产使用建议（给 AI/开发者的即时参考）
 
-- **可直接信任**：`capabilities/` 全部13个、`playbooks/` 全部14个、上表列出的 `knowledge/` 已核实文件、`patterns/surface/surface_analysis.md`、`patterns/ui/wizard.md`、`patterns/ui/dynamic_form.md`。
-- **谨慎使用**：`patterns/` 目录其余9个文件、`knowledge/drawing/*`、`knowledge/failure_patterns/`（除2个已核实）、`knowledge/infrastructure/`（除2个已核实）、`knowledge/mecmod/`、`knowledge/philosophy/`（除3个已核实）、`knowledge/surface/surface_basics.md`、`knowledge/ui/`（除已核实的6个）。AI 生成代码涉及这些区域的具体 API 调用时，应先用 `--query`/`--check-file` 核实关键类型和方法名，不要直接照抄示例代码。
+- **可直接信任**：`capabilities/` 全部13个、`playbooks/` 全部14个、上表列出的 `knowledge/` 已核实文件（包含 `knowledge/drawing/` 全部2个）、`patterns/surface/surface_analysis.md`、`patterns/ui/wizard.md`、`patterns/ui/dynamic_form.md`、`patterns/drawing/batch_drawing.md`。
+- **谨慎使用**：`patterns/` 目录其余9个文件、`knowledge/failure_patterns/`（除2个已核实）、`knowledge/infrastructure/`（除2个已核实）、`knowledge/mecmod/`、`knowledge/philosophy/`（除3个已核实）、`knowledge/surface/surface_basics.md`、`knowledge/ui/`（除已核实的6个）。AI 生成代码涉及这些区域的具体 API 调用时，应先用 `--query`/`--check-file` 核实关键类型和方法名，不要直接照抄示例代码。
 - **frameworks/ 148个文件**：这是自动生成的 API 索引数据（非教学代码），可作为**查找线索**（定位属于哪个框架）放心使用，但具体方法签名仍以 `--query` 实时核对头文件为准（索引文件本身也会标注 SDK/refman mismatch）。

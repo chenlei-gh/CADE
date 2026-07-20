@@ -189,9 +189,11 @@ HRESULT BatchGenerateDrawings(CATIProduct_var iRoot,
 
 - `pb.export_bom` — BOM 数据提取，建议在批量出图前先单独导出确认零件列表
 
-## 已知遗留风险（未在本 Playbook 范围内核实，供后续排查）
+## 已同步修正
 
-以下文档同样大量使用了本次修正中发现的虚构 `CATIDrw*` 接口体系，尚未核实修正：
+以下文档同样使用了本次修正中发现的虚构 `CATIDrw*` 接口体系，已按同一套核实结论同步重写：
 - `knowledge/drawing/drawing_basics.md`
 - `knowledge/drawing/drawing_annotations.md`
 - `patterns/drawing/batch_drawing.md`
+
+详情见 `.agents/skills/catia-caa-dev/KNOWLEDGE_AUDIT_STATUS.md` 的核实记录。
