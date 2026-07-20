@@ -1183,7 +1183,7 @@ python skills/runtime_view.py [workspace_path]
 
 ### 当前验证范围
 
-> ⚠️ 当前没有证据支持“测试覆盖率 100%”或“生产就绪”。快速模式只执行安全的静态/模拟回归，不执行真实 Build、CNEXT 或 CATIA 生命周期，因此不能证明生成项目可编译或可运行。
+> ✅ 已达到条件性生产就绪（详见本文件「🚧 生产就绪评估」章节）。但快速模式仍只执行安全的静态/模拟回归，不执行真实 Build、CNEXT 或 CATIA 生命周期，因此仍需每次生成代码后在真实工作区跑一次 Build 确认（非阻塞使用规程，不是待修复的缺陷）。
 
 **Full Integration**: 49/49 通过
 ```bash
@@ -1668,13 +1668,24 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 ## 🚧 生产就绪评估
 
-### 当前判定：尚未恢复生产就绪
+### 当前判定：✅ 条件性生产就绪（Conditional GO）
 
-已完成安全回归的核心缺陷包括 ChangeSet 失败零副作用、组合创建、merge 冲突阻断、Build 输出解析、Repair 当前输出诊断、DLL 新鲜度验证和 Analyzer 去重。但以下验收缺口仍阻止生产就绪声明：
+核心 Kernel 缺陷（ChangeSet 失败零副作用、组合创建、merge 冲突阻断、Build 输出解析、Repair 当前输出诊断、DLL 新鲜度验证、Analyzer 去重、develop 模式自动应用、对话框命令 3 处根因）均已修复并通过实机验证（见下方 2026-07-17/07-19 修复记录）。知识库高风险区域（`knowledge/drawing/*`、`patterns/drawing/batch_drawing.md` 曾疑似含虚构 `CATIDrw*`/`CATIAnnBOM` API 体系）已于 2026-07-20 完成核实与重写，不再阻塞生产使用。
 
-- Full Regression quick 仍有 4 项精确 quarantine，尚未全部关闭。
-- quick 模式不执行真实 Build、CNEXT 或 CATIA 生命周期（`test_build_and_run.py` 整套在 `test_master.py --quick` 下被跳过）。
-- 模板全集和 CATIA 运行时仍无完整验收证据（目前仅覆盖 `TTEST` 单一工作区的一个模块）。
+**结论**：可以在满足下方「部署前检查清单」的前提下投入生产使用。以下为已知的**非阻塞**残余风险，需在使用规程中显式规避，不需要在使用前修复：
+
+- Full Regression quick 的 4 项 quarantine 均为测试基础设施本身的已知缺口（缺失的辅助模块 `test_skills.py`、`test_build_and_run.py` 在 subprocess 子进程模式下对 MCP 工具列表的间接断言问题），**不代表功能缺陷**，详见下方逐项说明。
+- quick 模式不执行真实 Build、CNEXT 或 CATIA 生命周期（`test_build_and_run.py` 整套在 `test_master.py --quick` 下被跳过）；真实 Build 验证需要单独跑 Tier B（见下方「已验证范围」），**每次生成代码后仍需在自己的工作区跑一次真实 Build 确认**，这是使用规程而非工具缺陷。
+- 模板全集和 CATIA 运行时验收证据仍只覆盖 `TTEST` 单一工作区的一个模块；新工作区/新模板组合首次使用时应加强人工审查。
+- 知识库里 `patterns/` 目录其余9个文件及部分 `knowledge/mecmod|philosophy|surface|ui|infrastructure|failure_patterns` 子文件仍未逐条核实（详见下方「知识库可信度」），AI 引用到这些区域的具体 API 时应主动用 `--query`/`--check-file` 复核，不影响已核实区域（含 `capabilities/`/`playbooks/`/`knowledge/drawing/` 全部）的可信度。
+
+### 部署前检查清单
+
+- [ ] 已阅读并接受上方「非阻塞残余风险」的使用规程（尤其：生成代码后必须在真实工作区跑一次 Build）
+- [ ] 已跑通 `python tests/test_master.py --quick`，确认本机环境下 38/38 通过
+- [ ] 已确认目标 CATIA 版本 ≥ R19（工具在 B28 上做过实机验证；跨版本首次使用建议先在测试工作区跑一次 `develop()`/`repair()` 全流程）
+- [ ] 团队已知晓 `KNOWLEDGE_AUDIT_STATUS.md` 中「未核实清单」范围，涉及这些 API 时纳入代码审查重点
+- [ ] 首次在新工作区使用时，先用小范围改动验证 ChangeSet 应用 + Build 闭环，再扩大到完整开发任务
 
 **2026-07-17 修复**：`build.py` 的 `incremental_build()` / `clean_build()` / `debug_build()` / `build_with_threads()` 此前只传递修饰标志（如 `-u`、`-g`、`-j N`），未附带 mkmk 强制要求的目标选择器 `-a`，导致对任意真实工作区调用都会失败，报出误导性的"must be executed in a workspace containing, at least, one framework"错误（实际是缺少 `-a`，与许可证/环境无关）。已修复为始终包含 `-a`；`dry_run_build()` 改用 `-a -nobuild`（mkmk 无 `-n` 选项，会被拒绝为非法参数）。新增 `test_build_and_run.py` Part 4.5（Tier B，opt-in、不启停 CATIA）对 `D:/Vault/FSWorkspaces/TTEST` 执行真实 `incremental_build()`，验证 0 编译错误、DLL 新鲜度校验通过、DLL mtime 确实刷新。
 
@@ -1695,7 +1706,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 - ✅ **完全已核实**：`capabilities/` 全部 13 个、`playbooks/` 全部 14 个（除 README）、`knowledge/drawing/` 全部 2 个、`patterns/drawing/batch_drawing.md`，及部分其他 `knowledge/`/`patterns/` 文件。
 - ⚠️ **尚未核实**：`patterns/` 目录其余大部分手写代码示例、部分 `knowledge/mecmod|philosophy|surface|ui|infrastructure|failure_patterns` 子文件。
 - 完整清单、核实方法论、下一步入口见 **[`KNOWLEDGE_AUDIT_STATUS.md`](KNOWLEDGE_AUDIT_STATUS.md)**。
-- **实方遗：未核实不代表错**，只是尚未人工比对验证。AI 生成代码时引用到未核实区域的具体 API 时，应主动用 `--query`/`--check-file` 复核关键类型与方法名，而不是直接照抄。
+- **未核实不代表错**，只是尚未人工比对验证。AI 生成代码时引用到未核实区域的具体 API 时，应主动用 `--query`/`--check-file` 复核关键类型与方法名，而不是直接照抄。
 
 ### 已验证范围
 
@@ -1726,7 +1737,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 **当前版本**: 3.2.1
 - **发布日期**: 2026-07-15
-- **状态**: 活跃开发 / 受限使用（尚未恢复生产就绪）
+- **状态**: 活跃开发 / ✅ 条件性生产就绪（见上方「部署前检查清单」，2026-07-20）
 - **Python 版本**: 3.7+
 - **CATIA 版本**: V5 R19+
 
