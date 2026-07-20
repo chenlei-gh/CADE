@@ -66,6 +66,8 @@ void TraverseBOM(CATIProduct *iProduct, int level, CATListValBOMRow &oRows) {
     iProduct->GetPrdInstanceName(instName);
     row.name = instName;
     row.partNumber = iProduct->GetPartNumber();
+    row.quantity = 1;   // 本行代表单个 Instance；同一父级下重复的 PartNumber
+                        // 需要在遍历结束后按 partNumber 分组汇总才能得到真正的BOM数量
     oRows.Append(row);
 
     // 遍历子节点（CATIProduct::GetChildren 直接返回列表，无需 CATIPrtContainer）
@@ -93,10 +95,29 @@ HRESULT ExportToCSV(CATListValBOMRow &rows, const CATUnicodeString &path) {
     fclose(f);
     return S_OK;
 }
+
+// 汇总BOM：按 (level, partNumber) 分组累加 quantity，得到"结构化BOM"而非"扁平实例列表"
+void AggregateByPartNumber(CATListValBOMRow &iFlatRows, CATListValBOMRow &oAggregated) {
+    for (int i = 1; i <= iFlatRows.Size(); i++) {
+        BOMRow &row = iFlatRows[i];
+        int found = 0;
+        for (int j = 1; j <= oAggregated.Size(); j++) {
+            if (oAggregated[j].level == row.level &&
+                oAggregated[j].partNumber == row.partNumber) {
+                oAggregated[j].quantity += row.quantity;
+                found = 1;
+                break;
+            }
+        }
+        if (!found) oAggregated.Append(row);
+    }
+}
 ```
 
 ## 注意事项
 
+- `TraverseBOM` 每次递归只生成一行（一个 Instance），`quantity` 恒为 1；
+  需要额外调用 `AggregateByPartNumber` 按零件号分组累加才能得到"该零件在本层级下用了几个"的真实数量
 - Instance 和 Reference 的区别：Instance 数 ≠ 零件种类数
 - 大装配（>1000 节点）注意递归深度和性能
 - CATUnicodeString → char* 转换注意编码

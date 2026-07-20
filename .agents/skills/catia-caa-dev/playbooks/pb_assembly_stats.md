@@ -27,17 +27,26 @@ tags: [playbook, assembly, statistics]
 
 1. **获取根 Product** → `CATIProduct_var spRoot`（通过 `CATInit::GetRootContainer()` 或 `CATIDocRoots::GiveDocRoots()`）
 2. **递归遍历** → 使用 `CATIProduct::GetChildren()`/`GetAllChildren()`
-3. **识别类型** → `IsATypeOf("CATPart")` vs `IsATypeOf("CATProduct")`
+3. **识别类型** → 对子节点 QI 到 `CATIPrtContainer`（`MecModInterfaces`）：成功即为 Part 叶子节点，
+   失败则视为子装配（Product）（见下方修正说明）
 4. **收集属性** → `GetPartNumber()`, `GetPrdInstanceName()`, Material
 5. **获取物理属性** → 通过几何层的 `CATICGMDynMassProperties3D` 操作符（见下方说明），而非 Product 接口本身
 6. **展示结果** → Dialog List + 导出 CSV
 
-> ⚠️ **修正**：`CATIMeasurable` 接口（`MeasureGeometryInterfaces`）**没有** `GetMass()`/`GetVolume()`
+> ⚠️ **修正 1**：`CATIMeasurable` 接口（`MeasureGeometryInterfaces`）**没有** `GetMass()`/`GetVolume()`
 > 方法（CAADoc 核实：该接口仅有 `Angle`/`GetAxisSystem`/`GetEntityType`/`GetShapeName` 等，且多数
 > 已在 V5R16 废弃）。真正计算质量/体积的是几何层操作符 `CATICGMDynMassProperties3D`
 > （`GMOperatorsInterfaces` 框架），通过全局函数 `CATCGMDynCreateMassProperties3D` 创建，
 > 作用对象是 `CATBody`（几何体），而不是 `CATIProduct`/`CATISpecObject`。要统计整个装配的质量，
 > 需先拿到每个零件的几何 `CATBody`，再逐个调用该操作符，使用后必须 `Release()`。
+>
+> ⚠️ **修正 2**：`IsATypeOf("CATPart")`/`IsATypeOf("CATProduct")` 这种写法是错误的——
+> `CATBaseUnknown::IsATypeOf()` 的参数是 `CATClassId` 类型常量（如 `CATCylinderType`/`CATFaceType`），
+> 不能传字符串；`IsSubTypeOf(CATUnicodeString&)` 才接受字符串，但它比较的是 CAA 组件/Feature
+> 的类型名（如官方样例中 `spec->IsSubTypeOf("Solid")`），并不存在名为 `"CATPart"`/`"CATProduct"`
+> 的类型字符串。CAADoc 官方样例（`CAAAuiCreateFixConstraintInPart.cpp`）区分
+> "这是 Part 文档还是装配"的真实做法是：对该节点的规格容器 QI 到 `CATIPrtContainer`——
+> 成功则说明它是 Part（可继续 `GetPart()` 拿到 `CATIPrtPart`），失败则是装配/子产品。
 
 ## 关键代码骨架
 
