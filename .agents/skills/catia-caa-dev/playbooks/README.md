@@ -54,6 +54,8 @@ tags: [playbook]
          → CAADoc (查缺补漏)
 ```
 
+> 维护者编写/审核 playbook 时：每个 `apis`/`frameworks` 字段里的接口名先用 `python tools/build_caadoc_index.py --query <name>` 核实真实存在，避免把虚构 API 写进成熟方案。
+
 ---
 
 **当前数量**: 待补充

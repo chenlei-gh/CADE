@@ -272,6 +272,7 @@ AI 只知道 3 个 Mode:
 | ⚡ **永远不需要判断"走哪个"** | 用户说"创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`。基于自然语言的动词分类，不需要思考。 |
 | 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架 → 再精准打开 `<CATIA_INSTALL>/CAADoc/` 对应页面。不要跳过 Framework 直接全文搜 CAADoc。 |
 | 📝 **CAADoc 洞察沉淀** | 用 CAADoc 学到**踩坑经验/跨 API 组合/非文档化的行为**时，创建 knowledge/ 文件沉淀。纯 API 签名查询不需要沉淀——下次用 Framework 索引秒查。 |
+| 🔎 **核实 API 真实性先用索引工具** | 怀疑 playbooks/patterns/knowledge 里某接口、方法、框架名是否真实存在（尤其是“看起来很统一”的 Factory/Manager 名字，经常是虚构）时，先跑 `python tools/build_caadoc_index.py --query <name>` 或 `--search <pattern>`（cache 命中约 0.3 秒，比手动打开 CAADoc 页面或 `grep` 全量扫描快得多；连续核对多个名字用 `--repl` 交互模式，避免反复启动进程）。只有索引覆盖不到的语义性问题（官方样例怎么组合调用、设计意图是什么）才需要再去翻 `Doc/generated/refman/` 页面或 `.cpp` 样例代码。索引没查到不等于 100% 不存在（可能是拼写变体或索引未覆盖的老旧接口），但命中即可作为“确实存在”的强证据。 |
 | 🧠 **跨项目记忆库** | 遇到疑难问题（编译、运行时、工具链），先查 `D:/Vault/Memory/BestPractices.md`。症状速查表见下方 **故障排查** 章节。 |
 
 ### ✨ 核心优势
@@ -1416,11 +1417,15 @@ python tests/test_master.py --quick
 │   ├── test_catia_detection.py       # CATIA 检测
 │   └── test_system_health.py         # 健康检查
 │
-├── tools/                            # 辅助工具
+├── tools/                            # 辅助工具(与 skills/ 无关,不属于 Kernel 模块)
+│   ├── build_caadoc_index.py         (CAADoc API 签名/实现关系索引与核实工具: --query/--search/--repl)
 │   ├── check_code_reuse.py
 │   ├── validate_component_ai.bat
 │   ├── scan_frameworks.py
 │   ├── production_readiness_check.py
+│   ├── catia_detector.py             (动态检测本机 CATIA 安装,零硬编码)
+│   ├── prerequisites_manager.py      (Prerequisites 依赖管理)
+│   └── setup_wizard.bat / setup_environment.* / setup_mcp.* / setup_prerequisites.*
 │
 └── config/                           # 配置文件
     ├── caa_env_config.txt

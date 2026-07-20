@@ -76,6 +76,12 @@ HRESULT CreateDialog(CATDlgDialog **oDlg);
 ```
 AI 从 CAADoc 学到新知识
     ↓
+Step 0: 核实——用 `python tools/build_caadoc_index.py --query <name>` /
+        `--search <pattern>` 确认涉及的接口/方法/框架名真实存在于
+        CAADoc（cache 命中约 0.3 秒）。查无结果时不要直接当作
+        "CAADoc 没收录"沉淀下来，先用 --search 排查是否拼写/别名
+        问题；仍确认不存在则说明这是 AI 幻觉，不能沉淀。
+    ↓
 Step 1: 在 knowledge/gaps/ 创建 gap 文件（记录：来源URL、涉及API、建议路径）
     ↓
 Step 2: 按本规范创建正式 knowledge/ 文件

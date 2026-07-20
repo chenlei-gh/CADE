@@ -15,6 +15,17 @@
 - 修复 `tools/scan_frameworks.py`：扫描 CAADoc `refman/*.htm` 时未排除 `visidx.txt.htm`（全局 API 索引页，非某个 framework 的说明页），导致生成了一个虚假的 "visidx.txt" framework 条目，其 5 个 "关键词" 实为从索引正文里随机抓取的、分属 `CATAnalysisInterfaces`/`CATAnalysisResources`/`VPMInterfaces` 三个不同 framework 的接口名，与 "visidx.txt" 本身无关。已删除 `knowledge/frameworks/visidx.txt.md`，framework 导航文件总数由 149 修正为 148（与 CAADoc `refman/` 目录下真实的 148 个 framework `.htm` 页面一一对应），并同步更新 SKILL.md/README.md/CHANGELOG.md/ARCHITECTURE.md 中的计数。
 - 核实 `knowledge/frameworks/*.md`（148 个）其余文件：均由脚本从 CAADoc 官方 `.htm` 文件名及正文中的真实接口名（含编号后缀，如 `CATIUdfFeature_28696`）自动抓取生成，抽样交叉核对 CAADoc 目录确认无虚构内容。
 
+### 🛠 工具 (2026-07-20)
+
+- 新增 `tools/build_caadoc_index.py` —— CAADoc 本地索引构建与核实工具。解析 `Doc/generated/refman/**/*.htm`（6234 个类型的签名，含去重、HTML 实体解码修复）与 `**/*.dico`（414 条接口↔实现组件映射），支持：
+  - `--query <name>`：精确/大小写不敏感查询类型签名，含反向方法名查询（"哪些接口有该方法"）
+  - `--search <pattern>`：类型名/方法签名/.dico 组件名的子串搜索，用于"不确定确切名字，想探索候选"场景
+  - `--repl`：交互模式，命令 `q <name>`/`s <pattern>`，避免连续查询反复启动进程
+  - 默认优先加载 `cache/caadoc_index.json`（未提交，见 .gitignore），命中缓存约 0.3 秒；仅 `--write`/`--rebuild` 时才重新全量扫描（约 2 秒）
+  - 用于核实 `playbooks/`/`patterns/`/`knowledge/` 中疑似虚构的 API 签名/接口名/框架名，替代手动打开 CAADoc 页面或全量 `grep`
+- 已用该工具复核：`CATIProduct`（21 个去重方法）、`CATIVisPropertiesAbstract`（6 个方法）、`SetColor` 反查（13 个真实声明类型，`CATIVisProperties` 本身不在其中）、`TPSFactory` 子串搜索（CAADoc 仅有 3 个专用工厂接口，无统一 `CATITPSFactory`）
+- 在 `SKILL.md`（"给 AI 的提示"表格 + tools/ 目录清单）与 `knowledge/README.md`（CAADoc → CADE 知识沉淀流程新增 Step 0）中接入该工具的使用指引
+
 ### 📝 知识沉淀 (2026-07-19)
 
 - 新增 knowledge/failure_patterns/fp_dialog_null_parent.md — 来源: 实机调试 + CAADoc/CAADialogEngine.edu/CAADegGeoCommands.m
