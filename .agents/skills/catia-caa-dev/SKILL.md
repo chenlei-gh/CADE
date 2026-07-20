@@ -274,6 +274,7 @@ AI 只知道 3 个 Mode:
 | 📝 **CAADoc 洞察沉淀** | 用 CAADoc 学到**踩坑经验/跨 API 组合/非文档化的行为**时，创建 knowledge/ 文件沉淀。纯 API 签名查询不需要沉淀——下次用 Framework 索引秒查。 |
 | 🔎 **核实 API 真实性先用索引工具** | 怀疑 playbooks/patterns/knowledge 里某接口、方法、框架名是否真实存在（尤其是“看起来很统一”的 Factory/Manager 名字，经常是虚构）时，先跑 `python tools/build_caadoc_index.py --query <name>` 或 `--search <pattern>`（cache 命中约 0.3 秒，比手动打开 CAADoc 页面或 `grep` 全量扫描快得多；连续核对多个名字用 `--repl` 交互模式，避免反复启动进程）。只有索引覆盖不到的语义性问题（官方样例怎么组合调用、设计意图是什么）才需要再去翻 `Doc/generated/refman/` 页面或 `.cpp` 样例代码。索引没查到不等于 100% 不存在（可能是拼写变体或索引未覆盖的老旧接口），但命中即可作为“确实存在”的强证据。 |
 | 🥇 **冲突时信 SDK 头文件** | `--query` 会自动扫描 CATIA 安装目录下所有 Framework/PublicInterfaces 的 .h 头文件，把 refman 的方法列表与头文件的方法列表交叉比对，不一致时打印 `SDK/refman mismatch` 提示。头文件是 refman 的生成源，比 refman htm 页面更权威（refman 存在生成缺失），看到 mismatch 提示时以头文件为准。同一命令还会展示查询名命中的枚举值列表及其行内注释，用于核实枚举成员是否真实存在（refman 枚举页经常遗漏这些信息）。 |
+| 🏆 **查“组件实现了哪些接口”信随产品发布的字典** | `--query <接口名>` 会自动扫描 CATIA 安装目录下 `<arch>/code/dictionary/*.dic`（比 CAADoc 自带的 44 个教学 `.dico` 大得多，约 885 个文件/7.3 万条），列出真正发布产品里哪个组件真实实现了该接口，标记为 "ground truth"。遇到“接口真实存在但不知道怎么获取实例”的情况时，先用它反查实现组件，往往能发现真实获取方式是对该组件做 `QueryInterface`（如 `CATTPSSet` 实现了 `CATITPSFactoryElementary`/`CATITPSCaptureFactory`/`CATITPSViewFactory` 三个工厂接口，都需对 Set 实例 QI 获取）。 |
 | 🧠 **跨项目记忆库** | 遇到疑难问题（编译、运行时、工具链），先查 `D:/Vault/Memory/BestPractices.md`。症状速查表见下方 **故障排查** 章节。 |
 
 ### ✨ 核心优势

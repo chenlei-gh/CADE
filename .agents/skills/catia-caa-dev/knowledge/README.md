@@ -85,6 +85,11 @@ Step 0: 核实——用 `python tools/build_caadoc_index.py --query <name>` /
         比对结果里的 SDK 头文件方法列表为准（头文件是 refman 的生成源，
         比 refman htm 页面更权威）；枚举类型要确认具体枚举值真实存在，
         不要只凭接口名存在就假定枚举值存在。
+        接口真实存在但不知道怎么获取实例时，改用 `--query <组件名>`
+        反查该组件在“shipped .dic, ground truth”板块下实现了哪些接口
+        （发布产品构建时生成的组件字典，覆盖全部实际交付框架，比
+        CAADoc 自带的教学 `.dico` 权威得多），通常能直接找到真实的
+        QueryInterface 入口。
     ↓
 Step 1: 在 knowledge/gaps/ 创建 gap 文件（记录：来源URL、涉及API、建议路径）
     ↓

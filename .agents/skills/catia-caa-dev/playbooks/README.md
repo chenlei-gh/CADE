@@ -54,7 +54,7 @@ tags: [playbook]
          → CAADoc (查缺补漏)
 ```
 
-> 维护者编写/审核 playbook 时：每个 `apis`/`frameworks` 字段里的接口名先用 `python tools/build_caadoc_index.py --query <name>` 核实真实存在，避免把虚构 API 写进成熟方案。该工具会自动用 CATIA 安装目录下的 SDK 头文件（比 refman htm 页面更权威的真实源）交叉核实方法列表与枚举值，出现 `SDK/refman mismatch` 提示时请以头文件为准。枚举型字段（如 `DfTPS_ItfXxx`）尤需单独确认具体值存在，接口名本身真实不代表其归属的枚举值一定存在。
+> 维护者编写/审核 playbook 时：每个 `apis`/`frameworks` 字段里的接口名先用 `python tools/build_caadoc_index.py --query <name>` 核实真实存在，避免把虚构 API 写进成熟方案。该工具会自动用 CATIA 安装目录下的 SDK 头文件（比 refman htm 页面更权威的真实源）交叉核实方法列表与枚举值，出现 `SDK/refman mismatch` 提示时请以头文件为准。枚举型字段（如 `DfTPS_ItfXxx`）尤需单独确认具体值存在，接口名本身真实不代表其归属的枚举值一定存在。若接口真实存在但写不出获取实例的代码，改用 `--query <组件名>` 反查该组件在“shipped .dic, ground truth”板块下实现了哪些接口（发布产品构建时生成的组件字典，覆盖全部实际交付框架，权威性高于 CAADoc 自带的教学 `.dico`），通常能直接找到真实的 QueryInterface 入口。
 
 ---
 

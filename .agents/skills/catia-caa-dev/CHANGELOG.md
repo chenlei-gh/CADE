@@ -10,6 +10,11 @@
 
 ## [未发布]
 
+### 🛠 工具 (2026-07-20 第三批)
+
+- `tools/build_caadoc_index.py` 新增第四个数据源：扫描发布产品的组件字典 `<arch>/code/dictionary/*.dic`（例如 `win_b64/code/dictionary`，注意与 CAADoc 自带的 `**/*.dico` 教学样例字典区分）。这是真实发布产品在构建时生成的“组件→接口” TIE 实现字典，规模远大于 CAADoc 教学字典（约 885 个文件/7.3 万条，对比 44 个文件/414 条），是“组件 X 是否真实实现接口 Y”问题的真正 ground truth。`--query`/`--search` 现在会将发布字典的命中结果与 CAADoc 教学 `.dico` 分开标注展示（分别标 "CAADoc tutorials" 与 "ground truth"）。
+- **用这个新数据源解开了上一批留下的未解决问题**：`CATITPSFactoryElementary` 的真实获取方式。发布字典显示 `CATTPSSet` 组件同时实现了 `CATITPSFactoryElementary`、`CATITPSCaptureFactory`、`CATITPSViewFactory` 三个工厂接口，证实三者获取方式完全一致：均需对 `CATITPSSet` 实例做 `QueryInterface`（而不是通过 `CATTPSInstantiateComponent` + 枚举值获取，那是 `CATITPSFactoryAdvanced`/`CATITPSFactoryTTRS` 的获取方式，两者不同）。
+
 ### 🛠 工具 (2026-07-20 第二批)
 
 - `tools/build_caadoc_index.py` 新增 SDK 头文件扫描与交叉核实能力。因为 CAADoc 的 refman `.htm` 页面其实是从同一套 CATIA 安装里的 SDK 头文件（`<Framework>/PublicInterfaces/*.h`）自动生成的文档子集，并且存在生成缺失，所以头文件比 refman htm 更权威。新工具能力：
@@ -20,7 +25,7 @@
   - 全量扫描（refman+dico+headers）耗时约 3.5 秒，缓存命中仍约 0.3 秒
 - **本次改造发现的两个真实文档错误**（已验证，待修复 `capabilities/annotation.md`）：
   - `CATITPSSet` 并不实现 `CreateCapture()`。真实接口是独立的 `CATITPSCaptureFactory::CreateCapture(CATITPSCapture**)`，需对 `CATITPSSet` 实例做 `QueryInterface` 才能获取（refman 原始 htm 确认该接口页面未发生 Public/Protected/Private 视图分裂，排除了索引工具漏抓的可能性）
-  - `annotation.md` 引用的枚举值 `DfTPS_ItfTPSFactoryElementary` 在真实 `CATTPSComponent` 枚举（46 个值，由 `CATTPSInstantiateComponent.h` 确认）中不存在。`CATITPSFactoryElementary` 接口本身是真实的（14 个方法，refman 与 SDK 头文件一致），但其真实获取方式尚未查明（已全量搜索教学样例/SDK 头文件/.dico 均未发现调用入口）
+  - `annotation.md` 引用的枚举值 `DfTPS_ItfTPSFactoryElementary` 在真实 `CATTPSComponent` 枚举（46 个值，由 `CATTPSInstantiateComponent.h` 确认）中不存在。`CATITPSFactoryElementary` 接口本身是真实的（14 个方法，refman 与 SDK 头文件一致），其真实获取方式后来由发布字典扫描（见上方“第三批”条目）确认
 
 ### 🐛 Bug 修复 (2026-07-20)
 
