@@ -89,6 +89,22 @@ Usage:
     python tools/build_caadoc_index.py --search VisProp
     python tools/build_caadoc_index.py --rebuild --write --query CATIProduct
     python tools/build_caadoc_index.py --repl   # interactive: 'q <name>', 's <pattern>'
+
+    # Batch-audit an entire playbook/pattern file in ONE call instead of
+    # issuing one --query per API name by hand: extracts every CAT*-prefixed
+    # type token and every ->Method()/::Method() call out of the file's
+    # ```cpp fenced code blocks (whole file if not markdown), checks each
+    # against refman + SDK headers + .dico/.dic + enums, and prints ONLY the
+    # ones that resolve to nothing (the suspects), not a dump of everything
+    # that's fine. This is the preferred entry point for API-hallucination
+    # audits -- see also --quiet below for condensing --query itself.
+    python tools/build_caadoc_index.py --check-file playbooks/pb_foo.md
+    python tools/build_caadoc_index.py --check-file a.md --check-file b.md
+
+    # Condensed one-line verdict per --query instead of the full method/
+    # enum dump -- use this once you already know roughly what an API is
+    # and just need a fast FOUND/NOT-FOUND/MISMATCH sanity check.
+    python tools/build_caadoc_index.py --quiet --query CATIProduct --query CATIDrwView
 """
 import argparse
 import html
@@ -413,6 +429,24 @@ def build_method_index(refman_records):
     return idx
 
 
+def build_header_method_index(header_classes):
+    """Same as build_method_index but sourced from the SDK headers instead of
+    refman. Needed because refman generation sometimes drops methods that are
+    real and only visible in the header (see the SDK/refman mismatch checks);
+    a pure refman-based method index would wrongly flag those as unknown.
+    """
+    idx = {}
+    for rec in header_classes:
+        for meth in rec["methods"]:
+            base = meth.split("(", 1)[0].strip()
+            idx.setdefault(base, []).append({
+                "type": rec["name"],
+                "framework": rec["framework"],
+                "signature": meth,
+            })
+    return idx
+
+
 def build_index(caadoc_root: Path, catia_root=None, scan_headers: bool = True):
     t0 = time.time()
     refman_records = scan_refman(caadoc_root)
@@ -448,6 +482,7 @@ def build_index(caadoc_root: Path, catia_root=None, scan_headers: bool = True):
         sdk_implements_by_component.setdefault(e["component"], []).append(e["interface"])
 
     methods_by_name = build_method_index(refman_records)
+    header_methods_by_name = build_header_method_index(header_classes)
 
     headers_by_name = {}
     for rec in header_classes:
@@ -478,6 +513,7 @@ def build_index(caadoc_root: Path, catia_root=None, scan_headers: bool = True):
         "sdk_implements_by_interface": sdk_implements_by_interface,
         "sdk_implements_by_component": sdk_implements_by_component,
         "methods_by_name": methods_by_name,
+        "header_methods_by_name": header_methods_by_name,
         "header_classes": header_classes,
         "headers_by_name": headers_by_name,
         "header_enums": header_enums,
@@ -535,7 +571,208 @@ def _print_header_cross_check(index: dict, name: str, refman_methods):
             print("  (SDK header agrees with refman method list)")
 
 
-def query(index: dict, name: str):
+# ---------------------------------------------------------------------------
+# Batch file audit (--check-file): the preferred entry point for verifying
+# an entire playbook/pattern doc in one shot instead of one --query per name.
+# ---------------------------------------------------------------------------
+
+_KNOWN_NOISE_TYPES = {
+    # Common C++/STL/CATIA fundamentals that show up constantly in code
+    # samples but are never going to be "suspect" -- skipping them keeps
+    # --check-file output focused on real CAA interface/class names.
+    "HRESULT", "CATBoolean", "CATLONG32", "CATULONG32", "CATLONG64",
+    "CATBaseUnknown", "IUnknown", "NULL", "TRUE", "FALSE", "NULL_var",
+    "S_OK", "E_FAIL", "SUCCEEDED", "FAILED",
+}
+
+_TYPE_TOKEN_RE = re.compile(r'\b(CAT[A-Z]\w+)\b')
+_METHOD_CALL_RE = re.compile(r'(?:->|::)\s*(\w+)\s*\(')
+_CPP_FENCE_RE = re.compile(r'```cpp\s*\n(.*?)```', re.DOTALL)
+# CATLISTV(Foo)/CATLISTP(Foo) macro-generated container typedefs are named
+# CATListValFoo/CATListPtrFoo (optionally +"_var") by convention; they never
+# appear as standalone classes in refman/SDK headers, so checking them
+# against the type index always false-positives. Recognize the naming
+# pattern instead of enumerating every instantiation by hand.
+_LIST_TEMPLATE_RE = re.compile(r'^CATList(?:Val|Ptr)[A-Z]\w*$')
+
+
+def _extract_code_blocks(text: str):
+    """Return the contents of every ```cpp fenced block in a markdown file.
+    Falls back to the whole file if no fenced cpp blocks are found (e.g. the
+    input is already a bare .cpp/.h file)."""
+    blocks = _CPP_FENCE_RE.findall(text)
+    return blocks if blocks else [text]
+
+
+def _extract_candidates(code: str):
+    """Pull out (type_tokens, method_calls) worth checking from a chunk of
+    C++ code. Type tokens: any CAT-prefixed identifier (interfaces, classes,
+    enums). Method calls: the name right after -> or :: followed by '('.
+    Both are deduplicated but keep first-seen order for stable output.
+    """
+    types = []
+    seen_types = set()
+    for m in _TYPE_TOKEN_RE.finditer(code):
+        tok = m.group(1)
+        if tok in _KNOWN_NOISE_TYPES or tok in seen_types:
+            continue
+        seen_types.add(tok)
+        types.append(tok)
+
+    methods = []
+    seen_methods = set()
+    for m in _METHOD_CALL_RE.finditer(code):
+        name = m.group(1)
+        if name in seen_methods:
+            continue
+        seen_methods.add(name)
+        methods.append(name)
+
+    return types, methods
+
+
+def _resolve_type(index: dict, name: str):
+    """Return a short verdict string for a single CAT*-prefixed token:
+    'OK' (found in refman and/or SDK header and/or .dico/.dic), 'ENUM' (only
+    found as an SDK header enum), or None if not found anywhere (suspect).
+
+    Strips a trailing '_var' (the CAA smart-pointer typedef convention, e.g.
+    CATIProduct_var / CATListValCATBaseUnknown_var) before checking, since
+    those are not separate types in refman/SDK headers -- checking the bare
+    name avoids false-positive suspects on every _var usage.
+    """
+    lookup_name = name[:-4] if name.endswith("_var") else name
+    if _LIST_TEMPLATE_RE.match(lookup_name):
+        return "OK"
+    if (lookup_name in index["types_by_name"]
+            or lookup_name in index.get("headers_by_name", {})
+            or lookup_name in index.get("implements_by_interface", {})
+            or lookup_name in index.get("implements_by_component", {})
+            or lookup_name in index.get("sdk_implements_by_interface", {})
+            or lookup_name in index.get("sdk_implements_by_component", {})):
+        return "OK"
+    if lookup_name in index.get("enums_by_name", {}):
+        return "ENUM"
+    return None
+
+
+def _resolve_method(index: dict, name: str):
+    """Return 'OK' if a method with this bare name exists in refman or the
+    SDK headers, else None. Deliberately permissive (any type declaring it
+    counts) since --check-file is a first-pass suspect filter, not a full
+    per-type signature check -- follow up with --query on the owning type
+    for the precise signature once a name is confirmed to exist at all.
+    """
+    if name in index.get("methods_by_name", {}) or name in index.get("header_methods_by_name", {}):
+        return "OK"
+    return None
+
+
+def check_file(index: dict, path_str: str):
+    """Batch-audit every CAT*-prefixed type token and ->Method()/::Method()
+    call inside a file's ```cpp fenced code blocks (or the whole file if it
+    has none). Prints only suspects (nothing found anywhere) plus a one-line
+    summary -- this replaces issuing one --query per API name by hand.
+    """
+    p = Path(path_str)
+    try:
+        text = p.read_text(encoding="utf-8", errors="ignore")
+    except Exception as exc:
+        print(f"ERROR: cannot read {path_str}: {exc}")
+        return
+
+    blocks = _extract_code_blocks(text)
+    all_types = []
+    all_methods = []
+    seen_t, seen_m = set(), set()
+    for block in blocks:
+        types, methods = _extract_candidates(block)
+        for t in types:
+            if t not in seen_t:
+                seen_t.add(t)
+                all_types.append(t)
+        for m in methods:
+            if m not in seen_m:
+                seen_m.add(m)
+                all_methods.append(m)
+
+    suspect_types = []
+    ok_types = 0
+    enum_types = []
+    for t in all_types:
+        verdict = _resolve_type(index, t)
+        if verdict == "OK":
+            ok_types += 1
+        elif verdict == "ENUM":
+            enum_types.append(t)
+        else:
+            suspect_types.append(t)
+
+    suspect_methods = []
+    ok_methods = 0
+    for m in all_methods:
+        if _resolve_method(index, m) == "OK":
+            ok_methods += 1
+        else:
+            suspect_methods.append(m)
+
+    print(f"\n=== check-file: {path_str} ===")
+    print(f"Types checked: {len(all_types)} ({ok_types} OK, {len(enum_types)} enum-only, {len(suspect_types)} SUSPECT)")
+    print(f"Methods checked: {len(all_methods)} ({ok_methods} OK, {len(suspect_methods)} SUSPECT)")
+
+    if suspect_types:
+        print("\nSUSPECT types (no match in refman/SDK headers/.dico/.dic -- verify with --query):")
+        for t in suspect_types:
+            print(f"  ? {t}")
+    if suspect_methods:
+        print("\nSUSPECT methods (no bare-name match in refman or SDK headers -- verify with --query \"OwningType\"):")
+        for m in suspect_methods:
+            print(f"  ? {m}(...)")
+    if not suspect_types and not suspect_methods:
+        print("\nNo suspects found -- every CAT*-prefixed type and ->/::method() call resolved to something in refman, SDK headers, .dico, or .dic.")
+        print("(This does NOT guarantee exact signatures/argument order/enum member names are correct -- run --query on")
+        print(" specific types to confirm signatures before treating the file as fully verified.)")
+
+
+def _print_quiet_verdict(index: dict, name: str, matches):
+    """One-line FOUND/NOT-FOUND/MISMATCH verdict for --quiet mode, condensing
+    everything query() would otherwise print across many lines. Meant for
+    quickly sanity-checking a batch of already-mostly-known names, not for
+    first-time exploration (use the full query() or --search for that).
+    """
+    sources = []
+    if matches:
+        sources.append("refman")
+    if index.get("headers_by_name", {}).get(name):
+        sources.append("SDK-header")
+    if index.get("implements_by_interface", {}).get(name) or index.get("implements_by_component", {}).get(name):
+        sources.append(".dico")
+    if index.get("sdk_implements_by_interface", {}).get(name) or index.get("sdk_implements_by_component", {}).get(name):
+        sources.append(".dic")
+    method_hits = index.get("methods_by_name", {}).get(name) or index.get("header_methods_by_name", {}).get(name)
+    if method_hits:
+        sources.append("method-name")
+    enum_hits = index.get("enums_by_name", {}).get(name)
+    if enum_hits:
+        sources.append("enum")
+
+    if not sources:
+        print(f"  NOT FOUND : {name}")
+        return
+
+    mismatch_note = ""
+    if matches:
+        header_recs = index.get("headers_by_name", {}).get(name)
+        if header_recs:
+            refman_base = _method_base_names(matches[0]["methods"])
+            header_base = _method_base_names(header_recs[0]["methods"])
+            if refman_base != header_base:
+                mismatch_note = "  [SDK/refman mismatch -- rerun without --quiet for detail]"
+
+    print(f"  FOUND ({', '.join(sources)}) : {name}{mismatch_note}")
+
+
+def query(index: dict, name: str, quiet: bool = False):
     matches = index["types_by_name"].get(name)
     if not matches:
         # case-insensitive fallback
@@ -543,6 +780,11 @@ def query(index: dict, name: str):
         matches = [
             rec for rec in index["types"] if rec["name"].lower() == lname
         ]
+
+    if quiet:
+        _print_quiet_verdict(index, name, matches)
+        return
+
     refman_methods_for_crosscheck = None
     if matches:
         for rec in matches:
@@ -737,6 +979,8 @@ if __name__ == "__main__":
     p.add_argument("--search", action="append", default=[], help="Substring search over type names, method signatures, .dico entries, and SDK enum values (repeatable)")
     p.add_argument("--repl", action="store_true", help="Enter an interactive query/search loop after loading/building the index")
     p.add_argument("--no-headers", action="store_true", help="Skip scanning the SDK PublicInterfaces/*.h headers (refman + .dico + shipped .dic only, faster but loses method/enum cross-checking)")
+    p.add_argument("--check-file", action="append", default=[], dest="check_file", help="Batch-audit every CAT*-prefixed type and ->/::method() call in a playbook/pattern file's ```cpp blocks in ONE call; prints only suspects (repeatable)")
+    p.add_argument("--quiet", action="store_true", help="With --query: print a condensed one-line FOUND/NOT-FOUND/MISMATCH verdict per name instead of the full method/enum dump")
     args = p.parse_args()
 
     cache_file = cache_path()
@@ -785,10 +1029,13 @@ if __name__ == "__main__":
         print(f"Wrote index to {cache_file} ({cache_file.stat().st_size // 1024} KB)")
 
     for name in args.query:
-        query(index, name)
+        query(index, name, quiet=args.quiet)
 
     for pattern in args.search:
         search(index, pattern)
+
+    for file_path in args.check_file:
+        check_file(index, file_path)
 
     if args.repl:
         run_repl(index)
