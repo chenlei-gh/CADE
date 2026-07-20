@@ -156,7 +156,7 @@ CATStatusChangeRC MyCmd::Activate(...) {
     // 绑定 Apply 按钮
     CATDlgPushButton *pBtn = _pDlg->GetApplyButton();
     if (pBtn) {
-        AddAnalyseNotificationCB(this, pBtn->GetPushNotification(),
+        AddAnalyseNotificationCB(this, pBtn->GetPushBActivateNotification(),
             (CATCommandMethod)&MyCmd::OnApply, NULL);
     }
     return CATStatusChangeRCCompleted;

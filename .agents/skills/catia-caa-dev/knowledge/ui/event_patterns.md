@@ -26,11 +26,11 @@ CATStatusChangeRC MyCmd::Activate(CATCommand *iFromClient,
 
     // 2. 绑定按钮事件
     AddAnalyseNotificationCB(this,
-        _pDlg->GetApplyBtn()->GetPushNotification(),
+        _pDlg->GetApplyBtn()->GetPushBActivateNotification(),
         (CATCommandMethod)&MyCmd::OnApply, NULL);
 
     AddAnalyseNotificationCB(this,
-        _pDlg->GetCancelBtn()->GetPushNotification(),
+        _pDlg->GetCancelBtn()->GetPushBActivateNotification(),
         (CATCommandMethod)&MyCmd::OnCancel, NULL);
 
     // 3. 绑定选择事件（选择器 Agent 用 CATPathElementAgent，非 CATFeatureImportAgent）

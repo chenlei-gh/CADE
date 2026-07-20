@@ -5,7 +5,7 @@ category: playbook
 domain: ui
 keywords: [wizard, dialog, step, back, next, finish, state command, multi-step, form, CATStateCommand, AddDialogState, AddTransition]
 capabilities: [cap.selection, cap.parameter_system]
-apis: [CATStateCommand, CATDialogState, CATPathElementAgent, CATDlgDialog, CATDlgFrame, CATDlgPushButton]
+apis: [CATStateCommand, CATDialogState, CATDialogAgent, CATPathElementAgent, CATDlgDialog, CATDlgFrame, CATDlgPushButton]
 frameworks: [DialogEngine, ApplicationFrame, Dialog]
 difficulty: intermediate
 effort: medium
@@ -39,7 +39,7 @@ tags: [playbook, dialog, wizard, state command, UI]
 
 1. **在构造函数或 `BuildGraph()` 中创建状态**：`GetInitialState("Step1")` 取初始状态，`AddDialogState("StepN")` 创建后续状态，**把返回的 `CATDialogState*` 存成 Command 成员变量**（没有 `GetState(enum)` 这种按枚举取状态的方法）
 2. **`BuildGraph()` 用 `AddTransition(source, target, condition, action)` 定义跳转**：`AddTransition` 的参数是"源状态 + 目标状态 + 条件 + 动作"，不是"目标状态 + 判定函数 + 按钮对象"
-3. **条件用 `IsOutputSetCondition(pNotification)`**：包一层已发布的 `CATNotification*`（如按钮的 `GetPushBActivateNotification()`），不是自定义的裸判定函数指针
+3. **条件用 `IsOutputSetCondition(pAgent)`，参数是 `CATDialogAgent*`，不是按钮通知**：按钮点击先用 `AddAnalyseNotificationCB` 在 Dialog 里转发成自定义 `CATNotification` 子类，Command 端再用 `CATDialogAgent::AcceptOnNotify(pDlg, "自定义通知类名")` 绑定并 `AddDialogAgent()` 挂到状态上——`IsOutputSetCondition` 检测的是这个 agent 有没有被 valued，直接传 `GetPushBActivateNotification()` 的返回值（`CATNotification*`）类型不匹配，是错误写法。完整机制和示例见 `patterns/ui/wizard.md`
 4. **步骤1激活选择过滤**：用 `CATPathElementAgent::AddElementType(CATClassId)` 限制可选类型（如 `IID_CATIPart`），通过 `AddCSOClient()` 挂接；没有 `CATISelectionAgent`/`CATPartType` 这类接口和枚举
 5. **数据传递**：使用 Command 成员变量在状态间共享数据
 6. **Finish 后触发重算**：调用 `CATISpecObject::Update()`（不是 `CATIModelEvents::Dispatch()`）
@@ -73,38 +73,54 @@ public:
 private:
     CATDialogState   *_pStep1, *_pStep2, *_pStep3;
     MyWizardDlg      *_pDlg;
+    CATDialogAgent   *_pNextAgent, *_pBackAgent, *_pFinishAgent;
     CATPathElementAgent *_pSelectAgent;
     CATISpecObject_var  _spSelected;
 };
 
 void MyWizardCmd::BuildGraph() {
+    // Dialog 内部把 Next/Back/Finish 按钮点击转发成自定义通知
+    // （AddAnalyseNotificationCB + SendNotification，见 patterns/ui/wizard.md）
+    _pNextAgent   = new CATDialogAgent("NextId");
+    _pBackAgent   = new CATDialogAgent("BackId");
+    _pFinishAgent = new CATDialogAgent("FinishId");
+    _pNextAgent->AcceptOnNotify(_pDlg, "CAANextStepNotification");
+    _pBackAgent->AcceptOnNotify(_pDlg, "CAABackStepNotification");
+    _pFinishAgent->AcceptOnNotify(_pDlg, "CAAFinishStepNotification");
+
     _pStep1 = GetInitialState("Step1");
     _pStep2 = AddDialogState("Step2");
     _pStep3 = AddDialogState("Step3");
 
+    _pStep1->AddDialogAgent(_pNextAgent);
+    _pStep2->AddDialogAgent(_pNextAgent);
+    _pStep2->AddDialogAgent(_pBackAgent);
+    _pStep3->AddDialogAgent(_pBackAgent);
+    _pStep3->AddDialogAgent(_pFinishAgent);
+
     // Step1 -> Step2：Next 按钮触发，选择有效才放行
     AddTransition(_pStep1, _pStep2,
-        IsOutputSetCondition(_pDlg->GetNextBtn()->GetPushBActivateNotification()),
+        IsOutputSetCondition(_pNextAgent),
         NULL);
 
     // Step2 -> Step1：Back
     AddTransition(_pStep2, _pStep1,
-        IsOutputSetCondition(_pDlg->GetBackBtn()->GetPushBActivateNotification()),
+        IsOutputSetCondition(_pBackAgent),
         NULL);
 
     // Step2 -> Step3：Next（参数校验建议在 OnApply 回调里做，转换条件保持简单）
     AddTransition(_pStep2, _pStep3,
-        IsOutputSetCondition(_pDlg->GetNextBtn()->GetPushBActivateNotification()),
+        IsOutputSetCondition(_pNextAgent),
         NULL);
 
     // Step3 -> Step2：Back
     AddTransition(_pStep3, _pStep2,
-        IsOutputSetCondition(_pDlg->GetBackBtn()->GetPushBActivateNotification()),
+        IsOutputSetCondition(_pBackAgent),
         NULL);
 
     // Step3 -> 结束（target=NULL 表示命令结束）：Finish 触发实际执行动作
     AddTransition(_pStep3, NULL,
-        IsOutputSetCondition(_pDlg->GetFinishBtn()->GetPushBActivateNotification()),
+        IsOutputSetCondition(_pFinishAgent),
         Action((ActionMethod)&MyWizardCmd::ExecuteWizard, NULL, NULL, NULL));
 }
 
