@@ -180,7 +180,7 @@ Three new CAA domains unlocked — powered by 6 knowledge files + 3 patterns:
 
 ### 🧠 5-Layer Knowledge Architecture
 
-CADE now organizes knowledge in **5 layers** — AI finds answers 10x faster:
+CADE's Knowledge System organizes knowledge in **5 layers** — AI finds answers 10x faster:
 
 ```
 🎯 Capability (10)  → "What can CATIA do?"        AI entry point

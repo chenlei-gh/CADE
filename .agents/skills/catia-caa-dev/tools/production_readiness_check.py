@@ -12,6 +12,23 @@ import sys
 from pathlib import Path
 
 
+def _grep(args, cwd):
+    """Run grep with explicit UTF-8 decoding.
+
+    subprocess text=True on Windows decodes with the system ANSI
+    codepage (gbk on zh-CN), which crashes on UTF-8 bytes in our
+    source files (UnicodeDecodeError in the reader thread, lost
+    output). Force encoding so the check doesn't silently break.
+    """
+    return subprocess.run(
+        args,
+        cwd=cwd,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
 class ProductionReadinessCheck:
     def __init__(self):
         self.root = Path(__file__).parent.parent
@@ -64,11 +81,9 @@ class ProductionReadinessCheck:
         print("\n[1/10] Code Quality Check...")
 
         # 检查是否有 TODO/FIXME
-        result = subprocess.run(
+        result = _grep(
             ["grep", "-r", "TODO\\|FIXME", "skills/", "--include=*.py"],
             cwd=self.root,
-            capture_output=True,
-            text=True,
         )
         todo_count = len(result.stdout.splitlines()) if result.stdout else 0
         self.check_item(
@@ -78,11 +93,9 @@ class ProductionReadinessCheck:
         )
 
         # 检查是否有 print() 调试语句
-        result = subprocess.run(
+        result = _grep(
             ["grep", "-r", "print(", "skills/", "--include=*.py"],
             cwd=self.root,
-            capture_output=True,
-            text=True,
         )
         lines = result.stdout.splitlines() if result.stdout else []
         # 过滤掉合法的 print（如 file=sys.stderr）
@@ -175,11 +188,9 @@ class ProductionReadinessCheck:
         print("\n[4/10] Security Check...")
 
         # 检查是否有硬编码密码
-        result = subprocess.run(
+        result = _grep(
             ["grep", "-ri", "password.*=.*['\"]", "skills/", "--include=*.py"],
             cwd=self.root,
-            capture_output=True,
-            text=True,
         )
         self.check_item(
             "No hardcoded passwords",
@@ -207,11 +218,9 @@ class ProductionReadinessCheck:
         print("\n[5/10] Performance Check...")
 
         # 检查是否有不必要的递归
-        result = subprocess.run(
+        result = _grep(
             ["grep", "-r", "def.*recursive", "skills/", "--include=*.py"],
             cwd=self.root,
-            capture_output=True,
-            text=True,
         )
         recursive_count = len(result.stdout.splitlines()) if result.stdout else 0
         self.info.append(f"Found {recursive_count} explicit recursive functions")
@@ -292,11 +301,9 @@ class ProductionReadinessCheck:
         print("\n[9/10] Error Handling Check...")
 
         # 检查是否有裸 except
-        result = subprocess.run(
+        result = _grep(
             ["grep", "-rn", "except:$", "skills/", "--include=*.py"],
             cwd=self.root,
-            capture_output=True,
-            text=True,
         )
         bare_excepts = len(result.stdout.splitlines()) if result.stdout else 0
         self.check_item(
