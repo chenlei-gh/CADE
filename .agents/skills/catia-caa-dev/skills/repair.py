@@ -53,6 +53,7 @@ class RepairResult:
     details: List[Dict[str, Any]] = field(default_factory=list)
     preview: List[Dict[str, Any]] = field(default_factory=list)  # New
     backup_id: Optional[str] = None  # New: rollback point
+    diagnostics: List[Dict[str, Any]] = field(default_factory=list)  # raw findings
 
     def is_success(self) -> bool:
         return self.state in (RepairState.FIXED, RepairState.NO_ISSUES)
@@ -71,6 +72,8 @@ class RepairResult:
             d["backup_id"] = self.backup_id
         if self.details:
             d["details"] = self.details
+        if self.diagnostics:
+            d["diagnostics"] = self.diagnostics
         return d
 
 
@@ -182,6 +185,7 @@ class RepairLoop:
                     f"Preview only — no files modified."
                 ),
                 preview=all_preview_items,
+                diagnostics=all_diagnostics,
             )
 
         # ── No auto-fixable issues ──
@@ -195,6 +199,7 @@ class RepairLoop:
                     f"Manual intervention needed."
                 ),
                 preview=all_preview_items,
+                diagnostics=all_diagnostics,
             )
 
         # ── Create backup ──
@@ -282,10 +287,14 @@ class RepairLoop:
     def _diagnose_static(self) -> dict:
         """Run static workspace diagnostics (fast, no tools)"""
         try:
+            from analyzer import WorkspaceAnalyzer
             from diagnostics import DiagnosticsEngine
-            from meta_model import WorkspaceSnapshot
 
-            snapshot = WorkspaceSnapshot(root=self.workspace_root)
+            # WorkspaceSnapshot(root=...) alone is an EMPTY model — it does
+            # not scan the disk. Diagnostics on it silently reported zero
+            # issues forever. WorkspaceAnalyzer.analyze() actually discovers
+            # frameworks/modules/entities, which is what the checks need.
+            snapshot = WorkspaceAnalyzer(Path(self.workspace_root)).analyze()
             engine = DiagnosticsEngine(snapshot)
             engine.run_all()
             return engine.summary()

@@ -125,6 +125,7 @@ class DiagnosticsEngine:
         self._check_naming()
         self._check_integrity()
         self._check_unsupported_generated_apis()
+        self._check_ui_failure_patterns()
         self._check_orphaned()
         return self.diagnostics
 
@@ -412,6 +413,37 @@ class DiagnosticsEngine:
                                         auto_fixable=False,
                                     )
                                 )
+
+    def _check_ui_failure_patterns(self):
+        """Detect the documented UI failure patterns (dialog/toolbar).
+
+        These are the three silent-runtime-failure bugs recorded in
+        knowledge/failure_patterns/fp_*.md, originally diagnosed by hand
+        with debug_tools/ against a live CATIA. Static detection here
+        means repair() can surface them before any mkmk/launch cycle.
+        Not auto-fixable (rewriting command lifecycle logic needs human
+        review), but each diagnostic carries the exact fix guidance.
+        """
+        try:
+            from ui_lint import UILinter
+        except ImportError:
+            return
+        linter = UILinter()
+        for fw in self.snapshot.frameworks:
+            for mod in fw.modules:
+                for finding in linter.lint_module(mod.path):
+                    self.diagnostics.append(
+                        Diagnostic(
+                            severity=(Severity.ERROR if finding.severity == "error"
+                                      else Severity.WARNING),
+                            problem=f"{finding.problem} ({Path(finding.file).name}:{finding.line})",
+                            reason=f"{finding.reason} Fix: {finding.fix_hint} "
+                                   f"See {finding.knowledge_ref}.",
+                            category="ui_pattern",
+                            entity=Path(finding.file).stem,
+                            auto_fixable=False,
+                        )
+                    )
 
     def _check_orphaned(self):
         """Check for orphaned files"""

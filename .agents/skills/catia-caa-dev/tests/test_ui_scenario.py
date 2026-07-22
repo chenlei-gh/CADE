@@ -311,6 +311,94 @@ check("develop attaches knowledge_refs", "knowledge_refs" in r,
       f"keys: {sorted(r.keys())[:8]}")
 
 # ═══════════════════════════════════════════════════════════════
+# SECTION 9: UI Failure Patterns — static lint via repair pipeline
+# ═══════════════════════════════════════════════════════════════
+print(f"\n{'='*65}")
+print("  SECTION 9: UI Failure Patterns (ui_lint)")
+print("=" * 65)
+
+from ui_lint import UILinter
+linter = UILinter()
+
+# Rule 1: NULL-parent dialog → invisible (fp_dialog_null_parent)
+f1 = linter.lint_source("BadDlgCmd.cpp", '''
+CATStatusChangeRC BadDlgCmd::Activate(CATCommand *c, CATNotification *n) {
+    _pDlg = new MyDlg(NULL);
+    _pDlg->Build();
+    _pDlg->SetVisibility(CATDlgShow);
+    return CATStatusChangeRCCompleted;
+}
+''')
+check("null-parent dialog flagged", any(f.rule == "ui_dialog_null_parent" for f in f1))
+
+# Rule 2: Cancel() without SetVisibility(CATDlgHide) → close button dead
+f2 = linter.lint_source("BadCloseCmd.cpp", '''
+CATStatusChangeRC BadCloseCmd::Activate(CATCommand *c, CATNotification *n) {
+    _pDlg = new MyDlg(pMain);
+    _pDlg->SetVisibility(CATDlgShow);
+    return CATStatusChangeRCCompleted;
+}
+CATStatusChangeRC BadCloseCmd::Desactivate(CATCommand *c, CATNotification *n) {
+    if (_pDlg) { _pDlg->SetVisibility(CATDlgHide); }
+    return CATStatusChangeRCCompleted;
+}
+CATStatusChangeRC BadCloseCmd::Cancel(CATCommand *c, CATNotification *n) {
+    return CATStatusChangeRCAborted;
+}
+''')
+check("empty Cancel() flagged", any(f.rule == "ui_dialog_cancel_empty" for f in f2))
+
+# Rule 3: repeated SetAccessChild on same toolbar → only last button works
+f3 = linter.lint_source("BadAddin.cpp", '''
+CATCmdContainer* BadAddin::CreateToolbars() {
+    NewAccess(CATCmdContainer, pTlb, MyTlb);
+    NewAccess(CATCmdStarter, pC1, FirstCmd);
+    SetAccessChild(pTlb, pC1);
+    NewAccess(CATCmdStarter, pC2, SecondCmd);
+    SetAccessChild(pTlb, pC2);
+    return pTlb;
+}
+''')
+check("SetAccessChild overwrite flagged",
+      any(f.rule == "ui_toolbar_access_chain" for f in f3))
+
+# Clean code → no findings
+clean = f1 + f2 + f3  # sanity: findings exist on bad code
+f_clean = linter.lint_source("GoodAddin.cpp", '''
+CATCmdContainer* GoodAddin::CreateToolbars() {
+    NewAccess(CATCmdContainer, pTlb, MyTlb);
+    NewAccess(CATCmdStarter, pC1, FirstCmd);
+    SetAccessChild(pTlb, pC1);
+    NewAccess(CATCmdStarter, pC2, SecondCmd);
+    SetAccessNext(pC1, pC2);
+    return pTlb;
+}
+''')
+check("clean code passes", len(f_clean) == 0)
+
+# End-to-end: repair pipeline surfaces ui_pattern diagnostics on a
+# workspace containing bad code (validates _diagnose_static actually
+# scans the disk — it previously built an empty snapshot and no-op'd)
+bad_ws = Path(tempfile.mkdtemp(prefix="cade_uilint_ws_"))
+bad_ws = make_workspace(bad_ws)
+(bad_ws / "TestUI.edu" / "TestModule.m" / "src" / "BadCmd.cpp").write_text('''
+#include "BadCmd.h"
+CATCreateClass(BadCmd);
+CATStatusChangeRC BadCmd::Activate(CATCommand *c, CATNotification *n) {
+    _pDlg = new MyDlg(NULL);
+    _pDlg->SetVisibility(CATDlgShow);
+    return CATStatusChangeRCCompleted;
+}
+''', encoding="utf-8")
+k_bad = Kernel(workspace_root=str(bad_ws))
+r = k_bad.execute(KernelMode.REPAIR, "fix issues preview")
+diags = r.get("diagnostics", [])
+ui_diags = [d for d in diags if d.get("category") == "ui_pattern"]
+check("repair surfaces ui_pattern diagnostics", len(ui_diags) >= 1,
+      f"{len(ui_diags)} ui_pattern of {len(diags)} total")
+shutil.rmtree(bad_ws, ignore_errors=True)
+
+# ═══════════════════════════════════════════════════════════════
 # CLEANUP & SUMMARY
 # ═══════════════════════════════════════════════════════════════
 shutil.rmtree(ws, ignore_errors=True)

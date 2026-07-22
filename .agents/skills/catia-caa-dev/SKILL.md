@@ -1271,6 +1271,7 @@ python tests/test_master.py --quick
 │   ├── kernel.py                     # Development Kernel (v3.0)
 │   ├── catalog.py                    # Knowledge Catalog Index (v3.0)
 │   ├── api_registry.py               # API 白名单注册表（知识库驱动）
+│   ├── ui_lint.py                    # UI 失效模式静态检查器（failure_patterns）
 │   ├── requirements.py               # Requirements Clarifier (v3.0)
 │   │   └── decision_trees/          # 决策树 (3 个)
 │   ├── verifier.py                   # Code Verifier — static + mkmk (v3.0)
