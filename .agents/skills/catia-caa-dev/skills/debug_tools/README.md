@@ -36,6 +36,10 @@ dialog-close bug.
 | `cade_uia.ps1` | Reference-only: UI Automation descendant enumeration — also does **not** reliably see CATIA's custom toolbar button controls, kept for completeness/comparison. |
 | `cade_do_undo.ps1` / `cade_do_redo.ps1` | Reliably drives CATIA's Ctrl+Z/Ctrl+Y (Undo/Redo) on a given main-window hwnd: restores+maximizes the window, sets foreground, clicks inside the 3D view client area to guarantee real keyboard focus, then sends the key via `System.Windows.Forms.SendKeys`. **Must run window-restore + click + SendKeys in one single PowerShell process invocation** — splitting these steps across separate `terminal` tool calls loses OS foreground focus back to the calling shell/editor window in between, and the Ctrl+Z/Ctrl+Y appears to silently do nothing (or gets buffered and fires on some later, unrelated call). Usage: `powershell -ExecutionPolicy Bypass -File cade_do_undo.ps1 <mainHwnd>`. |
 | `cade_do_undo_multi.ps1` | Same as `cade_do_undo.ps1` but sends Ctrl+Z N times in a loop (`<mainHwnd> <count>`) — useful when other Automation calls (e.g. `Selection.Add`/`Clear` in a colour-check script) were run in between and pushed extra entries onto CATIA's undo stack that need to be skipped past. |
+| `cade_escape_and_undo.ps1` / `cade_escape_and_redo.ps1` | ESC-then-Ctrl+Z/Ctrl+Y combo on a given hwnd: first cancels any pending inline rename/edit in the tree, then performs the undo/redo. Useful when a previous automation step may have left the tree in inline-edit mode. |
+| `cade_click_on_hwnd.ps1` | Brings a window to the foreground and simulates a left mouse click at coordinates relative to the window's top-left corner (`<hwnd> <relX> <relY>`). |
+| `cade_restore_and_shot.ps1` | Restores a window if minimized, brings it to the foreground, then saves a `PrintWindow` screenshot to the given PNG path (`<hwnd> <outPng>`). |
+| `cade_crop.ps1` | Crops a region from a source PNG (`<srcPng> <x> <y> <w> <h> <outPng>`) — useful for comparing a specific UI area across runs. |
 
 ## Usage notes
 
