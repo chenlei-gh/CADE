@@ -7,6 +7,8 @@ Unified command-line interface for all CADE tools.
 Usage:
   cade develop <request> [--workspace path]
                                    # Full development pipeline (自然语言→代码)
+  cade develop <request> --preview # Generate ChangeSet but do NOT apply
+                                   # (review-then-apply; makes rollback usable)
 
   cade build [workspace]           # Incremental build (mkmk -u)
   cade build --full [workspace]    # Full rebuild
@@ -68,7 +70,7 @@ SKILL_ROOT = Path(__file__).parent
 sys.path.insert(0, str(SKILL_ROOT))
 
 
-def _kernel(capability: str, text: str, workspace: str = None) -> dict:
+def _kernel(capability: str, text: str, workspace: str = None, preview: bool = False) -> dict:
     """Route CLI command through Kernel for the explicitly selected workspace."""
     from kernel import Kernel, KernelMode
     mode_map = {"develop": KernelMode.DEVELOP, "analyze": KernelMode.ANALYZE, "repair": KernelMode.REPAIR}
@@ -79,7 +81,7 @@ def _kernel(capability: str, text: str, workspace: str = None) -> dict:
             ws = sys.argv[i + 1]
             break
     k = Kernel(workspace_root=ws)
-    return k.execute(mode_map[capability], text)
+    return k.execute(mode_map[capability], text, preview=preview)
 
 
 def _print_kernel(r: dict):
@@ -87,6 +89,13 @@ def _print_kernel(r: dict):
     status = r.get("status", "?")
     msg = r.get("message", "")
     print(f"[{status}] {msg}")
+    # In preview mode, make it explicit how to proceed
+    if status == "preview":
+        data = r.get("data", {})
+        cs = data.get("changeset") if isinstance(data, dict) else None
+        n_ops = len(cs.get("operations", [])) if isinstance(cs, dict) else 0
+        print(f"  ChangeSet contains {n_ops} operation(s). To apply, re-run the same command without --preview.")
+        print(f"  (If you apply and want to undo, use: cade rollback --id latest)")
     # Show clarification questions if present
     if r.get("data") and isinstance(r["data"], dict):
         questions = r["data"].get("questions", [])
@@ -191,18 +200,27 @@ def main():
 def cmd_develop(args):
     """Full development pipeline: natural language → code.
     Usage: cade develop "创建一个设置命令SettingsCmd，放在TestModule模块" --workspace D:/test
+           cade develop "..." --workspace D:/test --preview   # Generate but do NOT apply
     """
     if not args:
-        print("Usage: cade develop <natural language request> [--workspace path]")
+        print("Usage: cade develop <natural language request> [--workspace path] [--preview]")
+        print()
+        print("Options:")
+        print("  --preview   Generate the ChangeSet but do NOT apply it to the workspace.")
+        print("              Review data.changeset in the output, then re-run without")
+        print("              --preview to actually apply, or discard. Enables a")
+        print("              review-then-apply workflow that makes rollback usable.")
         print()
         print("Examples:")
         print('  cade develop "create command HelloCmd in MyModule"')
+        print('  cade develop "create command HelloCmd in MyModule" --preview')
         print('  cade develop "创建一个设置命令SettingsCmd，放在TestModule模块中"')
         print('  cade develop "analyze the workspace" --workspace D:/myproject')
         return
 
     # Separate flags from the natural language request
     opts = _get_flags(args)
+    preview = "--preview" in opts
     flag_keywords = {"--workspace", "-w", "--mode", "-m"}
     text_parts = [a for a in args if a not in flag_keywords and (not a.startswith("--") or a in ("--dialog",))]
     # Also skip values that follow flags
@@ -214,6 +232,8 @@ def cmd_develop(args):
             continue
         if a in ("--workspace", "-w", "--mode", "-m"):
             skip_next = True
+            continue
+        if a == "--preview":
             continue
         if a.startswith("--") and a not in ("--dialog",):
             skip_next = True
@@ -235,7 +255,7 @@ def cmd_develop(args):
     elif any(kw in text_lower for kw in repair_kw):
         result = _kernel("repair", text)
     else:
-        result = _kernel("develop", text)
+        result = _kernel("develop", text, preview=preview)
     _print_kernel(result)
 
 

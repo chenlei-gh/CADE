@@ -152,6 +152,37 @@ else:
     check("dico has one Addin registration", False, "dico missing")
 
 # ═══════════════════════════════════════════════════════════════
+# SECTION 3.5: DEVELOP — Preview Mode
+# ═══════════════════════════════════════════════════════════════
+print(f"\n{'='*65}")
+print("  SECTION 3.5: DEVELOP — Preview Mode (generate but don't apply)")
+print("=" * 65)
+
+# Preview mode: ChangeSet generated but NOT applied to disk
+preview_ws = Path(tempfile.mkdtemp(prefix="cade_preview_test_"))
+preview_ws = make_workspace(preview_ws)
+k_preview = Kernel(workspace_root=str(preview_ws))
+
+r = k_preview.execute(KernelMode.DEVELOP, "create command PreviewCmd in TestModule.m TestUI.edu", preview=True)
+check("preview → status='preview'", r["status"] == "preview", r.get("status", ""))
+check("preview → preview_mode=True", r.get("preview_mode") == True)
+check("preview → has changeset", bool(r.get("changeset")), "changeset key present")
+check("preview → no files written",
+      not (preview_ws / "TestUI.edu" / "TestModule.m" / "src" / "PreviewCmd.cpp").exists())
+check("preview → no header written",
+      not (preview_ws / "TestUI.edu" / "TestModule.m" / "LocalInterfaces" / "PreviewCmd.h").exists())
+
+# Now apply the same request without preview — files should be created
+r2 = k_preview.execute(KernelMode.DEVELOP, "create command PreviewCmd in TestModule.m TestUI.edu")
+check("apply → status='ok'", r2["status"] == "ok", r2.get("status", ""))
+check("apply → source file exists",
+      (preview_ws / "TestUI.edu" / "TestModule.m" / "src" / "PreviewCmd.cpp").exists())
+check("apply → header file exists",
+      (preview_ws / "TestUI.edu" / "TestModule.m" / "LocalInterfaces" / "PreviewCmd.h").exists())
+
+shutil.rmtree(preview_ws, ignore_errors=True)
+
+# ═══════════════════════════════════════════════════════════════
 # SECTION 4: DEVELOP — Multi-Intent
 # ═══════════════════════════════════════════════════════════════
 print(f"\n{'='*65}")

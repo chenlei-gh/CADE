@@ -137,13 +137,19 @@ class Kernel:
 
     # ─── Public API ────────────────────────────────────────────
 
-    def execute(self, mode: KernelMode, request: str) -> dict:
+    def execute(self, mode: KernelMode, request: str, preview: bool = False) -> dict:
         """
         Unified execution entry point.
 
         Args:
             mode: DEVELOP | ANALYZE | REPAIR
             request: Natural language request from AI/user
+            preview: If True (DEVELOP mode only), generate the ChangeSet but
+                     do NOT apply it to the workspace. The caller can inspect
+                     the returned 'changeset' and 'preview' fields, then
+                     decide whether to apply via a follow-up non-preview call
+                     (or roll back). Enables the review-then-apply workflow
+                     that makes rollback actually usable.
 
         Returns:
             dict with keys: status, mode, message, + mode-specific data
@@ -158,7 +164,7 @@ class Kernel:
 
         try:
             if mode == KernelMode.DEVELOP:
-                return self._handle_develop(request, policy)
+                return self._handle_develop(request, policy, preview=preview)
             elif mode == KernelMode.ANALYZE:
                 return self._handle_analyze(request, policy)
             elif mode == KernelMode.REPAIR:
@@ -177,7 +183,7 @@ class Kernel:
 
     # ─── Mode Handlers ─────────────────────────────────────────
 
-    def _handle_develop(self, request: str, policy: ModePolicy) -> dict:
+    def _handle_develop(self, request: str, policy: ModePolicy, preview: bool = False) -> dict:
         """DEVELOP mode: Requirement → Intent → Plan → Generate → Verify"""
         self._state = KernelState.CLARIFYING
         request_lower = request.lower()
@@ -189,7 +195,7 @@ class Kernel:
             decomposer_multi = MultiIntentDecomposer()
             sub_intents = decomposer_multi.decompose(request)
             if len(sub_intents) > 1:
-                return self._handle_multi_develop(request, sub_intents, policy)
+                return self._handle_multi_develop(request, sub_intents, policy, preview=preview)
         except ImportError:
             pass
 
@@ -237,25 +243,46 @@ class Kernel:
             ).to_dict()
 
         self._state = KernelState.GENERATING
-        result = self._execute_develop_plan(plan)
+        result = self._execute_develop_plan(plan, preview=preview)
 
         # Phase 2.5: Apply cross-domain extras (data_extension, imakefile deps)
-        if extras and any(extras.values()):
+        if not preview and extras and any(extras.values()):
             apply_result = self._apply_extras(plan, extras)
             if apply_result:
                 result["extras_applied"] = apply_result
 
-        # Phase 3: Static verification of generated code
-        verify_result = self._verify_generated_code(plan)
-        if verify_result and verify_result.get("files_checked", 0) > 0:
-            result["verification"] = verify_result
+        # Phase 3: Static verification of generated code (skip in preview mode
+        # since no files exist yet)
+        if not preview:
+            verify_result = self._verify_generated_code(plan)
+            if verify_result and verify_result.get("files_checked", 0) > 0:
+                result["verification"] = verify_result
 
         # Phase 3.5: Ensure IdentityCard (prevent mkmk build failures)
-        ic_ok = self._ensure_identity_card(plan)
-        if ic_ok:
-            result["identity_card"] = ic_ok
+        # Skip in preview mode: no files on disk yet to inspect
+        if not preview:
+            ic_ok = self._ensure_identity_card(plan)
+            if ic_ok:
+                result["identity_card"] = ic_ok
 
         self._state = KernelState.COMPLETED
+        if preview:
+            # In preview mode, surface a clear message and keep the raw
+            # changeset in the payload so the caller can inspect/diff it.
+            result["preview_mode"] = True
+            # Remove status/message from data to avoid overwriting the
+            # "preview" status/message when to_dict() merges data.
+            result_for_data = {k: v for k, v in result.items() if k not in ("status", "message")}
+            return KernelResult(
+                status="preview", mode="develop",
+                state=self._state.value,
+                message=(
+                    "Preview: ChangeSet generated but NOT applied. "
+                    "Review data.changeset / data.preview, then either "
+                    "re-run without --preview to apply, or discard."
+                ),
+                data=result_for_data,
+            ).to_dict()
         return KernelResult(
             status=result.get("status", "ok"), mode="develop",
             state=self._state.value,
@@ -444,7 +471,7 @@ class Kernel:
     # ─── Multi-Intent Handler (v3.1) ───────────────────────────
 
     def _handle_multi_develop(self, request: str, sub_intents: list,
-                               policy: ModePolicy) -> dict:
+                               policy: ModePolicy, preview: bool = False) -> dict:
         """
         Handle compound requests with multiple sub-intents.
         Each sub-intent goes through the full develop pipeline independently.
@@ -465,28 +492,30 @@ class Kernel:
                     continue
 
                 self._state = KernelState.GENERATING
-                result = self._execute_develop_plan(plan)
+                result = self._execute_develop_plan(plan, preview=preview)
 
-                # Apply extras for this sub-intent
-                try:
-                    from requirements import RequirementsClarifier, RequirementsDecomposer
-                    clarifier = RequirementsClarifier()
-                    sub_clarification = clarifier.analyze(sub_request)
-                    decomposer = RequirementsDecomposer()
-                    extras = decomposer.enhance(sub_clarification)
-                    if extras and any(extras.values()):
-                        self._apply_extras(plan, extras)
-                        result["extras_applied"] = True
-                except ImportError:
-                    pass
+                # Apply extras for this sub-intent (skip in preview mode)
+                if not preview:
+                    try:
+                        from requirements import RequirementsClarifier, RequirementsDecomposer
+                        clarifier = RequirementsClarifier()
+                        sub_clarification = clarifier.analyze(sub_request)
+                        decomposer = RequirementsDecomposer()
+                        extras = decomposer.enhance(sub_clarification)
+                        if extras and any(extras.values()):
+                            self._apply_extras(plan, extras)
+                            result["extras_applied"] = True
+                    except ImportError:
+                        pass
 
-                # Verify & ensure IdentityCard
-                verify_result = self._verify_generated_code(plan)
-                if verify_result and verify_result.get("files_checked", 0) > 0:
-                    result["verification"] = verify_result
-                ic_ok = self._ensure_identity_card(plan)
-                if ic_ok:
-                    result["identity_card"] = ic_ok
+                # Verify & ensure IdentityCard (skip in preview mode)
+                if not preview:
+                    verify_result = self._verify_generated_code(plan)
+                    if verify_result and verify_result.get("files_checked", 0) > 0:
+                        result["verification"] = verify_result
+                    ic_ok = self._ensure_identity_card(plan)
+                    if ic_ok:
+                        result["identity_card"] = ic_ok
 
                 all_results.append({
                     "sub_intent": si.to_dict(),
@@ -503,6 +532,24 @@ class Kernel:
 
         self._state = KernelState.COMPLETED
         ok_count = sum(1 for r in all_results if r.get("status") == "ok")
+
+        if preview:
+            return KernelResult(
+                status="preview",
+                mode="develop", state=self._state.value,
+                message=(
+                    f"Preview: {len(all_results)} ChangeSets generated but NOT applied. "
+                    "Review data.results, then re-run without --preview to apply."
+                ),
+                data={
+                    "multi_intent": True,
+                    "preview_mode": True,
+                    "total": len(all_results),
+                    "completed": ok_count,
+                    "results": all_results,
+                },
+            ).to_dict()
+
         return KernelResult(
             status="ok" if ok_count == len(all_results) else "partial",
             mode="develop", state=self._state.value,
@@ -577,7 +624,7 @@ class Kernel:
         except Exception:
             return {"intent": intent.to_dict(), "plan": {}, "steps": 0}
 
-    def _execute_develop_plan(self, plan: dict) -> dict:
+    def _execute_develop_plan(self, plan: dict, preview: bool = False) -> dict:
         """Execute a development plan via existing actions"""
         intent_data = plan.get("intent", {})
         intent_type = intent_data.get("type", "")
@@ -624,7 +671,11 @@ class Kernel:
             # develop request via CLI/MCP would silently stop at "pending"
             # and downstream phases (extras, verification, IdentityCard) would
             # no-op because the files never existed.
-            if result.get("status") == "pending" and result.get("changeset"):
+            # When preview=True, skip the apply step entirely and surface the
+            # serialized ChangeSet for the caller to review (the whole point
+            # of preview mode: allow inspect-then-decide, which is what makes
+            # rollback usable in practice).
+            if result.get("status") == "pending" and result.get("changeset") and not preview:
                 apply_result = self._apply_changeset_dict(result["changeset"])
                 result["apply_result"] = apply_result
                 if apply_result.get("status") == "applied":

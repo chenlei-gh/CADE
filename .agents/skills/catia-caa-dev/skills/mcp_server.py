@@ -68,6 +68,17 @@ TOOLS = [
                     "description": "What you want to create, in natural language.",
                 },
                 "workspace": {"type": "string", "description": "Optional workspace path override"},
+                "preview": {
+                    "type": "boolean",
+                    "description": (
+                        "If true, generate the ChangeSet but do NOT apply it to disk. "
+                        "Inspect the returned data.changeset / data.preview, then either "
+                        "re-call with preview=false (or omit preview) to actually apply, "
+                        "or discard. Enables a review-then-apply workflow that makes "
+                        "rollback usable in practice."
+                    ),
+                    "default": False,
+                },
             },
         },
     },
@@ -132,7 +143,8 @@ def handle_tool(name: str, args: dict) -> dict:
         return {"status": "error", "message": f"Unknown tool: {name}. Available: develop, analyze, repair"}
 
     kernel = Kernel(workspace_root=ws)
-    result = kernel.execute(mode_map[name], request)
+    preview = bool(args.get("preview", False)) if name == "develop" else False
+    result = kernel.execute(mode_map[name], request, preview=preview)
     return optimize(result)
 
 
