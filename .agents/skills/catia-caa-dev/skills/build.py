@@ -12,6 +12,7 @@ Build Time calling chain (replicates VS Build Time Prompt):
 """
 
 import argparse
+import re
 import subprocess
 import sys
 import tempfile
@@ -58,6 +59,7 @@ def verify_build(
     workspace_path: Path,
     expected_modules: Optional[List[str]] = None,
     build_start_time: Optional[datetime] = None,
+    touched_modules: Optional[List[str]] = None,
 ) -> dict:
     """Post-build verification: check that fresh, plausible DLLs were produced.
 
@@ -65,8 +67,20 @@ def verify_build(
         workspace_path: Workspace root
         expected_modules: Optional list of module names (e.g. ['TTModule']) to verify.
                           If provided, each is checked individually.
-        build_start_time: Start of the current build. DLLs older than this time
-                          cannot prove that this build produced them.
+        build_start_time: Start of the current build. Used as the staleness
+                          cutoff only for modules that this build actually
+                          touched (see touched_modules). Modules that mkmk
+                          skipped via incremental build are not expected to
+                          have a fresher DLL, so they are not held to this
+                          cutoff -- otherwise every untouched module in a
+                          multi-tool workspace would be falsely flagged as
+                          stale on every build.
+        touched_modules: Optional list of module names whose sources were
+                          actually compiled/linked in this invocation (as
+                          seen in the mkmk output, e.g. via 'compilation' /
+                          'link1st' steps). If omitted, all modules are
+                          treated as touched (legacy behavior, single-tool
+                          workspaces).
     """
     arch = "win_b64"
     try:
@@ -83,6 +97,24 @@ def verify_build(
     if not dlls:
         issues.append(f"No DLLs found in {bin_dir}")
 
+    touched_lower = {m.lower() for m in touched_modules} if touched_modules is not None else None
+
+    def _dll_module_name(dll_name: str) -> str:
+        return dll_name[:-4] if dll_name.lower().endswith(".dll") else dll_name
+
+    def _check_staleness(dll) -> Optional[str]:
+        if not build_start_time:
+            return None
+        if touched_lower is not None and _dll_module_name(dll.name).lower() not in touched_lower:
+            # This build's mkmk run did not recompile/relink this module
+            # (incremental build skipped it because its sources were
+            # unchanged). Its DLL predating this build's start time is
+            # therefore expected, not a failure.
+            return None
+        if dll.stat().st_mtime < build_start_time.timestamp():
+            return f"{dll.name}: stale DLL (older than current build start)"
+        return None
+
     # Check target module DLLs (P1-006)
     if expected_modules:
         dll_by_name = {d.name.lower(): d for d in dlls}
@@ -95,15 +127,17 @@ def verify_build(
             size = dll.stat().st_size
             if size < 1024:
                 issues.append(f"{dll.name}: suspicious size ({size} bytes)")
-            if build_start_time and dll.stat().st_mtime < build_start_time.timestamp():
-                issues.append(f"{dll.name}: stale DLL (older than current build start)")
+            stale_issue = _check_staleness(dll)
+            if stale_issue:
+                issues.append(stale_issue)
     else:
         for dll in dlls:
             size = dll.stat().st_size
             if size < 1024:
                 issues.append(f"{dll.name}: suspicious size ({size} bytes)")
-            if build_start_time and dll.stat().st_mtime < build_start_time.timestamp():
-                issues.append(f"{dll.name}: stale DLL (older than current build start)")
+            stale_issue = _check_staleness(dll)
+            if stale_issue:
+                issues.append(stale_issue)
 
     return {
         "dll_count": len(dlls),
@@ -133,15 +167,19 @@ def sync_runtime_view(workspace_path: Path, arch: str = "win_b64") -> dict:
             for f in dict_src.glob("*.dico"):
                 shutil.copy2(f, dict_dst / f.name)
                 synced.append(f"dictionary/{f.name}")
-        # NLS + CATRsc
+        # NLS + CATRsc (recursively, to sync localized subdirectories like
+        # Simplified_Chinese/ that CATIA's NLS loader searches per language).
         msg_src = cnext / "resources" / "msgcatalog"
         if msg_src.exists():
             msg_dst = rv / "resources" / "msgcatalog"
             msg_dst.mkdir(parents=True, exist_ok=True)
-            for f in msg_src.glob("*"):
+            for f in msg_src.rglob("*"):
                 if f.is_file():
-                    shutil.copy2(f, msg_dst / f.name)
-                    synced.append(f"msgcatalog/{f.name}")
+                    rel = f.relative_to(msg_src)
+                    dst = msg_dst / rel
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(f, dst)
+                    synced.append(f"msgcatalog/{rel.as_posix()}")
         # Icons
         icon_src = cnext / "resources" / "graphic" / "icons"
         if icon_src.exists():
@@ -363,10 +401,27 @@ def build_workspace(
                     if mod_dir.is_dir() and mod_dir.name.endswith(".m"):
                         expected_mods.append(mod_dir.name.replace(".m", ""))
 
+        # Determine which modules mkmk actually compiled/linked this run
+        # (via '# make:  <Framework>.edu\<Module>.m...' lines). mkmk is
+        # incremental: modules whose sources are unchanged are skipped and
+        # legitimately keep an older DLL timestamp, so they must not be
+        # held to the build_start_time staleness cutoff below. An empty
+        # result here is meaningful (nothing needed rebuilding this run,
+        # e.g. a no-op re-run) and must NOT be treated as "unknown" --
+        # otherwise every already-up-to-date DLL in the workspace gets
+        # falsely flagged as stale.
+        touched_mods = sorted(set(re.findall(r"#\s*make:\s*\S+?\.edu[\\/](\S+?)\.m\b", output)))
+        # Only fall back to "check everything" (None) if the output doesn't
+        # even contain a compilation/link section, which means we truly
+        # can't tell what mkmk did (unexpected output format).
+        has_build_steps = "step: compilation" in output or "step: link1st" in output
+        touched_for_verify = touched_mods if has_build_steps else None
+
         verify = verify_build(
             workspace_path,
             expected_modules=expected_mods if expected_mods else None,
             build_start_time=start_time,
+            touched_modules=touched_for_verify,
         )
         build_result["verification"] = verify
         if verify["issues"]:

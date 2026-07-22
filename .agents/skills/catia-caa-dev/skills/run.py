@@ -130,6 +130,7 @@ def start_catia_runtime(
     env_vars = os.environ.copy()
 
     # Only add Runtime View paths if workspace is provided
+    runtime_view_mounted = False
     if workspace_path:
         caa_env.load_config()
         arch = caa_env.get_architecture()
@@ -141,6 +142,16 @@ def start_catia_runtime(
                 env_vars["CATDLLPath"] = str(runtime_bin) + (os.pathsep + existing if existing else "")
                 logger.write(f"CATDLLPath += {runtime_bin}")
                 print(f"Using Runtime View: {runtime_view}", file=sys.stderr)
+                runtime_view_mounted = True
+        else:
+            warn = (
+                f"Runtime View directory not found: {runtime_view} — "
+                f"CATDLLPath/CATDictionaryPath/... will NOT include this "
+                f"workspace's DLLs even though mkrun is used. Run build.py "
+                f"first to generate the Runtime View."
+            )
+            logger.write(warn, "WARNING")
+            print(f"[WARNING] {warn}", file=sys.stderr)
 
     # Get CATSTART path (use CATSTART with proper parameters)
     catstart_path = caa_env.get_catstart_path()
@@ -200,7 +211,13 @@ def start_catia_runtime(
         cmd_args = ["cmd", "/c", f"start /min cmd /c {batfile}"]
         logger.write(f"Using mkrun (workspace): {workspace_path}")
     else:
-        # No workspace — use CATSTART for a plain CATIA launch
+        # No workspace — use CATSTART for a plain CATIA launch.
+        # WARNING: this does NOT set CATDLLPath/CATDictionaryPath/
+        # CATMsgCatalogPath for any workspace Runtime View, so custom CAA
+        # DLLs (new or previously-accepted) will NOT be loaded by CATIA.
+        # This mode looks like a normal successful start (status="started")
+        # but is a "bare" CATIA session — only use it when you deliberately
+        # do NOT need any custom CAA tool loaded.
         if not env_name:
             env_name = caa_env.get_default_env()
         env_dir = caa_env.get_catenv_dir()
@@ -213,6 +230,15 @@ def start_catia_runtime(
         ]
         logger.write(f"Using CATSTART: {catstart_path}")
         logger.write(f"Environment: {env_name}")
+        warning_msg = (
+            "No workspace provided — starting a BARE CATIA session. "
+            "Runtime View (CATDLLPath/CATDictionaryPath/CATMsgCatalogPath) is "
+            "NOT mounted, so custom CAA DLLs will NOT be loaded. "
+            "If you need a workspace's CAA tools available, restart with: "
+            "python run.py <workspace_path>"
+        )
+        logger.write(warning_msg, "WARNING")
+        print(f"[WARNING] {warning_msg}", file=sys.stderr)
 
     # Check if CATIA is already running
     running_catia = check_process_running("CNEXT.exe")
@@ -249,6 +275,7 @@ def start_catia_runtime(
                 "exit_code": result.returncode,
                 "duration_seconds": duration,
                 "timestamp": start_time.isoformat(),
+                "runtime_view_mounted": runtime_view_mounted,
             }
         else:
             # Use Popen with CREATE_NO_WINDOW to suppress cmd popup.
@@ -276,6 +303,7 @@ def start_catia_runtime(
                         "message": "CATIA started successfully",
                         "pid": running[0]["pid"],
                         "timestamp": start_time.isoformat(),
+                        "runtime_view_mounted": runtime_view_mounted,
                     }
                     break
 
@@ -285,6 +313,7 @@ def start_catia_runtime(
                     "status": "launching",
                     "message": "CATIA launch initiated (still initializing)",
                     "timestamp": start_time.isoformat(),
+                    "runtime_view_mounted": runtime_view_mounted,
                 }
 
         # Save to cache

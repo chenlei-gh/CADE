@@ -1085,15 +1085,18 @@ cmd_list, cmd_display = env.run_command("mkwhereami", "D:/workspace")
 ### 3. 运行 CATIA (CNEXT)
 
 ```bash
-python skills/run.py [options]
+python skills/run.py [workspace] [options]
 ```
+
+**重要**: `workspace` 是位置参数（不是 `--workspace` flag）。必须带上 workspace 路径才会挂载该工作区的 Runtime View（`CATDLLPath`/`CATDictionaryPath`/`CATMsgCatalogPath`），否则任何自定义 CAA DLL（不管新旧、不管是否已验收过）都不会被 CATIA 加载。这种“裸机启动”仍会返回 `"status": "started"`，看上去成功但工具不生效，需要靠返回 JSON 里的 `runtime_view_mounted` 字段或 stderr 的 `[WARNING]` 提示辨别。
 
 **示例**:
 ```bash
-python skills/run.py                    # 启动 CATIA
-python skills/run.py --workspace D:\ws  # 指定工作区
-python skills/run.py --wait             # 等待 CATIA 退出
-python skills/run.py --stop             # 停止所有 CATIA 进程
+python skills/run.py D:\workspace         # 启动 CATIA 并挂载该工作区 Runtime View（推荐，验证自定义工具时必须这样）
+python skills/run.py                      # 裸机启动，不加载任何自定义 CAA DLL（会打印 WARNING）
+python skills/run.py --wait               # 启动并等待 CATIA 退出
+python skills/run.py --stop               # 停止所有 CATIA 进程
+python skills/run.py --dev D:\workspace   # 编译 + 挂载 Runtime View 启动，一步到位
 ```
 
 **Python API**:
