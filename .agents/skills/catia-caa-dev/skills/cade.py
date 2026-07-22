@@ -72,7 +72,7 @@ SKILL_ROOT = Path(__file__).parent
 sys.path.insert(0, str(SKILL_ROOT))
 
 
-def _kernel(capability: str, text: str, workspace: str = None, preview: bool = False) -> dict:
+def _kernel(capability: str, text: str, workspace: str = None, preview: bool = False, detail: bool = False) -> dict:
     """Route CLI command through Kernel for the explicitly selected workspace."""
     from kernel import Kernel, KernelMode
     mode_map = {"develop": KernelMode.DEVELOP, "analyze": KernelMode.ANALYZE, "repair": KernelMode.REPAIR}
@@ -83,7 +83,7 @@ def _kernel(capability: str, text: str, workspace: str = None, preview: bool = F
             ws = sys.argv[i + 1]
             break
     k = Kernel(workspace_root=ws)
-    return k.execute(mode_map[capability], text, preview=preview)
+    return k.execute(mode_map[capability], text, preview=preview, detail=detail)
 
 
 def _print_kernel(r: dict):
@@ -389,6 +389,7 @@ def cmd_create(args):
 def cmd_analyze(args):
     """Analyze via Kernel — routes through analyze()."""
     opts = _get_flags(args)
+    detail = "--detail" in opts
     if "--modules" in opts:
         text = "list all modules"
     elif "--commands" in opts:
@@ -402,7 +403,7 @@ def cmd_analyze(args):
         text = f"visualize dependency graph of {entity}" if entity else "visualize dependency graph"
     else:
         text = "analyze the workspace"
-    result = _kernel("analyze", text)
+    result = _kernel("analyze", text, detail=detail)
     _print_kernel(result)
     # Print diagram if present
     data = result.get("data", {})
@@ -416,6 +417,12 @@ def cmd_analyze(args):
     guide = result.get("reading_guide", data.get("reading_guide", ""))
     if guide:
         print(f"  阅读顺序: {guide}")
+    # --detail: print inlined knowledge content (flattened to top level)
+    for item in result.get("content", []):
+        print(f"\n=== {item['file']} (id: {item['id']}) ===")
+        print(item["content"])
+        if item.get("truncated"):
+            print("... [truncated]")
 
 
 # ─── Diagnose / Fix ───────────────────────────────────────────────

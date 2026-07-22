@@ -151,7 +151,8 @@ class Kernel:
 
     # ─── Public API ────────────────────────────────────────────
 
-    def execute(self, mode: KernelMode, request: str, preview: bool = False) -> dict:
+    def execute(self, mode: KernelMode, request: str, preview: bool = False,
+                detail: bool = False) -> dict:
         """
         Unified execution entry point.
 
@@ -180,7 +181,7 @@ class Kernel:
             if mode == KernelMode.DEVELOP:
                 return self._handle_develop(request, policy, preview=preview)
             elif mode == KernelMode.ANALYZE:
-                return self._handle_analyze(request, policy)
+                return self._handle_analyze(request, policy, detail=detail)
             elif mode == KernelMode.REPAIR:
                 return self._handle_repair(request, policy)
             else:
@@ -312,7 +313,7 @@ class Kernel:
             data=result,
         ).to_dict()
 
-    def _handle_analyze(self, request: str, policy: ModePolicy) -> dict:
+    def _handle_analyze(self, request: str, policy: ModePolicy, detail: bool = False) -> dict:
         """ANALYZE mode: Knowledge search / diagnostics / workspace (read-only)"""
         self._state = KernelState.PLANNING
         request_lower = request.lower()
@@ -356,7 +357,7 @@ class Kernel:
 
         # ── Path 3: Knowledge / API query ──
         if self._is_knowledge_query(request_lower):
-            result = self._lookup_knowledge(request_lower)
+            result = self._lookup_knowledge(request_lower, include_content=detail)
             if result:
                 self._state = KernelState.COMPLETED
                 return KernelResult(
@@ -1058,10 +1059,14 @@ class Kernel:
         # Check question patterns
         return any(request.startswith(q) for q in self._KNOWLEDGE_QUESTION_WORDS)
 
-    def _lookup_knowledge(self, request: str) -> dict:
+    def _lookup_knowledge(self, request: str, include_content: bool = False) -> dict:
         """
         Search knowledge base via CatalogIndex (unified model).
         Alias expansion and keyword matching handled internally.
+
+        include_content: also inline the full text of the top-ranked knowledge
+        files (with a size budget) so the caller gets answers in ONE round
+        trip instead of search -> read -> maybe-grep -> read-again.
         """
         results = []
         domain_hint = ""
@@ -1097,13 +1102,52 @@ class Kernel:
         except Exception:
             pass
 
-        return {
+        out = {
             "summary": "; ".join(summary_parts) if summary_parts else "Knowledge base searched",
             "domain": domain_hint,
             "references": results,
             "reading_guide": guide,
             "hint": "Read files in reading_guide order. For official docs, see CAADoc via knowledge/frameworks/.",
         }
+        if include_content and entries:
+            out["content"] = self._read_knowledge_files(entries)
+        return out
+
+    def _read_knowledge_files(self, entries, max_files: int = 3,
+                              max_chars_per_file: int = 12000,
+                              max_total_chars: int = 24000) -> list:
+        """Inline the top-ranked knowledge files, bounded by a size budget.
+
+        Returns [{file, id, title, content, truncated}] in ranked order.
+        Reading is best-effort: a missing/unreadable file is skipped, never
+        fatal. Budgets keep the MCP/CLI payload from blowing up on large docs.
+        """
+        skill_root = Path(__file__).parent.parent
+        content = []
+        total = 0
+        for e in entries[:max_files]:
+            if not e.file or e.file.endswith("/"):
+                continue
+            path = skill_root / e.file
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            truncated = False
+            if len(text) > max_chars_per_file:
+                text = text[:max_chars_per_file]
+                truncated = True
+            if total + len(text) > max_total_chars:
+                break
+            total += len(text)
+            content.append({
+                "file": e.file,
+                "id": e.id,
+                "title": e.title,
+                "content": text,
+                "truncated": truncated,
+            })
+        return content
 
     def _consult_knowledge(self, request: str) -> list:
         """Lightweight knowledge grounding for the develop pipeline.

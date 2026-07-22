@@ -268,6 +268,7 @@ AI 只知道 3 个 Mode:
 | 🆕 **模糊需求用 develop()** | 用户说"我想做一个..."、"能不能..."时直接调用 `develop()`。Kernel 自动做需求澄清 → 分解增强（Playbook/Capability/依赖）→ 规划 → 生成 → **自动写入磁盘（auto-apply）** → 代码验证。如果返回 `needs_clarification`，把问题展示给用户。 |
 | ✅ **develop() 一次调用即完成，不要等"确认"** | `develop()` 会自动把生成结果写入磁盘并自带备份（`result.apply_result.rollback_id`），不存在"生成预览 → 再手动 apply"的第二步。返回 `status: "ok"` 就代表文件已经真实存在；只有意图无法解析（如模块不存在）才会停在 `status: "pending"`，此时也没有文件被写入。需要撤销时用 `repair()` 的 rollback，而不是去找一个不存在的 confirm 接口。 |
 | 🔍 **只读操作用 analyze()** | 所有查询、诊断、分析用 `analyze()`。它永不会修改文件，无需确认。 |
+| 📄 **知识问题加 detail=true** | 问 CAA API/Pattern/做法类问题时调 `analyze(request, detail=true)`，一次调用直接返回排序后的知识**文件内容**，不要再 analyze → read 文件 → grep 定位的多轮往返。返回已按相关性排序并带 reading_guide。 |
 | 🔧 **修复用 repair()** | 修复诊断问题、重构（重命名/移动）、回滚用 `repair()`。Kernel 内部运行 diagnose → fix → verify 最多重试 3 次。 |
 | ⚡ **永远不需要判断"走哪个"** | 用户说"创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`。基于自然语言的动词分类，不需要思考。 |
 | 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架 → 再精准打开 `<CATIA_INSTALL>/CAADoc/` 对应页面。不要跳过 Framework 直接全文搜 CAADoc。 |

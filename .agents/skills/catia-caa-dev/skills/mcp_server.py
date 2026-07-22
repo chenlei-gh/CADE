@@ -88,9 +88,12 @@ TOOLS = [
             "Query, diagnose, or inspect the workspace. READ-ONLY — never modifies files. "
             "Use for: workspace analysis, listing modules/commands, dependency analysis, "
             "diagnostics, validation, impact analysis. Supports EN and CN requests. "
+            "For CAA knowledge/API/pattern questions, set detail=true to get the actual "
+            "knowledge file CONTENT inlined in one call — this avoids a separate read/grep "
+            "round trip and guarantees you read the top-ranked file, not a wrong one. "
             'Examples: "analyze the workspace", "list all modules", '
             '"列出所有模块", "show dependencies of MyCmd", '
-            '"diagnose module TestModule.m".'
+            '"diagnose module TestModule.m", "如何创建对话框 (detail=true)".'
         ),
         "inputSchema": {
             "type": "object",
@@ -101,6 +104,14 @@ TOOLS = [
                     "description": "What you want to analyze or query, in natural language.",
                 },
                 "workspace": {"type": "string", "description": "Optional workspace path override"},
+                "detail": {
+                    "type": "boolean",
+                    "description": (
+                        "Knowledge queries only: inline the top-ranked knowledge file content "
+                        "in the response. Default false returns references + reading_guide only."
+                    ),
+                    "default": False,
+                },
             },
         },
     },
@@ -144,7 +155,15 @@ def handle_tool(name: str, args: dict) -> dict:
 
     kernel = Kernel(workspace_root=ws)
     preview = bool(args.get("preview", False)) if name == "develop" else False
-    result = kernel.execute(mode_map[name], request, preview=preview)
+    detail = bool(args.get("detail", False)) if name == "analyze" else False
+    result = kernel.execute(mode_map[name], request, preview=preview, detail=detail)
+
+    # A knowledge query with detail=true inlines file content that must reach
+    # the caller verbatim. Knowledge results are FLATTENED (content at top
+    # level, not under data), and 'auto' strips everything but ok/status on
+    # success — bypass optimization to preserve the payload.
+    if name == "analyze" and isinstance(result, dict) and result.get("content"):
+        return result
     return optimize(result)
 
 
