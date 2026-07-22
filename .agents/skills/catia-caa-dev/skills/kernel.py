@@ -1075,6 +1075,7 @@ class Kernel:
             pass
 
         # Step 2: Search via CatalogIndex (handles alias expansion internally)
+        entries = []
         try:
             if self.catalog:
                 entries = self.catalog.search(request, max_results=10)
@@ -1089,11 +1090,19 @@ class Kernel:
         if results:
             summary_parts.append(f"Found {len(results)} references")
 
+        guide = ""
+        try:
+            if self.catalog:
+                guide = self.catalog.reading_guide(entries, request)
+        except Exception:
+            pass
+
         return {
             "summary": "; ".join(summary_parts) if summary_parts else "Knowledge base searched",
             "domain": domain_hint,
             "references": results,
-            "hint": "For detailed API code, check knowledge/ files matched above. For official docs, see CAADoc via knowledge/frameworks/.",
+            "reading_guide": guide,
+            "hint": "Read files in reading_guide order. For official docs, see CAADoc via knowledge/frameworks/.",
         }
 
     def _consult_knowledge(self, request: str) -> list:

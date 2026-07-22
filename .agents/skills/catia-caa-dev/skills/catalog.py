@@ -278,6 +278,50 @@ class CatalogIndex:
                 return True
         return False
 
+    def reading_guide(self, entries: List["CatalogEntry"], query: str = "") -> str:
+        """Compact read-order hint for a ranked result set.
+
+        Groups entries by role and orders the groups by detected query intent,
+        so the caller reads the most actionable file first instead of walking
+        the raw ranked list top-down. Returns "" when there is nothing useful
+        to say (0-1 entries).
+        """
+        if len(entries) <= 1:
+            return ""
+        query_lower = query.lower()
+        failure_intent = any(t in query_lower for t in self._FAILURE_INTENT)
+        pattern_intent = any(t in query_lower for t in self._PATTERN_INTENT)
+
+        primary, patterns, failures = [], [], []
+        for e in entries:
+            if e.category in ("knowledge", "capability"):
+                primary.append(e)
+            elif e.category in ("pattern", "playbook"):
+                patterns.append(e)
+            elif e.category == "failure_pattern":
+                failures.append(e)
+
+        def files(group, n):
+            return ", ".join(e.file for e in group[:n] if e.file)
+
+        parts = []
+        if failure_intent and failures:
+            parts.append(f"先排错: {files(failures, 2)}")
+            if primary:
+                parts.append(f"再查基础: {files(primary, 2)}")
+        elif pattern_intent and patterns:
+            parts.append(f"先看模式: {files(patterns, 2)}")
+            if primary:
+                parts.append(f"基础参考: {files(primary, 2)}")
+        else:
+            if primary:
+                parts.append(f"先读: {files(primary, 2)}")
+            if patterns:
+                parts.append(f"按需模式: {files(patterns, 2)}")
+            if failures:
+                parts.append(f"遇错查: {files(failures, 1)}")
+        return " | ".join(p for p in parts if not p.endswith(": "))
+
     # ─── Internal ────────────────────────────────────────────────
 
     def _parse(self, content: str) -> None:

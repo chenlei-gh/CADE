@@ -413,6 +413,9 @@ def cmd_analyze(args):
     if refs:
         for r in refs[:5]:
             print(f"  - {r}")
+    guide = result.get("reading_guide", data.get("reading_guide", ""))
+    if guide:
+        print(f"  阅读顺序: {guide}")
 
 
 # ─── Diagnose / Fix ───────────────────────────────────────────────
