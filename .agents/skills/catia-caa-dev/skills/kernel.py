@@ -268,6 +268,22 @@ class Kernel:
         if knowledge_refs:
             result["knowledge_refs"] = knowledge_refs
 
+        # Phase 2.3: Auto-inject knowledge CONTENT so every caller — not just
+        # the ones disciplined enough to query first — generates against the
+        # verified API patterns. This is the main lever for equalizing output
+        # quality across AI agents. Skipped in preview (nothing generated yet).
+        if not preview and knowledge_refs:
+            try:
+                ref_ids = {r["id"] for r in knowledge_refs if r.get("id")}
+                ranked = [e for e in self.catalog.search(request, max_results=5)
+                          if e.id in ref_ids] if self.catalog else []
+                if ranked:
+                    result["knowledge_content"] = self._read_knowledge_files(
+                        ranked, max_files=2, max_chars_per_file=8000,
+                        max_total_chars=12000)
+            except Exception:
+                pass  # grounding is best-effort, never blocks develop
+
         # Phase 2.5: Apply cross-domain extras (data_extension, imakefile deps)
         if not preview and extras and any(extras.values()):
             apply_result = self._apply_extras(plan, extras)
@@ -280,6 +296,14 @@ class Kernel:
             verify_result = self._verify_generated_code(plan)
             if verify_result and verify_result.get("files_checked", 0) > 0:
                 result["verification"] = verify_result
+                # Surface violations as a top-level, impossible-to-miss field.
+                # Agents that skip the 'verification' blob still trip over this.
+                if verify_result.get("error_count", 0) > 0:
+                    result["verification_failed"] = True
+                    result["verification_errors"] = [
+                        i for i in verify_result.get("issues", [])
+                        if i.get("severity") == "error"
+                    ][:5]
 
         # Phase 3.5: Ensure IdentityCard (prevent mkmk build failures)
         # Skip in preview mode: no files on disk yet to inspect

@@ -218,6 +218,13 @@ triggers:
 
 # CATIA CAA V5 智能开发助手
 
+> ## ⛔ 强制工作流（AI 必读，不可跳过）
+>
+> 1. **创建/生成** → 调 `develop()`。它**自动注入相关知识内容**（`knowledge_content`）并**自动静态验证**。**先读响应里的 `knowledge_content` 再写代码**；若出现 `verification_failed: true`，**必须先修复 `verification_errors` 再继续**。
+> 2. **知识/API 问题** → 调 `analyze(request, detail=true)`，一次返回排序后的知识**文件内容**，不要再 grep / 多轮读文件。
+> 3. **编译错/修复** → 调 `repair()`，不要手动改生成代码。
+> 4. **绝不凭记忆写 CAA API**——`knowledge_content` / `api_registry` 里才是验证过的 API；训练记忆里的 CATIxxx 可能是虚构的。
+
 ## 🎯 核心特性
 
 **版本**: 3.2.1
