@@ -4,7 +4,7 @@ title: Dialog Layout & GridConstraints
 category: knowledge
 domain: ui
 keywords: [layout, grid, constraints, anchor, nesting, resize, frame, stretch]
-apis: [CATDlgGridConstraints, CATDlgFrame, CATDlgDialog]
+apis: [CATDlgGridConstraints, CATDlgFrame, CATDlgDialog, CATDlgTabContainer]
 requires: [ui.dialog]
 patterns: [ui.master_detail]
 examples: []
@@ -14,6 +14,27 @@ tags: [ui, layout, grid]
 
 # CAA Dialog Layout & Advanced Controls
 
+## ⚠️ 重要修正
+
+之前版本以下 API 经核实**不存在或签名错误**：
+
+| 虚构/错误 | 真实 API |
+|-----------|---------|
+| `SetGridConstraints(pFrame, gc)` 两参 | `SetGridConstraints(gc)` **单参**（CATDialog 方法） |
+| `gc.SetRow(r).SetColumn(c).SetSpan(...).SetAnchor(...)` 链式 | **无链式 setter**；用构造函数 `CATDlgGridConstraints(row, col, rspan, cspan, anchor)` 或直接写公有成员 `Row`/`Column` |
+| `CATGRID_HORIZONTAL` / `CATGRID_VERTICAL` | 不存在。水平填充用 `CATGRID_LEFT\|CATGRID_RIGHT`；垂直用 `CATGRID_TOP\|CATGRID_BOTTOM` |
+| `CATDlgFraGroupFrame` / `CATDlgFraSunkenFrame` | 不存在。Frame 风格只有 `CATDlgFraNoTitle`/`CATDlgFraNoFrame`/`CATDlgFraNoMargin`；标题用 `SetTitle()` |
+| `pTab->AttachTab(frame, "Title")` | 不存在。**以 TabContainer 为父创建 Frame 即自动成页**；页控制用 `SetSelectedPage/GetSelectedPage/GetPageCount` |
+| `CATDlgProgressBar` | 真实类名是 `CATDlgProgress` |
+| `CATDlgMultiEditor` | 不存在；多行文本用 `CATDlgEditor` + 多行风格，或 `CATDlgCombo` 的 `SetVisibleTextHeight` |
+| `pCombo->AddItem(...)` / `SetVisibleItemCount(n)` | 真实：`pCombo->SetLine(text, -1)` 追加；可见行数 `SetVisibleTextHeight(n)` |
+| `pSpinner->SetStep(n)` | 不存在；步进数是 `SetRange(min, max, stepCount)` 的第 3 参 |
+| `CATDlgNotification` + `SetMessage()` | 真实类 `CATDlgNotify`，方法 `SetText()` |
+| `CATDlgLstMultipleSelection` / `CATDlgLstNoEdit` | 真实风格 `CATDlgLstMultisel`（多选）；无 NoEdit 风格 |
+| `CATDlgFileOpen` / `pFile->GetName()` | 打开是默认风格（保存才需 `CATDlgFileSave`）；取文件用 `GetSelection()` |
+| `CenterOnScreen()` | 不存在；`SetRectDimensions(x, y, height, width)` 存在（注意 h/w 顺序） |
+| `CATDialogAgent::DoEvents()` | 不存在 |
+
 ## 布局模式速查
 
 ### 单列垂直
@@ -22,20 +43,21 @@ tags: [ui, layout, grid]
 void Build() {
     CATDlgFrame *pFrame = new CATDlgFrame(this, "F",
         CATDlgFraNoFrame | CATDlgGridLayout);
-    CATDlgGridConstraints g;
     int row = 0;
-    
-    _pLabel1 = new CATDlgLabel(pFrame, "L1", "Input:");
-    _pLabel1->SetGridConstraints(pFrame, g.SetRow(row++).SetColumn(0));
-    
+
+    _pLabel1 = new CATDlgLabel(pFrame, "L1");
+    _pLabel1->SetGridConstraints(CATDlgGridConstraints(row++, 0, 1, 1, CATGRID_LEFT));
+
     _pEditor1 = new CATDlgEditor(pFrame, "E1");
-    _pEditor1->SetGridConstraints(pFrame, g.SetRow(row++).SetColumn(0));
-    
-    _pLabel2 = new CATDlgLabel(pFrame, "L2", "Output:");
-    _pLabel2->SetGridConstraints(pFrame, g.SetRow(row++).SetColumn(0));
-    
+    _pEditor1->SetGridConstraints(CATDlgGridConstraints(row++, 0, 1, 1,
+        CATGRID_LEFT | CATGRID_RIGHT));   // 水平填充
+
+    _pLabel2 = new CATDlgLabel(pFrame, "L2");
+    _pLabel2->SetGridConstraints(CATDlgGridConstraints(row++, 0, 1, 1, CATGRID_LEFT));
+
     _pEditor2 = new CATDlgEditor(pFrame, "E2");
-    _pEditor2->SetGridConstraints(pFrame, g.SetRow(row++).SetColumn(0));
+    _pEditor2->SetGridConstraints(CATDlgGridConstraints(row++, 0, 1, 1,
+        CATGRID_LEFT | CATGRID_RIGHT));
 }
 ```
 
@@ -45,123 +67,104 @@ void Build() {
 void Build() {
     CATDlgFrame *pFrame = new CATDlgFrame(this, "F",
         CATDlgFraNoFrame | CATDlgGridLayout);
-    CATDlgGridConstraints g;
+
+    // 手工逐行（CAA 代码避免 lambda，兼容老编译器）
     int row = 0;
-    
-    auto AddRow = [&](const char *label, CATDlgEditor *&editor) {
-        CATDlgLabel *pLbl = new CATDlgLabel(pFrame, label, label);
-        pLbl->SetGridConstraints(pFrame, g.SetRow(row).SetColumn(0));
-        editor = new CATDlgEditor(pFrame, label);
-        editor->SetGridConstraints(pFrame, g.SetRow(row).SetColumn(1));
-        row++;
-    };
-    
-    AddRow("Name:",     _pNameEditor);
-    AddRow("Prefix:",   _pPrefixEditor);
-    AddRow("Value:",    _pValueEditor);
-    AddRow("Unit:",     _pUnitEditor);
+    _pNameLabel = new CATDlgLabel(pFrame, "NameLbl");
+    _pNameLabel->SetGridConstraints(CATDlgGridConstraints(row, 0, 1, 1, CATGRID_RIGHT));
+    _pNameEditor = new CATDlgEditor(pFrame, "NameEdt");
+    _pNameEditor->SetGridConstraints(CATDlgGridConstraints(row++, 1, 1, 1,
+        CATGRID_LEFT | CATGRID_RIGHT));
+
+    _pValueLabel = new CATDlgLabel(pFrame, "ValueLbl");
+    _pValueLabel->SetGridConstraints(CATDlgGridConstraints(row, 0, 1, 1, CATGRID_RIGHT));
+    _pValueEditor = new CATDlgEditor(pFrame, "ValueEdt");
+    _pValueEditor->SetGridConstraints(CATDlgGridConstraints(row++, 1, 1, 1,
+        CATGRID_LEFT | CATGRID_RIGHT));
 }
 ```
 
 ### Tab 页
 
+页 = 以 `CATDlgTabContainer` 为父创建的 Frame，**自动附加，无需 AttachTab**：
+
 ```cpp
 void Build() {
     CATDlgTabContainer *pTab = new CATDlgTabContainer(this, "Tabs");
-    
-    // Tab 1: Input
+
+    // 每个以 pTab 为父的 Frame 自动成为一个页
     CATDlgFrame *pInputTab = new CATDlgFrame(pTab, "InputTab",
         CATDlgFraNoFrame | CATDlgGridLayout);
     _pInputEditor = new CATDlgEditor(pInputTab, "Input");
-    pTab->AttachTab(pInputTab, "Input");
 
-    // Tab 2: Options
     CATDlgFrame *pOptTab = new CATDlgFrame(pTab, "OptTab",
         CATDlgFraNoFrame | CATDlgGridLayout);
-    _pOptionCB = new CATDlgCheckButton(pOptTab, "Opt", "Enable");
-    pTab->AttachTab(pOptTab, "Options");
+    _pOptionCB = new CATDlgCheckButton(pOptTab, "Opt");
 
-    // Tab 3: Preview
-    CATDlgFrame *pPrevTab = new CATDlgFrame(pTab, "PrevTab",
-        CATDlgFraNoFrame);
-    CATDlgLabel *pPreview = new CATDlgLabel(pPrevTab, "Prev",
-        "Result will appear here");
-    pTab->AttachTab(pPrevTab, "Preview");
+    // 页标题来自各 Frame 的 NLS Title；页控制：
+    pTab->SetSelectedPage(0);        // 默认显示第1页
+    // int n = pTab->GetPageCount();
 }
 ```
 
 ### 分组框 (GroupBox)
 
-```cpp
-CATDlgFrame *pGroup1 = new CATDlgFrame(pParent, "G1",
-    CATDlgFraGroupFrame | CATDlgGridLayout);
-pGroup1->SetTitle("Rename Options");
+带标题分组：**默认 Frame 就带标题栏**，不要加 `CATDlgFraNoTitle`；标题经 `SetTitle()` 或 NLS：
 
-_pPrefixRB = new CATDlgRadioButton(pGroup1, "Prefix", "Prefix");
-_pSuffixRB = new CATDlgRadioButton(pGroup1, "Suffix", "Suffix");
+```cpp
+CATDlgFrame *pGroup1 = new CATDlgFrame(pParent, "G1", CATDlgGridLayout);
+pGroup1->SetTitle(CATMsgCatalog::BuildMessage("ATCatalog", "AT_GROUP_RENAME"));  // 或 NLS 键 G1.Title
+
+_pPrefixRB = new CATDlgRadioButton(pGroup1, "Prefix");
+_pSuffixRB = new CATDlgRadioButton(pGroup1, "Suffix");
 ```
 
 ---
 
 ## GridConstraints 完整参数
 
-`CATDlgGridConstraints` 控制控件在网格中的位置、跨度、伸缩和锚定行为：
-
 ```cpp
 CATDlgGridConstraints(
-    int iRow,              // 行号 (0-based)
-    int iColumn,           // 列号 (0-based)
-    int iRowSpan,          // 跨行数 (默认 1)
-    int iColumnSpan,       // 跨列数 (默认 1)
-    unsigned int iAnchor,  // 锚定/填充方式
-    int iGravity = 0       // 重力对齐 (0=居中)
+    short iTopRow,          // 行号 (0-based)
+    short iLeftColumn,      // 列号 (0-based)
+    short iRowSpan,         // 跨行数
+    short iColumnSpan,      // 跨列数
+    unsigned int iJustification  // 锚定/填充方式
 );
+// 也有无参构造 + 公有成员 Row / Column 可直接赋值
 ```
 
-### 锚定常量 (iAnchor)
+### 锚定常量 (iJustification) — 真实完整列表
 
-| 常量 | 含义 | 适用场景 |
-|------|------|---------|
-| `CATGRID_LEFT` | 左对齐，高度不变 | 标签、短文本 |
-| `CATGRID_RIGHT` | 右对齐，高度不变 | 数值显示 |
-| `CATGRID_TOP` | 顶部对齐，宽度不变 | 垂直标签 |
-| `CATGRID_BOTTOM` | 底部对齐 | 状态栏 |
-| `CATGRID_4SIDES` | 四边填充（控件撑满格子） | 输入框、列表、多行文本 |
-| `CATGRID_HORIZONTAL` | 水平填充，高度不变 | 横向按钮 |
-| `CATGRID_VERTICAL` | 垂直填充，宽度不变 | 竖向工具栏 |
+| 常量 | 含义 |
+|------|------|
+| `CATGRID_LEFT` | 贴左 |
+| `CATGRID_RIGHT` | 贴右 |
+| `CATGRID_TOP` | 贴顶 |
+| `CATGRID_BOTTOM` | 贴底 |
+| `CATGRID_4SIDES` | 四边填充（=LEFT\|RIGHT\|TOP\|BOTTOM，撑满格子） |
+| `CATGRID_CST_WIDTH` | 固定宽度 |
+| `CATGRID_CST_HEIGHT` | 固定高度 |
+| `CATGRID_CST_SIZE` | 固定宽高 |
+| `CATGRID_CENTER` | 居中 |
+
+水平填充 = `CATGRID_LEFT | CATGRID_RIGHT`；垂直填充 = `CATGRID_TOP | CATGRID_BOTTOM`。
 
 ### 跨行/跨列 (Span)
 
 ```cpp
 // 按钮横跨两列
-_pFullWidthBtn->SetGridConstraints(pFrame,
-    CATDlgGridConstraints(row, 0, 1, 2, CATGRID_4SIDES));
-//                         ↑   ↑  ↑  ↑
-//                        row col rs cs(跨2列)
+_pFullWidthBtn->SetGridConstraints(CATDlgGridConstraints(row, 0, 1, 2, CATGRID_4SIDES));
+//                                                          ↑   ↑  ↑  ↑
+//                                                        row col rs cs(跨2列)
 
 // 多行编辑器跨3行
-_pMultiEdit->SetGridConstraints(pFrame,
-    CATDlgGridConstraints(row, 0, 3, 1, CATGRID_4SIDES));
-//                         ↑   ↑  ↑  ↑
-//                        row col rs(跨3行) cs
-```
-
-### 链式调用
-
-```cpp
-CATDlgGridConstraints g;
-_pWidget->SetGridConstraints(pFrame,
-    g.SetRow(0)
-     .SetColumn(1)
-     .SetSpan(1, 2)      // 跨2列
-     .SetAnchor(CATGRID_4SIDES));
+_pMultiEdit->SetGridConstraints(CATDlgGridConstraints(row, 0, 3, 1, CATGRID_4SIDES));
 ```
 
 ---
 
 ## 多层嵌套布局
-
-实际项目的对话框很少只有一层 Frame，通常是 3-5 层嵌套：
 
 ```
 Dialog (CATDlgGridLayout)
@@ -183,7 +186,6 @@ Dialog (CATDlgGridLayout)
  │
  └── BottomFrame (水平)                     ← 第2层: 按钮栏
       ├── StatusLabel
-      ├── Spacer     (CATDlgFrame 占位)
       ├── OKBtn
       └── CancelBtn
 ```
@@ -192,51 +194,44 @@ Dialog (CATDlgGridLayout)
 
 ```cpp
 void MyComplexDlg::Build() {
-    // === 第1层: 对话框本身 (GridLayout) ===
-    
     // === 第2层: 顶部搜索栏 ===
     CATDlgFrame *pTop = new CATDlgFrame(this, "TopFrame",
         CATDlgFraNoFrame | CATDlgGridLayout);
     _pSearchEditor = new CATDlgEditor(pTop, "SearchEdt");
-    _pSearchEditor->SetGridConstraints(pTop,
-        CATDlgGridConstraints(0, 0, 1, 1, CATGRID_4SIDES));
-    _pSearchBtn = new CATDlgPushButton(pTop, "SearchBtn", "Search");
-    _pSearchBtn->SetGridConstraints(pTop,
-        CATDlgGridConstraints(0, 1, 1, 1, CATGRID_HORIZONTAL));
-    
+    _pSearchEditor->SetGridConstraints(CATDlgGridConstraints(0, 0, 1, 1,
+        CATGRID_LEFT | CATGRID_RIGHT));
+    _pSearchBtn = new CATDlgPushButton(pTop, "SearchBtn");
+    _pSearchBtn->SetGridConstraints(CATDlgGridConstraints(0, 1, 1, 1, CATGRID_LEFT));
+
     // === 第2层: 主内容区 (水平 Frame) ===
     CATDlgFrame *pMain = new CATDlgFrame(this, "MainFrame", CATDlgFraNoFrame);
-    
+
     // === 第3层: 左侧列表 ===
     CATDlgFrame *pLeft = new CATDlgFrame(pMain, "LeftPanel",
-        CATDlgFraSunkenFrame | CATDlgGridLayout);
-    _pSelectorList = new CATDlgSelectorList(pLeft, "SelList",
-        CATDlgLstMultipleSelection);
-    _pSelectorList->SetGridConstraints(pLeft,
-        CATDlgGridConstraints(0, 0, 1, 2, CATGRID_4SIDES));
-    _pAddBtn = new CATDlgPushButton(pLeft, "AddBtn", "Add");
-    _pRemoveBtn = new CATDlgPushButton(pLeft, "RemoveBtn", "Remove");
-    
-    // === 第3层: 右侧详情 ===
-    CATDlgFrame *pRight = new CATDlgFrame(pMain, "RightPanel",
-        CATDlgFraGroupFrame | CATDlgGridLayout);
-    pRight->SetTitle("Properties");
-    
+        CATDlgFraNoTitle | CATDlgGridLayout);
+    _pSelectorList = new CATDlgSelectorList(pLeft, "SelList", CATDlgLstMultisel);
+    _pSelectorList->SetGridConstraints(CATDlgGridConstraints(0, 0, 1, 2, CATGRID_4SIDES));
+    _pAddBtn    = new CATDlgPushButton(pLeft, "AddBtn");
+    _pRemoveBtn = new CATDlgPushButton(pLeft, "RemoveBtn");
+
+    // === 第3层: 右侧详情（带标题分组） ===
+    CATDlgFrame *pRight = new CATDlgFrame(pMain, "RightPanel", CATDlgGridLayout);
+    pRight->SetTitle(CATMsgCatalog::BuildMessage("ATCatalog", "AT_GROUP_PROPS"));
+
     _pNameEditor = new CATDlgEditor(pRight, "NameEdt");
-    _pTypeCombo = new CATDlgCombo(pRight, "TypeCbo");
-    
+    _pTypeCombo  = new CATDlgCombo(pRight, "TypeCbo");
+
     // === 第4层: 属性子组 ===
     CATDlgFrame *pProp = new CATDlgFrame(pRight, "PropFrame",
         CATDlgFraNoFrame | CATDlgGridLayout);
     _pLengthEditor = new CATDlgEditor(pProp, "LenEdt");
-    _pWidthEditor = new CATDlgEditor(pProp, "WidEdt");
-    
+    _pWidthEditor  = new CATDlgEditor(pProp, "WidEdt");
+
     // === 第2层: 底部按钮栏 ===
-    CATDlgFrame *pBottom = new CATDlgFrame(this, "BottomFrame",
-        CATDlgFraNoFrame);
-    _pStatusLabel = new CATDlgLabel(pBottom, "Status", "Ready");
-    _pOKBtn = new CATDlgPushButton(pBottom, "OKBtn", "OK");
-    _pCancelBtn = new CATDlgPushButton(pBottom, "CancelBtn", "Cancel");
+    CATDlgFrame *pBottom = new CATDlgFrame(this, "BottomFrame", CATDlgFraNoFrame);
+    _pStatusLabel = new CATDlgLabel(pBottom, "Status");
+    _pOKBtn     = new CATDlgPushButton(pBottom, "OKBtn");
+    _pCancelBtn = new CATDlgPushButton(pBottom, "CancelBtn");
 }
 ```
 
@@ -244,46 +239,26 @@ void MyComplexDlg::Build() {
 
 ## 布局伸缩策略
 
-对话框缩放时，不同控件行为不同：
-
-| 控件类型 | 伸缩策略 | Anchor 设置 |
-|---------|---------|------------|
-| 输入框 | 水平拉伸 | `CATGRID_HORIZONTAL` |
+| 控件类型 | 伸缩策略 | Justification 设置 |
+|---------|---------|-------------------|
+| 输入框 | 水平拉伸 | `CATGRID_LEFT \| CATGRID_RIGHT` |
 | 多行文本 | 四边拉伸 | `CATGRID_4SIDES` |
 | 列表/树 | 四边拉伸 | `CATGRID_4SIDES` |
 | 标签 | 固定 | `CATGRID_LEFT` 或 `CATGRID_RIGHT` |
-| 按钮 | 固定 | 默认 |
-| 进度条 | 水平拉伸 | `CATGRID_HORIZONTAL` |
-| 分隔线 | 水平拉伸 | `CATGRID_HORIZONTAL` |
-| 图片 | 固定 | 默认 |
+| 按钮 | 固定 | `CATGRID_LEFT` 等单边 |
+| 进度条 | 水平拉伸 | `CATGRID_LEFT \| CATGRID_RIGHT` |
+| 分隔线 | 水平拉伸 | `CATGRID_LEFT \| CATGRID_RIGHT` |
 | Tab 页 | 四边拉伸 | `CATGRID_4SIDES` |
-
-### 常用布局比例
-
-```cpp
-// 左列 30% + 右列 70%（通过 Frame 宽度比例）
-CATDlgFrame *pLeft = new CATDlgFrame(pMain, "L", ...);
-CATDlgFrame *pRight = new CATDlgFrame(pMain, "R", ...);
-// pLeft->SetRectDimensions(..., 200, ...)  // 固定宽度
-// pRight 自动填充剩余空间
-```
 
 ---
 
-## 对话框初始大小和位置
+## 对话框初始大小和标题
 
 ```cpp
 void Build() {
     // ... 控件创建 ...
-    
-    // 设置对话框标题
-    SetTitle("Batch Rename");
-    
-    // 设置初始大小
-    SetRectDimensions(1, 1, 400, 300);  // x, y, w, h
-    
-    // 居中
-    CenterOnScreen();
+    SetTitle(CATMsgCatalog::BuildMessage("ATCatalog", "AT_DLG_TITLE"));  // CATDialog::SetTitle
+    SetRectDimensions(1, 1, 300, 400);   // (x, y, height, width) 注意 h/w 顺序！
 }
 ```
 
@@ -295,81 +270,77 @@ void Build() {
 
 ```cpp
 CATDlgCombo *pCombo = new CATDlgCombo(pFrame, "Combo");
-pCombo->AddItem("Option 1");
-pCombo->AddItem("Option 2");
-pCombo->AddItem("Option 3");
-pCombo->SetVisibleItemCount(5);  // 显示 5 行
+pCombo->SetLine(CATUnicodeString("Option 1"), -1);   // -1 = 追加
+pCombo->SetLine(CATUnicodeString("Option 2"), -1);
+pCombo->SetVisibleTextHeight(5);   // 下拉可见行数
 
-// 读取选中的
-int sel = pCombo->GetSelect();    // -1 = 未选中
-CATUnicodeString text = pCombo->GetItem(sel);
+int sel = pCombo->GetSelect();              // -1 = 未选中
+CATUnicodeString text;
+pCombo->GetLine(text, sel);                 // 取第 sel 行文本
 ```
 
 ### SelectorList（多选列表）
 
 ```cpp
 CATDlgSelectorList *pList = new CATDlgSelectorList(pFrame, "List",
-    CATDlgLstMultipleSelection | CATDlgLstNoEdit);
+    CATDlgLstMultisel);
 
-pList->SetLine("Item A");
-pList->SetLine("Item B");
-pList->SetLine("Item C");
+pList->SetLine(CATUnicodeString("Item A"), -1);
+pList->SetLine(CATUnicodeString("Item B"), -1);
 
-// 获取选中（返回选中索引数组）
-int *selArr = NULL;
-int count = pList->GetSelect(&selArr);
-if (selArr) delete[] selArr;
+// 获取选中：调用方先问数量，再提供足够大的数组
+int count = pList->GetSelectCount();
+if (count > 0) {
+    int *selArr = new int[count];
+    pList->GetSelect(selArr, count);
+    // ...
+    delete [] selArr;
+}
 ```
 
 ### File Selector
 
 ```cpp
-CATDlgFile *pFile = new CATDlgFile(pFrame, "File",
-    CATDlgFileOpen);  // 或 CATDlgFileSave
+// 打开文件 = 默认风格；保存 = CATDlgFileSave
+CATDlgFile *pFile = new CATDlgFile(pFrame, "FileDlg");           // 打开
+CATDlgFile *pSave = new CATDlgFile(pFrame, "SaveDlg", CATDlgFileSave);
 
-CATUnicodeString path = pFile->GetName();
+pFile->SetFilterPattern(CATUnicodeString("*.CATPart"));
+// 取选中文件：
+CATUnicodeString path;
+// pFile->GetSelection(path);   // GetSelection / GetSelectionCount
 ```
 
-### Progress Bar
+### Progress（进度条）
 
 ```cpp
-CATDlgProgressBar *pProgress = new CATDlgProgressBar(pFrame, "Progress");
-pProgress->SetRange(0, 100);
+CATDlgProgress *pProgress = new CATDlgProgress(pFrame, "Progress");
+// 范围与取值方法见 CATDlgProgress.h（SetRange/SetValue 系列）
 
-// 在操作循环中更新
-for (int i = 0; i < total; i++) {
-    int pct = (i * 100) / total;
-    pProgress->SetValue(pct);
-    CATDialogAgent::DoEvents();  // 刷新 UI
-}
+// 长循环中 UI 刷新：CAA 状态机命令天然在事件循环中分片执行；
+// 批处理场景按状态拆分，而不是调用不存在的 DoEvents()
 ```
 
-### MultiEditor（多行文本框）
+### Multi-line 文本
 
-```cpp
-CATDlgMultiEditor *pMulti = new CATDlgMultiEditor(pFrame, "Multi");
-pMulti->SetVisibleTextHeight(10);   // 10 行高
-pMulti->SetVisibleTextWidth(400);   // 宽度
-
-CATUnicodeString text = pMulti->GetText();
-pMulti->SetText("Initial text");
-```
+无 `CATDlgMultiEditor`。多行输入用 `CATDlgEditor` 配多行风格位，或退而用 `CATDlgCombo`（`SetVisibleTextHeight` 控制行高）。
 
 ### Separator（分隔线）
 
 ```cpp
 CATDlgSeparator *pSep = new CATDlgSeparator(pFrame, "Sep");
+pSep->SetGridConstraints(CATDlgGridConstraints(row, 0, 1, 2,
+    CATGRID_LEFT | CATGRID_RIGHT));
 ```
 
 ### Spinner（数字微调）
 
 ```cpp
 CATDlgSpinner *pSpinner = new CATDlgSpinner(pFrame, "Spin");
-pSpinner->SetRange(1, 9999);
-pSpinner->SetValue(100);
-pSpinner->SetStep(10);  // 每次步进 10
+pSpinner->SetRange(1.f, 9999.f, 10);   // min, max, 步进数（无 SetStep）
+pSpinner->SetValue(100.0);
 
-int val = pSpinner->GetValue();
+double val = pSpinner->GetValue();
 ```
 
 ---
@@ -377,7 +348,6 @@ int val = pSpinner->GetValue();
 ## 控件启用/禁用
 
 ```cpp
-// 根据模式切换控件状态
 void ATAutoRenameDlg::OnModeChanged() {
     if (_pPrefixRB->GetState() == CATDlgCheck) {
         _pPrefixEditor->SetSensitivity(CATDlgEnable);
@@ -388,7 +358,7 @@ void ATAutoRenameDlg::OnModeChanged() {
     }
 }
 
-// 根据权限隐藏整个 Group
+// 隐藏整个 Group
 _pAdminGroup->SetVisibility(CATDlgHide);
 ```
 
@@ -399,22 +369,14 @@ _pAdminGroup->SetVisibility(CATDlgHide);
 ```cpp
 CATBoolean ATAutoRenameDlg::ValidateInput() {
     CATUnicodeString name = _pNameEditor->GetText();
-    
-    if (name.GetLength() == 0) {
-        CATDlgNotification *pNotif = new CATDlgNotification(this, "Warning");
-        pNotif->SetMessage("Name cannot be empty");
-        pNotif->SetVisibility(CATDlgShow);
-        _pNameEditor->SetFocus();
-        return FALSE;
-    }
-    
-    if (name.GetLength() > 50) {
-        CATDlgNotification *pNotif = new CATDlgNotification(this, "Warning");
-        pNotif->SetMessage("Name too long (max 50)");
+
+    if (name.GetLength() == 0 || name.GetLength() > 50) {
+        // 真实通知类是 CATDlgNotify，文本用 SetText
+        CATDlgNotify *pNotif = new CATDlgNotify(this, "Warning");
+        pNotif->SetText(CATMsgCatalog::BuildMessage("ATCatalog", "AT_ERR_NAME"));
         pNotif->SetVisibility(CATDlgShow);
         return FALSE;
     }
-    
     return TRUE;
 }
 ```
@@ -424,16 +386,14 @@ CATBoolean ATAutoRenameDlg::ValidateInput() {
 ## AI 生成规则
 
 - [ ] 复杂表单用 GridLayout + 双列模式
-- [ ] 多类别用 TabContainer
-- [ ] 相关控件用 GroupBox 分组
-- [ ] `SetGridConstraints` 必须显式调用，不可省略
-- [ ] 输入框用 `CATGRID_4SIDES` 锚定
-- [ ] 标签用 `CATGRID_LEFT` 锚定
-- [ ] 跨列控件用 `SetSpan(1, N)`
+- [ ] 多类别用 `CATDlgTabContainer`（Frame 以其为父自动成页）
+- [ ] 分组用默认带标题 Frame + `SetTitle()`；**不要发明 CATDlgFraGroupFrame**
+- [ ] `SetGridConstraints` **单参**，必须显式调用
+- [ ] 水平填充 `CATGRID_LEFT|CATGRID_RIGHT`；四边 `CATGRID_4SIDES`
+- [ ] 控件文本一律 NLS（.CATNls 按控件名索引）或 `SetTitle`
+- [ ] 进度条类名 `CATDlgProgress`；通知类名 `CATDlgNotify`/`SetText`
 - [ ] 提供 `ValidateInput()` 验证方法
-- [ ] 控件状态联动用 `SetSensitivity`
-- [ ] 长文本用 `MultiEditor`
-- [ ] 文件选择用 `CATDlgFile`
+- [ ] 控件状态联动用 `SetSensitivity(CATDlgEnable/Disable)`
+- [ ] 文件选择用 `CATDlgFile`（打开默认/`CATDlgFileSave` 保存）
 - [ ] 不要硬编码像素位置，用网格布局
 - [ ] 3 层以上嵌套需要注释标明层级
-- [ ] 对话框大小用 `SetRectDimensions` + `CenterOnScreen`

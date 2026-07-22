@@ -126,12 +126,14 @@ CATStatusChangeRC MyCmd::Activate(...) {
 ## NLS 国际化
 
 ```cpp
-// ❌ 硬编码
-_pNameLabel = new CATDlgLabel(pFrame, "NameLbl", "New Name:");
+// ❌ 硬编码（且构造签名为 (parent, name, style)，第3参不是标题）
+_pNameLabel = new CATDlgLabel(pFrame, "NameLbl");
+_pNameLabel->SetTitle(CATUnicodeString("New Name:"));
 
-// ✅ NLS 引用
-_pNameLabel = new CATDlgLabel(pFrame, "NameLbl",
-    CATMsgCatalog::GetMessage("AT_DLG_NAME_LABEL"));
+// ✅ NLS：构造后 SetTitle 喂 CATMsgCatalog 消息
+_pNameLabel = new CATDlgLabel(pFrame, "NameLbl");
+_pNameLabel->SetTitle(CATMsgCatalog::BuildMessage("ATCatalog", "AT_DLG_NAME_LABEL"));
+// 或零代码：直接在 .CATNls 里写 NameLbl.Title = "New Name:";
 ```
 
 NLS 文件 (CNext/resources/msgcatalog/Framework.CATNls):
