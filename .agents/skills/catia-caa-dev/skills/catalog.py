@@ -10,6 +10,7 @@ Design principle:
 
 from __future__ import annotations
 
+import pickle
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,18 +40,89 @@ class CatalogIndex:
     def __init__(self):
         self.entries: List[CatalogEntry] = []
         self.aliases: Dict[str, List[str]] = {}  # alias_key → ["en_keyword1", "en_keyword2"]
+        self._inverted: Dict[str, List[int]] = {}  # word → entry indices (built lazily)
+        self._search_cache: Dict[str, List[CatalogEntry]] = {}  # query → results (LRU-ish)
+
+    # ─── Process-wide cache (per skill_root + file mtime) ─────────
+    _PROC_CACHE: Dict[str, "CatalogIndex"] = {}
+    _PROC_CACHE_MTIME: Dict[str, float] = {}
+    _SEARCH_CACHE_MAX = 128
 
     @classmethod
     def load(cls, skill_root: Path) -> "CatalogIndex":
-        """Parse catalog/index.yaml into structured model."""
-        catalog_file = skill_root / "catalog" / "index.yaml"
-        index = cls()
-        if not catalog_file.exists():
-            return index
+        """Parse catalog/index.yaml into structured model.
 
-        content = catalog_file.read_text(encoding="utf-8", errors="replace")
-        index._parse(content)
+        Three-tier loading, fastest first:
+          1. process-wide cache (valid while index.yaml mtime unchanged)
+          2. on-disk pickle cache in cache/catalog_index.pickle
+          3. full YAML parse (then populate both caches)
+        """
+        catalog_file = skill_root / "catalog" / "index.yaml"
+        try:
+            mtime = catalog_file.stat().st_mtime
+        except OSError:
+            return cls()
+
+        # Tier 1: process-wide cache
+        key = str(Path(skill_root).resolve())
+        if (key in cls._PROC_CACHE
+                and cls._PROC_CACHE_MTIME.get(key) == mtime):
+            return cls._PROC_CACHE[key]
+
+        # Tier 2: on-disk pickle cache (survives process restarts —
+        # this is what makes CLI/MCP cold-start retrieval sub-ms)
+        index = cls._load_disk_cache(skill_root, catalog_file, mtime)
+
+        # Tier 3: full parse
+        if index is None:
+            index = cls()
+            content = catalog_file.read_text(encoding="utf-8", errors="replace")
+            index._parse(content)
+            index._save_disk_cache(skill_root, catalog_file, mtime)
+
+        cls._PROC_CACHE[key] = index
+        cls._PROC_CACHE_MTIME[key] = mtime
         return index
+
+    # ─── Disk cache ──────────────────────────────────────────────
+
+    @classmethod
+    def _disk_cache_path(cls, skill_root: Path, catalog_file: Path) -> Path:
+        return skill_root / "cache" / "catalog_index.pickle"
+
+    @classmethod
+    def _load_disk_cache(cls, skill_root: Path, catalog_file: Path,
+                         mtime: float) -> "Optional[CatalogIndex]":
+        p = cls._disk_cache_path(skill_root, catalog_file)
+        try:
+            with p.open("rb") as f:
+                payload = pickle.load(f)
+            if payload.get("mtime") != mtime:
+                return None
+            if payload.get("version") != 1:
+                return None
+            index = cls()
+            index.entries = payload["entries"]
+            index.aliases = payload["aliases"]
+            return index
+        except Exception:
+            return None
+
+    def _save_disk_cache(self, skill_root: Path, catalog_file: Path,
+                         mtime: float) -> None:
+        p = self._disk_cache_path(skill_root, catalog_file)
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "version": 1,
+                "mtime": mtime,
+                "entries": self.entries,
+                "aliases": self.aliases,
+            }
+            with p.open("wb") as f:
+                pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception:
+            pass  # cache write is best-effort
 
     # ─── Public API ──────────────────────────────────────────────
 
@@ -58,20 +130,53 @@ class CatalogIndex:
         """
         Search catalog for entries matching the query.
         Automatically expands Chinese aliases to English keywords.
+
+        Uses an inverted index (word → entries) instead of a linear scan,
+        plus a small query→results cache for repeated lookups.
         """
+        cache_key = f"{query}|{max_results}"
+        if cache_key in self._search_cache:
+            return self._search_cache[cache_key]
+
+        if not self._inverted:
+            self._build_inverted_index()
+
         expanded = self._expand_aliases(query)
         words = [w.lower() for w in expanded.split() if len(w) >= 3]
 
-        results = []
-        for entry in self.entries:
-            # Match against keywords + title
-            searchable = " ".join(entry.keywords + [entry.title]).lower()
-            if any(w in searchable for w in words):
-                results.append(entry)
-                if len(results) >= max_results:
+        # Collect candidate entry indices via inverted index (substring
+        # match on indexed words), preserving first-seen order.
+        seen: Dict[int, None] = {}
+        for w in words:
+            for word, indices in self._inverted.items():
+                if w in word:
+                    for i in indices:
+                        if i not in seen:
+                            seen[i] = None
+                            if len(seen) >= max_results:
+                                break
+                if len(seen) >= max_results:
                     break
+            if len(seen) >= max_results:
+                break
 
+        results = [self.entries[i] for i in seen]
+
+        # Bound the cache
+        if len(self._search_cache) >= self._SEARCH_CACHE_MAX:
+            self._search_cache.clear()
+        self._search_cache[cache_key] = results
         return results
+
+    def _build_inverted_index(self) -> None:
+        """Build word → entry-indices map from keywords + title words."""
+        self._inverted = {}
+        for i, entry in enumerate(self.entries):
+            words = set(entry.keywords)
+            words.update(w.lower() for w in entry.title.split() if len(w) >= 3)
+            for w in words:
+                if len(w) >= 3:
+                    self._inverted.setdefault(w, []).append(i)
 
     def has_alias_match(self, query: str) -> bool:
         """Check if query matches any alias key (for routing decisions)."""

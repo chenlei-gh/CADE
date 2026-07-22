@@ -134,6 +134,20 @@ class Kernel:
     def __init__(self, workspace_root: str = None):
         self.workspace_root = Path(workspace_root).resolve() if workspace_root else Path.cwd()
         self._state = KernelState.IDLE
+        self._catalog = None  # lazily-loaded shared CatalogIndex
+
+    @property
+    def catalog(self):
+        """Shared CatalogIndex — loaded once per Kernel, then reused by
+        _is_knowledge_query / _lookup_knowledge / _consult_knowledge.
+        Avoids parsing index.yaml 2-3x per request."""
+        if self._catalog is None:
+            try:
+                from catalog import CatalogIndex
+                self._catalog = CatalogIndex.load(Path(__file__).parent.parent)
+            except Exception:
+                self._catalog = False  # don't retry on failure
+        return self._catalog or None
 
     # ─── Public API ────────────────────────────────────────────
 
@@ -1037,9 +1051,7 @@ class Kernel:
                 return True
         # Check alias keys via CatalogIndex (Chinese synonyms not in _KNOWLEDGE_KW)
         try:
-            from catalog import CatalogIndex
-            catalog = CatalogIndex.load(Path(__file__).parent.parent)
-            if catalog.has_alias_match(request):
+            if self.catalog and self.catalog.has_alias_match(request):
                 return True
         except Exception:
             pass
@@ -1051,7 +1063,6 @@ class Kernel:
         Search knowledge base via CatalogIndex (unified model).
         Alias expansion and keyword matching handled internally.
         """
-        skill_root = Path(__file__).parent.parent
         results = []
         domain_hint = ""
 
@@ -1065,10 +1076,9 @@ class Kernel:
 
         # Step 2: Search via CatalogIndex (handles alias expansion internally)
         try:
-            from catalog import CatalogIndex
-            catalog = CatalogIndex.load(skill_root)
-            entries = catalog.search(request, max_results=10)
-            results = [e.raw_line for e in entries]
+            if self.catalog:
+                entries = self.catalog.search(request, max_results=10)
+                results = [e.raw_line for e in entries]
         except Exception:
             pass
 
@@ -1095,16 +1105,15 @@ class Kernel:
         a full knowledge dump. Failures are silent (never block develop).
         """
         try:
-            from catalog import CatalogIndex
-            skill_root = Path(__file__).parent.parent
-            catalog = CatalogIndex.load(skill_root)
-            entries = catalog.search(request, max_results=3)
+            if not self.catalog:
+                return []
+            entries = self.catalog.search(request, max_results=3)
             if not entries:
                 return []
             # Enrich with verified APIs from the registry where possible
             try:
                 from api_registry import get_registry
-                registry = get_registry(skill_root)
+                registry = get_registry(Path(__file__).parent.parent)
             except Exception:
                 registry = None
             refs = []
