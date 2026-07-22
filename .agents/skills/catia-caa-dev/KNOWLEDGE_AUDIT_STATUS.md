@@ -65,7 +65,7 @@ parameter_editor · surface_analysis
 | mecmod/ | **feature_patterns.md**（本次会话完整重写：虚构 `CATImplementStartUp`/`CATFeatureStartUp`/`CATAttribute`/`CATNull` 宏与 `CreateFeature` → 真实 `CATOsmSUHandler::Instanciate` 目录机制 + `CATImplementClass(X, DataExtension, CATBaseUnknown, LateType)`） |
 | philosophy/ | late_types.md、reference_vs_instance.md、updates.md（`679eecf`） |
 | product/ | assembly.md（`ce25c0a`） |
-| ui/ | dialog_dataflow.md、dialog_patterns.md、event_patterns.md（`9ac0762`+`49a26e7`）、layout_advanced.md、layout_anti_patterns.md（`9ac0762`）、toolbar.md（`af81e50`，官方MacDeclareHeader核实但未标"重要修正"，风险低）、**dialog.md**（本次会话完整重写：虚构 `CATDlgList` → 真实 `CATDlgSelectorList`/`CATDlgTableView`；统一构造签名 `(parent,name,style)`，文本走 NLS/`SetTitle`）、**dialog_layout.md**（本次会话重写：修正 2参`SetGridConstraints`/链式`SetRow`/等虚构链式调用、`CATGRID_HORIZONTAL`/`CATDlgFraGroupFrame`/`AttachTab`/`CATDlgProgressBar`/`CATDlgMultiEditor`/`AddItem`/`SetStep`/`CATDlgNotification`/`CATDlgLstMultipleSelection`/`CATDlgFileOpen`/`CenterOnScreen`/`DoEvents` 等 16 项虚构 → 全部替换为 B28 头文件实证 API） |
+| ui/ | dialog_dataflow.md、dialog_patterns.md、event_patterns.md（`9ac0762`+`49a26e7`）、layout_advanced.md、layout_anti_patterns.md（`9ac0762`）、toolbar.md（`af81e50`，官方MacDeclareHeader核实但未标"重要修正"，风险低）、**dialog.md**（本次会话完整重写：虚构 `CATDlgList` → 真实 `CATDlgSelectorList`/`CATDlgTableView`；统一构造签名 `(parent,name,style)`，文本走 NLS/`SetTitle`）、**dialog_layout.md**（本次会话重写：修正 2参`SetGridConstraints`/链式`SetRow`/等虚构链式调用、`CATGRID_HORIZONTAL`/`CATDlgFraGroupFrame`/`AttachTab`/`CATDlgProgressBar`/`CATDlgMultiEditor`/`AddItem`/`SetStep`/`CATDlgNotification`/`CATDlgLstMultipleSelection`/`CATDlgFileOpen`/`CenterOnScreen`/`DoEvents` 等 16 项虚构 → 全部替换为 B28 头文件实证 API）、**workbench_patterns.md**（本次会话完整重写：虚构 CATIGenericWksAddin/CATCmdMenu/AddCommand → 真实 CATIAfrGeneralWksAddin + MacDeclareHeader + NewAccess 宏链） |
 | failure_patterns/ | fp_dialog_cancel_not_desactivate.md、fp_dialog_null_parent.md（`9ac0762`） |
 | drawing/ | drawing_basics.md、drawing_annotations.md（本次会话完整重写，修正虚构 `CATIDrw*` 体系为真实 `CATIDft*`，详情见各文件开头的"⚠️ 重要修正"章节与 `playbooks/pb_batch_drawing.md`） |
 
@@ -75,6 +75,8 @@ parameter_editor · surface_analysis
 - `ui/wizard.md`（`49a26e7` 完整重写，修正 `IsOutputSetCondition` 类型不匹配的深层机制错误）
 - `ui/dynamic_form.md`（`9ac0762` 小幅修正 `CATFeatureImportAgent` 误用）
 - `drawing/batch_drawing.md`（本次会话完整重写，修正 `CATIDrwSheet`→`CATIDftSheet`、`CATIProgressCallback`（不存在）→真实的 `CATIProgressTask`/`CATIProgressTaskUI`（`ApplicationFrame` 框架））
+- `workflow/batch_process.md`（本次会话完整重写：虚构 `CATSessionServices`/`CATIProgressBar`/`GetActiveDocument`/`GetPartContainer` → 真实 `CATFrmEditor::GetDocument` + `CATIContainerOfDocument::GetSpecContainer` + `CATIProgressTask`/`CATIProgressTaskUI`）
+- `blocks/locator.md`（本次会话完整重写：虚构 `GetSelection`/`SelectElement`/`ReframeOnObject`/`CATVisProperties::SetHighlight` → 真实 `CATCSO`/`CATIVisProperties::SetPropertiesAtt`/`ResetPropertiesAtt`/`CAT3DViewer::ReframeOn`）
 
 ### frameworks/（148个自动生成索引文件，不适用本审计）
 
@@ -91,12 +93,10 @@ parameter_editor · surface_analysis
 - `patterns/analyzer/geometry_analyzer.md`
 - `patterns/analyzer/rule_checker.md`
 - `patterns/blocks/feature_visitor.md`
-- `patterns/blocks/locator.md`
 - `patterns/fta/auto_annotate.md`
 - `patterns/ui/context_menu.md`
 - `patterns/ui/master_detail.md`
 - `patterns/ui/result_dialog.md`
-- `patterns/workflow/batch_process.md`
 
 ### 🟡 中风险（knowledge/ 目录剩余未核实文件）
 
@@ -107,7 +107,7 @@ parameter_editor · surface_analysis
 | mecmod/ | feature.md、topology.md |
 | philosophy/ | caterror.md、com_lifecycle.md、undo_redo.md |
 | surface/ | surface_basics.md |
-| ui/ | context_menu.md、workbench_patterns.md |
+| ui/ | context_menu.md |
 
 ---
 
