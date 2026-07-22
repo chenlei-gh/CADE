@@ -37,16 +37,52 @@ class CatalogIndex:
       results = catalog.search("对话框")  # alias expansion + keyword matching
     """
 
+    # Relevance scoring: field weight × match quality, per query word (max
+    # across fields), plus intent-based category boost. Ties keep the
+    # original catalog order (stable).
+    # 'desc' is a free-text natural-language description (playbook 目标,
+    # failure 诊断). It is sparser and broader than curated keywords, so it
+    # is weighted below 'keyword' to avoid a single Chinese-phrase hit
+    # outranking a curated API keyword.
+    # 'ref' holds cross-reference targets (cap.xxx, pb.xxx ...). They aid
+    # recall (a playbook about selection should surface for 选择) but rank
+    # low so they never outrank the referenced entry itself.
+    _FIELD_WEIGHTS = {"keyword": 3.0, "id": 2.5, "title": 2.0, "desc": 1.8, "file": 1.0, "ref": 0.9}
+    _MATCH_EXACT = 3.0
+    _MATCH_PREFIX = 2.0
+    _MATCH_SUBSTRING = 1.0
+    # Playbook/pattern entries that match ONLY via their id/file tokens are
+    # penalized: their "涉及 Capability" column declares they delegate to the
+    # referenced capability/knowledge entry, so an id-only hit (e.g. 'dialog'
+    # in pb.dialog_wizard) should rank below the foundational entry.
+    _ID_ONLY_PENALTY = 0.7
+    # Category priors: on neutral queries a playbook is a composition of
+    # capabilities, so it starts slightly below the foundational entry it
+    # delegates to. A pattern-intent query lifts playbooks/patterns instead.
+    _PLAYBOOK_PRIOR = 0.8
+    # Failure patterns are diagnostic references; on a neutral query they sit
+    # below both foundational knowledge and playbooks. Only an explicit
+    # failure-intent query lifts them (via _INTENT_BOOST).
+    _FAILURE_PRIOR = 0.8
+    _PATTERN_INTENT = ("pattern", "playbook", "模式", "架构", "最佳实践")
+    _FAILURE_INTENT = ("报错", "错误", "失败", "崩溃", "无法", "不显示", "不工作",
+                       "无反应", "缺失", "error", "fail", "missing", "crash")
+    _INTENT_BOOST = 1.5   # category matches detected query intent
+    _DEFAULT_BOOST = 1.2  # knowledge/capability on neutral queries
+
     def __init__(self):
         self.entries: List[CatalogEntry] = []
         self.aliases: Dict[str, List[str]] = {}  # alias_key → ["en_keyword1", "en_keyword2"]
-        self._inverted: Dict[str, List[int]] = {}  # word → entry indices (built lazily)
+        self._entry_refs: List[List[str]] = []  # per-entry cross-reference targets
+        self._field_index: List[Dict[str, List[str]]] = []  # per-entry searchable tokens
         self._search_cache: Dict[str, List[CatalogEntry]] = {}  # query → results (LRU-ish)
 
     # ─── Process-wide cache (per skill_root + file mtime) ─────────
     _PROC_CACHE: Dict[str, "CatalogIndex"] = {}
     _PROC_CACHE_MTIME: Dict[str, float] = {}
     _SEARCH_CACHE_MAX = 128
+    # Bump whenever parsing/scoring changes so stale disk pickles are dropped.
+    _CACHE_VERSION = 2
 
     @classmethod
     def load(cls, skill_root: Path) -> "CatalogIndex":
@@ -99,11 +135,14 @@ class CatalogIndex:
                 payload = pickle.load(f)
             if payload.get("mtime") != mtime:
                 return None
-            if payload.get("version") != 1:
+            # Parser version guards against stale pickles when the scoring/
+            # parsing logic changes but index.yaml does not. Bump on change.
+            if payload.get("version") != self._CACHE_VERSION:
                 return None
             index = cls()
             index.entries = payload["entries"]
             index.aliases = payload["aliases"]
+            index._entry_refs = payload.get("refs", [[] for _ in index.entries])
             return index
         except Exception:
             return None
@@ -114,10 +153,11 @@ class CatalogIndex:
         try:
             p.parent.mkdir(parents=True, exist_ok=True)
             payload = {
-                "version": 1,
+                "version": self._CACHE_VERSION,
                 "mtime": mtime,
                 "entries": self.entries,
                 "aliases": self.aliases,
+                "refs": self._entry_refs,
             }
             with p.open("wb") as f:
                 pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -131,36 +171,70 @@ class CatalogIndex:
         Search catalog for entries matching the query.
         Automatically expands Chinese aliases to English keywords.
 
-        Uses an inverted index (word → entries) instead of a linear scan,
-        plus a small query→results cache for repeated lookups.
+        Relevance-ranked: each entry scores per query word as
+        max(field_weight × match_quality), then boosted by category when the
+        query shows pattern-seeking or failure-diagnosis intent. Higher score
+        first; ties preserve catalog order.
         """
         cache_key = f"{query}|{max_results}"
         if cache_key in self._search_cache:
             return self._search_cache[cache_key]
 
-        if not self._inverted:
-            self._build_inverted_index()
+        if not self._field_index:
+            self._build_field_index()
 
         expanded = self._expand_aliases(query)
         words = [w.lower() for w in expanded.split() if len(w) >= 3]
 
-        # Collect candidate entry indices via inverted index (substring
-        # match on indexed words), preserving first-seen order.
-        seen: Dict[int, None] = {}
-        for w in words:
-            for word, indices in self._inverted.items():
-                if w in word:
-                    for i in indices:
-                        if i not in seen:
-                            seen[i] = None
-                            if len(seen) >= max_results:
-                                break
-                if len(seen) >= max_results:
-                    break
-            if len(seen) >= max_results:
-                break
+        query_lower = query.lower()
+        pattern_intent = any(t in query_lower for t in self._PATTERN_INTENT)
+        failure_intent = any(t in query_lower for t in self._FAILURE_INTENT)
 
-        results = [self.entries[i] for i in seen]
+        scored: List[tuple] = []
+        for idx, fields in enumerate(self._field_index):
+            score = 0.0
+            strong_hit = False  # any query word matched keyword or title
+            for w in words:
+                best = 0.0
+                best_field = ""
+                for field_name, tokens in fields.items():
+                    weight = self._FIELD_WEIGHTS[field_name]
+                    for tok in tokens:
+                        if w == tok:
+                            match = self._MATCH_EXACT
+                        elif tok.startswith(w):
+                            match = self._MATCH_PREFIX
+                        elif w in tok:
+                            match = self._MATCH_SUBSTRING
+                        else:
+                            continue
+                        cand = weight * match
+                        if cand > best:
+                            best, best_field = cand, field_name
+                score += best
+                if best_field in ("keyword", "title", "desc"):
+                    strong_hit = True
+            if score <= 0:
+                continue
+            category = self.entries[idx].category
+            if not strong_hit and category in ("playbook", "pattern"):
+                score *= self._ID_ONLY_PENALTY
+            if failure_intent and category == "failure_pattern":
+                score *= self._INTENT_BOOST
+            elif pattern_intent and category in ("pattern", "playbook"):
+                score *= self._INTENT_BOOST
+            elif not failure_intent and not pattern_intent:
+                if category in ("knowledge", "capability"):
+                    score *= self._DEFAULT_BOOST
+                elif category == "playbook":
+                    score *= self._PLAYBOOK_PRIOR
+                elif category == "failure_pattern":
+                    score *= self._FAILURE_PRIOR
+            scored.append((score, idx))
+
+        # Stable sort: score desc, original catalog order as tiebreak
+        scored.sort(key=lambda t: (-t[0], t[1]))
+        results = [self.entries[i] for _, i in scored[:max_results]]
 
         # Bound the cache
         if len(self._search_cache) >= self._SEARCH_CACHE_MAX:
@@ -168,15 +242,33 @@ class CatalogIndex:
         self._search_cache[cache_key] = results
         return results
 
-    def _build_inverted_index(self) -> None:
-        """Build word → entry-indices map from keywords + title words."""
-        self._inverted = {}
+    def _build_field_index(self) -> None:
+        """Build per-entry searchable-token buckets, weighted by field."""
+        self._field_index = []
+        split_re = r"[._\-/]"
+        # Title words are split on whitespace AND separators, with stray
+        # punctuation stripped — knowledge-section titles are comma-joined
+        # keyword strings, playbook/capability titles are Chinese phrases.
+        title_re = r"[,/、，]"
         for i, entry in enumerate(self.entries):
-            words = set(entry.keywords)
-            words.update(w.lower() for w in entry.title.split() if len(w) >= 3)
-            for w in words:
-                if len(w) >= 3:
-                    self._inverted.setdefault(w, []).append(i)
+            title_tokens = []
+            for part in re.split(title_re, entry.title.lower()):
+                for t in part.split():
+                    t = t.strip("+*()（）,，.。:：")
+                    if len(t) >= 3:
+                        title_tokens.append(t)
+            fields = {
+                "keyword": [k for k in entry.keywords if len(k) >= 3],
+                "id": [t for t in re.split(split_re, entry.id.lower()) if len(t) >= 3],
+                "title": title_tokens,
+                "file": [t for t in re.split(split_re, entry.file.lower()) if len(t) >= 3],
+                "ref": list(self._entry_refs[i]) if i < len(self._entry_refs) else [],
+            }
+            # Playbook/failure titles are free-text descriptions, not curated
+            # keywords; demote their hit weight to the 'desc' bucket.
+            if entry.category in ("playbook", "failure_pattern"):
+                fields["desc"] = fields.pop("title")
+            self._field_index.append(fields)
 
     def has_alias_match(self, query: str) -> bool:
         """Check if query matches any alias key (for routing decisions)."""
@@ -241,10 +333,23 @@ class CatalogIndex:
             if entry_id in ("ID", "id") or entry_title in ("文件", "目标", "能力", "内容", "诊断", "关键词", "适用场景"):
                 continue
 
-            # Extract keywords from remaining columns
+            # Keywords come only from columns AFTER the title/description
+            # column. The title is handled separately (title/desc field), so
+            # it must not double-count as a keyword. Cross-reference tokens
+            # (cap.xxx, pb.xxx, mecmod.xxx ...) are links to other entries,
+            # not search keywords — indexing them lets a pattern/playbook
+            # steal the referenced entry's terms.
             keywords = []
-            for c in cols[2:]:
-                keywords.extend([k.strip().lower() for k in re.split(r"[,/、]", c) if k.strip() and len(k.strip()) >= 3])
+            refs = []
+            for c in cols[3:]:
+                for k in re.split(r"[,/、]", c):
+                    k = k.strip().lower()
+                    if len(k) < 3:
+                        continue
+                    if re.match(r"^[a-z]+\.[a-z_]", k):
+                        refs.append(k)
+                    else:
+                        keywords.append(k)
 
             self.entries.append(CatalogEntry(
                 id=entry_id,
@@ -254,6 +359,7 @@ class CatalogIndex:
                 keywords=keywords,
                 raw_line=line,
             ))
+            self._entry_refs.append(refs)
 
     def _parse_aliases(self, content: str) -> None:
         """Parse the aliases table."""

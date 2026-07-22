@@ -38,7 +38,12 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 | 撤销 | undo, rollback, revert |
 | 重做 | redo, replay |
 | 颜色/着色 | color, material, visualization, appearance |
-| 选择/选取 | selection, pick, highlight, locate |
+| 选择/选取/拾取/点选 | selection, pick, highlight, locate |
+| 高亮/定位 | highlight, reframe, locate |
+| 报错/崩溃/失败 | error, HRESULT, fail, missing |
+| 多语言/本地化 | NLS, localization |
+| 工作台 | workbench, addin |
+| 属性 | attribute, CATISpecAttribute |
 | 参数 | parameter, formula, relation, attribute |
 | 更新 | update, refresh, rebuild, regenerate |
 | 导出 | export, save, output, write |
