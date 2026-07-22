@@ -3,8 +3,8 @@ id: surface.basics
 title: Surface & GSD Basics
 category: knowledge
 domain: surface
-keywords: [surface, GSD, Generative Shape Design, extrude, revolve, sweep, offset, trim, join]
-apis: [CATIGSMFactory, CATIGSMSweep, CATIGSMOffset, CATIGSMTrim, CATIGSMJoin]
+keywords: [surface, GSD, Generative Shape Design, extrude, revolve, sweep, offset, trim, assemble]
+apis: [CATIGSMFactory, CATIGSMExtrude, CATIGSMOffset, CATIGSMTrim, CATIGSMAssemble, CATICkeParmFactory]
 requires: [mecmod.feature, part.fillet]
 patterns: [surface.analysis]
 examples: []
@@ -16,130 +16,122 @@ tags: [surface, GSD, geometry]
 
 Generative Shape Design (GSD) 通过 `CATIGSMFactory` 创建曲面特征。
 
+## ⚠️ 重要修正
+
+之前版本以下 API 经核实**不存在或签名错误**：
+
+| 虚构/错误 | 真实 API |
+|-----------|---------|
+| `CreateExtrude(profile, NULL, dir, len, len, &out)` | 真实签名：`CreateExtrude(CATISpecObject_var, CATIGSMDirection_var, CATICkeParm_var len1, CATICkeParm_var len2, CATBoolean orient)` → 返回 `CATIGSMExtrude_var`。**长度参数必须是 `CATICkeParm_var`**（用 `CATICkeParmFactory::CreateLength(name, value)` 创建），不能直接传 double |
+| `CreateOffset(surf, double, bool, &out)` | 真实：`CreateOffset(CATISpecObject_var, CATICkeParm_var iLittMax, CATBoolean invert=FALSE, CATBoolean suppress=FALSE)` → `CATIGSMOffset_var` |
+| `CreateJoin(...)` / `CATIGSMJoin` | **均不存在**。UI 里的 Join 在 API 中叫 **Assemble**：`CATIGSMFactory::CreateAssemble(CATLISTV(CATISpecObject_var))` → `CATIGSMAssemble_var` |
+| `CreateTrim(s1, s2, bool, bool, &out)` | 真实：`CreateTrim(CATISpecObject_var, CATGSMOrientation, CATISpecObject_var, CATGSMOrientation)` → `CATIGSMTrim_var` |
+| `CreateSweep` | 不存在。真实：`CreateExplicitSweep` / `CreateLinearSweep` / `CreateCircularSweep` / `CreateConicalSweep` |
+| `CreateDevelop` / `CATIGSMDevelop`（展平） | 均不存在于 CATIGSMFactory |
+| `CATBooleanTrue` / `CATBooleanFalse` | 不存在。用标准 `TRUE` / `FALSE` |
+| `CATBody::GetSurfaceArea(area)` | 不存在。面积测量用 `CATIMeasurableSurface::GetArea(double&)`（MeasureGeometryInterfaces） |
+| `CATIGSMConnectChecker`（连续性检查） | 不存在 |
+
+官方样例参考：`CAADoc/CAAGSMInterfaces.edu/CAAGsiBodyGSAndOGS.m/src/CAAGsiBodyGSAndOGS.cpp`
+
 ## 核心接口
 
 | 接口 | 用途 |
 |------|------|
-| `CATIGSMFactory` | 所有曲面操作入口 |
+| `CATIGSMFactory` | 所有曲面操作入口（对 Part 的 spec 容器 QI 获取） |
 | `CATIGSMExtrude` | 拉伸曲面 |
-| `CATIGSMRevolve` | 旋转曲面 |
-| `CATIGSMSweep` | 扫掠曲面 |
+| `CATIGSMSweep*` | 扫掠（Explicit/Linear/Circular/Conical 四种创建方法） |
 | `CATIGSMOffset` | 偏移曲面 |
 | `CATIGSMTrim` | 修剪 |
-| `CATIGSMJoin` | 缝合 |
-| `CATIGSMSplit` | 分割 |
-| `CATIGSMFill` | 填充 |
+| `CATIGSMAssemble` | 缝合（API 名 Assemble = UI 的 Join） |
+| `CATICkeParmFactory` | 创建长度/角度参数（`CreateLength`） |
 
 ## 基本操作
 
-### 拉伸曲面
+### 拉伸曲面（官方样例惯用法）
 
 ```cpp
-CATISpecObject *CreateExtrude(CATISpecObject *iProfile,
-                                CATMathVector &iDirection,
-                                double iLength) {
-    CATIGSMFactory *pFactory = NULL;
-    HRESULT hr = iProfile->QueryInterface(
-        IID_CATIGSMFactory, (void**)&pFactory);
-    
-    CATISpecObject *pExtrude = NULL;
-    hr = pFactory->CreateExtrude(iProfile, NULL,
-        iDirection, iLength, iLength, &pExtrude);
-    pFactory->Release();
-    return pExtrude;
-}
+#include "CATIGSMFactory.h"
+#include "CATICkeParmFactory.h"
+
+// 1. 长度参数必须经 CATICkeParmFactory 创建，不能直接传 double
+CATICkeParm_var spStart = spCkeFact->CreateLength("Start", 0.0);
+CATICkeParm_var spEnd   = spCkeFact->CreateLength("End",   100.0);
+
+// 2. 方向对象
+CATIGSMDirection_var spDir = spGsmFact->CreateDirection(spPlane);
+
+// 3. 创建拉伸（返回 CATIGSMExtrude_var，不是输出参数）
+CATIGSMExtrude_var spExtrude =
+    spGsmFact->CreateExtrude(spProfile, spDir, spStart, spEnd, TRUE);
+
+// 4. 当 CATISpecObject 用，插入过程视图并更新
+CATISpecObject_var spSpecExtrude = spExtrude;
+// ... insert in procedural view + update ...
+spPrtPart->SetCurrentFeature(spSpecExtrude);
 ```
 
 ### 偏移曲面
 
 ```cpp
-CATISpecObject *CreateOffset(CATISpecObject *iSurface,
-                               double iOffset) {
-    CATIGSMFactory *pFactory = NULL;
-    iSurface->QueryInterface(IID_CATIGSMFactory,
-        (void**)&pFactory);
-    
-    CATISpecObject *pOffset = NULL;
-    pFactory->CreateOffset(iSurface, iOffset,
-        CATBooleanTrue, &pOffset);  // both sides
-    pFactory->Release();
-    return pOffset;
-}
+CATICkeParm_var spOffsetVal = spCkeFact->CreateLength("Offset", 5.0);
+
+CATIGSMOffset_var spOffset =
+    spGsmFact->CreateOffset(spSurface, spOffsetVal,
+                            FALSE,   // invert direction
+                            FALSE);  // suppress mode（TRUE=剔除错误元素）
 ```
 
-### 缝合曲面
+### 缝合曲面（API 名 Assemble）
 
 ```cpp
-CATISpecObject *JoinSurfaces(CATListValCATISpecObject &iSurfaces) {
-    CATIGSMFactory *pFactory = CreateFactory(iSurfaces[1]);
-    
-    CATISpecObject *pJoin = NULL;
-    pFactory->CreateJoin(iSurfaces, &pJoin);
-    pFactory->Release();
-    return pJoin;
-}
+CATLISTV(CATISpecObject_var) listSurfs;
+listSurfs.Append(spSurf1);
+listSurfs.Append(spSurf2);
+
+CATIGSMAssemble_var spAssemble = spGsmFact->CreateAssemble(listSurfs);
 ```
 
-### 修剪/分割
+### 修剪 (Trim)
 
 ```cpp
-// 修剪 (Trim) — 两个面互相修剪
-CATISpecObject *TrimSurfaces(CATISpecObject *iSurf1,
-                               CATISpecObject *iSurf2) {
-    CATIGSMFactory *pFactory = CreateFactory(iSurf1);
-    
-    CATISpecObject *pTrim = NULL;
-    pFactory->CreateTrim(iSurf1, iSurf2,
-        CATBooleanFalse, CATBooleanFalse, &pTrim);
-    //            side1?         side2?
-    pFactory->Release();
-    return pTrim;
-}
-
-// 分割 (Split) — 用工具面切目标面
-CATISpecObject *SplitSurface(CATISpecObject *iTarget,
-                               CATISpecObject *iTool) {
-    // ...
-}
+// 两个面互相修剪，方向枚举控制保留侧
+CATIGSMTrim_var spTrim = spGsmFact->CreateTrim(
+    spSurf1, CATGSMSameOrientation,      // 第1面保留侧
+    spSurf2, CATGSMInvertOrientation);   // 第2面保留侧
 ```
 
 ## 曲面分析
 
+### 面积/重心/周长（CATIMeasurableSurface）
+
 ```cpp
-// 获取曲面面积
-double GetSurfaceArea(CATISpecObject *iSurface) {
-    CATBody *pBody = GetBody(iSurface);
-    if (!pBody) return 0.0;
-    
+#include "CATIMeasurableSurface.h"
+
+double GetSurfaceArea(CATISpecObject_var iSurface) {
+    CATIMeasurableSurface *pMeas = NULL;
+    HRESULT rc = iSurface->QueryInterface(IID_CATIMeasurableSurface,
+                                          (void**)&pMeas);
+    if (FAILED(rc) || !pMeas) return 0.0;
+
     double area = 0.0;
-    pBody->GetSurfaceArea(area);
+    pMeas->GetArea(area);          // 还有 GetArea_COfG / GetCOG / GetPerimeter
+    pMeas->Release();
     return area;
 }
-
-// 检查曲面连续性
-CATBoolean CheckContinuity(CATISpecObject *iSurf1,
-                            CATISpecObject *iSurf2,
-                            int continuityLevel) {
-    // G0 = point, G1 = tangent, G2 = curvature
-    // 通过 CATIGSMConnectChecker 检查
-}
-
-// 展平曲面（铺平）
-CATISpecObject *FlattenSurface(CATISpecObject *iSurface,
-                                 CATMathDirection &iDirection) {
-    // CATIGSMDevelop 展平/展开
-    CATIGSMFactory *pFactory = CreateFactory(iSurface);
-    CATISpecObject *pFlattened = NULL;
-    pFactory->CreateDevelop(iSurface, iDirection, &pFlattened);
-    pFactory->Release();
-    return pFlattened;
-}
 ```
+
+### 连续性检查
+
+`CATIGSMConnectChecker` 不存在。曲面连接/连续性分析请改用 MeasureGeometryInterfaces 的测量接口或 GSD 分析工作台对应接口（以 B28 refman 为准），不要臆造 Checker 类。
 
 ## AI 生成规则
 
 - [ ] 所有曲面操作通过 `CATIGSMFactory`
-- [ ] Profile（截面）必须是封闭或开放草图
-- [ ] 偏移曲面检查自交
-- [ ] 缝合前检查面之间的间隙（<0.001mm）
-- [ ] 展平曲面注意不可展曲面（双曲率）会近似
+- [ ] **长度/角度参数必须 `CATICkeParmFactory::CreateLength/CreateAngle`**，禁止直接传 double
+- [ ] 方向用 `CreateDirection(参考平面/线)` 生成 `CATIGSMDirection_var`
+- [ ] 创建方法返回 `CATIGSMXxx_var`（智能指针），**不是输出参数**
+- [ ] 缝合 = `CreateAssemble`，不要说 Join
+- [ ] 布尔用 `TRUE`/`FALSE`；方向用 `CATGSMOrientation` 枚举
+- [ ] 创建后插入过程视图并 `Update()`，再 `SetCurrentFeature`
+- [ ] 面积测量 QI `CATIMeasurableSurface`

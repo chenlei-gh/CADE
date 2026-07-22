@@ -64,8 +64,9 @@ parameter_editor · surface_analysis
 | part/ | chamfer.md、fillet.md、hole.md（`9ac0762`） |
 | mecmod/ | **feature_patterns.md**（本次会话完整重写：虚构 `CATImplementStartUp`/`CATFeatureStartUp`/`CATAttribute`/`CATNull` 宏与 `CreateFeature` → 真实 `CATOsmSUHandler::Instanciate` 目录机制 + `CATImplementClass(X, DataExtension, CATBaseUnknown, LateType)`） |
 | philosophy/ | late_types.md、reference_vs_instance.md、updates.md（`679eecf`） |
+| surface/ | **surface_basics.md**（本次会话完整重写：虚构 `CreateJoin`/`CATIGSMJoin`/`CATIGSMConnectChecker`/`CATBody::GetSurfaceArea`/`CATBooleanTrue` → 真实 `CreateAssemble`/`CATIMeasurableSurface::GetArea`/TRUE/FALSE；长度参数必须 `CATICkeParmFactory::CreateLength`） |
 | product/ | assembly.md（`ce25c0a`） |
-| ui/ | dialog_dataflow.md、dialog_patterns.md、event_patterns.md（`9ac0762`+`49a26e7`）、layout_advanced.md、layout_anti_patterns.md（`9ac0762`）、toolbar.md（`af81e50`，官方MacDeclareHeader核实但未标"重要修正"，风险低）、**dialog.md**（本次会话完整重写：虚构 `CATDlgList` → 真实 `CATDlgSelectorList`/`CATDlgTableView`；统一构造签名 `(parent,name,style)`，文本走 NLS/`SetTitle`）、**dialog_layout.md**（本次会话重写：修正 2参`SetGridConstraints`/链式`SetRow`/等虚构链式调用、`CATGRID_HORIZONTAL`/`CATDlgFraGroupFrame`/`AttachTab`/`CATDlgProgressBar`/`CATDlgMultiEditor`/`AddItem`/`SetStep`/`CATDlgNotification`/`CATDlgLstMultipleSelection`/`CATDlgFileOpen`/`CenterOnScreen`/`DoEvents` 等 16 项虚构 → 全部替换为 B28 头文件实证 API）、**workbench_patterns.md**（本次会话完整重写：虚构 CATIGenericWksAddin/CATCmdMenu/AddCommand → 真实 CATIAfrGeneralWksAddin + MacDeclareHeader + NewAccess 宏链） |
+| ui/ | dialog_dataflow.md、dialog_patterns.md、event_patterns.md（`9ac0762`+`49a26e7`）、layout_advanced.md、layout_anti_patterns.md（`9ac0762`）、toolbar.md（`af81e50`，官方MacDeclareHeader核实但未标"重要修正"，风险低）、**dialog.md**（本次会话完整重写：虚构 `CATDlgList` → 真实 `CATDlgSelectorList`/`CATDlgTableView`；统一构造签名 `(parent,name,style)`，文本走 NLS/`SetTitle`）、**dialog_layout.md**（本次会话重写：修正 2参`SetGridConstraints`/链式`SetRow`/等虚构链式调用、`CATGRID_HORIZONTAL`/`CATDlgFraGroupFrame`/`AttachTab`/`CATDlgProgressBar`/`CATDlgMultiEditor`/`AddItem`/`SetStep`/`CATDlgNotification`/`CATDlgLstMultipleSelection`/`CATDlgFileOpen`/`CenterOnScreen`/`DoEvents` 等 16 项虚构 → 全部替换为 B28 头文件实证 API）、**workbench_patterns.md**（本次会话完整重写：虚构 CATIGenericWksAddin/CATCmdMenu/AddCommand → 真实 CATIAfrGeneralWksAddin + MacDeclareHeader + NewAccess 宏链）、**layout_advanced.md**（本次会话修正存量虚构：`CATDlgTree`/`CATDlgTreeItem` 不存在、2 参 `SetGridConstraints`、`CATDlgSplitterVertical`/`AttachLeft`/`SetMinimumSize`/`SetCurrentTab` → 真实 SelectorList 缩进模拟 + TabContainer + `SetSelectedPage`/`SetSashPosition`） |
 | failure_patterns/ | fp_dialog_cancel_not_desactivate.md、fp_dialog_null_parent.md（`9ac0762`） |
 | drawing/ | drawing_basics.md、drawing_annotations.md（本次会话完整重写，修正虚构 `CATIDrw*` 体系为真实 `CATIDft*`，详情见各文件开头的"⚠️ 重要修正"章节与 `playbooks/pb_batch_drawing.md`） |
 
@@ -77,6 +78,8 @@ parameter_editor · surface_analysis
 - `drawing/batch_drawing.md`（本次会话完整重写，修正 `CATIDrwSheet`→`CATIDftSheet`、`CATIProgressCallback`（不存在）→真实的 `CATIProgressTask`/`CATIProgressTaskUI`（`ApplicationFrame` 框架））
 - `workflow/batch_process.md`（本次会话完整重写：虚构 `CATSessionServices`/`CATIProgressBar`/`GetActiveDocument`/`GetPartContainer` → 真实 `CATFrmEditor::GetDocument` + `CATIContainerOfDocument::GetSpecContainer` + `CATIProgressTask`/`CATIProgressTaskUI`）
 - `blocks/locator.md`（本次会话完整重写：虚构 `GetSelection`/`SelectElement`/`ReframeOnObject`/`CATVisProperties::SetHighlight` → 真实 `CATCSO`/`CATIVisProperties::SetPropertiesAtt`/`ResetPropertiesAtt`/`CAT3DViewer::ReframeOn`）
+- `ui/result_dialog.md`（本次会话完整重写：虚构 `CATDlgList` 多列签名/`SelectElement` → 真实 `CATDlgSelectorList`/`CATDlgTableView` + `CATCSO`）
+- `ui/master_detail.md`（本次会话完整重写：虚构 `CATDlgSunkenFrame`/`CATDlgGroupFrame`/`CATDlgLstSingleSelection` → 真实 `CATDlgFraNoTitle`/`SetTitle`/`CATDlgLstMultisel`）
 
 ### frameworks/（148个自动生成索引文件，不适用本审计）
 
@@ -95,8 +98,6 @@ parameter_editor · surface_analysis
 - `patterns/blocks/feature_visitor.md`
 - `patterns/fta/auto_annotate.md`
 - `patterns/ui/context_menu.md`
-- `patterns/ui/master_detail.md`
-- `patterns/ui/result_dialog.md`
 
 ### 🟡 中风险（knowledge/ 目录剩余未核实文件）
 
@@ -106,14 +107,13 @@ parameter_editor · surface_analysis
 | infrastructure/ | code_style.md、error_handling.md、imakefile_advanced.md、memory_management.md、naming_conventions.md |
 | mecmod/ | feature.md、topology.md |
 | philosophy/ | caterror.md、com_lifecycle.md、undo_redo.md |
-| surface/ | surface_basics.md |
 | ui/ | context_menu.md |
 
 ---
 
 ## 下次会话继续入口
 
-1. 🔴 高风险组（drawing 相关3文件）已在本次会话全部处理完毕。下次可从"🟡 中风险"列表挑选下一批。建议优先顺序：`patterns/` 目录下9个手写代码示例文件（启用频率高）→ `knowledge/mecmod/`（核心建模概念，使用频率高）→ 其余
+1. 🔴 高风险组与最热的 7 个文件（selection/dialog/dialog_layout/feature_patterns/workbench_patterns/batch_process/locator）均已在本次会话处理完毕。下次从“🟡 中风险”剩余文件继续：`patterns/analyzer/`(2) → `patterns/blocks/feature_visitor` → `patterns/fta/auto_annotate` → `knowledge/failure_patterns/`(4) → `knowledge/mecmod/`(feature/topology) → 其余
 2. 对每个文件跑 `python tools/build_caadoc_index.py --check-file <path>`，把输出的 SUSPECT 逐条用 `--query`/`.edu` 样例源码交叉验证
 3. 确认虚构点后，用 `write_file` 整体重写受影响段落（**不要用 `edit_file` 对含大量代码块的长 markdown 做局部编辑**——历史上多次在 `pb_parameter_editor.md`、`patterns/ui/wizard.md` 上造成截断/内容错位，即使工具返回"successfully"也不可信，写完必须 `read_file` 验证结构完整）
 4. 修完一批文件后，在本文件对应清单里把文件从"未核实"移到"已核实"，并记录 commit hash
@@ -123,6 +123,6 @@ parameter_editor · surface_analysis
 
 ## 生产使用建议（给 AI/开发者的即时参考）
 
-- **可直接信任**：`capabilities/` 全部13个、`playbooks/` 全部14个、上表列出的 `knowledge/` 已核实文件（包含 `knowledge/drawing/` 全部2个）、`patterns/surface/surface_analysis.md`、`patterns/ui/wizard.md`、`patterns/ui/dynamic_form.md`、`patterns/drawing/batch_drawing.md`。
-- **谨慎使用**：`patterns/` 目录其余9个文件、`knowledge/failure_patterns/`（除2个已核实）、`knowledge/infrastructure/`（除2个已核实）、`knowledge/mecmod/`、`knowledge/philosophy/`（除3个已核实）、`knowledge/surface/surface_basics.md`、`knowledge/ui/`（除已核实的6个）。AI 生成代码涉及这些区域的具体 API 调用时，应先用 `--query`/`--check-file` 核实关键类型和方法名，不要直接照抄示例代码。
+- **可直接信任**：`capabilities/` 全部13个、`playbooks/` 全部14个、上表列出的 `knowledge/` 已核实文件（含 `knowledge/drawing/` 全部2个、`knowledge/surface/surface_basics.md`）、`patterns/surface/surface_analysis.md`、`patterns/ui/wizard.md`、`patterns/ui/dynamic_form.md`、`patterns/ui/result_dialog.md`、`patterns/ui/master_detail.md`、`patterns/drawing/batch_drawing.md`、`patterns/workflow/batch_process.md`、`patterns/blocks/locator.md`。
+- **谨慎使用**：`patterns/` 目录其余5个文件（analyzer/geometry_analyzer、analyzer/rule_checker、blocks/feature_visitor、fta/auto_annotate、ui/context_menu）、`knowledge/failure_patterns/`（除2个已核实）、`knowledge/infrastructure/`（除3个已核实）、`knowledge/mecmod/`（除feature_patterns已核实）、`knowledge/philosophy/`（除3个已核实）、`knowledge/ui/context_menu.md`。AI 生成代码涉及这些区域的具体 API 调用时，应先用 `--query`/`--check-file` 核实关键类型和方法名，不要直接照抄示例代码。
 - **frameworks/ 148个文件**：这是自动生成的 API 索引数据（非教学代码），可作为**查找线索**（定位属于哪个框架）放心使用，但具体方法签名仍以 `--query` 实时核对头文件为准（索引文件本身也会标注 SDK/refman mismatch）。
