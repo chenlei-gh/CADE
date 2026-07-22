@@ -254,6 +254,63 @@ for q, expect in [("对话框", True), ("装配体", True), ("xyz123", False)]:
     check(f"has_alias({q})", catalog.has_alias_match(q) == expect)
 
 # ═══════════════════════════════════════════════════════════════
+# SECTION 8: API Registry — Knowledge-driven Whitelist
+# ═══════════════════════════════════════════════════════════════
+print(f"\n{'='*65}")
+print("  SECTION 8: API Registry (whitelist)")
+print("=" * 65)
+
+from api_registry import get_registry
+from verifier import CodeVerifier
+
+registry = get_registry(SKILL)
+stats = registry.stats()
+check("registry loaded", stats["apis"] > 200, f"{stats['apis']} apis")
+check("capability APIs indexed", stats["sources"]["capability"] >= 50,
+      f"{stats['sources']['capability']} from capabilities")
+
+# Verified real APIs (from capabilities/*.md, checked against CAADoc)
+for api in ["CATCSO", "CATIProduct", "CATIGSMFactory", "CATPathElement"]:
+    check(f"known API: {api}", registry.is_known_api(api))
+
+# Fabricated APIs — documented in knowledge base as NOT existing
+for fake in ["CATIUpdate", "CATIMechanicalUpdate", "CATISelectionSetFactory"]:
+    check(f"fabricated API rejected: {fake}", not registry.is_known_api(fake))
+
+# Noise anchors from framework auto-extraction must be filtered
+check("noise anchor filtered", not registry.is_known_api("CATI2DCamera_22103"))
+
+# Verifier integration: fabricated include flagged, real one passes
+v = CodeVerifier()
+issues = v.verify_file("src/WlTestCmd.cpp", '''
+#include "WlTestCmd.h"
+#include "CATStateCommand.h"
+#include "CATIUpdate.h"
+CATCreateClass(WlTestCmd);
+''')
+unknown = [i for i in issues if "Unknown CAA header" in i.message]
+check("fabricated include flagged", len(unknown) == 1,
+      f"{len(unknown)} flagged")
+check("flag is CATIUpdate.h", any("CATIUpdate" in i.message for i in unknown))
+check("suggestion offered", any("Did you mean" in i.message for i in unknown))
+
+# Local + whitelisted includes must NOT be flagged
+v2 = CodeVerifier()
+issues2 = v2.verify_file("src/WlLocalCmd.cpp", '''
+#include "WlLocalCmd.h"
+#include "CATStateCommand.h"
+#include "CATCSO.h"
+CATCreateClass(WlLocalCmd);
+''')
+bad = [i for i in issues2 if "Unknown CAA header" in i.message]
+check("local + whitelisted includes pass", len(bad) == 0, f"{len(bad)} flagged")
+
+# Kernel develop → knowledge_refs traceability
+r = k.execute(KernelMode.DEVELOP, "create command RefsCmd in TestModule.m TestUI.edu", preview=True)
+check("develop attaches knowledge_refs", "knowledge_refs" in r,
+      f"keys: {sorted(r.keys())[:8]}")
+
+# ═══════════════════════════════════════════════════════════════
 # CLEANUP & SUMMARY
 # ═══════════════════════════════════════════════════════════════
 shutil.rmtree(ws, ignore_errors=True)

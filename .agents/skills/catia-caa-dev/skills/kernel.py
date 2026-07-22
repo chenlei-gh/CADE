@@ -245,6 +245,14 @@ class Kernel:
         self._state = KernelState.GENERATING
         result = self._execute_develop_plan(plan, preview=preview)
 
+        # Phase 2.2: Knowledge grounding — consult catalog/knowledge base for
+        # APIs relevant to this request and attach them for traceability.
+        # Downstream verification (Phase 3) validates generated #includes
+        # against the same knowledge base via ApiRegistry whitelist.
+        knowledge_refs = self._consult_knowledge(request)
+        if knowledge_refs:
+            result["knowledge_refs"] = knowledge_refs
+
         # Phase 2.5: Apply cross-domain extras (data_extension, imakefile deps)
         if not preview and extras and any(extras.values()):
             apply_result = self._apply_extras(plan, extras)
@@ -1077,6 +1085,42 @@ class Kernel:
             "references": results,
             "hint": "For detailed API code, check knowledge/ files matched above. For official docs, see CAADoc via knowledge/frameworks/.",
         }
+
+    def _consult_knowledge(self, request: str) -> list:
+        """Lightweight knowledge grounding for the develop pipeline.
+
+        Returns a short list of {file, apis} refs from the catalog so the
+        caller can see which knowledge entries governed this generation.
+        Kept deliberately small (max 3 refs) — this is traceability, not
+        a full knowledge dump. Failures are silent (never block develop).
+        """
+        try:
+            from catalog import CatalogIndex
+            skill_root = Path(__file__).parent.parent
+            catalog = CatalogIndex.load(skill_root)
+            entries = catalog.search(request, max_results=3)
+            if not entries:
+                return []
+            # Enrich with verified APIs from the registry where possible
+            try:
+                from api_registry import get_registry
+                registry = get_registry(skill_root)
+            except Exception:
+                registry = None
+            refs = []
+            for e in entries:
+                ref = {"id": e.id, "file": e.file, "title": e.title}
+                if registry and e.file:
+                    # APIs whose source file matches this entry
+                    src_name = Path(e.file).name
+                    apis = sorted(a for a, s in registry.api_source.items()
+                                  if s.endswith(f":{src_name}"))[:8]
+                    if apis:
+                        ref["apis"] = apis
+                refs.append(ref)
+            return refs
+        except Exception:
+            return []
 
     # ─── Build / Run / Support Routing ─────────────────────────
 

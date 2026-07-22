@@ -426,17 +426,45 @@ class CodeVerifier:
     # ─── Shared checks ──────────────────────────────────────────
 
     def _check_includes(self, path: Path, content: str):
-        """Check #include directives reference known headers"""
+        """Check #include directives against the knowledge-driven API whitelist.
+
+        An include is suspect only when ALL of these hold:
+          - it names a CAA-like identifier (CAT-prefixed)
+          - it is not in the whitelist (capabilities + frameworks + templates)
+          - it is not a local project header (stem matches the file's own
+            class/module, e.g. MyCmd.cpp including MyCmd.h)
+        Standard/system headers and lowercase custom headers pass silently.
+        """
+        try:
+            from api_registry import get_registry
+            registry = get_registry()
+        except ImportError:
+            registry = None
+
         includes = re.findall(r'#include\s+[<"]([^>"]+)[>"]', content)
+        own_stem = path.stem.lstrip("I")  # MyCmd.cpp / IMyCmd.h → MyCmd
         for inc in includes:
             basename = Path(inc).stem
             # Standard library and system headers are always OK
             if inc.startswith(("std", "cstd", "string", "vector", "map", "iostream")):
                 continue
-            # Unknown header — warn
-            if basename not in CAA_INCLUDES.values() and not inc.endswith(".h"):
-                # Not a known CAA pattern, skip silently (could be custom)
+            # Local project headers (own class, same-module) are OK
+            if basename == path.stem or basename == own_stem or basename == f"I{own_stem}":
                 continue
+            if registry is None:
+                continue  # no whitelist available — legacy silent behavior
+            # Only police CAA-like headers; user custom headers pass
+            if not registry.is_caa_like(basename):
+                continue
+            if registry.is_known_header(basename):
+                continue
+            # CAA-like but not whitelisted → suspect (fabricated or typo)
+            suggestions = registry.suggest(basename)
+            hint = f" Did you mean: {', '.join(suggestions)}?" if suggestions else \
+                   " Check CAADoc — this API may not exist."
+            self._warn("include", str(path), 0,
+                       f"Unknown CAA header '{inc}' (not in knowledge whitelist).{hint}",
+                       "Verify the API name against capabilities/*.md or CAADoc")
 
     # ─── Issue recording ────────────────────────────────────────
 
