@@ -1,11 +1,13 @@
 """
-CADE Icon Provider v3.2
+CADE Icon Provider v3.3
 =======================
 107 geometric patterns, 4x supersampling, true multi-color RGBA rendering.
 
 Design: draw at 4x on RGBA with explicit colors, LANCZOS scale down,
 quantize to 8-bit BMP. Each pattern can use BODY, EDGE, DIM, ACCENT colors.
-Default: BODY=domain color, EDGE=white, DIM=dark shade.
+Style aligned with official CATIA icons (sampled from B28 resources):
+BODY=domain color, EDGE=dark navy ink (24,16,82), DIM=dark shade,
+background=CATIA gray (192,192,192), no dithering (clean flat pixels).
 
 100% offline, instant.
 """
@@ -18,6 +20,11 @@ from PIL import Image, ImageDraw
 
 CACHE_DIR = Path.home() / ".cade" / "cache" / "icons"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# ─── Official CATIA icon style (sampled from B28 win_b64 resources) ───
+CATIA_BG = (192, 192, 192)        # dominant official background gray
+CATIA_INK = (24, 16, 82)          # dominant official dark-navy outline
+CACHE_VER = "v3"                  # bump when render style changes
 
 # ─── Domain → Icon ───────────────────────────────────────────────
 DOMAIN_MAP = {
@@ -88,10 +95,10 @@ def _get_color_for_icon(icon_name: str) -> Tuple[int,int,int]:
         if k in nl: return c
     for dk,di in DOMAIN_MAP.items():
         if di==nl and dk in COLOR_MAP: return COLOR_MAP[dk]
-    return (200,200,200)
+    return (10, 0, 255)  # CATIA accent blue for unmapped icons (never ~bg gray)
 
 def get_icon(icon_name: str, style: str = "geo") -> Optional[Path]:
-    key = f"{icon_name}_{style}".replace("/","_").replace(" ","_").replace(":","_")
+    key = f"{icon_name}_{CACHE_VER}_{style}".replace("/","_").replace(" ","_").replace(":","_")
     cached = CACHE_DIR / f"{key}.bmp"
     if cached.exists(): return cached
     path = _render_icon(icon_name)
@@ -120,7 +127,7 @@ def copy_icons_to_runtime(workspace_path: Path):
 # ═══════════════════════════════════════════════════════════════════
 
 def _render_icon(icon_name: str) -> Path:
-    """Render to 22x22 8-bit BMP. Multi-color RGBA -> quantize."""
+    """Render to 22x22 8-bit BMP, official CATIA style: gray bg, navy ink, no dither."""
     color = _get_color_for_icon(icon_name)
     r,g,b = color
     S = 4
@@ -128,8 +135,8 @@ def _render_icon(icon_name: str) -> Path:
 
     # Build color palette for this icon
     body = (r, g, b, 255)
-    edge = (255, 255, 255, 255)
-    dim  = (r//3, g//3, b//3, 255)
+    edge = (*CATIA_INK, 255)
+    dim  = (r//2, g//2, b//2, 255)
 
     # Some patterns get accent colors (for multi-color effect)
     accent = None
@@ -146,16 +153,14 @@ def _render_icon(icon_name: str) -> Path:
     if icon_name in acmap:
         accent = acmap[icon_name]
 
-    # Draw on RGBA
-    img_big = Image.new("RGBA", (big_w, big_h), (0, 0, 0, 0))
+    # Draw on official CATIA gray background
+    img_big = Image.new("RGBA", (big_w, big_h), (*CATIA_BG, 255))
     draw_big = ImageDraw.Draw(img_big)
     _draw_icon_4x_rgba(draw_big, icon_name, S, body, edge, dim, accent)
 
-    # Scale down
-    img = img_big.resize((22, 22), Image.LANCZOS)
-
-    # Quantize to 8-bit indexed
-    img_p = img.quantize(256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.FLOYDSTEINBERG)
+    # Scale down, flatten to RGB, quantize without dithering (flat pixels)
+    img = img_big.resize((22, 22), Image.LANCZOS).convert("RGB")
+    img_p = img.quantize(256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE)
 
     tmp = Path(os.environ.get("TEMP", "/tmp")) / f"cade_icon_{icon_name}.bmp"
     img_p.save(tmp, format="BMP")
@@ -165,6 +170,7 @@ def _render_icon(icon_name: str) -> Path:
 def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
     """107 patterns at 4x on RGBA. BODY/EDGE/DIM/ACCENT = RGBA tuples."""
     W,H=22*S,22*S; c=W//2; B,E,D,AC=BODY,EDGE,DIM,ACCENT
+    BG=(*CATIA_BG,255)  # cutout color: shows the gray background through
 
     def R(xy,**kw): draw.rectangle(xy,**kw)
     def O(xy,**kw): draw.ellipse(xy,**kw)
@@ -173,12 +179,14 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
     def AR(xy,s,e,**kw): draw.arc(xy,s,e,**kw)
 
     def _gear(draw,cx,cy,r,teeth):
-        O([cx-r-2,cy-r-2,cx+r+2,cy+r+2],outline=E,width=3)
-        O([cx-r+2,cy-r+2,cx+r-2,cy+r-2],outline=B,width=1)
+        # solid body disc, official style: filled gear with dark ink outline
+        O([cx-r-2,cy-r-2,cx+r+2,cy+r+2],fill=B)
         for i in range(teeth):
             a=2*pi*i/teeth; nx=cx+(r+2)*cos(a); ny=cy+(r+2)*sin(a)
-            O([nx-2,ny-2,nx+2,ny+2],fill=0)
-        O([cx-4,cy-4,cx+4,cy+4],fill=E); O([cx-2,cy-2,cx+2,cy+2],fill=0)
+            O([nx-3,ny-3,nx+3,ny+3],fill=B)
+        O([cx-r-2,cy-r-2,cx+r+2,cy+r+2],outline=E,width=3)
+        O([cx-5,cy-5,cx+5,cy+5],fill=E)
+        O([cx-3,cy-3,cx+3,cy+3],fill=BG)
 
     def _cube():
         R([4*S,6*S,15*S,17*S],outline=E,width=2*S)
@@ -210,7 +218,7 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
 "wave":      lambda:L([(1*S,17*S),(4*S,9*S),(7*S,17*S),(10*S,9*S),(13*S,17*S),(16*S,9*S),(20*S,17*S)],fill=E,width=3*S),
 "grid":      lambda:[L([3*S,8*S,18*S,8*S],fill=D,width=S),L([3*S,14*S,18*S,14*S],fill=D,width=S),L([8*S,3*S,8*S,18*S],fill=D,width=S),L([14*S,3*S,14*S,18*S],fill=D,width=S)],
 "play":      lambda:[P([4*S,2*S,4*S,19*S,19*S,c],fill=B),P([4*S,2*S,4*S,19*S,19*S,c],outline=E)],
-"drill":     lambda:[P([c,2*S,3*S,16*S,18*S,16*S],fill=B),R([c-3*S,7*S,c+3*S,16*S],fill=0)],
+"drill":     lambda:[P([c,2*S,3*S,16*S,18*S,16*S],fill=B),R([c-3*S,7*S,c+3*S,16*S],fill=BG)],
 "cut":       lambda:[L([2*S,2*S,19*S,19*S],fill=E,width=3*S),L([19*S,2*S,2*S,19*S],fill=E,width=3*S)],
 "cursor":    lambda:P([1*S,1*S,1*S,17*S,8*S,12*S,13*S,19*S,16*S,15*S,10*S,10*S,16*S,6*S],fill=B),
 "move":      lambda:[P([c,1*S,c-6*S,9*S,c-2*S,9*S,c-2*S,18*S,c+2*S,18*S,c+2*S,9*S,c+6*S,9*S],fill=B),L([c,3*S,c,17*S],fill=E,width=2*S),P([1*S,c,9*S,c-6*S,9*S,c-2*S,18*S,c-2*S,18*S,c+2*S,9*S,c+2*S,9*S,c+6*S],fill=B),L([3*S,c,17*S,c],fill=E,width=2*S)],
@@ -244,7 +252,7 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
 "curve":     lambda:_bez(2*S,19*S,c,2*S,19*S,19*S),
 "star":      lambda:_star(c,c,4*S,10*S,5),
 "heart":     lambda:[O([3*S,2*S,10*S,9*S],fill=B),O([11*S,2*S,18*S,9*S],fill=B),P([3*S,6*S,18*S,6*S,c,19*S],fill=B),O([3*S,2*S,10*S,9*S],outline=E),O([11*S,2*S,18*S,9*S],outline=E),P([3*S,6*S,18*S,6*S,c,19*S],outline=E)],
-"lock":      lambda:[AR([4*S,4*S,17*S,12*S],180,0,fill=E,width=3*S),R([5*S,10*S,16*S,20*S],fill=B),R([5*S,10*S,16*S,20*S],outline=E),O([8*S,13*S,13*S,18*S],fill=0),R([8*S,14*S,13*S,18*S],fill=E)],
+"lock":      lambda:[AR([4*S,4*S,17*S,12*S],180,0,fill=E,width=3*S),R([5*S,10*S,16*S,20*S],fill=B),R([5*S,10*S,16*S,20*S],outline=E),O([8*S,13*S,13*S,18*S],fill=BG),R([8*S,14*S,13*S,18*S],fill=E)],
 "plus":      lambda:[R([c-2*S,4*S,c+2*S,17*S],fill=B),R([4*S,c-2*S,17*S,c+2*S],fill=B),R([c-2*S,4*S,c+2*S,17*S],outline=E),R([4*S,c-2*S,17*S,c+2*S],outline=E)],
 "triangle":  lambda:P([c,1*S,1*S,20*S,20*S,20*S],fill=B),
 "diamond":   lambda:P([(c,1*S),(20*S,c),(c,20*S),(1*S,c)],fill=B),
@@ -268,7 +276,7 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
 "backward":  lambda:[P([17*S,2*S,17*S,19*S,7*S,c],fill=B),P([7*S,2*S,7*S,19*S,1*S,c],fill=B)],
 "key":       lambda:[O([c-2*S,c-2*S,c+2*S,c+2*S],fill=E),L([c,c,18*S,5*S],fill=B,width=3*S),L([13*S,7*S,19*S,4*S],fill=B,width=2*S)],
 "bell":      lambda:[P([c,1*S,2*S,8*S,2*S,14*S,19*S,14*S,19*S,8*S],fill=B),R([8*S,14*S,13*S,17*S],fill=B),O([9*S,17*S,12*S,20*S],fill=D)],
-"tag":       lambda:[P([2*S,2*S,18*S,2*S,18*S,12*S,c,19*S,2*S,12*S],fill=B),O([c-3*S,c-3*S,c+3*S,c+3*S],fill=0)],
+"tag":       lambda:[P([2*S,2*S,18*S,2*S,18*S,12*S,c,19*S,2*S,12*S],fill=B),O([c-3*S,c-3*S,c+3*S,c+3*S],fill=BG)],
 "pin":       lambda:[O([5*S,1*S,16*S,12*S],fill=B),P([8*S,10*S,13*S,10*S,c,20*S],fill=B)],
 "flag":      lambda:[L([3*S,1*S,3*S,20*S],fill=E,width=2*S),P([3*S,1*S,18*S,4*S,3*S,8*S],fill=B)],
 "trophy":    lambda:[AR([2*S,2*S,9*S,9*S],180,0,fill=B,width=3*S),AR([12*S,2*S,19*S,9*S],180,0,fill=B,width=3*S),R([5*S,7*S,16*S,15*S],fill=B),R([7*S,15*S,14*S,20*S],fill=B)],
@@ -292,7 +300,7 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
 "equal":     lambda:[L([4*S,7*S,17*S,7*S],fill=E,width=3*S),L([4*S,13*S,17*S,13*S],fill=E,width=3*S)],
 "percent":   lambda:[O([2*S,2*S,8*S,8*S],fill=B),L([15*S,3*S,8*S,18*S],fill=E,width=2*S),O([11*S,13*S,17*S,19*S],fill=B)],
 "sun":       lambda:[O([5*S,5*S,16*S,16*S],fill=B),_sun_rays()],
-"moon":      lambda:[O([5*S,2*S,16*S,19*S],fill=B),O([9*S,3*S,20*S,18*S],fill=0)],
+"moon":      lambda:[O([5*S,2*S,16*S,19*S],fill=B),O([9*S,3*S,20*S,18*S],fill=BG)],
 "cloud":     lambda:[O([2*S,8*S,12*S,15*S],fill=B),O([8*S,4*S,18*S,11*S],fill=B),O([2*S,13*S,19*S,20*S],fill=B)],
 "lightning": lambda:P([c,1*S,7*S,11*S,8*S,11*S,3*S,18*S,14*S,9*S,12*S,9*S,18*S,1*S],fill=E),
 "flame":     lambda:[O([4*S,10*S,17*S,20*S],fill=B),P([c,2*S,4*S,12*S,7*S,10*S],fill=B),P([c,2*S,14*S,10*S,17*S,12*S],fill=B)],

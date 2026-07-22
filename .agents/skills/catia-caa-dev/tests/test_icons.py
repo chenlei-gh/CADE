@@ -81,9 +81,16 @@ for name in all_patterns:
         print(f"  [FAIL] {name}: bad format {w}x{h} {bpp}bpp")
         continue
 
-    # Must have visible pixels
+    # Must have visible pixels (pixels differing from CATIA gray background)
     px = data[1078:]  # skip 54B header + 1024B palette
-    non_zero = sum(1 for b in px if b > 0)
+    pal = data[54:54+1024]
+    bg_idx = None
+    for i in range(256):
+        r, g, b = pal[i*4+2], pal[i*4+1], pal[i*4]
+        if abs(r-192) < 24 and abs(g-192) < 24 and abs(b-192) < 24:
+            bg_idx = i
+            break
+    non_zero = sum(1 for b in px if b != bg_idx)
     if non_zero == 0:
         render_fail += 1
         print(f"  [FAIL] {name}: 0 visible pixels")
@@ -96,7 +103,6 @@ for name in all_patterns:
     seen_hashes.add(px_hash)
 
     # Palette check: must have non-trivial colors (not just grayscale 0-255)
-    pal = data[54:54+1024]
     unique_colors = len({(pal[i*4], pal[i*4+1], pal[i*4+2])
                          for i in range(256)
                          if sum(pal[i*4:i*4+3]) > 5})
