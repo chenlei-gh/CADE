@@ -1,13 +1,17 @@
 """
-CADE Icon Provider v3.3
+CADE Icon Provider v3.4
 =======================
-107 geometric patterns, 4x supersampling, true multi-color RGBA rendering.
+123 geometric patterns, 4x supersampling, true multi-color RGBA rendering.
 
 Design: draw at 4x on RGBA with explicit colors, LANCZOS scale down,
 quantize to 8-bit BMP. Each pattern can use BODY, EDGE, DIM, ACCENT colors.
 Style aligned with official CATIA icons (sampled from B28 resources):
 BODY=domain color, EDGE=dark navy ink (24,16,82), DIM=dark shade,
 background=CATIA gray (192,192,192), no dithering (clean flat pixels).
+
+Composition: verb-object parsing maps commands to (base pattern, corner
+badge) — 'CreateHoleCmd' -> drill + plus badge, official style. Large
+fills get a halftone checker like official teal-checker fills.
 
 100% offline, instant.
 """
@@ -24,7 +28,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # ─── Official CATIA icon style (sampled from B28 win_b64 resources) ───
 CATIA_BG = (192, 192, 192)        # dominant official background gray
 CATIA_INK = (24, 16, 82)          # dominant official dark-navy outline
-CACHE_VER = "v3"                  # bump when render style changes
+CACHE_VER = "v4"                  # bump when render style changes
 
 # ─── Domain → Icon ───────────────────────────────────────────────
 DOMAIN_MAP = {
@@ -43,6 +47,12 @@ DOMAIN_MAP = {
     "export":"export","import":"import","file":"doc","catalog":"book",
     "database":"db","search":"search","filter":"funnel","test":"play",
     "test_tool":"play","dev":"code",
+    "mirror":"mirror","symmetry":"mirror","plane":"plane","layer":"layer",
+    "print":"print","pattern":"pattern","array":"pattern","sweep":"sweep",
+    "loft":"loft","shell":"shell","draft":"draft","helix":"helix",
+    "spring":"helix","thread":"helix","boolean":"boolean","axis":"axis",
+    "rotate":"rotate","explode":"explode","material":"material",
+    "dimension":"dimension",
 }
 
 # ─── Domain → Color ───────────────────────────────────────────────
@@ -76,6 +86,12 @@ COLOR_MAP: Dict[str, Tuple[int,int,int]] = {
     "catalog":_YL,"database":_YL,"search":_YL,
     "filter":_YL,"test":_MG,"test_tool":_MG,
     "dev":_MG,
+    "mirror":_TL,"symmetry":_TL,"plane":_TL,"reference":_TL,
+    "layer":_PU,"print":_YL,"pattern":_TL,"array":_TL,
+    "sweep":_TL,"loft":_TL,"shell":_TL,"draft":_TL,
+    "helix":_TL,"spring":_TL,"thread":_CR,"boolean":_TL,
+    "axis":_TL,"rotate":_TL,"explode":_BL,"material":_GN,
+    "dimension":_GN,
     "heart":_CR,"lock":_YL,"plus":_GN,
     "lightning":_YL,"flame":(255,100,0),"trophy":_YL,
     "pin":_CR,"forward":_GN,"target":(255,0,0),
@@ -87,14 +103,70 @@ COLOR_MAP: Dict[str, Tuple[int,int,int]] = {
 #  Public API
 # ═══════════════════════════════════════════════════════════════════
 
+# ─── Verb → Badge (official corner-badge composition) ─────────────
+VERB_MAP: Dict[str, str] = {
+    "create":"plus","new":"star","add":"plus",
+    "delete":"multiply","del":"multiply","remove":"minus","clear":"multiply",
+    "edit":"pencil","modify":"pencil",
+    "measure":"ruler",
+    "check":"check","verify":"check","validate":"check",
+    "copy":"copy","duplicate":"copy",
+    "import":"import","export":"export",
+    "save":"disk","open":"folder",
+    "search":"search","find":"search","analyze":"chart","analysis":"chart",
+    "view":"eye","show":"eye","preview":"eye",
+    "run":"play","execute":"play","launch":"play","start":"play",
+    "test":"play","play":"play",
+    "lock":"lock","info":"info","help":"question",
+    "setting":"settings","config":"settings",
+}
+
+_CAMEL = re.compile(r'[A-Z]+(?![a-z])|[A-Z][a-z0-9]*|[a-z0-9]+')
+
+def _tokenize(name: str) -> List[str]:
+    name = re.sub(r'(command|cmd)$', '', name, flags=re.I)
+    toks = []
+    for part in re.split(r'[_\-\s]+', name):
+        toks += _CAMEL.findall(part)
+    return [t.lower() for t in toks if t]
+
+def resolve_icon_ex(command_name: str, hint: str = None) -> Tuple[str, Optional[str]]:
+    """Verb-object parse: object -> base pattern, verb -> corner badge.
+
+    'CreateHoleCmd' -> ('drill','plus'); 'HoleAnalysisCmd' -> ('drill','chart');
+    plain pattern names pass through with badge=None.
+    """
+    base = DOMAIN_MAP[hint.lower()] if hint and hint.lower() in DOMAIN_MAP else None
+    toks = _tokenize(command_name)
+    verb = next((t for t in toks if t in VERB_MAP), None)
+
+    if base is None:
+        for t in toks:
+            if t != verb and t in DOMAIN_MAP:
+                base = DOMAIN_MAP[t]; break
+    if base is None:
+        # fused token like 'createhole' (actions.py passes lowercased names)
+        for t in toks:
+            for v in VERB_MAP:
+                if t.startswith(v) and len(t) > len(v) and t[len(v):] in DOMAIN_MAP:
+                    verb = verb or v
+                    base = DOMAIN_MAP[t[len(v):]]; break
+            if base: break
+    if base is None:
+        nl = command_name.lower().replace("cmd","").replace("command","")
+        for k, v in DOMAIN_MAP.items():
+            if k in nl: base = v; break
+    if base is None:
+        base = command_name.lower().split("_")[0] if "_" in command_name else command_name.lower()
+
+    badge = VERB_MAP.get(verb) if verb else None
+    if badge == base:  # 'MeasureDistance' -> ruler+ruler is redundant
+        badge = None
+    return base, badge
+
 def resolve_icon(command_name: str, hint: str = None) -> str:
-    nl = command_name.lower().replace("cmd","").replace("command","")
-    if hint and hint.lower() in DOMAIN_MAP: return DOMAIN_MAP[hint.lower()]
-    for w in nl.split("_"):
-        if w.strip() in DOMAIN_MAP: return DOMAIN_MAP[w.strip()]
-    for k,v in DOMAIN_MAP.items():
-        if k in nl: return v
-    return nl.split("_")[0] if "_" in nl else nl
+    """Back-compat: returns base pattern name (badge dropped)."""
+    return resolve_icon_ex(command_name, hint)[0]
 
 def _get_color_for_icon(icon_name: str) -> Tuple[int,int,int]:
     nl = icon_name.lower().replace("-","_").replace(" ","_")
@@ -106,10 +178,12 @@ def _get_color_for_icon(icon_name: str) -> Tuple[int,int,int]:
     return (10, 0, 255)  # CATIA accent blue for unmapped icons (never ~bg gray)
 
 def get_icon(icon_name: str, style: str = "geo") -> Optional[Path]:
-    key = f"{icon_name}_{CACHE_VER}_{style}".replace("/","_").replace(" ","_").replace(":","_")
+    base, badge = resolve_icon_ex(icon_name)
+    cache_name = f"{icon_name}+{badge}" if badge else icon_name
+    key = f"{cache_name}_{CACHE_VER}_{style}".replace("/","_").replace(" ","_").replace(":","_")
     cached = CACHE_DIR / f"{key}.bmp"
     if cached.exists(): return cached
-    path = _render_icon(icon_name)
+    path = _render_icon(base, badge)
     if path: shutil.copy(path, cached)
     return path
 
@@ -134,7 +208,43 @@ def copy_icons_to_runtime(workspace_path: Path):
 #  Rendering Pipeline
 # ═══════════════════════════════════════════════════════════════════
 
-def _render_icon(icon_name: str) -> Path:
+def _render_badge_plate(badge: str, S: int) -> Image.Image:
+    """Official-style corner badge: glyph on gray plate with ink border."""
+    plate_sz = 10*S
+    plate = Image.new("RGBA", (plate_sz, plate_sz), (*CATIA_BG, 255))
+    glyph = Image.new("RGBA", (22*S, 22*S), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glyph)
+    _draw_icon_4x_rgba(gd, badge, S, (10, 0, 255, 255), (*CATIA_INK, 255),
+                       (0, 0, 150, 255), None)
+    glyph = glyph.resize((plate_sz - 2*S, plate_sz - 2*S), Image.LANCZOS)
+    plate.alpha_composite(glyph, (S, S))
+    pd = ImageDraw.Draw(plate)
+    pd.rectangle([0, 0, plate_sz-1, plate_sz-1], outline=(*CATIA_INK, 255),
+                 width=max(1, S//2))
+    return plate
+
+
+def _apply_checker(img: Image.Image, body_rgb: Tuple[int,int,int]) -> Image.Image:
+    """Official-style halftone: lighten every other pixel on large body
+    fills. Applied at 22x22 for a crisp 1px checker."""
+    px = img.load()
+    W, H = img.size
+    count = 0
+    for y in range(H):
+        for x in range(W):
+            if px[x, y] == body_rgb:
+                count += 1
+    if count < W*H//5:  # small fills stay flat
+        return img
+    light = tuple(min(255, int(c + (255 - c) * 0.45)) for c in body_rgb)
+    for y in range(H):
+        for x in range(W):
+            if px[x, y] == body_rgb and ((x + y) & 1) == 0:
+                px[x, y] = light
+    return img
+
+
+def _render_icon(icon_name: str, badge: str = None) -> Path:
     """Render to 22x22 8-bit BMP, official CATIA style: gray bg, navy ink, no dither."""
     color = _get_color_for_icon(icon_name)
     r,g,b = color
@@ -166,8 +276,14 @@ def _render_icon(icon_name: str) -> Path:
     draw_big = ImageDraw.Draw(img_big)
     _draw_icon_4x_rgba(draw_big, icon_name, S, body, edge, dim, accent)
 
-    # Scale down, flatten to RGB, quantize without dithering (flat pixels)
+    # Corner badge composition (official verb-badge style)
+    if badge:
+        plate = _render_badge_plate(badge, S)
+        img_big.alpha_composite(plate, (big_w - plate.width, big_h - plate.height))
+
+    # Scale down, flatten to RGB, halftone large fills, quantize w/o dither
     img = img_big.resize((22, 22), Image.LANCZOS).convert("RGB")
+    img = _apply_checker(img, (r, g, b))
     img_p = img.quantize(256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE)
 
     tmp = Path(os.environ.get("TEMP", "/tmp")) / f"cade_icon_{icon_name}.bmp"
@@ -325,6 +441,22 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
 "warning":   lambda:[P([c,1*S,1*S,17*S,20*S,17*S],fill=B),P([c,1*S,1*S,17*S,20*S,17*S],outline=E),R([c-1*S,7*S,c+1*S,11*S],fill=E),O([c-1*S,12*S,c+1*S,14*S],fill=E)],
 "question":  lambda:[O([2*S,2*S,19*S,19*S],outline=E,width=2*S),AR([6*S,5*S,14*S,11*S],180,0,fill=B,width=2*S),O([c-1*S,13*S,c+1*S,15*S],fill=B)],
 "globe":     lambda:[O([2*S,2*S,19*S,19*S],outline=E,width=2*S),O([c-1*S,2*S,c+1*S,19*S],fill=D),L([2*S,c,19*S,c],fill=D,width=S)],
+"mirror":    lambda:[P([3*S,4*S,9*S,c,3*S,18*S],fill=B),P([3*S,4*S,9*S,c,3*S,18*S],outline=E),P([19*S,4*S,13*S,c,19*S,18*S],outline=E),L([c,2*S,c,20*S],fill=D,width=S)],
+"plane":     lambda:[P([2*S,16*S,8*S,8*S,20*S,8*S,14*S,16*S],fill=B),P([2*S,16*S,8*S,8*S,20*S,8*S,14*S,16*S],outline=E),L([c,8*S,c,2*S],fill=E,width=2*S),P([c,1*S,c-2*S,5*S,c+2*S,5*S],fill=E)],
+"layer":     lambda:[P([2*S,6*S,c,2*S,20*S,6*S,c,10*S],fill=B),P([2*S,6*S,c,2*S,20*S,6*S,c,10*S],outline=E),P([2*S,11*S,c,7*S,20*S,11*S,c,15*S],fill=D),P([2*S,11*S,c,7*S,20*S,11*S,c,15*S],outline=E),P([2*S,16*S,c,12*S,20*S,16*S,c,20*S],fill=B),P([2*S,16*S,c,12*S,20*S,16*S,c,20*S],outline=E)],
+"print":     lambda:[R([6*S,2*S,16*S,8*S],fill=BG,outline=E,width=S),R([3*S,8*S,19*S,15*S],fill=B),R([3*S,8*S,19*S,15*S],outline=E),R([6*S,13*S,16*S,20*S],fill=BG,outline=E,width=S),L([8*S,16*S,14*S,16*S],fill=D,width=S),L([8*S,18*S,14*S,18*S],fill=D,width=S)],
+"pattern":   lambda:[R([x*S,y*S,x*S+5*S,y*S+5*S],fill=B,outline=E) for y in (2,9,16) for x in (2,9,16)],
+"sweep":     lambda:[O([2*S,13*S,8*S,19*S],fill=B),O([2*S,13*S,8*S,19*S],outline=E),_bez(5*S,16*S,15*S,18*S,19*S,4*S)],
+"loft":      lambda:[R([3*S,14*S,11*S,19*S],fill=B),R([3*S,14*S,11*S,19*S],outline=E),R([11*S,3*S,19*S,8*S],fill=B),R([11*S,3*S,19*S,8*S],outline=E),L([3*S,14*S,11*S,3*S],fill=D,width=S),L([11*S,19*S,19*S,8*S],fill=D,width=S)],
+"shell":     lambda:[R([3*S,3*S,19*S,19*S],fill=B),R([3*S,3*S,19*S,19*S],outline=E),R([7*S,7*S,19*S,19*S],fill=BG),L([7*S,7*S,7*S,19*S],fill=E,width=S),L([7*S,7*S,19*S,7*S],fill=E,width=S)],
+"draft":     lambda:[P([5*S,3*S,17*S,3*S,20*S,19*S,2*S,19*S],fill=B),P([5*S,3*S,17*S,3*S,20*S,19*S,2*S,19*S],outline=E),L([c,3*S,c,19*S],fill=D,width=S)],
+"helix":     lambda:[AR([5*S,2*S,17*S,8*S],0,360,fill=E,width=2*S),AR([5*S,8*S,17*S,14*S],0,360,fill=B,width=2*S),AR([5*S,14*S,17*S,20*S],0,360,fill=E,width=2*S)],
+"boolean":   lambda:[O([3*S,5*S,13*S,16*S],fill=B),O([3*S,5*S,13*S,16*S],outline=E),O([9*S,5*S,19*S,16*S],fill=D),O([9*S,5*S,19*S,16*S],outline=E)],
+"axis":      lambda:[L([c,2*S,c,20*S],fill=E,width=S),L([2*S,c,20*S,c],fill=E,width=S),O([c-4*S,c-4*S,c+4*S,c+4*S],outline=B,width=2*S)],
+"rotate":    lambda:[AR([3*S,3*S,19*S,19*S],30,330,fill=B,width=3*S),P([15*S,2*S,20*S,6*S,13*S,8*S],fill=B)],
+"explode":   lambda:[R([8*S,8*S,14*S,14*S],fill=B),R([8*S,8*S,14*S,14*S],outline=E),L([c,1*S,c,6*S],fill=E,width=2*S),L([c,16*S,c,21*S],fill=E,width=2*S),L([1*S,c,6*S,c],fill=E,width=2*S),L([16*S,c,21*S,c],fill=E,width=2*S),P([c,1*S,c-2*S,4*S,c+2*S,4*S],fill=E),P([c,21*S,c-2*S,18*S,c+2*S,18*S],fill=E),P([1*S,c,4*S,c-2*S,4*S,c+2*S],fill=E),P([21*S,c,18*S,c-2*S,18*S,c+2*S],fill=E)],
+"material":  lambda:[R([3*S,3*S,19*S,19*S],fill=B),R([3*S,3*S,19*S,19*S],outline=E),R([5*S,5*S,9*S,9*S],fill=D),R([13*S,5*S,17*S,9*S],fill=D),R([9*S,9*S,13*S,13*S],fill=D),R([5*S,13*S,9*S,17*S],fill=D),R([13*S,13*S,17*S,17*S],fill=D)],
+"dimension": lambda:[L([4*S,3*S,4*S,10*S],fill=E,width=S),L([18*S,3*S,18*S,10*S],fill=E,width=S),L([4*S,7*S,18*S,7*S],fill=B,width=2*S),P([4*S,7*S,7*S,5*S,7*S,9*S],fill=B),P([18*S,7*S,15*S,5*S,15*S,9*S],fill=B),R([7*S,12*S,15*S,17*S],fill=BG,outline=E,width=S)],
     }
     if name in _: _[name]()
     else: r=9*S; P([(c,c-r),(c+r,c),(c,c+r),(c-r,c)],fill=B); P([(c,c-r),(c+r,c),(c,c+r),(c-r,c)],outline=E)

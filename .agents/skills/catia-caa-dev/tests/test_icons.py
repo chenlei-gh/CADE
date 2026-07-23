@@ -230,6 +230,56 @@ check("Render speed < 50ms/icon", avg_ms < 50,
 
 
 # ═══════════════════════════════════════════════════════════════
+#  PART G: Composition (verb badge) + Halftone texture
+# ═══════════════════════════════════════════════════════════════
+print("\n" + "=" * 60)
+print("  G. Composition + Texture")
+print("=" * 60)
+
+from icon_provider import resolve_icon_ex, _apply_checker
+from PIL import Image
+
+b, g = resolve_icon_ex("CreateHoleCmd")
+check("compose CreateHoleCmd -> drill+plus", b == "drill" and g == "plus", f"{b}+{g}")
+
+b, g = resolve_icon_ex("HoleAnalysisCmd")
+check("compose HoleAnalysisCmd -> drill+chart", b == "drill" and g == "chart", f"{b}+{g}")
+
+b, g = resolve_icon_ex("MeasureDistanceCmd")
+check("compose dedupe ruler+ruler", b == "ruler" and g is None, f"{b}+{g}")
+
+b, g = resolve_icon_ex("createhole")  # fused lowercase from actions.py
+check("compose fused 'createhole'", b == "drill" and g == "plus", f"{b}+{g}")
+
+b, g = resolve_icon_ex("cube")
+check("plain pattern pass-through", b == "cube" and g is None, f"{b}+{g}")
+
+# composite render: badge must change pixels, format stays 22x22 8bpp
+# NOTE: _render_icon reuses one tmp path per pattern — read bytes immediately
+da = _render_icon("drill").read_bytes()
+db = _render_icon("drill", "plus").read_bytes()
+check("badge changes pixels", da != db)
+check("composite format 22x22 8bpp",
+      abs(int.from_bytes(db[18:22], "little", signed=True)) == 22
+      and int.from_bytes(db[28:30], "little") == 8)
+
+# halftone checker: large body fill gains a lighter shade
+im22 = Image.new("RGB", (22, 22), (192, 192, 192))
+for yy in range(2, 20):
+    for xx in range(2, 20):
+        im22.putpixel((xx, yy), (155, 0, 0))
+out = _apply_checker(im22, (155, 0, 0))
+ncolors = len(set(out.getdata()))
+check("checker texture adds shade", ncolors >= 3, f"{ncolors} colors")
+
+# small fills stay flat (no checker noise)
+im23 = Image.new("RGB", (22, 22), (192, 192, 192))
+im23.putpixel((11, 11), (155, 0, 0))
+out2 = _apply_checker(im23, (155, 0, 0))
+check("small fill stays flat", len(set(out2.getdata())) == 2)
+
+
+# ═══════════════════════════════════════════════════════════════
 print("\n" + "=" * 60)
 print(f"  RESULT: {passed}/{total} PASSED"
       + (f" ({total-passed} FAILED)" if total-passed > 0 else ""))
