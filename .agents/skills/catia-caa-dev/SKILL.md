@@ -1439,6 +1439,7 @@ python tests/test_master.py --quick
 ├── tools/                            # 辅助工具(与 skills/ 无关,不属于 Kernel 模块)
 │   ├── build_caadoc_index.py         (CAADoc API 签名/实现关系索引与核实工具: --query/--search/--repl; 同步扫描 SDK PublicInterfaces/*.h 与 refman 交叉比对)
 │   ├── check_code_reuse.py
+│   ├── check_nls_conventions.py     (扫描存量工作区的 NLS 约定问题: _Chinese.CATNls 平铺文件/硬编码 SetTitle/缺中文 catalog; --fix 自动迁移)
 │   ├── validate_component_ai.bat
 │   ├── scan_frameworks.py
 │   ├── production_readiness_check.py
