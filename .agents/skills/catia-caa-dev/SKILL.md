@@ -278,6 +278,7 @@ AI 只知道 3 个 Mode:
 | 📄 **知识问题加 detail=true** | 问 CAA API/Pattern/做法类问题时调 `analyze(request, detail=true)`，一次调用直接返回排序后的知识**文件内容**，不要再 analyze → read 文件 → grep 定位的多轮往返。返回已按相关性排序并带 reading_guide。 |
 | 🔧 **修复用 repair()** | 修复诊断问题、重构（重命名/移动）、回滚用 `repair()`。Kernel 内部运行 diagnose → fix → verify 最多重试 3 次。 |
 | ⚡ **永远不需要判断"走哪个"** | 用户说"创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`。基于自然语言的动词分类，不需要思考。 |
+| 🚫 **新工具禁止复制旧工具骨架** | 创建新命令/对话框/工作台时，必须调 `develop()` 走模板生成器，**不要**把工作区里现有工具的 .cpp/.h/.CATNls/.CATRsc 复制一份再改名。旧工具可能还带着已修复的历史 bug（如硬编码 `SetTitle`、错误的 `_Chinese.CATNls` 约定），复制 = 把 bug 克隆进新工具，还会错过模板/图标/双语 NLS 的持续更新。已有工具**只可参考业务逻辑**（API 组合、算法、项目命名习惯）；文件骨架、资源文件、注册代码永远以生成器输出为准。 |
 | 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架 → 再精准打开 `<CATIA_INSTALL>/CAADoc/` 对应页面。不要跳过 Framework 直接全文搜 CAADoc。 |
 | 📝 **CAADoc 洞察沉淀** | 用 CAADoc 学到**踩坑经验/跨 API 组合/非文档化的行为**时，创建 knowledge/ 文件沉淀。纯 API 签名查询不需要沉淀——下次用 Framework 索引秒查。 |
 | 🔎 **核实 API 真实性先用索引工具** | 怀疑 playbooks/patterns/knowledge 里某接口、方法、框架名是否真实存在（尤其是“看起来很统一”的 Factory/Manager 名字，经常是虚构）时，先跑 `python tools/build_caadoc_index.py --query <name>` 或 `--search <pattern>`（cache 命中约 0.3 秒，比手动打开 CAADoc 页面或 `grep` 全量扫描快得多；连续核对多个名字用 `--repl` 交互模式，避免反复启动进程）。只有索引覆盖不到的语义性问题（官方样例怎么组合调用、设计意图是什么）才需要再去翻 `Doc/generated/refman/` 页面或 `.cpp` 样例代码。索引没查到不等于 100% 不存在（可能是拼写变体或索引未覆盖的老旧接口），但命中即可作为“确实存在”的强证据。 |

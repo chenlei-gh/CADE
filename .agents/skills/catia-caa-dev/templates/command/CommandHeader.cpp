@@ -1,4 +1,5 @@
 // COPYRIGHT DASSAULT SYSTEMES 2026
+// [CADE] 模板生成文件。创建新命令请调 develop() 重新生成，勿复制改名。
 #include "<CommandHeaderClassName>.h"
 #include "CATCommandHeader.h"
 #include "CATAfrCommandHeader.h"
