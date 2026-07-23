@@ -69,6 +69,23 @@ pip install Pillow
 > **Zed** — works out of the box.  
 > **Claude / Cursor / VS Code / Windsurf** — run `python .agents/skills/catia-caa-dev/tools/setup_mcp.py`
 
+> [!IMPORTANT]
+> **Upgrading an existing project?** Do NOT delete the project's `.agents` folder and re-copy — that would wipe your project-specific `debug_tools/` scripts and the `cache/` / `logs/` runtime data. Instead, sync the skill body only:
+> ```powershell
+> # PowerShell: copies new/changed files, skips project assets
+> $src = 'CADE\.agents\skills\catia-caa-dev'          # freshly cloned CADE
+> $dst = 'your\project\.agents\skills\catia-caa-dev'
+> $skip = @('\cache\','\logs\','\__pycache__\','\debug_tools\')
+> Get-ChildItem $src -Recurse -File | Where-Object {
+>   $rel = $_.FullName.Substring($src.Length)
+>   $_.Extension -ne '.pyc' -and -not ($skip | Where-Object { $rel.Contains($_) })
+> } | ForEach-Object {
+>   $t = Join-Path $dst $_.FullName.Substring($src.Length)
+>   New-Item -ItemType Directory -Path (Split-Path $t) -Force | Out-Null
+>   Copy-Item $_.FullName $t -Force
+> }
+> ```
+
 <details><summary>📋 Manual MCP setup</summary>
 
 ```json
@@ -442,6 +459,23 @@ pip install Pillow
 ```
 
 **前置条件：** CATIA V5 B28 + Visual Studio（含 RADE 插件）已安装。
+
+> [!IMPORTANT]
+> **已有项目要升级 CADE？** 不要删掉项目里的 `.agents` 再整体重拷——那会清掉项目专用的 `debug_tools/` 脚本和 `cache/`、`logs/` 运行数据。正确做法是只同步 skill 本体（跳过这三类目录）：
+> ```powershell
+> # PowerShell：只复制新增/变更的文件，保留项目资产
+> $src = 'CADE\.agents\skills\catia-caa-dev'          # 刚克隆的最新 CADE
+> $dst = '你的\项目\.agents\skills\catia-caa-dev'
+> $skip = @('\cache\','\logs\','\__pycache__\','\debug_tools\')
+> Get-ChildItem $src -Recurse -File | Where-Object {
+>   $rel = $_.FullName.Substring($src.Length)
+>   $_.Extension -ne '.pyc' -and -not ($skip | Where-Object { $rel.Contains($_) })
+> } | ForEach-Object {
+>   $t = Join-Path $dst $_.FullName.Substring($src.Length)
+>   New-Item -ItemType Directory -Path (Split-Path $t) -Force | Out-Null
+>   Copy-Item $_.FullName $t -Force
+> }
+> ```
 
 > ✅ **生产就绪状态**：条件性生产就绪（Conditional GO）——部署前请先阅读 [SKILL.md「生产就绪评估」章节](.agents/skills/catia-caa-dev/SKILL.md#-生产就绪评估) 及部署前检查清单。
 

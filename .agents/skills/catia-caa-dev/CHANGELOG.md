@@ -10,6 +10,23 @@
 
 ## [未发布]
 
+### 🔧 模板与生成器 (2026-07-23)
+
+- **对话框 NLS 模式对齐生产实证**：改用 `CATMsgCatalog::BuildMessage(catalog, key, NULL, 0, fallback)` + 英文 fallback 保底，替代之前推的零代码控制路径。fallback 编译进二进制，catalog 缺失/条目缺失时界面仍可读；catalog 改用 framework 共享名（`msgcatalog/<Framework>.CATNls`），多对话框/命令的消息合并进同一文件；key 用语义名（`类名.控件名`），不与控件对象名耦合。
+- **中文 catalog 必须 GBK 编码**：B28 官方 `Simplified_Chinese/*.CATNls` 实测为 GBK，CADE 此前按 UTF-8 写入会被 CATIA 读成乱码。`changeset.py` 现在对 `Simplified_Chinese/` 路径自动用 GBK 落盘（`errors="replace"` 防 emoji 崩溃）。⚠️ 中文 catalog 内容不能含 emoji（GBK 无法编码），3 个中文 CATNls 模板已移除 `⚠️` 符号。
+- **对话框布局知识库对齐生产实证**：
+  - 新增「顶层 attachment 布局」模式（`SetHorizontalAttachment` + `CATDlgWndAutoResize`）——生产项目（CAAAutoRenameDlg）验证的多区域垂直堆叠方案，优于顶层 GridLayout
+  - 新增「动态显隐面板」模式：`ResetAttachment()` 从布局摘除（不占空间、窗口自动收缩），而不是只 `SetVisibility()`（会在 GridLayout 里留空白）
+  - 修正 `SetGridConstraints` 认知：5 参重载 `(row, col, rspan, cspan, anchor)` 真实存在（CATDialog.h L606），生产项目常用；此前知识库误称只有单参版
+  - 清掉一批虚构 API：链式 `SetRow/SetColumn`、两参 `SetGridConstraints(pFrame, gc)`、`CATDlgFraGroupFrame`/`CATDlgFraSunkenFrame`、`CATDlgMultiEditor`、`CATDlgProgressBar`、Combo `AddItem`、Tab `AttachTab`
+  - 控件宽度统一用 `SetVisibleTextWidth(n)`（可见字符数），不硬编码像素
+- **禁止复制旧骨架**：`create_command`/`create_dialog` 等生成的骨架文件头部加注释，明确「新建工具请调 develop() 重新生成，不要复制本文件改名」，避免 AI 做新工具时复制上一个工具的骨架而继承历史 bug、错过模板更新。
+- **新增 NLS 规范检查工具**：`tools/check_nls_conventions.py`，扫描工作区里的 NLS 用法是否符合新规范（硬编码 SetTitle、零代码路径残留等）。
+
+### 📖 文档 (2026-07-23)
+
+- README 增加「升级已有项目」说明：不要整体删除重拷 `.agents`（会清掉项目专用 debug_tools 脚本和 cache/logs 运行数据），给出选择性同步的 PowerShell 脚本（跳过 `debug_tools/`、`cache/`、`logs/`）。
+
 ### 🛠 工具 (2026-07-20 第三批)
 
 - `tools/build_caadoc_index.py` 新增第四个数据源：扫描发布产品的组件字典 `<arch>/code/dictionary/*.dic`（例如 `win_b64/code/dictionary`，注意与 CAADoc 自带的 `**/*.dico` 教学样例字典区分）。这是真实发布产品在构建时生成的“组件→接口” TIE 实现字典，规模远大于 CAADoc 教学字典（约 885 个文件/7.3 万条，对比 44 个文件/414 条），是“组件 X 是否真实实现接口 Y”问题的真正 ground truth。`--query`/`--search` 现在会将发布字典的命中结果与 CAADoc 教学 `.dico` 分开标注展示（分别标 "CAADoc tutorials" 与 "ground truth"）。
