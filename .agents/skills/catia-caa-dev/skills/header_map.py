@@ -13,7 +13,13 @@ them. This mapping powers the LINK_WITH coverage check in diagnostics:
 The scan is slow (503 frameworks, thousands of headers), so results are
 cached to JSON keyed by CATIA version. Cache lives in CADE's cache dir.
 
-Usage:
+CLI (for AI agents — never guess <Framework>/PublicInterfaces paths):
+  python skills/header_map.py CATDlgEditor [CATPathElement ...]
+      → CATDlgEditor  fw=Dialog  mod=CATDlgBitmap  path=<abs path to .h>
+  python skills/header_map.py --rebuild   # force cache rebuild
+  python skills/header_map.py --stats     # cache stats
+
+Python API:
   from header_map import HeaderMap
   hm = HeaderMap.load(skill_root)
   entry = hm.lookup("CATPathElement")  # ("CATViz", "VisualizationBase")
@@ -183,3 +189,68 @@ class HeaderMap:
                     stem = hdr.stem
                     if stem not in self._map:
                         self._map[stem] = (mod_names[0] if mod_names else fw_name, fw_name)
+
+
+# ─── CLI ───────────────────────────────────────────────────────────
+
+def _resolve_header_path(catia_install: str, fw_name: str, stem: str) -> Optional[str]:
+    """Probe the two candidate locations for a header's absolute path."""
+    if not catia_install:
+        return None
+    root = Path(catia_install) / fw_name
+    for candidate in (root / "PublicInterfaces" / f"{stem}.h",
+                      root / "CNext" / "public" / "interfaces" / f"{stem}.h"):
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
+def _cli(argv: List[str]) -> int:
+    from difflib import get_close_matches
+
+    args = [a for a in argv if not a.startswith("--")]
+    flags = {a for a in argv if a.startswith("--")}
+
+    skill_root = Path(__file__).resolve().parent.parent
+    hm = HeaderMap.load(skill_root, force_rebuild="--rebuild" in flags)
+
+    if "--stats" in flags:
+        print(f"frameworks={hm.framework_count} headers={hm.header_count}")
+        return 0
+
+    if not args:
+        print(__doc__.strip())
+        return 0
+
+    # CATIA_INSTALL for absolute path resolution
+    catia_install = ""
+    try:
+        sys.path.insert(0, str(skill_root / "skills"))
+        from env import CAAEnvironment
+        env = CAAEnvironment()
+        env.load_config()
+        catia_install = env.config.get("CATIA_INSTALL", "")
+    except Exception:
+        pass
+
+    rc = 0
+    for name in args:
+        stem = Path(name).stem  # tolerate CATDlgEditor.h
+        entry = hm.lookup(stem)
+        if entry:
+            mod, fw = entry
+            line = f"{stem}  fw={fw}  mod={mod}"
+            path = _resolve_header_path(catia_install, fw, stem)
+            if path:
+                line += f"  path={path}"
+            print(line)
+        else:
+            rc = 1
+            sugg = get_close_matches(stem, sorted(hm._map.keys()), n=3, cutoff=0.70)
+            hint = f"  did-you-mean: {', '.join(sugg)}" if sugg else ""
+            print(f"{stem}  NOT-FOUND{hint}")
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(_cli(sys.argv[1:]))

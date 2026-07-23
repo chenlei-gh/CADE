@@ -282,6 +282,7 @@ AI 只知道 3 个 Mode:
 | 🎨 **图标是 develop() 的自动产物，不要手动补** | `develop()` 创建命令时图标已连同骨架一起生成（verb-object 解析自动选 123 个几何图案 + 角标，如 `PartToAsmCmd` → cube+arrow），无需再调 `icon_provider.py`。只有**换图标风格**时才单独调：`from icon_provider import get_icon; get_icon("CmdName")`（自动解析，不要先列图案库人工挑）。首次编译时图标会随 Runtime View 同步自动生效。 |
 | 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架 → 再精准打开 `<CATIA_INSTALL>/CAADoc/` 对应页面。不要跳过 Framework 直接全文搜 CAADoc。 |
 | 📝 **CAADoc 洞察沉淀** | 用 CAADoc 学到**踩坑经验/跨 API 组合/非文档化的行为**时，创建 knowledge/ 文件沉淀。纯 API 签名查询不需要沉淀——下次用 Framework 索引秒查。 |
+| 📍 **查头文件位置用 header_map，禁止猜路径** | 需要读 CAA 头文件（查方法签名、确认类/枚举存在）时，先跑 `python skills/header_map.py <Name> [Name2 ...]`（毫秒级返回 框架/模块/**头文件绝对路径**，可一次查多个）→ 直接读返回的 path。**禁止**凭类名前缀猜 `<CATIA_INSTALL>/<Framework>/PublicInterfaces/` 路径硬查——类名前缀和框架名不对应（`CATDlgEditor.h` 在 Dialog 不在 DialogEngine，`CATPathElement.h` 在 VisualizationBase），猜错就是白跑一轮 PowerShell。未命中时输出的 did-you-mean 就是正确头文件名（如 `CATListValCATBaseUnknown` → `CATLISTV_CATBaseUnknown`）。 |
 | 🔎 **核实 API 真实性先用索引工具** | 怀疑 playbooks/patterns/knowledge 里某接口、方法、框架名是否真实存在（尤其是“看起来很统一”的 Factory/Manager 名字，经常是虚构）时，先跑 `python tools/build_caadoc_index.py --query <name>` 或 `--search <pattern>`（cache 命中约 0.3 秒，比手动打开 CAADoc 页面或 `grep` 全量扫描快得多；连续核对多个名字用 `--repl` 交互模式，避免反复启动进程）。只有索引覆盖不到的语义性问题（官方样例怎么组合调用、设计意图是什么）才需要再去翻 `Doc/generated/refman/` 页面或 `.cpp` 样例代码。索引没查到不等于 100% 不存在（可能是拼写变体或索引未覆盖的老旧接口），但命中即可作为“确实存在”的强证据。 |
 | 📄 **批量核实整份文档用 `--check-file`** | 需要一次性核实某个 playbook/pattern/knowledge 文件里所有 API 时，不要逐个手敲 `--query`：跑 `python tools/build_caadoc_index.py --check-file <path>`，它会自动扫描文件里所有 ```cpp 代码块中的 `CAT*` 类型名和 `->`/`::` 方法调用，一次调用只打印疑点（SUSPECT），比人工逐个核对快一个数量级。`--query`/`--check-file` 都支持 `--quiet` 输出一行式 FOUND/NOT-FOUND/MISMATCH verdict，适合批量核对多个名字时减少输出体积。局限：只扫描代码块，不扫描正文反引号提及的 API 名；枚举成员/类型常量可能被误报，需人工用 `--query` 复核。 |
 | 🥇 **冲突时信 SDK 头文件** | `--query` 会自动扫描 CATIA 安装目录下所有 Framework/PublicInterfaces 的 .h 头文件，把 refman 的方法列表与头文件的方法列表交叉比对，不一致时打印 `SDK/refman mismatch` 提示。头文件是 refman 的生成源，比 refman htm 页面更权威（refman 存在生成缺失），看到 mismatch 提示时以头文件为准。同一命令还会展示查询名命中的枚举值列表及其行内注释，用于核实枚举成员是否真实存在（refman 枚举页经常遗漏这些信息）。 |
@@ -1283,7 +1284,7 @@ python tests/test_master.py --quick
 │   ├── kernel.py                     # Development Kernel (v3.0)
 │   ├── catalog.py                    # Knowledge Catalog Index (v3.0)
 │   ├── api_registry.py               # API 白名单注册表（知识库驱动）
-│   ├── header_map.py                # CAA header→module→framework 映射（缓存）
+│   ├── header_map.py                # CAA header→module→framework 映射（缓存；CLI: python skills/header_map.py <Name> 返回头文件绝对路径）
 │   ├── ui_lint.py                    # UI 失效模式静态检查器（failure_patterns）
 │   ├── requirements.py               # Requirements Clarifier (v3.0)
 │   │   └── decision_trees/          # 决策树 (3 个)

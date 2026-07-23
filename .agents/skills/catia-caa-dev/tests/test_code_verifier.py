@@ -140,6 +140,37 @@ ck("detects malformed dictionary entry",
    any("Malformed" in i.message for i in issues))
 
 # ═══════════════════════════════════════════════════════════════
+# [11] header_map CLI — fabricated/real header lookup
+# ═══════════════════════════════════════════════════════════════
+print("\n[11] header_map CLI")
+import subprocess
+_hm_cli = [sys.executable, str(SKILL / "skills" / "header_map.py")]
+try:
+    out = subprocess.run(_hm_cli + ["CATDlgEditor", "CATIProduct"],
+                         capture_output=True, text=True, timeout=60)
+    ck("real header resolves with fw + path",
+       out.returncode == 0
+       and "fw=Dialog" in out.stdout
+       and "path=" in out.stdout,
+       out.stdout.strip().splitlines()[0] if out.stdout else "no output")
+
+    out2 = subprocess.run(_hm_cli + ["CATListValCATBaseUnknown"],
+                          capture_output=True, text=True, timeout=60)
+    ck("fabricated header NOT-FOUND with suggestion",
+       out2.returncode == 1
+       and "NOT-FOUND" in out2.stdout
+       and "CATLISTV_CATBaseUnknown" in out2.stdout,
+       out2.stdout.strip() if out2.stdout else "no output")
+
+    # Multiple headers in one call — all-found must exit 0
+    out3 = subprocess.run(_hm_cli + ["CATDlgEditor", "CATDlgFile", "CATPathElement"],
+                          capture_output=True, text=True, timeout=60)
+    ck("multi-query all-found exits 0",
+       out3.returncode == 0 and out3.stdout.count("fw=") == 3)
+except FileNotFoundError:
+    ck("header_map CLI runnable", False, "skills/header_map.py not found")
+
+# ═══════════════════════════════════════════════════════════════
 # Cleanup
 # ═══════════════════════════════════════════════════════════════
 import shutil
