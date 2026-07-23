@@ -86,6 +86,14 @@ _SET_ACCESS_CHILD_RE = re.compile(
     r"SetAccessChild\s*\(\s*(?P<toolbar>\w+)\s*,"
 )
 
+# Rule 4: CATICutAndPastable::Paste with a non-NULL second argument
+# (explicit CATPathElement targets). Safe only for same-document paste;
+# across documents it crashes CATIA with an UNcatchable runtime
+# exception. fp_paste_cross_doc_catpathelement.md
+_PASTE_NON_NULL_RE = re.compile(
+    r"->\s*Paste\s*\(\s*[^,]+,\s*(?!NULL\b|nullptr\b)(?P<target>\S[^,)]*)"
+)
+
 
 class UILinter:
     """Static linter for the documented CAA UI failure patterns."""
@@ -120,6 +128,7 @@ class UILinter:
         findings.extend(self._check_null_parent(file_label, content))
         findings.extend(self._check_cancel_hides_dialog(file_label, content))
         findings.extend(self._check_toolbar_access_chain(file_label, content))
+        findings.extend(self._check_paste_explicit_targets(file_label, content))
         return findings
 
     # ─── Rule 1: NULL-parent dialog ──────────────────────────────
@@ -212,4 +221,39 @@ class UILinter:
                     ),
                     knowledge_ref="knowledge/failure_patterns/fp_toolbar_setaccesschild_overwrite.md",
                 ))
+        return out
+
+    # ─── Rule 4: Paste with explicit targets ─────────────────────
+
+    def _check_paste_explicit_targets(self, file_label: str, content: str) -> List[UIFinding]:
+        # Cross-document indicator: clipboard extract or multiple documents
+        cross_doc = ("BoundaryExtract" in content
+                     or "CATDocumentServices" in content
+                     or "GetDocument" in content)
+        out = []
+        for m in _PASTE_NON_NULL_RE.finditer(content):
+            line = content[:m.start()].count("\n") + 1
+            out.append(UIFinding(
+                rule="paste_explicit_targets",
+                # Cross-document context → crash is certain; same-document
+                # usage is legal, so only warn there.
+                severity="error" if cross_doc else "warning",
+                file=file_label,
+                line=line,
+                problem=f"Paste() with explicit targets: {m.group(0).strip()}",
+                reason=(
+                    "Passing explicit CATPathElement targets to "
+                    "CATICutAndPastable::Paste is only safe for SAME-document "
+                    "paste. Across documents the path references source-context "
+                    "objects and CATIA crashes with an UNcatchable runtime "
+                    "exception (try/catch and set_terminate do not fire)."
+                ),
+                fix_hint=(
+                    "Pass NULL for iToCurObjects: Paste(iObj, NULL, NULL) and let "
+                    "the target container decide (defaults to MainBody). For "
+                    "precise cross-document placement use the Automation layer "
+                    "(Selection.Copy/PasteSpecial) instead."
+                ),
+                knowledge_ref="knowledge/failure_patterns/fp_paste_cross_doc_catpathelement.md",
+            ))
         return out
