@@ -18,6 +18,7 @@ Diagnostic categories:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -42,6 +43,7 @@ class FixAction(Enum):
     DELETE_FILE = "delete_file"  # Remove a file
     RENAME = "rename"  # Rename a file or entity
     REGENERATE = "regenerate"  # Re-run generation
+    MANUAL = "manual"  # Requires manual edit (e.g. IdentityCard prerequisite)
 
 
 @dataclass
@@ -122,6 +124,7 @@ class DiagnosticsEngine:
         self._check_dictionary()
         self._check_catalog_nls()
         self._check_imakefile()
+        self._check_link_with_coverage()
         self._check_naming()
         self._check_integrity()
         self._check_unsupported_generated_apis()
@@ -225,7 +228,13 @@ class DiagnosticsEngine:
                         )
 
     def _check_imakefile(self):
-        """Check Imakefile.mk for completeness"""
+        """Check Imakefile.mk for completeness and framework/module confusion."""
+        try:
+            from header_map import HeaderMap
+            hm = HeaderMap.load(Path(__file__).resolve().parent.parent)
+        except Exception:
+            hm = None
+
         for fw in self.snapshot.frameworks:
             for mod in fw.modules:
                 imake = mod.imakefile_path()
@@ -245,6 +254,168 @@ class DiagnosticsEngine:
                 # CAA mkmk discovers C++ sources in the module src directory.
                 # A SOURCES variable is not required and is absent from valid
                 # B28 wizard-generated modules.
+
+                # Check LINK_WITH entries: framework name vs module name
+                if hm:
+                    try:
+                        content = imake.read_text(encoding="utf-8", errors="replace")
+                    except OSError:
+                        continue
+                    for m in re.finditer(r'LINK_WITH\s*[=+]?\s*(.+)', content):
+                        entries = m.group(1).replace('\\', ' ').split()
+                        for entry in entries:
+                            entry = entry.strip().strip('$()')
+                            if not entry or entry.startswith('#'):
+                                continue
+                            # Skip variable references
+                            if entry.startswith('$'):
+                                continue
+                            # Flag if a framework name was used where a
+                            # module name is expected (error #3 pattern)
+                            if hm.is_framework_only(entry):
+                                fw_name = entry
+                                mods_in_fw = [m for m in hm._frameworks.get(fw_name, [])
+                                             if m != fw_name]
+                                self.diagnostics.append(
+                                    Diagnostic(
+                                        severity=Severity.ERROR,
+                                        problem=(
+                                            f"LINK_WITH has framework name '{entry}' "
+                                            f"instead of module name"
+                                        ),
+                                        reason=(
+                                            f"'{entry}' is a framework name, not a "
+                                            "module name. mkmk LINK_WITH requires "
+                                            "module names. Modules in this framework: "
+                                            f"{', '.join(mods_in_fw[:5]) if mods_in_fw else 'see CATIA install}'}."
+                                        ),
+                                        category="imakefile",
+                                        entity=mod.name,
+                                        auto_fixable=False,
+                                    )
+                                )
+
+    def _check_link_with_coverage(self):
+        """Check that #include headers have their framework declared as
+        prerequisite in IdentityCard.xml and linked in LINK_WITH.
+
+        This catches:
+        - Error #2: header included but LINK_WITH missing (LNK2019)
+        - Error #4: LINK_WITH module in non-prerequisite framework (ignored)
+        """
+        try:
+            from header_map import HeaderMap
+            # Build the header map from the skill root
+            skill_root = Path(__file__).resolve().parent.parent
+            hm = HeaderMap.load(skill_root)
+        except Exception:
+            return
+        if not hm._loaded or hm.header_count == 0:
+            return  # CATIA not installed or scan failed
+
+        # Frameworks always available via CATIAV5Level (don't require prereq)
+        try:
+            from header_map import _ALWAYS_AVAILABLE as always_available
+        except ImportError:
+            always_available = {"System", "ObjectModelerBase", "ApplicationFrame",
+                               "DialogEngine", "InteractiveInterfaces"}
+
+        for fw in self.snapshot.frameworks:
+            # Parse IdentityCard prerequisites
+            prereqs = set()
+            ic_path = fw.identitycard_path()
+            if ic_path.exists():
+                try:
+                    ic_content = ic_path.read_text(encoding="utf-8", errors="replace")
+                    for m in re.finditer(r'<prerequisite\s+name="([^"]+)"', ic_content):
+                        prereqs.add(m.group(1))
+                    # Also parse AddPrereqComponent (IdentityCard.h style)
+                    for m in re.finditer(r'AddPrereqComponent\("([^"]+)"', ic_content):
+                        prereqs.add(m.group(1))
+                except OSError:
+                    pass
+
+            for mod in fw.modules:
+                # Collect all #includes from source files
+                includes = set()
+                source_dirs = [mod.path / "src", mod.path / "LocalInterfaces",
+                               mod.path / "PublicInterfaces"]
+                for src_dir in source_dirs:
+                    if not src_dir.exists():
+                        continue
+                    for path in src_dir.rglob("*"):
+                        if not path.is_file() or path.suffix.lower() not in (".h", ".cpp"):
+                            continue
+                        try:
+                            content = path.read_text(encoding="utf-8", errors="replace")
+                        except OSError:
+                            continue
+                        for m in re.finditer(r'#include\s+[<"]([^>"/]+\.h)[>"]', content):
+                            stem = m.group(1).replace(".h", "")
+                            if stem.startswith("CAT"):
+                                includes.add(stem)
+
+                if not includes:
+                    continue
+
+                # Read LINK_WITH from Imakefile
+                link_with = set()
+                imake_path = mod.imakefile_path()
+                if imake_path.exists():
+                    try:
+                        imake = imake_path.read_text(encoding="utf-8", errors="replace")
+                        for m in re.finditer(r'LINK_WITH\s*[=+]?\s*(.+)', imake):
+                            for e in m.group(1).replace('\\', ' ').split():
+                                e = e.strip().strip('$()')
+                                if e and not e.startswith('#') and not e.startswith('$'):
+                                    link_with.add(e)
+                    except OSError:
+                        pass
+
+                # Check each included header's framework
+                missing_prereqs = {}  # fw_name → [header stems]
+                for stem in sorted(includes):
+                    entry = hm.lookup(stem)
+                    if not entry:
+                        continue  # not a known CAA header
+                    module_name, fw_name = entry
+                    if fw_name in always_available:
+                        continue
+                    if fw_name in prereqs:
+                        continue  # already declared
+                    missing_prereqs.setdefault(fw_name, []).append(stem)
+
+                for fw_name, stems in missing_prereqs.items():
+                    self.diagnostics.append(
+                        Diagnostic(
+                            severity=Severity.ERROR,
+                            problem=(
+                                f"Missing prerequisite: '{fw_name}' not declared "
+                                f"in IdentityCard.xml"
+                            ),
+                            reason=(
+                                f"Source files include headers from framework "
+                                f"'{fw_name}' ({', '.join(stems[:3])}"
+                                f"{'...' if len(stems) > 3 else ''}) but "
+                                f"'{fw_name}' is not declared as a prerequisite "
+                                "in IdentityCard.xml. mkmk will IGNORE modules "
+                                "from this framework in LINK_WITH (silent ignore, "
+                                "not an error), causing LNK2019 unresolved symbols."
+                            ),
+                            category="imakefile",
+                            entity=fw.name,
+                            fix_plan=FixPlan(
+                                action=FixAction.MANUAL,
+                                file=str(ic_path),
+                                entity_name=fw_name,
+                                description=(
+                                    f"Add <prerequisite name=\"{fw_name}\" "
+                                    f"access=\"Protected\" /> to IdentityCard.xml"
+                                ),
+                            ),
+                            auto_fixable=False,
+                        )
+                    )
 
     def _check_naming(self):
         """Check CAA naming conventions"""

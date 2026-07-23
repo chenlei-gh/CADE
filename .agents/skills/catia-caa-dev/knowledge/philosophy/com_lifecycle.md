@@ -18,6 +18,7 @@ CAA 基于 Dassault 的 COM 变体。对象生命周期由引用计数管理。
 1. **永远使用 Smart Pointer** — `CATISpecObject_var`、`CATIProduct_var` 等 `_var` 后缀类型自动管理 AddRef/Release
 2. **裸指针只在局部使用** — 函数参数、临时变量，不能存储
 3. **QueryInterface 返回的指针需要 Release？** — `_var` 类型自动处理，裸指针需要手动 Release
+4. **`_var` 必须完整 #include，不能用前向声明** — `CATIXxx_var` 是一个完整的智能指针类（定义在 `CATIXxx.h` 内部），不是裸指针。前向声明 `class CATIXxx;` 只适用于**裸指针** `CATIXxx*` 的场景（参数/返回值是裸指针、不调用任何方法）。一旦用了 `_var`，就必须 `#include`，否则编译报 C2146 语法错误。详见 [fp.var_forward_decl](../failure_patterns/fp_var_forward_decl.md)
 
 ## Smart Pointer 模式
 

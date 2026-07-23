@@ -39,10 +39,6 @@ LINK_WITH = CATAssemblyInterfaces
 LINK_WITH = CATAssemblyInterfaces CATProductStructure CATMecModUseItf
 ```
 
-## 预防规则
+## 预防规则（已实现：diagnostics `_check_link_with_coverage`）
 
-- [ ] 使用 `CATIProduct` → 需链接 `CATProductStructure`
-- [ ] 使用 `CATIMeasurable` → 需链接 `CATMecModUseItf`
-- [ ] 使用 `CATISpecObject` → 需链接 `ObjectModelerBase`
-- [ ] 使用 `CATIVisProperties` → 需链接 `CATGraphicProperties`
-- [ ] 使用 `CATDlgDialog` → 需链接 `DialogEngine`
+CADE 的 diagnostics 引擎自动扫描源码 `#include`，通过 header_map 查出其所属框架，与 IdentityCard.xml 的 prerequisite 声明对比。缺失 prerequisite 的会报 ERROR 并附修复指引。同时 `_check_imakefile` 检查 LINK_WITH 条目是否误填框架名（如 `VisualizationBase` 而非 `CATViz`）。

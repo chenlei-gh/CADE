@@ -94,6 +94,15 @@ _PASTE_NON_NULL_RE = re.compile(
     r"->\s*Paste\s*\(\s*[^,]+,\s*(?!NULL\b|nullptr\b)(?P<target>\S[^,)]*)"
 )
 
+# Rule 5: forward-declared CAA interface used as _var smart pointer.
+# `class CATIPrtContainer;` is insufficient for `CATIPrtContainer_var`
+# because the _var type is a smart-pointer class whose full definition
+# lives in the interface header. Forward decl → C2146 syntax error.
+# fp_var_forward_decl.md
+_FWD_DECL_RE = re.compile(r"^\s*class\s+(?P<name>CATI\w+)\s*;", re.MULTILINE)
+_VAR_USAGE_RE = re.compile(r"\b(?P<name>CATI\w+)_var\b")
+_INCLUDE_RE = re.compile(r'#include\s+[<"](?P<name>CATI\w+)\.h[>"]')
+
 
 class UILinter:
     """Static linter for the documented CAA UI failure patterns."""
@@ -129,6 +138,7 @@ class UILinter:
         findings.extend(self._check_cancel_hides_dialog(file_label, content))
         findings.extend(self._check_toolbar_access_chain(file_label, content))
         findings.extend(self._check_paste_explicit_targets(file_label, content))
+        findings.extend(self._check_var_forward_decl(file_label, content))
         return findings
 
     # ─── Rule 1: NULL-parent dialog ──────────────────────────────
@@ -256,4 +266,40 @@ class UILinter:
                 ),
                 knowledge_ref="knowledge/failure_patterns/fp_paste_cross_doc_catpathelement.md",
             ))
+        return out
+
+    # ─── Rule 5: _var smart pointer with only forward decl ───────
+
+    def _check_var_forward_decl(self, file_label: str, content: str) -> List[UIFinding]:
+        out = []
+        fwd_decls = {m.group("name") for m in _FWD_DECL_RE.finditer(content)}
+        if not fwd_decls:
+            return out
+        includes = {m.group("name") for m in _INCLUDE_RE.finditer(content)}
+        var_usages = set()
+        for m in _VAR_USAGE_RE.finditer(content):
+            var_usages.add(m.group("name"))
+        # A forward-declared interface used as _var but not #included
+        for name in sorted(fwd_decls):
+            if name in var_usages and name not in includes:
+                line = content[:content.find(f"class {name};")].count("\n") + 1
+                out.append(UIFinding(
+                    rule="var_forward_decl",
+                    severity="error",
+                    file=file_label,
+                    line=line,
+                    problem=f"{name}_var used with only forward declaration 'class {name};'",
+                    reason=(
+                        f"CAA smart-pointer types like {name}_var require the "
+                        f"FULL header definition (#include \"{name}.h\"), not "
+                        "just a forward declaration. The _var class is defined "
+                        "inside the interface header; a bare 'class {name};' "
+                        "causes C2146 syntax errors (missing ';' before "
+                        "GetXXX)."
+                    ),
+                    fix_hint=(
+                        f"Replace 'class {name};' with '#include \"{name}.h\"'."
+                    ),
+                    knowledge_ref="knowledge/failure_patterns/fp_var_forward_decl.md",
+                ))
         return out

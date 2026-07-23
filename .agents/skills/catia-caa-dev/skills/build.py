@@ -260,6 +260,27 @@ def build_workspace(
         if not health.get("can_build", True):
             return error_result(f"Workspace validation failed: {'; '.join(health['issues'])}")
 
+    # --- Pre-build: check CATIA is not running (DLL lock prevention) ---
+    # A running CATIA process locks .dll files, causing LNK1104 "拒绝访问".
+    # This is error #5 in the S2 build-incident series — preventable.
+    try:
+        from run import check_catia_running
+        catia_status = check_catia_running()
+        if catia_status.get("running"):
+            proc_list = ", ".join(
+                p.get("pid", "?") for p in catia_status.get("processes", [])
+            )
+            msg = (
+                f"CATIA is running (PID {proc_list}). DLLs are locked — "
+                "mkmk will fail with LNK1104. Stop CATIA first: "
+                "python run.py --stop, or close CATIA manually."
+            )
+            logger.write(f"BLOCKED: {msg}")
+            return error_result(msg, catia_running=True)
+        logger.write("CATIA not running — DLLs are writable")
+    except ImportError:
+        pass  # run.py not available in this context
+
     # --- Auto-configure workspace prerequisites (links to CATIA installation) ---
     # Only run if workspace looks like a real CAA workspace (has .edu directory)
     has_framework = any(
