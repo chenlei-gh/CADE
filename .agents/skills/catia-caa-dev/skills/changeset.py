@@ -39,6 +39,21 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from utils import render_template
 
+
+def _text_encoding_for(path: Path) -> str:
+    """Text encoding for written files.
+
+    CATIA V5 reads message catalogs in the system locale codepage, not UTF-8:
+    official B28 Simplified_Chinese/*.CATNls files are GBK-encoded. Writing
+    Chinese catalogs as UTF-8 makes CNEXT display mojibake. Everything under a
+    Simplified_Chinese/ directory is therefore written as GBK; all other files
+    stay UTF-8.
+    """
+    if any(part.lower() == "simplified_chinese" for part in path.parts):
+        return "gbk"
+    return "utf-8"
+
+
 # ─── Patch ───────────────────────────────────────────────────────
 
 
@@ -376,7 +391,9 @@ class ChangeSet:
                 elif content == "[BINARY]":
                     pass  # binary placeholder — already handled or skipped
                 else:
-                    p.write_text(content, encoding="utf-8", newline="\r\n")
+                    enc = _text_encoding_for(p)
+                    # GBK cannot encode emoji like ⚠ — replace rather than fail
+                    p.write_text(content, encoding=enc, errors=("replace" if enc == "gbk" else "strict"), newline="\r\n")
                 applied_created.append(path_str)
                 result["created"].append(path_str)
 
@@ -388,7 +405,9 @@ class ChangeSet:
 
             # 5. Modify files
             for path_str, content in self.modified.items():
-                Path(path_str).write_text(content, encoding="utf-8", newline="\r\n")
+                mp = Path(path_str)
+                menc = _text_encoding_for(mp)
+                mp.write_text(content, encoding=menc, errors=("replace" if menc == "gbk" else "strict"), newline="\r\n")
                 applied_modified.append(path_str)
                 result["modified"].append(path_str)
 

@@ -545,7 +545,7 @@ result = delete_command(
 - **Icon** - 图标资源
 - **Imakefile** - 编译配置
 
-> ⚠️ **NLS 三规则**（B28 实证）：catalog 文件名 = 类名（对话框）/资源名（命令头）；控件 key = 对象名路径（`FrameId.LabelId.Title`）；多语言用 `Simplified_Chinese/` 子目录而非 `_Chinese` 文件名后缀。对话框 .cpp 里**不要硬编码 SetTitle**，文本全部走 .CATNls 零代码解析。详见 `knowledge/ui/dialog_dataflow.md → NLS 国际化`。
+> ⚠️ **NLS 三规则**（生产项目 + B28 实证）：catalog 用 **framework 共享名**（`msgcatalog/<Framework>.CATNls`），key 用语义名（`类名.控件名`）；代码里用 `CATMsgCatalog::BuildMessage(catalog, key, NULL, 0, fallback)` + 英文 fallback 保底；多语言用 `Simplified_Chinese/` 子目录而非 `_Chinese` 文件名后缀，且**中文 catalog 必须 GBK 编码**（CADE 生成自动处理，内容不能含 emoji）。详见 `knowledge/ui/dialog_dataflow.md → NLS 国际化`。
 
 ---
 

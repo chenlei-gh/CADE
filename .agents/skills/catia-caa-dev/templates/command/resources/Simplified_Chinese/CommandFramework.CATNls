@@ -2,7 +2,7 @@
 // Resource file for <CommandClassName> (Simplified Chinese)
 // File: Simplified_Chinese/<FrameworkName>.CATNls
 //
-// ⚠️ 文件名与英文版相同，仅所在语言子目录不同（CATIA 按运行语言自动查找）。
+// NOTE: 文件名与英文版相同，仅所在语言子目录不同（CATIA 按运行语言自动查找）。
 
 // 命令标题（工具栏提示）
 <CommandHeaderName>.Title = "<CommandTitle>";

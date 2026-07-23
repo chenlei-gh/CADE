@@ -127,34 +127,39 @@ CATStatusChangeRC MyCmd::Activate(...) {
 
 ```cpp
 // ❌ 硬编码（且构造签名为 (parent, name, style)，第3参不是标题）
-//    硬编码字符串会覆盖 CATIA 自动 NLS 查找，中文环境下仍显示英文
+//    硬编码字符串会覆盖 CATIA NLS 查找，中文环境下仍显示英文
 _pNameLabel = new CATDlgLabel(pFrame, "NameLbl");
 _pNameLabel->SetTitle(CATUnicodeString("New Name:"));
 
-// ✅ 零代码 NLS（官方推荐，见 CAAAfrBoundingElementCmd 样例）：
-//    控件只用对象名创建，显示文本全部交给 .CATNls
+// ✅ BuildMessage + fallback（生产项目实证模式）：
+//    语义 key + 英文 fallback 保底，catalog 缺失/条目缺失都能显示
+static CATUnicodeString NLS(const char* iKey, const char* iFallback)
+{
+    return CATMsgCatalog::BuildMessage("MyFramework", iKey, NULL, 0, iFallback);
+}
 _pNameLabel = new CATDlgLabel(pFrame, "NameLbl");
+_pNameLabel->SetTitle(NLS("MyDlg.NameLbl", "New Name:"));
 ```
 
-**CATIA 对话框 NLS 三条规则（全部经过 B28 官方样例/安装目录实证）：**
+**对话框 NLS 三条规则（生产项目 + B28 安装目录实证）：**
 
-1. **catalog 文件名 = 对话框 C++ 类名**（`CATDlgDialog` 默认资源名就是类名，无需 `SetResourceName`）
-2. **key = 控件对象名路径 + 属性**：对话框窗口本身用裸 `Title`/`Help`；控件用 `<父Frame对象名>.<控件对象名>.Title`（多层 Frame 逐级拼）
-3. **多语言用目录区分，不是文件名后缀**：英文放 `msgcatalog/XxxDlg.CATNls`，中文放 `msgcatalog/Simplified_Chinese/XxxDlg.CATNls`（文件名完全相同）。⚠️ 平铺的 `XxxDlg_Chinese.CATNls` CATIA **不会加载**
+1. **catalog 用 framework 共享名**（`msgcatalog/<Framework>.CATNls`），所有对话框/命令的消息合并进同一个文件；**key 用语义名**（`类名.控件名`，如 `MyDlg.Title`、`MyDlg.ApplyBtn`），不与控件对象名耦合，重命名控件不破 NLS
+2. **代码里用 `BuildMessage(catalog, key, NULL, 0, fallback)`**：fallback 是编译进二进制的英文保底，catalog 没部署时界面仍可读；中文用户则自动取 `Simplified_Chinese/` 下的译文
+3. **多语言用目录区分，不是文件名后缀**：英文放 `msgcatalog/<Framework>.CATNls`（UTF-8），中文放 `msgcatalog/Simplified_Chinese/<Framework>.CATNls`（**必须 GBK 编码**，B28 官方中文 catalog 实测为 GBK；UTF-8 写入会被 CATIA 读成乱码）。⚠️ 平铺的 `Xxx_Chinese.CATNls` CATIA **不会加载**；中文 catalog 内容**不能含 emoji**（GBK 无法编码）
 
-`CNext/resources/msgcatalog/MyDlg.CATNls`（英文/默认）：
+`CNext/resources/msgcatalog/MyFramework.CATNls`（英文/默认，UTF-8）：
 ```
-Title = "My Dialog";
-FrameId.NameLbl.Title = "New Name:";
-```
-
-`CNext/resources/msgcatalog/Simplified_Chinese/MyDlg.CATNls`（中文）：
-```
-Title = "我的对话框";
-FrameId.NameLbl.Title = "新名称:";
+MyDlg.Title = "My Dialog";
+MyDlg.NameLbl = "New Name:";
 ```
 
-运行时代码里读消息用 `CATMsgCatalog::BuildMessage(catalog, key, msg)` 完整签名（不存在 `GetMessage`）；但对话框控件文本优先走上面的零代码路径，不要在 Build() 里 SetTitle。
+`CNext/resources/msgcatalog/Simplified_Chinese/MyFramework.CATNls`（中文，GBK）：
+```
+MyDlg.Title = "我的对话框";
+MyDlg.NameLbl = "新名称:";
+```
+
+> 备选：CATDlg 控件也支持**零代码 NLS**（不设标题，CATIA 按 `catalog=类名`、key=`FrameId.控件名.Title` 自动解析，见 CAAAfrBoundingElementCmd 样例）。局限：catalog 文件名必须 = 对话框类名（无法共享）、key 与控件对象名耦合、无 fallback、不支持运行时动态文本。CADE 生成器默认走上面的 BuildMessage 模式。
 
 ## 关键原则
 

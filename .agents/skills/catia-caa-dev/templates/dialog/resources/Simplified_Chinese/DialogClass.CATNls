@@ -1,14 +1,13 @@
 // COPYRIGHT DASSAULT SYSTEMES 2026
-// Resource file for <DialogClassName> (Simplified Chinese)
-// File: Simplified_Chinese/<DialogClassName>.CATNls
+// <DialogClassName> 对话框字符串（简体中文）
+// 合并到 framework 共享 catalog: Simplified_Chinese/<FrameworkName>.CATNls
 //
-// ⚠️ 中文版必须放在 msgcatalog/Simplified_Chinese/ 子目录下、
-// 文件名与英文版完全相同（CATIA 按运行语言自动到对应语言子目录查找）。
-// 平铺的 <Name>_Chinese.CATNls 文件名 CATIA 不会加载。
+// NOTE: 本文件必须 GBK 编码（CATIA V5 按系统代码页读 catalog，官方
+// Simplified_Chinese/*.CATNls 均为 GBK）；CADE 生成时已自动处理。
+// 文件名与英文版相同，仅所在语言子目录不同（CATIA 按运行语言自动查找）。
 
-// 对话框窗口标题与帮助
-Title = "<DialogClassName>";
-Help  = "<DialogClassName> 对话框";
+// 对话框窗口标题
+<DialogClassName>.Title = "<DialogClassName>";
 
-// 控件标题（路径 = 父Frame对象名.控件对象名.属性）
-FrameId.LabelId.Title = "值:";
+// 控件文本
+<DialogClassName>.LabelId = "值:";

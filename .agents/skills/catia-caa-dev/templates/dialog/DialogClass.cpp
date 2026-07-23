@@ -10,6 +10,26 @@
 #include "CATDlgFrame.h"
 #include "CATDlgLabel.h"
 #include "CATDlgEditor.h"
+#include "CATMsgCatalog.h"
+
+//-------------------------------------------------------------------
+// NLS helper: read message from the framework catalog with fallback.
+//
+// 模式（生产实证，优于零代码控制路径）：
+//   SetTitle(NLS("<DialogClassName>.LabelId", "Value:"));
+//   - key 用语义名（类名前缀），可读性高、不受控件对象名约束
+//   - fallback 保底：catalog 丢失/缺 key 时仍显示英文，不会空白
+//   - 动态文本（列标题、模式切换）天然支持
+// catalog 文件（GBK 编码的中文版放 Simplified_Chinese/ 子目录）：
+//   CNext/resources/msgcatalog/<FrameworkName>.CATNls                    (英文)
+//   CNext/resources/msgcatalog/Simplified_Chinese/<FrameworkName>.CATNls (中文)
+//   条目示例: <DialogClassName>.LabelId = "Value:";
+//-------------------------------------------------------------------
+static CATUnicodeString NLS(const CATString &iKey, const char *iFallback)
+{
+    return CATMsgCatalog::BuildMessage(
+        "<FrameworkName>", iKey, NULL, 0, iFallback);
+}
 
 <DialogClassName>::<DialogClassName>(CATDialog *iParent)
     : CATDlgDialog(iParent, "<DialogClassName>Id", CATDlgWndBtnClose | CATDlgGridLayout)
@@ -25,22 +45,13 @@
 
 void <DialogClassName>::Build()
 {
-    // ⚠️ 不要在这里调用 SetTitle("英文文本")——硬编码字符串会覆盖 CATIA 的
-    // 自动 NLS 查找，导致中文环境下仍显示英文。
-    //
-    // 正确做法（官方模式，见 CAAAfrBoundingElementCmd 样例）：
-    // 控件只用对象名创建，显示文本全部走 msgcatalog 资源：
-    //   <DialogClassName>.CATNls                          （英文/默认）
-    //   Simplified_Chinese/<DialogClassName>.CATNls       （中文）
-    // catalog 文件名必须等于对话框 C++ 类名（默认资源名），
-    // key = 控件对象名路径 + 属性，例如：
-    //   Title = "My Dialog";                    （对话框窗口标题）
-    //   FrameId.LabelId.Title = "Value:";       （FrameId 下 LabelId 的标题）
-    // CATIA 在 Build 时按当前语言自动解析，无需任何代码。
+    // 窗口标题也走 NLS（catalog key: <DialogClassName>.Title）
+    SetTitle(NLS("<DialogClassName>.Title", "<DialogClassName>"));
 
     _pFrame = new CATDlgFrame(this, "FrameId", CATDlgFraNoTitle | CATDlgGridLayout);
 
     _pLabel = new CATDlgLabel(_pFrame, "LabelId");
+    _pLabel->SetTitle(NLS("<DialogClassName>.LabelId", "Value:"));
 
     _pEditor = new CATDlgEditor(_pFrame, "EditorId");
     _pEditor->SetVisibleTextWidth(20);

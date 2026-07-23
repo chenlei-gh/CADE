@@ -165,8 +165,16 @@ def _queue_nls(cs: ChangeSet, path: Path, content: str, marker: str):
     already queued, and only skips when `marker` is already present.
     """
     key = str(path)
+    # Existing Simplified_Chinese catalogs are GBK on disk (CATIA locale
+    # codepage convention); read with the matching encoding or the marker
+    # check would run against mojibake.
+    disk_enc = (
+        "gbk"
+        if any(part.lower() == "simplified_chinese" for part in path.parts)
+        else "utf-8"
+    )
     if path.exists():
-        old = path.read_text(encoding="utf-8", errors="replace")
+        old = path.read_text(encoding=disk_enc, errors="replace")
         if marker not in old:
             cs.add_modify(path, old.rstrip() + "\n" + content)
     elif key in cs.created:
@@ -899,35 +907,36 @@ def create_dialog(
         ),
     )
 
-    # 每对话框 NLS catalog（en + zh）——catalog 文件名 = 对话框 C++ 类名
-    #（CATDlgDialog 默认资源名 = 类名），key = 控件对象名路径。
-    # 中文版放 Simplified_Chinese/ 子目录，文件名与英文版相同。
+    # 对话框 NLS 条目合并到 framework 共享 catalog（en + zh）。
+    # 与 DialogClass.cpp 的 NLS(key, fallback) 模式对齐：
+    #   en -> msgcatalog/<Framework>.CATNls
+    #   zh -> msgcatalog/Simplified_Chinese/<Framework>.CATNls（GBK 落盘）
     fw_path = mod.framework.path if mod.framework else None
     if fw_path:
+        fw_base = mod.framework.name.replace(".edu", "")
         msg_dir = fw_path / "CNext" / "resources" / "msgcatalog"
         tpl_nls_en = tpl / "resources" / "DialogClass.CATNls"
         tpl_nls_zh = tpl / "resources" / "Simplified_Chinese" / "DialogClass.CATNls"
+        replacements = _r(
+            name,
+            fw_name=mod.framework.name,
+            mod_name=mod.name,
+            DialogClassName=name,
+        )
         if tpl_nls_en.exists():
-            cs.add_create_file(
-                msg_dir / f"{name}.CATNls",
-                tpl_nls_en,
-                _r(
-                    name,
-                    fw_name=mod.framework.name,
-                    mod_name=mod.name,
-                    DialogClassName=name,
-                ),
+            content_en = render_template(
+                tpl_nls_en.read_text(encoding="utf-8", errors="replace"), replacements
             )
+            _queue_nls(cs, msg_dir / f"{fw_base}.CATNls", content_en, name)
         if tpl_nls_zh.exists():
-            cs.add_create_file(
-                msg_dir / "Simplified_Chinese" / f"{name}.CATNls",
-                tpl_nls_zh,
-                _r(
-                    name,
-                    fw_name=mod.framework.name,
-                    mod_name=mod.name,
-                    DialogClassName=name,
-                ),
+            content_zh = render_template(
+                tpl_nls_zh.read_text(encoding="utf-8", errors="replace"), replacements
+            )
+            _queue_nls(
+                cs,
+                msg_dir / "Simplified_Chinese" / f"{fw_base}.CATNls",
+                content_zh,
+                name,
             )
 
     cs.metadata = {"dialog": name, "module": module}
