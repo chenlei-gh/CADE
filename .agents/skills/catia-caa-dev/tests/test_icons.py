@@ -280,6 +280,76 @@ check("small fill stays flat", len(set(out2.getdata())) == 2)
 
 
 # ═══════════════════════════════════════════════════════════════
+#  PART H: First-compile freshness (stale/foreign icon overwrite)
+# ═══════════════════════════════════════════════════════════════
+print("\n" + "=" * 60)
+print("  H. Icon Freshness on Compile")
+print("=" * 60)
+
+import tempfile
+from icon_provider import copy_icons_to_runtime
+
+try:
+    from actions import ActionContext, create_command
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        fw = tmp / "TestFw.edu"
+        (fw / "IdentityCard").mkdir(parents=True)
+        (fw / "IdentityCard" / "IdentityCard.h").write_text(
+            'AddPrereqComponent("System",Public);')
+        mod = fw / "TestMod.m"
+        (mod / "src").mkdir(parents=True)
+        (mod / "LocalInterfaces").mkdir()
+        (mod / "Imakefile.mk").write_text("MODULE=TestMod\nSOURCES = \\")
+        icons_dir = fw / "CNext" / "resources" / "graphic" / "icons" / "normal"
+        icons_dir.mkdir(parents=True)
+
+        # Pre-existing stale icon (old CADE version / other tool)
+        stale = icons_dir / "I_freshcmd.bmp"
+        stale.write_bytes(b"STALE-GARBAGE-ICON")
+
+        ctx = ActionContext(str(tmp))
+        ctx.refresh()
+        result = create_command(ctx, "FreshCmd", "TestMod.m")
+        check("create_command pending", result["status"] == "pending",
+              result.get("status", "?"))
+
+        from changeset import ChangeSet
+        cs = ChangeSet.from_dict(result["changeset"]) if isinstance(result["changeset"], dict) else result["changeset"]
+        cs.apply()
+
+        new_bytes = stale.read_bytes()
+        check("stale icon overwritten", new_bytes != b"STALE-GARBAGE-ICON"
+              and len(new_bytes) > 100, f"{len(new_bytes)} bytes")
+        # Must be a valid 22x22 8-bit BMP
+        check("fresh icon is 22x22 8bpp BMP",
+              new_bytes[:2] == b"BM"
+              and abs(int.from_bytes(new_bytes[18:22], "little", signed=True)) == 22
+              and int.from_bytes(new_bytes[28:30], "little") == 8)
+
+        # Runtime sync must also overwrite a stale runtime icon
+        rv_icon = tmp / "win_b64" / "resources" / "graphic" / "icons" / "normal" / "I_freshcmd.bmp"
+        rv_icon.parent.mkdir(parents=True, exist_ok=True)
+        rv_icon.write_bytes(b"OLD-RUNTIME-ICON")
+        copy_icons_to_runtime(tmp)
+        check("runtime icon refreshed", rv_icon.read_bytes() == new_bytes)
+
+        # Identical icon is not rewritten (ChangeSet stays clean)
+        ctx2 = ActionContext(str(tmp))
+        ctx2.refresh()
+        r2 = create_command(ctx2, "FreshCmd", "TestMod.m")
+        cs2 = r2["changeset"]
+        bin_paths = cs2.get("_binary", {}) if isinstance(cs2, dict) else {}
+        check("identical icon not rewritten",
+              not any("I_freshcmd" in p for p in bin_paths))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+except ImportError as e:
+    check("freshness test imports", False, str(e))
+
+
+# ═══════════════════════════════════════════════════════════════
 print("\n" + "=" * 60)
 print(f"  RESULT: {passed}/{total} PASSED"
       + (f" ({total-passed} FAILED)" if total-passed > 0 else ""))

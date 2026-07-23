@@ -235,7 +235,9 @@ class ChangeSet:
         # Check that created files don't already exist and parent would be creatable
         for path_str, content in self.created.items():
             p = Path(path_str)
-            if p.exists():
+            if p.exists() and path_str not in self._binary:
+                # Binary payloads (icons, etc.) are explicitly queued bytes —
+                # overwriting stale renders is their intended semantics.
                 errors.append(f"Created file already exists: {path_str}")
             # Only check if parent exists or would be inside workspace_root (no mkdir here)
             parent = p.parent

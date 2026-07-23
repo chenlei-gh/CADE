@@ -201,7 +201,8 @@ def copy_icons_to_runtime(workspace_path: Path):
             dst.mkdir(parents=True,exist_ok=True)
             for sf in src.rglob("*.bmp"):
                 df = dst/sf.relative_to(src); df.parent.mkdir(parents=True,exist_ok=True)
-                if not df.exists() or sf.stat().st_mtime>df.stat().st_mtime: shutil.copy2(sf,df)
+                # Content compare, not mtime (git checkout restores old mtimes)
+                if not df.exists() or df.read_bytes() != sf.read_bytes(): shutil.copy2(sf,df)
 
 
 # ═══════════════════════════════════════════════════════════════════

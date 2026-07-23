@@ -746,8 +746,12 @@ def create_command(
                     icons_dir = fw.path / "CNext" / "resources" / "graphic" / "icons" / "normal"
                     ico_name = f"I_{icon_name.replace(' ', '_')}.bmp"
                     target = icons_dir / ico_name
-                    if not target.exists():
-                        cs.add_create_binary(target, ico_path.read_bytes())
+                    # Freshness guarantee: overwrite any stale/foreign icon
+                    # with the current CADE render (old CADE versions or
+                    # other tools may have left an icon with the same name).
+                    new_bytes = ico_path.read_bytes()
+                    if not target.exists() or target.read_bytes() != new_bytes:
+                        cs.add_create_binary(target, new_bytes)
             except Exception:
                 pass  # icon failure never blocks generation
 
