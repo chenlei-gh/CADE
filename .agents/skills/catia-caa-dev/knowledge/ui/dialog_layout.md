@@ -20,7 +20,7 @@ tags: [ui, layout, grid]
 
 | 虚构/错误 | 真实 API |
 |-----------|---------|
-| `SetGridConstraints(pFrame, gc)` 两参 | `SetGridConstraints(gc)` **单参**（CATDialog 方法） |
+| `SetGridConstraints(pFrame, gc)` 两参 | **两种都合法**（CATDialog.h L577/L606）：`SetGridConstraints(gc)` 单参对象，或 `SetGridConstraints(row, col, rspan, cspan, anchor)` 5 参重载（生产项目常用后者，更紧凑） |
 | `gc.SetRow(r).SetColumn(c).SetSpan(...).SetAnchor(...)` 链式 | **无链式 setter**；用构造函数 `CATDlgGridConstraints(row, col, rspan, cspan, anchor)` 或直接写公有成员 `Row`/`Column` |
 | `CATGRID_HORIZONTAL` / `CATGRID_VERTICAL` | 不存在。水平填充用 `CATGRID_LEFT\|CATGRID_RIGHT`；垂直用 `CATGRID_TOP\|CATGRID_BOTTOM` |
 | `CATDlgFraGroupFrame` / `CATDlgFraSunkenFrame` | 不存在。Frame 风格只有 `CATDlgFraNoTitle`/`CATDlgFraNoFrame`/`CATDlgFraNoMargin`；标题用 `SetTitle()` |
@@ -36,6 +36,55 @@ tags: [ui, layout, grid]
 | `CATDialogAgent::DoEvents()` | 不存在 |
 
 ## 布局模式速查
+
+### ⭐ 顶层布局选型（生产实证）
+
+| 场景 | 顶层布局 | 窗口风格 |
+|------|---------|---------|
+| 对话框只含一个表单 | `CATDlgGridLayout`（对话框或单 Frame） | `CATDlgWndBtnOKCancel` 等 |
+| **多个区域垂直堆叠，或有动态显隐面板** | **attachment 布局**（不设 GridLayout） | **必须配 `CATDlgWndAutoResize`** |
+
+**attachment 布局（生产项目 CAAAutoRenameDlg 实证模式）：**
+
+```cpp
+// 构造函数：窗口风格配 AutoResize
+MyDlg::MyDlg(CATDialog *iParent)
+    : CATDlgDialog(iParent, "MyDlgId",
+                   CATDlgWndAutoResize | CATDlgWndBtnOKCancel | CATDlgWndNoResize)
+{}
+
+void MyDlg::Build() {
+    // SetHorizontalAttachment 垂直堆叠（top→bottom）；第1参是 tab 线索引，
+    // 索引大小决定上下顺序，间隔留大些（0/10/20）方便以后插入新行
+    _pList = new CATDlgMultiList(this, "ListId");
+    SetHorizontalAttachment(0, CATDlgTopOrLeft, _pList, NULL);
+
+    // 内部表单仍用 GridLayout Frame（两种布局各司其职）
+    _pForm = new CATDlgFrame(this, "FormId", CATDlgFraNoFrame | CATDlgGridLayout);
+    SetHorizontalAttachment(10, CATDlgTopOrLeft, _pForm, NULL);
+    // ... 表单控件见下
+}
+```
+
+关键 API（CATDlgFrame.h / CATDlgWindow.h 实证）：
+- `SetHorizontalAttachment(tabIndex, CATDlgTopOrLeft, obj, NULL)` — 垂直堆叠
+- `SetVerticalAttachment(tabIndex, CATDlgTopOrLeft, obj, NULL)` — 水平并排
+- `ResetAttachment(obj)` — 把对象**从布局中摘除**（不占空间，配合动态显隐）
+- `Attach4Sides(obj)` — 让对象撑满整个 Frame
+- 附件模式：`CATDlgTopOrLeft`（固定）/ `CATDlgTopOrLeftRelative`（可拉伸）/ `CATDlgCenter` 等
+
+**动态显隐面板（窗口自动收缩，不留空白）：**
+
+```cpp
+// 显示：attach + show
+SetHorizontalAttachment(10, CATDlgTopOrLeft, _pEditPanel, NULL);
+_pEditPanel->SetVisibility(CATDlgShow);
+
+// 隐藏：detach + hide —— ResetAttachment 让面板不占布局空间，
+// AutoResize 窗口随之收缩回原样（只 SetVisibility 会留一块空白！）
+ResetAttachment(_pEditPanel);
+_pEditPanel->SetVisibility(CATDlgHide);
+```
 
 ### 单列垂直
 
@@ -135,6 +184,15 @@ CATDlgGridConstraints(
 ```
 
 ### 锚定常量 (iJustification) — 真实完整列表
+
+`SetGridConstraints` 两个重载都合法（B28 CATDialog.h L577/L606）：
+```cpp
+// 单参对象版
+_pEditor->SetGridConstraints(CATDlgGridConstraints(0, 0, 1, 1, CATGRID_4SIDES));
+// 5 参版（生产项目常用，更紧凑；注意头文件注释里 rspan/cspan 描述与惯例相反，
+// 实际行为：第3参=跨行数 rowspan，第4参=跨列数 colspan）
+_pEditor->SetGridConstraints(0, 0, 1, 1, CATGRID_4SIDES);
+```
 
 | 常量 | 含义 |
 |------|------|
@@ -257,10 +315,13 @@ void MyComplexDlg::Build() {
 ```cpp
 void Build() {
     // ... 控件创建 ...
-    SetTitle(CATMsgCatalog::BuildMessage("ATCatalog", "AT_DLG_TITLE"));  // CATDialog::SetTitle
+    SetTitle(NLS("MyDlg.Title", "My Dialog"));  // NLS 优先
     SetRectDimensions(1, 1, 300, 400);   // (x, y, height, width) 注意 h/w 顺序！
+    // 若用 CATDlgWndAutoResize 风格，无需 SetRectDimensions，窗口随内容自适应
 }
 ```
+
+控件宽度控制（不用像素）：`_pEditor->SetVisibleTextWidth(30);` 按可见字符数定宽，跨语言/字体稳定。
 
 ---
 
@@ -385,15 +446,17 @@ CATBoolean ATAutoRenameDlg::ValidateInput() {
 
 ## AI 生成规则
 
-- [ ] 复杂表单用 GridLayout + 双列模式
+- [ ] 顶层多区域堆叠/动态面板用 **attachment 布局**（`SetHorizontalAttachment` + `CATDlgWndAutoResize`），单一表单才用顶层 GridLayout
+- [ ] 动态显隐面板：`ResetAttachment()` + `SetVisibility(Hide)` 隐藏；`SetHorizontalAttachment` + `SetVisibility(Show)` 显示
+- [ ] 复杂表单内部用 GridLayout + 双列模式
 - [ ] 多类别用 `CATDlgTabContainer`（Frame 以其为父自动成页）
 - [ ] 分组用默认带标题 Frame + `SetTitle()`；**不要发明 CATDlgFraGroupFrame**
-- [ ] `SetGridConstraints` **单参**，必须显式调用
+- [ ] `SetGridConstraints` 用单参对象或 5 参重载（**两参不存在**），GridLayout 下必须显式调用
 - [ ] 水平填充 `CATGRID_LEFT|CATGRID_RIGHT`；四边 `CATGRID_4SIDES`
-- [ ] 控件文本一律 NLS（.CATNls 按控件名索引）或 `SetTitle`
+- [ ] 控件宽度用 `SetVisibleTextWidth(n)`，不硬编码像素
+- [ ] 控件文本一律 NLS（BuildMessage + fallback，见 dialog_dataflow.md）
 - [ ] 进度条类名 `CATDlgProgress`；通知类名 `CATDlgNotify`/`SetText`
 - [ ] 提供 `ValidateInput()` 验证方法
 - [ ] 控件状态联动用 `SetSensitivity(CATDlgEnable/Disable)`
 - [ ] 文件选择用 `CATDlgFile`（打开默认/`CATDlgFileSave` 保存）
-- [ ] 不要硬编码像素位置，用网格布局
 - [ ] 3 层以上嵌套需要注释标明层级

@@ -14,7 +14,7 @@ tags: [ui, anti-pattern, debugging]
 
 # CAA Layout Anti-Patterns
 
-CAA 对话框布局的常见错误和正确做法。
+CAA 对话框布局的常见错误和正确做法。所有"正确"示例均经 B28 头文件/生产项目实证。
 
 ---
 
@@ -31,16 +31,17 @@ _pLabel->SetRectDimensions(10, 50, 100, 20);
 ### ✅ 正确
 
 ```cpp
-// 用 GridLayout + SetGridConstraints
+// 用 GridLayout + SetGridConstraints（5参重载，生产实证）
 CATDlgFrame *pFrame = new CATDlgFrame(this, "F",
     CATDlgFraNoFrame | CATDlgGridLayout);
-_pLabel->SetGridConstraints(pFrame,
-    CATDlgGridConstraints(0, 0, 1, 1, CATGRID_LEFT));
-_pEditor->SetGridConstraints(pFrame,
-    CATDlgGridConstraints(0, 1, 1, 1, CATGRID_4SIDES));
+_pLabel->SetGridConstraints(0, 0, 1, 1, CATGRID_LEFT);
+_pEditor->SetGridConstraints(0, 1, 1, 1, CATGRID_4SIDES);
+
+// 控件宽度用可见字符数控制，不用像素
+_pEditor->SetVisibleTextWidth(30);
 ```
 
-> **原因**: 硬编码在 DPI 缩放、不同分辨率、不同语言下都会错位。GridLayout 自动适配。
+> **原因**: 硬编码在 DPI 缩放、不同分辨率、不同语言下都会错位。GridLayout 自动适配；`SetVisibleTextWidth(n)` 按字符数定宽，跨语言稳定。
 
 ---
 
@@ -57,15 +58,57 @@ _pEditor = new CATDlgEditor(pFrame, "Edt");  // 控件位置不可预测！
 
 ```cpp
 _pEditor = new CATDlgEditor(pFrame, "Edt");
-_pEditor->SetGridConstraints(pFrame,
-    CATDlgGridConstraints(0, 0, 1, 1, CATGRID_4SIDES));
+_pEditor->SetGridConstraints(0, 0, 1, 1, CATGRID_4SIDES);
 ```
 
 > **原因**: GridLayout 下，未设置 GridConstraints 的控件可能重叠或不可见。
 
 ---
 
-## 3. Frame 嵌套过深（>5 层）
+## 3. 顶层垂直堆叠用 GridLayout（窗口不收缩）
+
+### ❌ 错误
+
+```cpp
+// 对话框顶层用 GridLayout 堆叠多个区域，隐藏某区域时窗口留空白
+: CATDlgDialog(iParent, "DlgId", CATDlgGridLayout)
+...
+_pMainList->SetGridConstraints(0, 0, 1, 1, CATGRID_4SIDES);
+_pEditPanel->SetGridConstraints(1, 0, 1, 1, CATGRID_4SIDES);
+_pEditPanel->SetVisibility(CATDlgHide);   // 隐藏了，但网格行仍占位 → 窗口底部一大块空白
+```
+
+### ✅ 正确（生产实证：attachment 布局 + AutoResize）
+
+```cpp
+// 顶层不设 GridLayout，用窗口风格 CATDlgWndAutoResize + 附件布局
+: CATDlgDialog(iParent, "DlgId",
+               CATDlgWndAutoResize | CATDlgWndBtnOKCancel | CATDlgWndNoResize)
+
+void Build() {
+    _pMainList = new CATDlgMultiList(this, "ListId");
+    // SetHorizontalAttachment 垂直堆叠（top→bottom）；行号是 tab 线索引
+    SetHorizontalAttachment(0, CATDlgTopOrLeft, _pMainList, NULL);
+
+    _pEditPanel = new CATDlgFrame(this, "EditPanelId",
+                                  CATDlgFraNoFrame | CATDlgGridLayout);
+    _pEditPanel->SetVisibility(CATDlgHide);   // 未 attach → 不占空间
+}
+
+// 显示面板：attach + show，AutoResize 自动撑高窗口
+SetHorizontalAttachment(10, CATDlgTopOrLeft, _pEditPanel, NULL);
+_pEditPanel->SetVisibility(CATDlgShow);
+
+// 隐藏面板：detach + hide，窗口收缩回原样，不留空白
+ResetAttachment(_pEditPanel);
+_pEditPanel->SetVisibility(CATDlgHide);
+```
+
+> **原因**: `SetVisibility(CATDlgHide)` 在 GridLayout 里只是"不画"，格子还在，AutoResize 窗口会留出一块空白。`ResetAttachment()` 把面板**从布局中摘除**，不占用任何空间，窗口精确收缩。这是生产项目（CAAAutoRenameDlg）验证过的模式。
+
+---
+
+## 4. Frame 嵌套过深（>5 层）
 
 ### ❌ 错误
 
@@ -83,19 +126,19 @@ CATDlgFrame *p6 = new CATDlgFrame(p5, "F", CATDlgGridLayout);
 ### ✅ 正确
 
 ```cpp
-// 控制在 3-4 层，用 GroupBox / Tab 替代深层嵌套
+// 控制在 3-4 层，用带标题 Frame / Tab 替代深层嵌套
 CATDlgFrame *pTop = new CATDlgFrame(this, "Top", CATDlgGridLayout);
-  CATDlgFrame *pGroup = new CATDlgFrame(pTop, "Group",
-      CATDlgFraGroupFrame | CATDlgGridLayout);
+  CATDlgFrame *pGroup = new CATDlgFrame(pTop, "Group", CATDlgGridLayout);
+  pGroup->SetTitle(NLS("Dlg.Group", "Options"));   // 默认 Frame 自带标题栏
     _pEditor = new CATDlgEditor(pGroup, "Edt");
 // 仅 3 层
 ```
 
-> **原因**: CAA 的 GridLayout 在 5 层以上可能有布局计算问题。用语义化容器（GroupBox/Tab/Splitter）替代无意义的多层嵌套。
+> **原因**: CAA 的 GridLayout 在 5 层以上可能有布局计算问题。分组用**默认 Frame + SetTitle**（B28 无 `CATDlgFraGroupFrame`/`CATDlgFraSunkenFrame`，Frame 风格只有 NoTitle/NoFrame/NoMargin）。
 
 ---
 
-## 4. 混用 GridLayout 和绝对定位
+## 5. 混用 GridLayout 和绝对定位
 
 ### ❌ 错误
 
@@ -111,7 +154,7 @@ _pEditor->SetRectDimensions(10, 10, 200, 25);
 ```cpp
 // 要么全用 GridLayout
 CATDlgFrame *pFrame = new CATDlgFrame(this, "F", CATDlgGridLayout);
-_pEditor->SetGridConstraints(pFrame, ...);
+_pEditor->SetGridConstraints(0, 0, 1, 1, CATGRID_4SIDES);
 
 // 要么全用绝对定位（不推荐）
 CATDlgFrame *pFrame = new CATDlgFrame(this, "F", CATDlgFraNoFrame);
@@ -122,13 +165,13 @@ _pEditor->SetRectDimensions(10, 10, 200, 25);
 
 ---
 
-## 5. 标签和输入框分属不同 Frame
+## 6. 标签和输入框分属不同 Frame
 
 ### ❌ 错误
 
 ```cpp
 // 标签在 pTop，输入框在 pMain → 布局断裂
-CATDlgLabel *pLbl = new CATDlgLabel(pTop, "Lbl", "Name:");
+CATDlgLabel *pLbl = new CATDlgLabel(pTop, "Lbl");
 CATDlgEditor *pEdt = new CATDlgEditor(pMain, "Edt");
 ```
 
@@ -138,28 +181,10 @@ CATDlgEditor *pEdt = new CATDlgEditor(pMain, "Edt");
 // 同行控件必须在同一个 Frame 下
 CATDlgFrame *pRow = new CATDlgFrame(pMain, "Row",
     CATDlgFraNoFrame | CATDlgGridLayout);
-CATDlgLabel *pLbl = new CATDlgLabel(pRow, "Lbl", "Name:");
+CATDlgLabel *pLbl = new CATDlgLabel(pRow, "Lbl");
 CATDlgEditor *pEdt = new CATDlgEditor(pRow, "Edt");
-pLbl->SetGridConstraints(pRow, CATDlgGridConstraints(0, 0, ...));
-pEdt->SetGridConstraints(pRow, CATDlgGridConstraints(0, 1, ...));
-```
-
----
-
-## 6. 按钮不设默认按钮
-
-### ❌ 错误
-
-```cpp
-_pOKBtn = new CATDlgPushButton(pFrame, "OK", "OK");
-// 没设默认按钮 → Enter 键无效
-```
-
-### ✅ 正确
-
-```cpp
-_pOKBtn = new CATDlgPushButton(pFrame, "OK", "OK");
-SetDefaultPushButton(_pOKBtn);  // Enter 键触发 OK
+pLbl->SetGridConstraints(0, 0, 1, 1, CATGRID_RIGHT);
+pEdt->SetGridConstraints(0, 1, 1, 1, CATGRID_LEFT | CATGRID_RIGHT);
 ```
 
 ---
@@ -219,36 +244,29 @@ void MyCmd::OnApply(CATCommand *iCmd, CATNotification *iNotif,
 
 ---
 
-## 9. 不设 Frame 风格导致无边框
+## 9. 窗口风格漏配 AutoResize / 按钮
 
 ### ❌ 错误
 
 ```cpp
-CATDlgFrame *pFrame = new CATDlgFrame(this, "F", CATDlgGridLayout);
-// 缺少 CATDlgFraNoFrame → 出现多余的 3D 边框
+// 窗口大小固定死，内容多了被裁剪、少了留空
+: CATDlgDialog(iParent, "DlgId", CATDlgWndBtnOKCancel)
 ```
 
 ### ✅ 正确
 
 ```cpp
-// 明确指定边框风格
-CATDlgFrame *pFrame = new CATDlgFrame(this, "F",
-    CATDlgFraNoFrame | CATDlgGridLayout);    // 无边框容器
-
-CATDlgFrame *pGroup = new CATDlgFrame(this, "G",
-    CATDlgFraGroupFrame | CATDlgGridLayout);  // 带标题分组框
-pGroup->SetTitle("Options");
-
-CATDlgFrame *pSunken = new CATDlgFrame(this, "S",
-    CATDlgFraSunkenFrame | CATDlgGridLayout); // 下凹框
+// AutoResize：窗口随内容自适应（配合 attachment 布局的动态面板尤其重要）
+: CATDlgDialog(iParent, "DlgId",
+               CATDlgWndAutoResize | CATDlgWndBtnOKCancel | CATDlgWndNoResize)
 ```
 
-| Frame 风格常量 | 视觉效果 |
-|---------------|---------|
-| `CATDlgFraNoFrame` | 无边框（透明容器） |
-| `CATDlgFraGroupFrame` | 分组框（带标题线框） |
-| `CATDlgFraSunkenFrame` | 下凹框（列表/预览区） |
-| 不设风格 | 3D 凸起边框（通常不推荐） |
+| 窗口风格常量 | 作用 |
+|-------------|------|
+| `CATDlgWndAutoResize` | 窗口随可见内容自动调整大小 |
+| `CATDlgWndNoResize` | 禁止用户拖边框改大小（布局由代码全权控制时常配） |
+| `CATDlgWndBtnOKCancel` | 自带 OK/Cancel 按钮行 |
+| `CATDlgWndBtnClose` | 自带 Close 按钮 |
 
 ---
 
@@ -284,12 +302,13 @@ CATStatusChangeRC MyCmd::Desactivate(...) {
 
 ## AI 生成规则
 
-- [ ] 禁止硬编码 `SetRectDimensions` 替代 `SetGridConstraints`
-- [ ] 每个控件创建后立即调用 `SetGridConstraints`
-- [ ] 嵌套不超过 4 层，超过用 GroupBox/Tab/Splitter 重构
+- [ ] 禁止硬编码 `SetRectDimensions` 替代布局约束；控件宽度用 `SetVisibleTextWidth(n)`
+- [ ] GridLayout 下每个控件创建后立即调用 `SetGridConstraints`（单参对象或 5 参重载均可，**两参 `SetGridConstraints(pFrame, gc)` 不存在**）
+- [ ] 顶层垂直堆叠用 **attachment 布局**（`SetHorizontalAttachment` + `CATDlgWndAutoResize`），不要顶层 GridLayout
+- [ ] 动态显隐面板用 `ResetAttachment()` 脱离布局 + `SetVisibility`，不要只 `SetVisibility`（会留空白）
+- [ ] 嵌套不超过 4 层，超过用带标题 Frame/Tab/Splitter 重构
 - [ ] 同 Frame 内控件 ID 必须唯一
 - [ ] 同行标签和输入框必须在同一 Frame
-- [ ] 必须设默认按钮 `SetDefaultPushButton`
 - [ ] Dialog 不写业务逻辑，只提供 Getter/Setter
-- [ ] Frame 风格必须显式指定 `CATDlgFraNoFrame`
+- [ ] Frame 风格显式指定（分组用默认 Frame + SetTitle，B28 无 GroupFrame/SunkenFrame）
 - [ ] Desactivate 必须清理 Dialog 和 Agent

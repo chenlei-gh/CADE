@@ -131,12 +131,14 @@ void OnModeChanged(CATCommand *iCmd, CATNotification *iNotif,
 
 ```cpp
 void MyDlg::Build() {
-    CATDlgFrame *pGroup = new CATDlgFrame(pParent, "Group",
-        CATDlgFraGroupFrame | CATDlgGridLayout);
-    pGroup->SetTitle("Mode");
+    // 默认 Frame 自带标题栏（B28 无 CATDlgFraGroupFrame）
+    CATDlgFrame *pGroup = new CATDlgFrame(pParent, "Group", CATDlgGridLayout);
+    pGroup->SetTitle(NLS("Dlg.ModeGroup", "Mode"));
 
-    _pRB1 = new CATDlgRadioButton(pGroup, "RB1", "Option A");
-    _pRB2 = new CATDlgRadioButton(pGroup, "RB2", "Option B");
+    _pRB1 = new CATDlgRadioButton(pGroup, "RB1");
+    _pRB1->SetTitle(NLS("Dlg.RB1", "Option A"));
+    _pRB2 = new CATDlgRadioButton(pGroup, "RB2");
+    _pRB2->SetTitle(NLS("Dlg.RB2", "Option B"));
     _pRB1->SetState(CATDlgCheck);  // 默认选中
 }
 

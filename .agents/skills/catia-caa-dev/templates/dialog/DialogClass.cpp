@@ -32,6 +32,12 @@ static CATUnicodeString NLS(const CATString &iKey, const char *iFallback)
 }
 
 <DialogClassName>::<DialogClassName>(CATDialog *iParent)
+    // 布局选型（生产实证，详见 knowledge/ui/dialog_layout.md）：
+    //   - 单一表单 → CATDlgGridLayout（本模板默认）
+    //   - 多区域垂直堆叠/动态显隐面板 → 去掉 GridLayout，用 attachment 布局：
+    //       窗口风格 CATDlgWndAutoResize|CATDlgWndBtnOKCancel|CATDlgWndNoResize
+    //       SetHorizontalAttachment(0, CATDlgTopOrLeft, pCtrl, NULL) 逐行堆叠
+    //       动态面板用 ResetAttachment(pCtrl) 摘除（不占空间，窗口自动收缩）
     : CATDlgDialog(iParent, "<DialogClassName>Id", CATDlgWndBtnClose | CATDlgGridLayout)
     , _pFrame(NULL)
     , _pLabel(NULL)
@@ -52,7 +58,9 @@ void <DialogClassName>::Build()
 
     _pLabel = new CATDlgLabel(_pFrame, "LabelId");
     _pLabel->SetTitle(NLS("<DialogClassName>.LabelId", "Value:"));
+    _pLabel->SetGridConstraints(0, 0, 1, 1, CATGRID_RIGHT);
 
     _pEditor = new CATDlgEditor(_pFrame, "EditorId");
-    _pEditor->SetVisibleTextWidth(20);
+    _pEditor->SetVisibleTextWidth(20);   // 可见字符数定宽，不用像素
+    _pEditor->SetGridConstraints(0, 1, 1, 1, CATGRID_LEFT | CATGRID_RIGHT);
 }

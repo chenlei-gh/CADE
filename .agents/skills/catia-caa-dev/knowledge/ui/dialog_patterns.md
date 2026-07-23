@@ -73,30 +73,34 @@ void ATAutoRenameDlg::Build() {
     // 1. 创建容器（风格 + 布局）
     CATDlgFrame *pFrame = new CATDlgFrame(this, "MainFrame",
         CATDlgFraNoFrame | CATDlgGridLayout);
-    CATDlgGridConstraints grid;
 
-    // 2. 添加控件（一行一个 Row）
-    _pNameLabel = new CATDlgLabel(pFrame, "NameLbl", "New Name:");
-    _pNameLabel->SetGridConstraints(pFrame, grid.SetRow(0).SetColumn(0));
-    
+    // 2. 添加控件（5参重载 SetGridConstraints，生产实证）
+    _pNameLabel = new CATDlgLabel(pFrame, "NameLbl");
+    _pNameLabel->SetTitle(NLS("Dlg.NameLbl", "New Name:"));
+    _pNameLabel->SetGridConstraints(0, 0, 1, 1, CATGRID_RIGHT);
+
     _pNameEditor = new CATDlgEditor(pFrame, "NameEdt");
-    _pNameEditor->SetGridConstraints(pFrame, grid.SetRow(0).SetColumn(1));
-    _pNameEditor->SetVisibleTextMaxWidth(200);
+    _pNameEditor->SetGridConstraints(0, 1, 1, 1, CATGRID_LEFT | CATGRID_RIGHT);
+    _pNameEditor->SetVisibleTextWidth(30);   // 可见字符数定宽，不用像素
 
-    // 3. Radio Group
+    // 3. Radio Group（同 Frame 下自动互斥见 event_patterns.md）
     CATDlgFrame *pRadioFrame = new CATDlgFrame(pFrame, "ModeFrame",
         CATDlgFraNoFrame | CATDlgGridLayout);
-    _pPrefixRB = new CATDlgRadioButton(pRadioFrame, "PrefixRB", "Prefix");
+    _pPrefixRB = new CATDlgRadioButton(pRadioFrame, "PrefixRB");
+    _pPrefixRB->SetTitle(NLS("Dlg.PrefixRB", "Prefix"));
     _pPrefixRB->SetState(CATDlgCheck);  // 默认选中
-    _pSuffixRB = new CATDlgRadioButton(pRadioFrame, "SuffixRB", "Suffix");
-    
-    // 4. Spinner（数字微调）
-    _pCounter = new CATDlgSpinner(pFrame, "CounterSpn");
-    _pCounter->SetRange(1, 9999);
+    _pSuffixRB = new CATDlgRadioButton(pRadioFrame, "SuffixRB");
+    _pSuffixRB->SetTitle(NLS("Dlg.SuffixRB", "Suffix"));
 
-    // 5. 按钮
-    _pApplyBtn = new CATDlgPushButton(pFrame, "ApplyBtn", "Apply");
-    _pCancelBtn = new CATDlgPushButton(pFrame, "CancelBtn", "Cancel");
+    // 4. Spinner（数字微调；第3参是步进数，无 SetStep）
+    _pCounter = new CATDlgSpinner(pFrame, "CounterSpn");
+    _pCounter->SetRange(1.f, 9999.f, 10);
+    _pCounter->SetGridConstraints(2, 1, 1, 1, CATGRID_LEFT);
+
+    // 5. 按钮（若窗口风格已带 OKCancel 按钮行则无需自建）
+    _pApplyBtn = new CATDlgPushButton(pFrame, "ApplyBtn");
+    _pApplyBtn->SetTitle(NLS("Dlg.ApplyBtn", "Apply"));
+    _pApplyBtn->SetGridConstraints(3, 0, 1, 2, CATGRID_LEFT);
 
     // 6. 设置默认按钮
     SetDefaultPushButton(_pApplyBtn);
@@ -106,31 +110,33 @@ void ATAutoRenameDlg::Build() {
 ## 控件速查表
 
 | 控件 | 类 | 用途 | 关键方法 |
-|------|-----|------|---------|
-| 标签 | `CATDlgLabel` | 显示只读文本 | |
-| 输入框 | `CATDlgEditor` | 单行文本 | `GetText()`, `SetText()` |
-| 多行文本 | `CATDlgMultiEditor` | 多行文本 | |
+|------|-----|------|--------|
+| 标签 | `CATDlgLabel` | 显示只读文本 | `SetTitle()` |
+| 输入框 | `CATDlgEditor` | 单行文本 | `GetText()`, `SetText()`, `SetVisibleTextWidth(n)` |
 | 复选框 | `CATDlgCheckButton` | 开/关 | `GetState()`, `SetState(CATDlgCheck\|CATDlgUncheck)` |
 | 单选按钮 | `CATDlgRadioButton` | 互斥选项 | 同上，需手动互斥 |
-| 下拉框 | `CATDlgCombo` | 多选一 | `AddItem()`, `GetSelect()` |
-| 列表框 | `CATDlgSelectorList` | 多选 | `SetLine()`, `GetSelect()` |
+| 下拉框 | `CATDlgCombo` | 多选一 | `SetLine(text, -1)`, `GetSelect()`, `SetVisibleTextHeight(n)` |
+| 多行文本 | `CATDlgEditor` + 多行风格 | 多行文本 | （无 `CATDlgMultiEditor`） |
+| 列表框 | `CATDlgSelectorList` | 多选 | `SetLine(text, -1)`, `GetSelect(arr, count)` |
 | 按钮 | `CATDlgPushButton` | 触发动作 | 绑定 Notification |
-| 数字微调 | `CATDlgSpinner` | 整数输入 | `GetValue()`, `SetRange()` |
-| 进度条 | `CATDlgProgressBar` | 显示进度 | `SetValue()` |
-| 文件选择 | `CATDlgFile` | 选择文件 | `GetName()` |
+| 数字微调 | `CATDlgSpinner` | 数值输入 | `GetValue()`, `SetRange(min, max, stepCount)` |
+| 进度条 | `CATDlgProgress` | 显示进度 | （无 `CATDlgProgressBar`） |
+| 文件选择 | `CATDlgFile` | 选择文件 | `GetSelection()`（保存用 `CATDlgFileSave` 风格） |
 | 分隔线 | `CATDlgSeparator` | 视觉分隔 | |
-| Tab 页 | `CATDlgTabContainer` | 多页切换 | `AttachTab()` |
+| Tab 页 | `CATDlgTabContainer` | 多页切换 | Frame 以其为父自动成页（无 `AttachTab`），`SetSelectedPage(n)` |
 
 ## 布局模式
 
 ### 网格布局（最常用）
 
 ```cpp
-CATDlgGridConstraints grid;
-_pWidget1->SetGridConstraints(pFrame, grid.SetRow(0).SetColumn(0));
-_pWidget2->SetGridConstraints(pFrame, grid.SetRow(0).SetColumn(1));
-_pWidget3->SetGridConstraints(pFrame, grid.SetRow(1).SetColumn(0).SetSpan(2, 1));
-// Row 1, Column 0, Span 2 columns
+// 5参重载：(row, col, rowspan, colspan, anchor)
+_pWidget1->SetGridConstraints(0, 0, 1, 1, CATGRID_RIGHT);
+_pWidget2->SetGridConstraints(0, 1, 1, 1, CATGRID_LEFT | CATGRID_RIGHT);
+_pWidget3->SetGridConstraints(1, 0, 1, 2, CATGRID_4SIDES);
+// Row 1, Column 0, 跨 2 列
+// 或单参对象版：SetGridConstraints(CATDlgGridConstraints(0, 0, 1, 1, CATGRID_4SIDES))
+// ⚠️ 无链式 SetRow/SetColumn，无两参 (pFrame, gc) 版本
 ```
 
 ### 垂直/水平布局
@@ -184,7 +190,7 @@ void MyDlg::Build() {
     _pNameEditor = new CATDlgEditor(pLeft, "Name");
     _pWidthSpinner = new CATDlgSpinner(pLeft, "Width");
     CATDlgFrame *pRight = new CATDlgFrame(pMain, "Right",
-        CATDlgFraSunkenFrame);
+        CATDlgFraNoFrame);   // B28 无 CATDlgFraSunkenFrame
     _pPreviewLabel = new CATDlgLabel(pRight, "Preview", "");
     AddAnalyseNotificationCB(this,
         _pNameEditor->GetEditorNotification(),
