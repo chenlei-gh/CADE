@@ -28,14 +28,14 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # ─── Official CATIA icon style (sampled from B28 win_b64 resources) ───
 CATIA_BG = (192, 192, 192)        # dominant official background gray
 CATIA_INK = (24, 16, 82)          # dominant official dark-navy outline
-CACHE_VER = "v5"                  # bump when render style changes (v5: 奶油黄主色)
+CACHE_VER = "v6"                  # bump when render style changes (v6: 官方伪3D等轴测+光照)
 
 # ─── Domain → Icon ───────────────────────────────────────────────
 DOMAIN_MAP = {
-    "hole":"drill","pocket":"box","contour":"contour","mill":"cube",
+    "hole":"hole","pocket":"box","contour":"contour","mill":"cube",
     "drill":"drill","machine":"settings","cog":"settings","gear":"settings",
     "assemble":"cube","part":"cube","product":"package","component":"cube",
-    "constrain":"link","pad":"box","extrude":"arrow-up","revolve":"circle",
+    "constrain":"link","pad":"cube","extrude":"arrow-up","revolve":"circle",
     "fillet":"arc","chamfer":"cut","sketch":"pencil","surface":"wave",
     "wireframe":"grid","point":"point","line":"line","curve":"curve",
     "split":"cut","trim":"cut","join":"merge","transform":"move",
@@ -82,8 +82,8 @@ COLOR_MAP: Dict[str, Tuple[int,int,int]] = {
     "shell":_CREAM,"draft":_CREAM,"boolean":_CREAM,"transform":_CREAM,
     "join":_CREAM,"surface":_CREAM,"wireframe":_CREAM,"reference":_CREAM,
     "helix":_CREAM,"spring":_CREAM,"box":_CREAM,"contour":_CREAM,
-    # 圆角/倒角类：青/蓝辅助（与 I_Fillet/I_Chamfer 一致）
-    "fillet":_TEAL,"chamfer":_SKY,
+    # 圆角/倒角类：奶油黄主体（官方 I_Fillet/I_Chamfer 主体也是奶油黄，青/蓝仅辅助面）
+    "fillet":_CREAM,"chamfer":_CREAM,
     # 装配/约束类：主体奶油黄 + 约束可用亮青高亮（与 I_Assemble/I_*Constraint 一致）
     "assemble":_CREAM,"part":_CREAM,"product":_CREAM,"component":_CREAM,
     "cube":_CREAM,"explode":_CREAM,"package":_CREAM,
@@ -112,7 +112,7 @@ COLOR_MAP: Dict[str, Tuple[int,int,int]] = {
     "heart":(155,0,0),"lock":_YL,"plus":_GN,"lightning":_YL,
     "flame":_OR,"trophy":_YL,"pin":(155,0,0),"forward":_GN,
     "target":(255,0,0),"shield":_SKY,"star":_YL,"merge":_CREAM,
-    "move":_CREAM,"ruler":_GN,"arc":_TEAL,"circle":_CREAM,
+    "move":_CREAM,"ruler":_GN,"arc":_CREAM,"circle":_CREAM,
     "pencil":_CREAM,"grid":_CREAM,"wave":_CREAM,"arrow_up":_CREAM,
     "settings":_PU,
     # 命名/编辑/更新类（常用工具动词）
@@ -339,9 +339,21 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
         O([cx-3,cy-3,cx+3,cy+3],fill=BG)
 
     def _cube():
-        R([4*S,6*S,15*S,17*S],outline=E,width=2*S)
-        P([4*S,6*S,9*S,1*S,19*S,1*S,14*S,6*S],outline=E,fill=B)
-        P([14*S,6*S,19*S,1*S,19*S,11*S,14*S,17*S],outline=E,fill=D)
+        # Official I_Pad-style iso block: white top, gray right, cream front
+        _iso_block(3*S, 8*S, 11*S, 11*S, 5*S)
+
+    def _fillet_block():
+        # Official I_Fillet: block with convex rounded top-right corner
+        pts=[(3*S,20*S),(3*S,10*S),(10*S,10*S)]
+        pts+=[(10*S+int(6*S*cos(-pi/2+i*pi/12)),16*S+int(6*S*sin(-pi/2+i*pi/12))) for i in range(1,13)]
+        pts+=[(16*S,20*S)]
+        P(pts,fill=B); P(pts,outline=E)
+
+    def _hole_block():
+        # Official I_Hole: iso block + bored hole, gray gradient = depth
+        _iso_block(2*S,7*S,12*S,12*S,5*S)
+        O([5*S,10*S,11*S,16*S],fill=SHADE,outline=E)
+        O([6*S,11*S,10*S,15*S],fill=DSHADE)
 
     def _star(cx,cy,ir,or_,pts):
         v=[]; [v.append((cx+(or_ if i%2==0 else ir)*cos(-pi/2+pi*i/pts),cy+(or_ if i%2==0 else ir)*sin(-pi/2+pi*i/pts))) for i in range(pts*2)]
@@ -350,6 +362,25 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
     def _bez(x0,y0,cx,cy,x1,y1):
         pts=[(u**2*x0+2*u*t*cx+t**2*x1,u**2*y0+2*u*t*cy+t**2*y1) for i in range(13) for t,u in [(i/12.0,1-i/12.0)]]
         [L([pts[i],pts[i+1]],fill=E,width=3*S) for i in range(len(pts)-1)]
+
+    # ── Official pseudo-3D (isometric + lighting) helpers ──────────
+    # Palette sampled from B28 mainstream icons (I_Pad/I_Pocket/I_Hole):
+    # white top highlight, cream front face, gray right face, navy ink.
+    WHITE=(255,255,255,255); SHADE=(106,106,106,255); DSHADE=(75,75,75,255)
+
+    def _iso_block(x,y,w,h,depth):
+        """Iso cube: white top + gray right + cream front, ink outlines."""
+        P([x,y, x+depth,y-depth, x+w+depth,y-depth, x+w,y], fill=WHITE, outline=E)
+        P([x+w,y, x+w+depth,y-depth, x+w+depth,y+h-depth, x+w,y+h], fill=SHADE, outline=E)
+        R([x,y, x+w,y+h], fill=B, outline=E)
+
+    def _extrude_profile(pts, depth):
+        """Extrude a 2D profile toward upper-right: gray side walls,
+        white back face, cream front face — official I_Pad style."""
+        off=[(px+depth,py-depth) for px,py in pts]
+        for i in range(len(pts)):
+            j=(i+1)%len(pts); P([pts[i],pts[j],off[j],off[i]], fill=SHADE, outline=E)
+        P(off, fill=WHITE, outline=E); P(pts, fill=B, outline=E)
 
     def _ngon(cx,cy,r,n):
         pts=[(cx+r*cos(-pi/2+2*pi*i/n),cy+r*sin(-pi/2+2*pi*i/n)) for i in range(n)]
@@ -360,16 +391,16 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
             L([c+7*S*cos(a),c+7*S*sin(a),c+10*S*cos(a),c+10*S*sin(a)],fill=E,width=2*S)
 
     _ = {
-"box":       lambda:[P([3*S,19*S,3*S,5*S,19*S,5*S,19*S,19*S],fill=B),P([3*S,19*S,3*S,5*S,19*S,5*S,19*S,19*S],outline=E),R([8*S,5*S,14*S,13*S],fill=BG),L([8*S,5*S,8*S,13*S],fill=E,width=S),L([14*S,5*S,14*S,13*S],fill=E,width=S),L([8*S,13*S,14*S,13*S],fill=E,width=S)],
+"box":       lambda:[_iso_block(2*S,7*S,12*S,12*S,5*S),R([6*S,11*S,11*S,16*S],fill=DSHADE),R([6*S,11*S,11*S,16*S],outline=E,width=S)],
 "circle":    lambda:O([1*S,1*S,20*S,20*S],fill=B),
 "point":     lambda:[O([c-6*S,c-6*S,c+6*S,c+6*S],fill=B),O([c-6*S,c-6*S,c+6*S,c+6*S],outline=E,width=S),O([c-2*S,c-2*S,c+2*S,c+2*S],fill=E)],
 "line":      lambda:L([2*S,c,19*S,c],fill=E,width=4*S),
-"arc":       lambda:AR([1*S,1*S,20*S,20*S],180,360,fill=E,width=4*S),
+"arc":       lambda:_fillet_block(),
 "wave":      lambda:[L([(1*S+i*18*S//16,c+int(5*S*sin(i*pi/8))) for i in range(17)],fill=B,width=3*S),L([(1*S+i*18*S//16,c+6*S+int(3*S*sin(i*pi/8))) for i in range(17)],fill=D,width=2*S)],
 "grid":      lambda:[L([3*S,8*S,18*S,8*S],fill=D,width=S),L([3*S,14*S,18*S,14*S],fill=D,width=S),L([8*S,3*S,8*S,18*S],fill=D,width=S),L([14*S,3*S,14*S,18*S],fill=D,width=S)],
 "play":      lambda:[P([4*S,2*S,4*S,19*S,19*S,c],fill=B),P([4*S,2*S,4*S,19*S,19*S,c],outline=E)],
-"drill":     lambda:[R([c-4*S,2*S,c+4*S,14*S],fill=B),P([c-4*S,14*S,c+4*S,14*S,c,20*S],fill=B),R([c-4*S,2*S,c+4*S,14*S],outline=E),P([c-4*S,14*S,c+4*S,14*S,c,20*S],outline=E),L([c-2*S,3*S,c+2*S,9*S],fill=E,width=S),L([c+2*S,6*S,c-2*S,12*S],fill=E,width=S)],
-"cut":       lambda:[P([3*S,3*S,15*S,3*S,19*S,7*S,19*S,19*S,3*S,19*S],fill=B),P([3*S,3*S,15*S,3*S,19*S,7*S,19*S,19*S,3*S,19*S],outline=E),L([15*S,3*S,19*S,7*S],fill=D,width=2*S)],
+"drill":     lambda:[R([c-3*S,2*S,c+3*S,13*S],fill=B),L([c-1*S,3*S,c-1*S,12*S],fill=WHITE,width=2*S),R([c-3*S,2*S,c+3*S,13*S],outline=E),P([c-3*S,13*S,c+3*S,13*S,c,20*S],fill=SHADE),P([c-3*S,13*S,c+3*S,13*S,c,20*S],outline=E),L([c-3*S,5*S,c+3*S,8*S],fill=D,width=S),L([c-3*S,9*S,c+3*S,12*S],fill=D,width=S)],
+"cut":       lambda:[_extrude_profile([(2*S,19*S),(2*S,9*S),(9*S,9*S),(15*S,15*S),(15*S,19*S)],4*S)],
 "cursor":    lambda:P([1*S,1*S,1*S,17*S,8*S,12*S,13*S,19*S,16*S,15*S,10*S,10*S,16*S,6*S],fill=B),
 "move":      lambda:[L([c,3*S,c,19*S],fill=E,width=2*S),L([3*S,c,19*S,c],fill=E,width=2*S),P([c,1*S,c-3*S,6*S,c+3*S,6*S],fill=B),P([c,21*S,c-3*S,16*S,c+3*S,16*S],fill=B),P([1*S,c,6*S,c-3*S,6*S,c+3*S],fill=B),P([21*S,c,16*S,c-3*S,16*S,c+3*S],fill=B)],
 "merge":     lambda:[L([3*S,3*S,c,13*S],fill=E,width=3*S),L([18*S,3*S,c,13*S],fill=E,width=3*S),L([c,13*S,c,19*S],fill=E,width=3*S)],
@@ -397,7 +428,7 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
 "link":      lambda:[AR([1*S,2*S,14*S,15*S],-200,20,fill=E,width=3*S),AR([7*S,8*S,20*S,21*S],-200,20,fill=E,width=3*S)],
 "cube":      lambda:_cube(),
 "contour":   lambda:[R([2*S,2*S,19*S,12*S],outline=E,width=2*S),R([6*S,6*S,15*S,19*S],outline=B,width=S)],
-"package":   lambda:[R([2*S,6*S,19*S,19*S],outline=B,width=2*S),P([9*S,1*S,6*S,6*S,15*S,6*S,12*S,1*S],fill=B),P([9*S,1*S,6*S,6*S,15*S,6*S,12*S,1*S],outline=E)],
+"package":   lambda:[_iso_block(3*S,8*S,11*S,11*S,4*S),L([3*S,10*S,8*S,12*S,8*S,19*S],fill=E,width=S),L([8*S,12*S,13*S,10*S],fill=E,width=S),P([8*S,12*S,11*S,14*S,8*S,17*S],fill=D)],
 "arrow-up":  lambda:[P([c,1*S,2*S,12*S,7*S,12*S,7*S,20*S,14*S,20*S,14*S,12*S,19*S,12*S],fill=B),P([c,1*S,2*S,12*S,7*S,12*S,7*S,20*S,14*S,20*S,14*S,12*S,19*S,12*S],outline=E)],
 "curve":     lambda:_bez(2*S,19*S,c,2*S,19*S,19*S),
 "star":      lambda:_star(c,c,4*S,10*S,5),
@@ -474,11 +505,12 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
 "pattern":   lambda:[R([x*S,y*S,x*S+5*S,y*S+5*S],fill=B,outline=E) for y in (2,9,16) for x in (2,9,16)],
 "sweep":     lambda:[O([2*S,13*S,8*S,19*S],fill=B),O([2*S,13*S,8*S,19*S],outline=E),_bez(5*S,16*S,15*S,18*S,19*S,4*S)],
 "loft":      lambda:[R([3*S,14*S,11*S,19*S],fill=B),R([3*S,14*S,11*S,19*S],outline=E),R([11*S,3*S,19*S,8*S],fill=B),R([11*S,3*S,19*S,8*S],outline=E),L([3*S,14*S,11*S,3*S],fill=D,width=S),L([11*S,19*S,19*S,8*S],fill=D,width=S)],
-"shell":     lambda:[R([3*S,3*S,19*S,19*S],fill=B),R([3*S,3*S,19*S,19*S],outline=E),R([7*S,7*S,19*S,19*S],fill=BG),L([7*S,7*S,7*S,19*S],fill=E,width=S),L([7*S,7*S,19*S,7*S],fill=E,width=S)],
+"shell":     lambda:[_iso_block(2*S,8*S,12*S,11*S,4*S),P([5*S,8*S,7*S,6*S,15*S,6*S,13*S,8*S],fill=DSHADE,outline=E)],
 "draft":     lambda:[P([5*S,3*S,17*S,3*S,20*S,19*S,2*S,19*S],fill=B),P([5*S,3*S,17*S,3*S,20*S,19*S,2*S,19*S],outline=E),L([c,3*S,c,19*S],fill=D,width=S)],
 "helix":     lambda:[AR([5*S,2*S,17*S,8*S],0,360,fill=E,width=2*S),AR([5*S,8*S,17*S,14*S],0,360,fill=B,width=2*S),AR([5*S,14*S,17*S,20*S],0,360,fill=E,width=2*S)],
 "boolean":   lambda:[O([3*S,5*S,13*S,16*S],fill=B),O([3*S,5*S,13*S,16*S],outline=E),O([9*S,5*S,19*S,16*S],fill=D),O([9*S,5*S,19*S,16*S],outline=E)],
 "axis":      lambda:[L([c,2*S,c,20*S],fill=E,width=S),L([2*S,c,20*S,c],fill=E,width=S),O([c-4*S,c-4*S,c+4*S,c+4*S],outline=B,width=2*S)],
+"hole":      lambda:_hole_block(),
 "rotate":    lambda:[AR([3*S,3*S,19*S,19*S],30,330,fill=B,width=3*S),P([15*S,2*S,20*S,6*S,13*S,8*S],fill=B)],
 "explode":   lambda:[R([8*S,8*S,14*S,14*S],fill=B),R([8*S,8*S,14*S,14*S],outline=E),L([c,1*S,c,6*S],fill=E,width=2*S),L([c,16*S,c,21*S],fill=E,width=2*S),L([1*S,c,6*S,c],fill=E,width=2*S),L([16*S,c,21*S,c],fill=E,width=2*S),P([c,1*S,c-2*S,4*S,c+2*S,4*S],fill=E),P([c,21*S,c-2*S,18*S,c+2*S,18*S],fill=E),P([1*S,c,4*S,c-2*S,4*S,c+2*S],fill=E),P([21*S,c,18*S,c-2*S,18*S,c+2*S],fill=E)],
 "material":  lambda:[R([3*S,3*S,19*S,19*S],fill=B),R([3*S,3*S,19*S,19*S],outline=E),R([5*S,5*S,9*S,9*S],fill=D),R([13*S,5*S,17*S,9*S],fill=D),R([9*S,9*S,13*S,13*S],fill=D),R([5*S,13*S,9*S,17*S],fill=D),R([13*S,13*S,17*S,17*S],fill=D)],

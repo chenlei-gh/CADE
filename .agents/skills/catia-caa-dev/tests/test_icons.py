@@ -240,16 +240,16 @@ from icon_provider import resolve_icon_ex, _apply_checker
 from PIL import Image
 
 b, g = resolve_icon_ex("CreateHoleCmd")
-check("compose CreateHoleCmd -> drill+plus", b == "drill" and g == "plus", f"{b}+{g}")
+check("compose CreateHoleCmd -> hole+plus", b == "hole" and g == "plus", f"{b}+{g}")
 
 b, g = resolve_icon_ex("HoleAnalysisCmd")
-check("compose HoleAnalysisCmd -> drill+chart", b == "drill" and g == "chart", f"{b}+{g}")
+check("compose HoleAnalysisCmd -> hole+chart", b == "hole" and g == "chart", f"{b}+{g}")
 
 b, g = resolve_icon_ex("MeasureDistanceCmd")
 check("compose dedupe ruler+ruler", b == "ruler" and g is None, f"{b}+{g}")
 
 b, g = resolve_icon_ex("createhole")  # fused lowercase from actions.py
-check("compose fused 'createhole'", b == "drill" and g == "plus", f"{b}+{g}")
+check("compose fused 'createhole'", b == "hole" and g == "plus", f"{b}+{g}")
 
 b, g = resolve_icon_ex("cube")
 check("plain pattern pass-through", b == "cube" and g is None, f"{b}+{g}")
