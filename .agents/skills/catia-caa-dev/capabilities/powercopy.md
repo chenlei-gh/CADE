@@ -3,7 +3,7 @@ id: cap.powercopy
 title: PowerCopy & UDF
 category: capability
 domain: infrastructure
-keywords: [PowerCopy, UDF, UserFeature, instantiate, template, publish, parameter, mapping, reuse, user defined feature]
+keywords: [PowerCopy, UDF, UserFeature, instantiate, template, publish, parameter, mapping, reuse, user defined feature, copy paste, CATICutAndPastable, CATPathElement, cross-document]
 apis: [CATIUdfFactory, CATIUdfFeature, CATIUdfInstantiate, CATIUdfFeatureInstance, CATIUdfFeatureSet, CATIUdfFeatureUser, CATISpecObject]
 frameworks: [MechanicalCommands, MecModInterfaces, ObjectModelerBase]
 playbooks: [block.visitor, workflow.batch, analyzer.rule]
@@ -46,6 +46,7 @@ The PowerCopy and User Feature (UDF) capability covers the programmatic lifecycl
 - **Role**: A human-readable NLS name given to an input or a published parameter (`SetInputRole()` / `SetParameterRole()`), shown in the instantiation/edition dialog
 - **Sets**: References live in one of two non-mechanical feature sets aggregated under the MechanicalPart — the "PowerCopy" set (index `0`) or the "UserFeatures" set (index `1`), retrieved via `CATIUdfFactory::GetFeatureSet(mode)`
 - **Destination**: At instantiation, the target location is a `CATPathElement`, set either on the whole MechanicalPart (`SetDestinationPath`) or on a specific destination feature with a relative position "Inside"/"After" (`SetDestinationPathOfInsertion`)
+- **⚠️ Cross-document `CATPathElement` hazard**: `CATPathElement`-based targeting is only safe when source and target live in the **same document** (same `PrtContainer`). Passing a `CATPathElement` that references objects from a *different* document (e.g. cross-document Copy/Paste via `CATICutAndPastable::Paste`) crashes the CATIA process with an **uncatchable** runtime exception. For cross-document paste, pass `NULL` targets and let the container decide, or use the Automation layer (`Selection.Copy/PasteSpecial`). See [fp.paste_cross_doc_catpathelement](../knowledge/failure_patterns/fp_paste_cross_doc_catpathelement.md)
 - **Instantiation transaction order**: `SetDestinationPath(...)` → valuate inputs (`SetNewInput`/`UseIdenticalName`) → optionally modify published parameters (`GetParameters`) → `Instantiate(...)` → optionally `GetInstantiated()`/`SetDisplayName()` → `EndInstantiate()` → `Reset()`
 - **Editing instances**: Only User Feature instances are editable after creation, through `CATIUdfFeatureInstance` (bracketed by `Init()`/`Reset()`); PowerCopy instances are ordinary independent features with no dedicated edition interface
 - **Type**: A User-Feature-only classification string (no equivalent for PowerCopy), set via `CATIUdfFeatureUser::SetType()`/`GetType()`, useful to hook a custom `CATIEdit` panel per type

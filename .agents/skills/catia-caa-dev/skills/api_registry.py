@@ -54,6 +54,8 @@ class ApiRegistry:
       2. templates/** #include "X.h" — headers CADE itself emits (self-consistent)
       3. knowledge/frameworks/*.md frontmatter `apis:` — auto-extracted, noisy
          (used for headers only after _NON_API_SUFFIXES filtering)
+      4. knowledge/failure_patterns/*.md frontmatter `apis:` — curated incident
+         reports; APIs named there are known-good (they caused a real crash)
     """
 
     # Suffixes seen in auto-extracted framework keywords that are NOT real
@@ -90,6 +92,15 @@ class ApiRegistry:
         if fw_dir.is_dir():
             for md in sorted(fw_dir.glob("*.md")):
                 reg._ingest_frontmatter(md, trust="framework")
+
+        # 4. knowledge/failure_patterns/*.md — curated incident reports;
+        #    their `apis:` lists name the APIs involved in a REAL crash/
+        #    error, so they are known-good names that the verifier must
+        #    never flag as fabricated (e.g. CATICutAndPastable::Paste).
+        fp_dir = skill_root / "knowledge" / "failure_patterns"
+        if fp_dir.is_dir():
+            for md in sorted(fp_dir.glob("*.md")):
+                reg._ingest_frontmatter(md, trust="failure_pattern")
 
         return reg
 
