@@ -166,8 +166,15 @@ class CodeVerifier:
     for common template errors before compilation.
     """
 
-    def __init__(self):
+    def __init__(self, skill_root: Path | str | None = None):
         self.issues: List[CodeIssue] = []
+        # skill_root enables header_map-based authoritative include validation.
+        # Auto-detect from this file's location if not provided.
+        if skill_root is not None:
+            self._skill_root = Path(skill_root)
+        else:
+            # verifier.py lives at {skill_root}/skills/verifier.py
+            self._skill_root = Path(__file__).resolve().parent.parent
 
     def verify_module(self, module_path: str | Path) -> CodeVerifyResult:
         """
@@ -426,20 +433,35 @@ class CodeVerifier:
     # ─── Shared checks ──────────────────────────────────────────
 
     def _check_includes(self, path: Path, content: str):
-        """Check #include directives against the knowledge-driven API whitelist.
+        """Check #include directives against known CAA headers.
+
+        Two-layer validation:
+          1. header_map (authoritative — 5500+ real headers from CATIA
+             installation). If the header is not in header_map, it does
+             NOT exist in the installed CATIA → error.
+          2. api_registry (knowledge-driven whitelist) — for headers that
+             exist in header_map, no further check needed. For headers
+             NOT in header_map, check if they're in the knowledge
+             whitelist as a fallback.
 
         An include is suspect only when ALL of these hold:
           - it names a CAA-like identifier (CAT-prefixed)
-          - it is not in the whitelist (capabilities + frameworks + templates)
-          - it is not a local project header (stem matches the file's own
-            class/module, e.g. MyCmd.cpp including MyCmd.h)
-        Standard/system headers and lowercase custom headers pass silently.
+          - it is not found in header_map (authoritative check)
+          - it is not in the knowledge whitelist (fallback check)
+          - it is not a local project header
         """
         try:
             from api_registry import get_registry
             registry = get_registry()
         except ImportError:
             registry = None
+
+        # Load header_map for authoritative include validation
+        try:
+            from header_map import HeaderMap
+            _hm = HeaderMap.load(self._skill_root) if self._skill_root else None
+        except Exception:
+            _hm = None
 
         includes = re.findall(r'#include\s+[<"]([^>"]+)[>"]', content)
         own_stem = path.stem.lstrip("I")  # MyCmd.cpp / IMyCmd.h → MyCmd
@@ -451,20 +473,45 @@ class CodeVerifier:
             # Local project headers (own class, same-module) are OK
             if basename == path.stem or basename == own_stem or basename == f"I{own_stem}":
                 continue
-            if registry is None:
-                continue  # no whitelist available — legacy silent behavior
             # Only police CAA-like headers; user custom headers pass
-            if not registry.is_caa_like(basename):
+            if registry and not registry.is_caa_like(basename):
+                continue
+            if registry is None:
+                # Without registry, do a basic CAT-prefix check
+                if not basename.startswith("CAT"):
+                    continue
+
+            # Layer 1: header_map (authoritative — real headers from CATIA install)
+            if _hm is not None:
+                if _hm.lookup(basename) is not None:
+                    continue  # header exists in CATIA installation
+                # Not in header_map → fabricated or typo
+                suggestions = self._hm_suggest(_hm, basename)
+                hint = f" Did you mean: {', '.join(suggestions)}?" if suggestions else \
+                       " This header does not exist in the CATIA installation."
+                self._error("include", str(path), 0,
+                            f"Fabricated CAA header '{inc}' (not found in CATIA installation).{hint}",
+                            "Check CAADoc for the correct header name, or use the type name "
+                            "to find the header (e.g. type CATListValXxx_var → CATLISTV_Xxx.h)")
+                continue
+
+            # Layer 2: knowledge whitelist fallback (when header_map unavailable)
+            if registry is None:
                 continue
             if registry.is_known_header(basename):
                 continue
-            # CAA-like but not whitelisted → suspect (fabricated or typo)
             suggestions = registry.suggest(basename)
             hint = f" Did you mean: {', '.join(suggestions)}?" if suggestions else \
                    " Check CAADoc — this API may not exist."
             self._warn("include", str(path), 0,
                        f"Unknown CAA header '{inc}' (not in knowledge whitelist).{hint}",
                        "Verify the API name against capabilities/*.md or CAADoc")
+
+    @staticmethod
+    def _hm_suggest(hm, basename: str, n: int = 3) -> list:
+        """Find closest real headers from header_map for a suspect name."""
+        from difflib import get_close_matches
+        return get_close_matches(basename, sorted(hm._map.keys()), n=n, cutoff=0.70)
 
     # ─── Issue recording ────────────────────────────────────────
 

@@ -132,6 +132,9 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 | fp.dialog_null_parent | knowledge/failure_patterns/fp_dialog_null_parent.md | Dialog 无父窗口导致不可见 |
 | fp.toolbar_setaccesschild_overwrite | knowledge/failure_patterns/fp_toolbar_setaccesschild_overwrite.md | 多命令挂同一工具栏只最后一个可点击 |
 | fp.dialog_cancel_not_desactivate | knowledge/failure_patterns/fp_dialog_cancel_not_desactivate.md | 对话框关闭无反应（Cancel 与 Desactivate 混淆） |
+| fp.paste_cross_doc_catpathelement | knowledge/failure_patterns/fp_paste_cross_doc_catpathelement.md | 跨文档 Paste 传 CATPathElement targets 崩溃 |
+| fp.var_forward_decl | knowledge/failure_patterns/fp_var_forward_decl.md | _var 智能指针类型不能前向声明 |
+| fp.catlistv_header_naming | knowledge/failure_patterns/fp_catlistv_header_naming.md | CATListVal 类型名 ≠ 头文件名（CATLISTV_Xxx.h） |
 
 ### Knowledge 索引
 

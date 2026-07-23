@@ -80,6 +80,7 @@ CATIAlias_var spAlias = spUdfFeature;
 spAlias->SetAlias("MountingBoss");
 
 // Select the components to include
+// 注意：CATListValCATBaseUnknown_var 的头文件是 CATLISTV_CATBaseUnknown.h（类型名 ≠ 头文件名）
 CATListValCATBaseUnknown_var* pComponents = new CATLISTV(CATBaseUnknown_var);
 pComponents->Append(pPadFeature);
 pComponents->Append(pFilletFeature);

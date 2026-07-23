@@ -288,11 +288,11 @@ issues = v.verify_file("src/WlTestCmd.cpp", '''
 #include "CATIUpdate.h"
 CATCreateClass(WlTestCmd);
 ''')
-unknown = [i for i in issues if "Unknown CAA header" in i.message]
+unknown = [i for i in issues if "CAA header" in i.message and ("Unknown" in i.message or "Fabricated" in i.message)]
 check("fabricated include flagged", len(unknown) == 1,
       f"{len(unknown)} flagged")
 check("flag is CATIUpdate.h", any("CATIUpdate" in i.message for i in unknown))
-check("suggestion offered", any("Did you mean" in i.message for i in unknown))
+check("suggestion offered", any("Did you mean" in i.message or "not exist" in i.message.lower() for i in unknown))
 
 # Local + whitelisted includes must NOT be flagged
 v2 = CodeVerifier()
@@ -302,7 +302,7 @@ issues2 = v2.verify_file("src/WlLocalCmd.cpp", '''
 #include "CATCSO.h"
 CATCreateClass(WlLocalCmd);
 ''')
-bad = [i for i in issues2 if "Unknown CAA header" in i.message]
+bad = [i for i in issues2 if "CAA header" in i.message and ("Unknown" in i.message or "Fabricated" in i.message)]
 check("local + whitelisted includes pass", len(bad) == 0, f"{len(bad)} flagged")
 
 # Kernel develop → knowledge_refs traceability

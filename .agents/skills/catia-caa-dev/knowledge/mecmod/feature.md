@@ -29,6 +29,8 @@ CATISpecObject_var pRoot = pPart;
 ### 遍历子 Feature
 
 ```cpp
+#include "CATLISTV_CATBaseUnknown.h"  // CATListValCATBaseUnknown_var 的头文件（类型名 ≠ 头文件名）
+
 CATISpecObject_var pRoot = ...;
 
 // CATISpecObject 没有 GetChildren，需 QueryInterface CATINavigateObject

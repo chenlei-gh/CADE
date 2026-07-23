@@ -59,6 +59,8 @@ piDocRootsOnDoc->Release();
 ### 遍历子组件
 
 ```cpp
+#include "CATLISTV_CATBaseUnknown.h"  // CATListValCATBaseUnknown_var 的头文件（注意命名：类型名 ≠ 头文件名）
+
 CATIProduct_var pRoot = ...;
 // GetChildren() 是直接返回值，不是输出参数；
 // 返回类型是 CATListValCATBaseUnknown_var*，需要逐个 cast 到 CATIProduct_var

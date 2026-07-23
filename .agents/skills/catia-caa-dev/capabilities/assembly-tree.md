@@ -57,6 +57,8 @@ Assembly tree traversal is the fundamental capability for walking the CATIA prod
 ### 4.1 Root-to-Leaf Recursive Traversal
 
 ```cpp
+#include "CATLISTV_CATBaseUnknown.h"  // 注意：类型名 CATListValCATBaseUnknown_var 的头文件是 CATLISTV_CATBaseUnknown.h
+
 void TraverseProduct(CATIProduct_var pProduct, int depth) {
     CATUnicodeString partNumber = pProduct->GetPartNumber();
     CATUnicodeString instance;
