@@ -28,7 +28,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # ─── Official CATIA icon style (sampled from B28 win_b64 resources) ───
 CATIA_BG = (192, 192, 192)        # dominant official background gray
 CATIA_INK = (24, 16, 82)          # dominant official dark-navy outline
-CACHE_VER = "v4"                  # bump when render style changes
+CACHE_VER = "v5"                  # bump when render style changes (v5: 奶油黄主色)
 
 # ─── Domain → Icon ───────────────────────────────────────────────
 DOMAIN_MAP = {
@@ -56,46 +56,71 @@ DOMAIN_MAP = {
 }
 
 # ─── Domain → Color ───────────────────────────────────────────────
-# CATIA classic palette (sampled from B28 win_b64 official icons)
-_CR = (155, 0, 0)      # classic dark red   — machining
-_BL = (10, 0, 255)     # official blue      — assembly
-_TL = (0, 157, 167)    # official teal      — modeling (PartDesign teal)
-_GN = (0, 150, 0)      # classic green      — measurement
-_PU = (128, 0, 128)    # classic purple     — interaction (constraint violet)
-_YL = (255, 200, 0)    # classic amber      — file/catalog
-_MG = (210, 0, 210)    # classic magenta    — test/dev
+# CATIA classic palette — 2026-07 重新从 B28 主流工具图标实证采样
+# （I_Pad/I_Pocket/I_Hole/I_Assemble/I_Split/I_Rotate 等 22x22 图标）。
+# 关键发现：主流建模/装配工具图标的主体色**不是按域分色**，而是统一的
+# 奶油黄 (255,255,150) 主体 + 深蓝轮廓 (24,16,82) + 青蓝系辅助。
+# 之前的 _CR/_BL/_TL/_GN/_PU 高饱和"域色"是从冷门工具（ABQ/Mold）误采的，
+# 与主流工具风格不一致，已全部修正。
+_CREAM = (255, 255, 150)  # 奶油黄主体 —— 主流建模/装配图标的主导色
+_TEAL  = (59, 159, 164)   # 柔和青 —— Fillet/Shell 等的辅助面
+_SKY   = (91, 169, 208)   # 柔蓝 —— Chamfer 等的辅助面
+_CYAN  = (75, 230, 255)   # 亮青 —— Constraint/ThickSurface 的辅助高亮
+_GN    = (0, 150, 0)      # 绿 —— measure/check 语义保留（官方 AnalysisMeasure 也有绿色元素）
+_YL    = (255, 238, 135)  # 浅黄 —— 文件/保存类
+_PU    = (128, 0, 128)    # 紫 —— 交互/设置类（低频，保留）
+_MG    = (210, 0, 210)    # 品红 —— test/dev 语义
+_OR    = (255, 100, 0)    # 橙 —— flame 等特殊语义
+
 COLOR_MAP: Dict[str, Tuple[int,int,int]] = {
-    "hole":_CR,"pocket":_CR,"contour":_CR,
-    "mill":_CR,"drill":_CR,"machine":_CR,
-    "cog":_CR,"gear":_CR,
-    "assemble":_BL,"part":_BL,"product":_BL,
-    "component":_BL,"cube":_BL,"constrain":_BL,
-    "pad":_TL,"extrude":_TL,"revolve":_TL,
-    "fillet":_TL,"chamfer":_TL,"sketch":_TL,
-    "surface":_TL,"wireframe":_TL,"point":_TL,
-    "line":_TL,"curve":_TL,"split":_TL,
-    "trim":_TL,"join":_TL,"transform":_TL,
-    "measure":_GN,"distance":_GN,"angle":_GN,
-    "analyze":_GN,"check":_GN,"verify":_GN,
-    "report":_GN,"statistic":_GN,
-    "select":_PU,"pick":_PU,"dialog":_PU,
-    "setting":_PU,"config":_PU,"configure":_PU,
-    "option":_PU,"view":_PU,"zoom":_PU,
-    "pan":_PU,"save":_YL,"open":_YL,
-    "export":_YL,"import":_YL,"file":_YL,
-    "catalog":_YL,"database":_YL,"search":_YL,
-    "filter":_YL,"test":_MG,"test_tool":_MG,
-    "dev":_MG,
-    "mirror":_TL,"symmetry":_TL,"plane":_TL,"reference":_TL,
-    "layer":_PU,"print":_YL,"pattern":_TL,"array":_TL,
-    "sweep":_TL,"loft":_TL,"shell":_TL,"draft":_TL,
-    "helix":_TL,"spring":_TL,"thread":_CR,"boolean":_TL,
-    "axis":_TL,"rotate":_TL,"explode":_BL,"material":_GN,
-    "dimension":_GN,
-    "heart":_CR,"lock":_YL,"plus":_GN,
-    "lightning":_YL,"flame":(255,100,0),"trophy":_YL,
-    "pin":_CR,"forward":_GN,"target":(255,0,0),
-    "chat":_PU,"shield":_BL,
+    # 建模类：主体奶油黄（与 I_Pad/I_Pocket/I_Hole/I_Split/I_Rotate 一致）
+    "hole":_CREAM,"pocket":_CREAM,"pad":_CREAM,"extrude":_CREAM,
+    "revolve":_CREAM,"split":_CREAM,"trim":_CREAM,"rotate":_CREAM,
+    "sketch":_CREAM,"point":_CREAM,"line":_CREAM,"curve":_CREAM,
+    "plane":_CREAM,"axis":_CREAM,"mirror":_CREAM,"symmetry":_CREAM,
+    "pattern":_CREAM,"array":_CREAM,"sweep":_CREAM,"loft":_CREAM,
+    "shell":_CREAM,"draft":_CREAM,"boolean":_CREAM,"transform":_CREAM,
+    "join":_CREAM,"surface":_CREAM,"wireframe":_CREAM,"reference":_CREAM,
+    "helix":_CREAM,"spring":_CREAM,"box":_CREAM,"contour":_CREAM,
+    # 圆角/倒角类：青/蓝辅助（与 I_Fillet/I_Chamfer 一致）
+    "fillet":_TEAL,"chamfer":_SKY,
+    # 装配/约束类：主体奶油黄 + 约束可用亮青高亮（与 I_Assemble/I_*Constraint 一致）
+    "assemble":_CREAM,"part":_CREAM,"product":_CREAM,"component":_CREAM,
+    "cube":_CREAM,"explode":_CREAM,"package":_CREAM,
+    "constrain":_CYAN,"link":_CYAN,
+    # 加工/齿轮类：奶油黄（官方 AssyPrtHOLE 等也是奶油黄，非深红）
+    "mill":_CREAM,"drill":_CREAM,"machine":_CREAM,"cog":_CREAM,
+    "gear":_CREAM,"thread":_CREAM,"cut":_CREAM,
+    # 测量/分析类：绿（语义色，官方 AnalysisMeasure 含绿色元素）
+    "measure":_GN,"distance":_GN,"angle":_GN,"analyze":_GN,
+    "check":_GN,"verify":_GN,"report":_GN,"statistic":_GN,
+    "dimension":_GN,"material":_GN,"chart":_GN,
+    # 交互/设置类：紫（低频）
+    "select":_PU,"pick":_PU,"dialog":_PU,"setting":_PU,
+    "config":_PU,"configure":_PU,"option":_PU,"view":_PU,
+    "zoom":_PU,"pan":_PU,"cursor":_PU,"window":_PU,
+    "eye":_PU,"magnify":_PU,"hand":_PU,"layer":_PU,
+    "chevron":_PU,"chat":_PU,
+    # 文件/保存/导入导出类：浅黄
+    "save":_YL,"open":_YL,"export":_YL,"import":_YL,"file":_YL,
+    "catalog":_YL,"database":_YL,"search":_YL,"filter":_YL,
+    "print":_YL,"disk":_YL,"folder":_YL,"doc":_YL,"book":_YL,
+    "db":_YL,"funnel":_YL,
+    # 测试/开发类：品红（语义色）
+    "test":_MG,"test_tool":_MG,"dev":_MG,"play":_MG,"code":_MG,
+    # 特殊语义图标
+    "heart":(155,0,0),"lock":_YL,"plus":_GN,"lightning":_YL,
+    "flame":_OR,"trophy":_YL,"pin":(155,0,0),"forward":_GN,
+    "target":(255,0,0),"shield":_SKY,"star":_YL,"merge":_CREAM,
+    "move":_CREAM,"ruler":_GN,"arc":_TEAL,"circle":_CREAM,
+    "pencil":_CREAM,"grid":_CREAM,"wave":_CREAM,"arrow_up":_CREAM,
+    "settings":_PU,
+    # 命名/编辑/更新类（常用工具动词）
+    "rename":_CREAM,"edit":_CREAM,"update":_CREAM,"modify":_CREAM,
+    "replace":_CREAM,"delete":_CREAM,"remove":_CREAM,"copy":_CREAM,
+    "paste":_CREAM,"undo":_CREAM,"redo":_CREAM,"refresh":_CREAM,
+    "apply":_CREAM,"ok":_CREAM,"cancel":_CREAM,"reset":_CREAM,
+    "batch":_CREAM,"auto":_CREAM,"wizard":_CREAM,"preview":_CREAM,
 }
 
 
