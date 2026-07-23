@@ -540,9 +540,11 @@ result = delete_command(
 - **Catalog** - 命令注册
 - **Dictionary** - 组件注册
 - **IdentityCard** - Framework 信息
-- **NLS** - 国际化资源
+- **NLS** - 国际化资源（**中英双语自动生成**：英文 `msgcatalog/Xxx.CATNls` + 中文 `msgcatalog/Simplified_Chinese/Xxx.CATNls`，创建命令/对话框时无需手动提示加语言）
 - **Icon** - 图标资源
 - **Imakefile** - 编译配置
+
+> ⚠️ **NLS 三规则**（B28 实证）：catalog 文件名 = 类名（对话框）/资源名（命令头）；控件 key = 对象名路径（`FrameId.LabelId.Title`）；多语言用 `Simplified_Chinese/` 子目录而非 `_Chinese` 文件名后缀。对话框 .cpp 里**不要硬编码 SetTitle**，文本全部走 .CATNls 零代码解析。详见 `knowledge/ui/dialog_dataflow.md → NLS 国际化`。
 
 ---
 

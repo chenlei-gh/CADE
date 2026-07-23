@@ -155,6 +155,28 @@ def _result(cs: ChangeSet) -> Dict:
     return {"status": "pending", "message": cs.description, "changeset": cs.to_dict()}
 
 
+def _queue_nls(cs: ChangeSet, path: Path, content: str, marker: str):
+    """Queue NLS content for `path` without losing previously queued blocks.
+
+    ChangeSet.add_create is a plain dict assignment (last write wins), so two
+    add_create calls on a not-yet-existing file silently drop the first block
+    (this used to eat the command-header Title/ShortHelp entries whenever the
+    toolbar/addin NLS was queued after it). This helper appends to whatever is
+    already queued, and only skips when `marker` is already present.
+    """
+    key = str(path)
+    if path.exists():
+        old = path.read_text(encoding="utf-8", errors="replace")
+        if marker not in old:
+            cs.add_modify(path, old.rstrip() + "\n" + content)
+    elif key in cs.created:
+        queued = cs.created[key]
+        if marker not in queued:
+            cs.add_create(path, queued.rstrip() + "\n" + content)
+    else:
+        cs.add_create(path, content)
+
+
 def _apply_and_return(cs: ChangeSet, dry_run: bool = False) -> Dict:
     result = cs.apply(dry_run=dry_run)
     result["preview"] = cs.preview()
@@ -706,12 +728,34 @@ def create_command(
                     f'{dialog_name}.Title = "{dialog_name}";\n'
                     f'{dialog_name}Id.Title = "{dialog_name}";\n'
                 )
-            if nls_file.exists():
-                old = nls_file.read_text(encoding="utf-8", errors="replace")
-                if name not in old:
-                    cs.add_modify(nls_file, old.rstrip() + "\n" + nls_content)
-            else:
-                cs.add_create(nls_file, nls_content)
+            _queue_nls(cs, nls_file, nls_content, name)
+
+        # 中文 NLS — 放在 Simplified_Chinese/ 子目录（文件名与英文版相同，
+        # CATIA 按运行语言自动到语言子目录查找；平铺的 *_Chinese.CATNls 不会被加载）。
+        # 标题沿用用户传入的 tooltip（中文用户通常直接传中文）；固定串给中文默认。
+        tpl_nls_zh = ctx.tpl("command", "resources", "Simplified_Chinese", "CommandFramework.CATNls")
+        nls_file_zh = (
+            fw.path / "CNext" / "resources" / "msgcatalog"
+            / "Simplified_Chinese" / f"{fw_base}.CATNls"
+        )
+        if tpl_nls_zh.exists():
+            nls_title = tooltip if tooltip else name
+            nls_content_zh = render_template(
+                tpl_nls_zh.read_text(encoding="utf-8", errors="replace"),
+                {
+                    "CommandClassName": name,
+                    "CommandHeaderName": name,
+                    "CommandTitle": nls_title,
+                    "FrameworkName": fw_base,
+                },
+            )
+            if dialog_name:
+                nls_content_zh += (
+                    f'\n// 对话框窗口标题\n'
+                    f'{dialog_name}.Title = "{dialog_name}";\n'
+                    f'{dialog_name}Id.Title = "{dialog_name}";\n'
+                )
+            _queue_nls(cs, nls_file_zh, nls_content_zh, name)
 
         # CATRsc — in msgcatalog/ (where CNEXT reads it via CATMsgCatalogPath)
         # Named after header class, format: HeaderClass.HeaderID.Icon.Normal
@@ -762,12 +806,15 @@ def create_command(
             f"{addin_name}.Tip    = \"{tip}\";\n"
             f"{module_base}Tlb.Title  = \"{module_base} Commands\";\n"
         )
-        if nls_file.exists():
-            old = nls_file.read_text(encoding="utf-8", errors="replace")
-            if addin_name not in old:
-                cs.add_modify(nls_file, old.rstrip() + "\n" + addin_nls)
-        else:
-            cs.add_create(nls_file, addin_nls)
+        _queue_nls(cs, nls_file, addin_nls, addin_name)
+
+        # Toolbar + addin 中文 NLS（与英文块镜像，固定串用中文）
+        addin_nls_zh = (
+            f'{addin_name}.Title  = "{name}";\n'
+            f'{addin_name}.Tip    = "{tip}";\n'
+            f'{module_base}Tlb.Title  = "{module_base} 命令";\n'
+        )
+        _queue_nls(cs, nls_file_zh, addin_nls_zh, addin_name)
 
     cs.metadata = {
         "command": name,
@@ -851,6 +898,37 @@ def create_dialog(
             mod_name=mod.name,
         ),
     )
+
+    # 每对话框 NLS catalog（en + zh）——catalog 文件名 = 对话框 C++ 类名
+    #（CATDlgDialog 默认资源名 = 类名），key = 控件对象名路径。
+    # 中文版放 Simplified_Chinese/ 子目录，文件名与英文版相同。
+    fw_path = mod.framework.path if mod.framework else None
+    if fw_path:
+        msg_dir = fw_path / "CNext" / "resources" / "msgcatalog"
+        tpl_nls_en = tpl / "resources" / "DialogClass.CATNls"
+        tpl_nls_zh = tpl / "resources" / "Simplified_Chinese" / "DialogClass.CATNls"
+        if tpl_nls_en.exists():
+            cs.add_create_file(
+                msg_dir / f"{name}.CATNls",
+                tpl_nls_en,
+                _r(
+                    name,
+                    fw_name=mod.framework.name,
+                    mod_name=mod.name,
+                    DialogClassName=name,
+                ),
+            )
+        if tpl_nls_zh.exists():
+            cs.add_create_file(
+                msg_dir / "Simplified_Chinese" / f"{name}.CATNls",
+                tpl_nls_zh,
+                _r(
+                    name,
+                    fw_name=mod.framework.name,
+                    mod_name=mod.name,
+                    DialogClassName=name,
+                ),
+            )
 
     cs.metadata = {"dialog": name, "module": module}
     return _result(cs)

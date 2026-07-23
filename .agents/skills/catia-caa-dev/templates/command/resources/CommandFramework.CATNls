@@ -1,12 +1,12 @@
 // COPYRIGHT DASSAULT SYSTEMES 2026
-// Resource file for <CommandClassName> (English)
+// Resource file for <CommandClassName> (English / default)
 // File: <FrameworkName>.CATNls
 
 // Command title (shown in toolbar tooltip)
-<CommandHeaderName>.Title = "<Command Title>";
-<CommandHeaderName>.ShortHelp = "<Short help text>";
-<CommandHeaderName>.LongHelp = "<Detailed help text - shown in status bar>";
-<CommandHeaderName>.Help = "<Help topic ID>";
+<CommandHeaderName>.Title = "<CommandTitle>";
+<CommandHeaderName>.ShortHelp = "Execute <CommandClassName>";
+<CommandHeaderName>.LongHelp = "Execute <CommandClassName> command.";
+<CommandHeaderName>.Help = "<CommandClassName>";
 
 // Command prompts (shown during interaction)
 <CommandClassName>.State1.Prompt = "Select first element";

@@ -41,7 +41,7 @@ LINK_WITH += \
 # These define toolbar layout, icons, and localized strings
 BUILT_OBJECT_ASSOCIATED_FILES = \
     CNext/resources/msgcatalog/{{PREFIX}}Workbench.CATNls \
-    CNext/resources/msgcatalog/{{PREFIX}}Workbench_Chinese.CATNls \
+    CNext/resources/msgcatalog/Simplified_Chinese/{{PREFIX}}Workbench.CATNls \
     CNext/resources/msgcatalog/{{PREFIX}}Workbench.CATRsc
 
 # Icon resources (if icons are provided)

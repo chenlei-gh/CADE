@@ -1,12 +1,14 @@
 // COPYRIGHT DASSAULT SYSTEMES 2026
-// Resource file for <CommandClassName> (Chinese)
-// File: <FrameworkName>.CATNls
+// Resource file for <CommandClassName> (Simplified Chinese)
+// File: Simplified_Chinese/<FrameworkName>.CATNls
+//
+// ⚠️ 文件名与英文版相同，仅所在语言子目录不同（CATIA 按运行语言自动查找）。
 
 // 命令标题（工具栏提示）
-<CommandHeaderName>.Title = "<命令标题>";
-<CommandHeaderName>.ShortHelp = "<简短帮助>";
-<CommandHeaderName>.LongHelp = "<详细帮助 - 显示在状态栏>";
-<CommandHeaderName>.Help = "<帮助主题ID>";
+<CommandHeaderName>.Title = "<CommandTitle>";
+<CommandHeaderName>.ShortHelp = "执行 <CommandClassName>";
+<CommandHeaderName>.LongHelp = "执行 <CommandClassName> 命令。";
+<CommandHeaderName>.Help = "<CommandClassName>";
 
 // 命令提示（交互过程中显示）
 <CommandClassName>.State1.Prompt = "选择第一个元素";

@@ -429,10 +429,15 @@ class WorkspaceAnalyzer:
                 break
 
         # NLS files
+        # zh 判定：官方语言子目录（Simplified_Chinese 等）或旧的 _Chinese 后缀
+        _zh_dirs = {"simplified_chinese", "chinese"}
         for f in fw.path.rglob("*.CATNls"):
+            parent = f.parent.name.lower()
             lang = (
                 "zh"
-                if "chinese" in f.stem.lower() or f.stem.endswith("_Chinese")
+                if parent in _zh_dirs
+                or "chinese" in f.stem.lower()
+                or f.stem.endswith("_Chinese")
                 else "en"
             )
             res = Resource(

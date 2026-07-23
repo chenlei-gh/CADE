@@ -1,0 +1,14 @@
+// COPYRIGHT DASSAULT SYSTEMES 2026
+// Resource file for <DialogClassName> (English / default)
+// File: <DialogClassName>.CATNls
+//
+// ⚠️ catalog 文件名必须等于对话框 C++ 类名（CATDlgDialog 默认资源名 = 类名）。
+// key = 控件对象名路径 + 属性（见 CAAAfrBoundingElementCmd 官方样例）。
+// 对应 DialogClass.cpp 中的控件对象名：FrameId / LabelId / EditorId。
+
+// 对话框窗口标题与帮助
+Title = "<DialogClassName>";
+Help  = "<DialogClassName> dialog";
+
+// 控件标题（路径 = 父Frame对象名.控件对象名.属性）
+FrameId.LabelId.Title = "Value:";
