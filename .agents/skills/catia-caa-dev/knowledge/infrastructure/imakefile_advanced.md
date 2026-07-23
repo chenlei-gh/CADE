@@ -61,10 +61,10 @@ LOCAL_LIBS += CATVisualization
 LOCAL_LIBS += CATDialogEngine
 
 # 特征
-LOCAL_LIBS += CATMecMod Interfaces
+LOCAL_LIBS += CATMecModInterfaces
 
 # 几何
-LOCAL_LIBS += CATTessellation CATTopology
+LOCAL_LIBS += CATTessellation CATTopologicalOperators
 
 # 选择
 LOCAL_LIBS += CATInteractiveInterfaces
@@ -74,12 +74,12 @@ LOCAL_LIBS += CATInteractiveInterfaces
 
 | 你的功能 | 需要的库 |
 |---------|---------|
-| 创建 Feature | `CATMecMod Interfaces` |
+| 创建 Feature | `CATMecModInterfaces` |
 | 创建 Dialog | `CATDialogEngine` |
-| 几何计算 | `CATMathematics CATTopology` |
+| 几何计算 | `CATMathematics CATTopologicalOperators` |
 | 选择对象 | `CATInteractiveInterfaces` |
-| 文件 I/O | `CATSysMultiCAA` |
-| 批处理 | `CATBatchInfra` |
+| 文件 I/O | `CATSysFile` |
+| 批处理 | `CATBatchUtils` |
 
 ## 预编译宏
 
@@ -139,6 +139,6 @@ PREREQ_COMPONENTS += \
 - [ ] 每个 `src/*Header.cpp`（命令注册）也要加到 `SOURCES`
 - [ ] IDL 接口用 `BUILT_SOURCES` 不是 `SOURCES`
 - [ ] 用到了 Dialog → 加 `CATDialogEngine`
-- [ ] 用到了 Feature → 加 `CATMecMod Interfaces`
+- [ ] 用到了 Feature → 加 `CATMecModInterfaces`
 - [ ] Framework 的 `MODULES` 列表和实际模块目录一致
 - [ ] 模块间有依赖 → 加 `PREREQ_COMPONENTS`

@@ -4,7 +4,7 @@ title: Geometry Analyzer
 category: pattern
 domain: analyzer
 keywords: [analyzer, geometry, check, inspect, traversal, visitor]
-apis: [CATISpecObject, CATIPrtPart, CATIHole, CATIFillet, CATIChamfer]
+apis: [CATISpecObject, CATIPrtPart, CATINewHole, CATIEdgeFillet, CATIChamfer]
 requires: [mecmod.feature, part.fillet]
 patterns: [block.visitor, analyzer.rule]
 examples: [geo.fillet_checker]
@@ -73,13 +73,15 @@ public:
 
 private:
     void Traverse(CATISpecObject_var pParent) {
-        CATListValCATISpecObject_var children;
-        pParent->GetChildren(children);
-        for (int i = 1; i <= children.Size(); i++) {
-            CATISpecObject_var child = children[i];
+        CATListValCATISpecObject_var* pChildren = pParent->ListComponents();
+        if (NULL == pChildren) return;
+        int nChildren = pChildren->Size();
+        for (int i = 1; i <= nChildren; i++) {
+            CATISpecObject_var child = (*pChildren)[i];
             CheckFeature(child);
             Traverse(child);
         }
+        delete pChildren;
     }
 
     void CheckFeature(CATISpecObject_var pFeature) {
@@ -99,15 +101,28 @@ private:
 ```cpp
 void Dialog::OnListDoubleClick(int line) {
     CATISpecObject_var pFeature = m_results[line].feature;
-    CATPathElement path(pFeature);
-    CATFrmEditor::GetCurrentEditor()->GetSelection()->SelectElement(path);
-    CATFrmEditor::GetCurrentEditor()->GetISO()->ReframeOnObject(path);
+
+    // 将特征加入 ISO 高亮集
+    CATFrmEditor* pEditor = CATFrmEditor::GetCurrentEditor();
+    if (NULL == pEditor) return;
+    CATISO* pISO = pEditor->GetISO();
+    if (NULL != pISO) {
+        pISO->Empty();
+        pISO->AddElement(pFeature);
+    }
+
+    // 通过 Viewer 定位
+    CAT3DViewer* pViewer = ...; // 从当前 CATFrmWindow 获取
+    if (NULL != pViewer) {
+        CAT3DBoundingSphere bs = pViewer->GetGlobalBoundingSphere();
+        pViewer->ReframeOn(bs);
+    }
 }
 ```
 
 ## 关键点
 
 1. **递归遍历**是核心 —— 特征树可能有多层嵌套（如 Body、Geometrical Set）
-2. **按类型过滤**使用 `IsATypeOf("TypeName")`
+2. **按类型过滤**使用 `IsSubTypeOf("TypeName")`
 3. **结果收集**应包含完整路径，方便定位
-4. **双击定位**必须同时做 Select + Reframe
+4. **双击定位**必须同时做 Highlight（ISO AddElement）+ Reframe（Viewer ReframeOn）

@@ -3,7 +3,7 @@ id: mecmod.feature
 title: Feature Model
 category: knowledge
 domain: mecmod
-keywords: [feature, spec object, CATISpecObject, feature tree, update, parent, children, IsATypeOf]
+keywords: [feature, spec object, CATISpecObject, feature tree, update, parent, children, IsSubTypeOf]
 apis: [CATISpecObject, CATIPrtPart, CATIPrtContainer, CATISpecAccess]
 requires: []
 patterns: [block.visitor, analyzer.geometry]
@@ -30,12 +30,17 @@ CATISpecObject_var pRoot = pPart;
 
 ```cpp
 CATISpecObject_var pRoot = ...;
-CATListValCATISpecObject_var children;
-pRoot->GetChildren(children);
 
-for (int i = 1; i <= children.Size(); i++) {
-    CATISpecObject_var child = children[i];
-    // 处理子 Feature...
+// CATISpecObject 没有 GetChildren，需 QueryInterface CATINavigateObject
+CATINavigateObject_var pNav = pRoot;
+CATListValCATBaseUnknown_var* children = pNav->GetChildren();  // 返回裸指针，调用方负责释放
+
+if (children) {
+    for (int i = 1; i <= children->Size(); i++) {
+        CATISpecObject_var child = (*children)[i];
+        // 处理子 Feature...
+    }
+    delete children;  // GetChildren 返回新分配的列表
 }
 ```
 
@@ -43,7 +48,7 @@ for (int i = 1; i <= children.Size(); i++) {
 
 ```cpp
 CATISpecObject_var pFeature = ...;
-CATISpecObject_var pParent = pFeature->GetParent();
+CATISpecObject* pParent = pFeature->GetFather();   // CATISpecObject::GetFather() 返回裸指针
 ```
 
 ### 获取 Feature 名称
@@ -62,7 +67,7 @@ CATUnicodeString type = pFeature->GetType();
 ### 判断 Feature 类型
 
 ```cpp
-if (pFeature->IsATypeOf("EdgeFillet")) {
+if (pFeature->IsSubTypeOf(CATUnicodeString("EdgeFillet"))) {
     // 这是圆角...
 }
 ```
@@ -71,17 +76,19 @@ if (pFeature->IsATypeOf("EdgeFillet")) {
 
 ```cpp
 void TraverseFeature(CATISpecObject_var pRoot) {
-    CATListValCATISpecObject_var children;
-    pRoot->GetChildren(children);
+    CATINavigateObject_var pNav = pRoot;
+    CATListValCATBaseUnknown_var* children = pNav->GetChildren();
+    if (!children) return;
 
-    for (int i = 1; i <= children.Size(); i++) {
-        CATISpecObject_var child = children[i];
+    for (int i = 1; i <= children->Size(); i++) {
+        CATISpecObject_var child = (*children)[i];
         // 处理当前 Feature
         ProcessFeature(child);
 
         // 递归子节点
         TraverseFeature(child);
     }
+    delete children;
 }
 ```
 
@@ -110,8 +117,8 @@ void TraverseFeature(CATISpecObject_var pRoot) {
 | 场景 | 方式 |
 |------|------|
 | 获取 Part 根 | `CATIPrtPart` → `CATISpecObject` |
-| 遍历子节点 | `GetChildren()` |
-| 获取父节点 | `GetParent()` |
-| 判断类型 | `IsATypeOf("TypeName")` |
+| 遍历子节点 | `CATINavigateObject::GetChildren()` |
+| 获取父节点 | `CATISpecObject::GetFather()` |
+| 判断类型 | `IsSubTypeOf("TypeName")` |
 | 获取名称 | `GetName()` |
-| 获取 Body | `GetBody()` → `CATBody` |
+| 获取 Body | `CATIMfBRep::GetBody()` → `CATBody` |

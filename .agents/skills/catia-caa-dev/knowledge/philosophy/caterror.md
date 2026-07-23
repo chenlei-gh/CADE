@@ -58,9 +58,9 @@ HRESULT SafeUpdate(CATISpecObject *iFeature) {
     CHECK_ARGS(iFeature);
 
     CATTry {
-        CATIMechanicalUpdate_var spUpdate = iFeature;
-        if (NULL_var != spUpdate) {
-            spUpdate->Update();
+        CATISpecObject_var spFeature = iFeature;
+        if (NULL_var != spFeature) {
+            spFeature->Update();
         }
     }
     CATCatch(CATError, e) {

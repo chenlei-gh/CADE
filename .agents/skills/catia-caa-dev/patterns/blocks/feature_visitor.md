@@ -20,11 +20,12 @@ tags: [block, traversal, recursion]
 
 ```cpp
 void TraverseFeatures(CATISpecObject_var pParent) {
-    CATListValCATISpecObject_var children;
-    pParent->GetChildren(children);
+    CATListValCATISpecObject_var* pChildren = pParent->ListComponents();
+    if (NULL == pChildren) return;
 
-    for (int i = 1; i <= children.Size(); i++) {
-        CATISpecObject_var child = children[i];
+    int nChildren = pChildren->Size();
+    for (int i = 1; i <= nChildren; i++) {
+        CATISpecObject_var child = (*pChildren)[i];
 
         // 回调：处理当前 Feature
         OnFeature(child);
@@ -32,6 +33,7 @@ void TraverseFeatures(CATISpecObject_var pParent) {
         // 递归子节点
         TraverseFeatures(child);
     }
+    delete pChildren;
 }
 ```
 
@@ -57,30 +59,35 @@ class MyAnalyzer {
 ```cpp
 // 仅遍历叶子节点
 void TraverseLeaves(CATISpecObject_var pParent) {
-    CATListValCATISpecObject_var children;
-    pParent->GetChildren(children);
+    CATListValCATISpecObject_var* pChildren = pParent->ListComponents();
+    if (NULL == pChildren) return;
 
-    if (children.Size() == 0) {
+    int nChildren = pChildren->Size();
+    if (nChildren == 0) {
         OnLeaf(pParent); // 叶子节点
+        delete pChildren;
         return;
     }
 
-    for (int i = 1; i <= children.Size(); i++) {
-        TraverseLeaves(children[i]);
+    for (int i = 1; i <= nChildren; i++) {
+        TraverseLeaves((*pChildren)[i]);
     }
+    delete pChildren;
 }
 
 // 按类型过滤的遍历
 void TraverseByType(CATISpecObject_var pParent, const CATUnicodeString& type) {
-    CATListValCATISpecObject_var children;
-    pParent->GetChildren(children);
+    CATListValCATISpecObject_var* pChildren = pParent->ListComponents();
+    if (NULL == pChildren) return;
 
-    for (int i = 1; i <= children.Size(); i++) {
-        CATISpecObject_var child = children[i];
-        if (child->IsATypeOf(type)) {
+    int nChildren = pChildren->Size();
+    for (int i = 1; i <= nChildren; i++) {
+        CATISpecObject_var child = (*pChildren)[i];
+        if (child->IsSubTypeOf(type)) {
             OnFeature(child); // 仅处理匹配类型
         }
         TraverseByType(child, type);
     }
+    delete pChildren;
 }
 ```

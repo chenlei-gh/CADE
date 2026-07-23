@@ -120,7 +120,7 @@ ATAutoRenameCmd::~ATAutoRenameCmd() {
     
     // 2. 释放 Agent
     if (_pAgent) {
-        _pAgent->RemoveAllElementaryFilters();
+        _pAgent->SetFilter(NULL);
         _pAgent->Release();
         _pAgent = NULL;
     }

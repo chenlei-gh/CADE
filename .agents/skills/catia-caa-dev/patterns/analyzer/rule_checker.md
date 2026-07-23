@@ -81,11 +81,11 @@ public:
     MinRadiusRule(double minR) : m_minRadius(minR) {}
 
     CheckResult Check(CATISpecObject_var pFeature) override {
-        if (!pFeature->IsATypeOf("EdgeFillet")) {
+        if (!pFeature->IsSubTypeOf("EdgeFillet")) {
             return {m_ruleId, true, "N/A", pFeature};
         }
-        CATIFillet_var pFillet = pFeature;
-        double r = pFillet->GetRadius()->Value();
+        CATIEdgeFillet_var pFillet = pFeature;
+        double r = pFillet->GetRadius();
         bool pass = r >= m_minRadius;
         return {
             m_ruleId,

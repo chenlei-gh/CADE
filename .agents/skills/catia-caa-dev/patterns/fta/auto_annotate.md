@@ -54,18 +54,18 @@ public:
         double tolerance;
         CATUnicodeString datumRef;
     };
-    
+
     struct AnnotationReport {
         int totalFeatures;
         int annotatedCount;
         int skippedCount;
         CATListValCATUnicodeString skippedReasons;
     };
-    
+
     HRESULT LoadRules(const CATUnicodeString &iRuleFile);
     HRESULT Execute(CATISpecObject *iPart,
                       AnnotationReport &oReport);
-    
+
 private:
     HRESULT AnnotateHoles(CATISpecObject *iPart, CATITPSView *iView);
     HRESULT AnnotateGaps(CATISpecObject *iPart, CATITPSView *iView);
@@ -79,27 +79,29 @@ private:
 // 自动标注孔特征
 HRESULT ATAutoAnnotation::AnnotateHoles(
     CATISpecObject *iPart, CATITPSView *iView) {
-    
+
     CATListValCATISpecObject holes;
     FindFeaturesByType(iPart, "Hole", holes);
-    
+
     for (int i = 1; i <= holes.Size(); i++) {
         CATISpecObject *pHole = holes[i];
-        
-        // 获取孔的参数
-        CATIHole_var spHole = GetInterface<CATIHole>(pHole);
-        double diameter = spHole->GetDiameter();
-        double depth = spHole->GetDepth();
-        
+
+        // 获取孔的参数 — CATINewHole 是孔的 CAA 接口
+        CATINewHole_var spHole = pHole;
+        double diameter = 0.0;
+        spHole->GetDiameter(diameter);
+
+        // 孔深需要通过 Bottom Limit 或 Thread 获取，此处略
+
         // 标注直径
         CATMathPoint pos = GetAnnotationPosition(pHole);
         CATITPSDimension *pDim = CreateDiameterDim(
             iView, pHole, pos);
-        
+
         // 加公差
         CreateTolerance(iView, pDim,
             diameter + 0.01, diameter - 0.0);
-        
+
         m_report.annotatedCount++;
     }
     return S_OK;
@@ -117,7 +119,7 @@ HRESULT ATAutoAnnotation::AnnotateHoles(
 ## AI 生成规则
 
 - [ ] 标注规则外置为 JSON/CSV 配置文件
-- [ ] 特征遍历用 `IsATypeOf` 检测
+- [ ] 特征遍历用 `IsSubTypeOf` 检测
 - [ ] 每个 Annotate 方法处理一种特征类型
 - [ ] 标注位置自动计算，避免重叠
 - [ ] 输出标注摘要：total / annotated / skipped

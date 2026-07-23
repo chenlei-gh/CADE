@@ -32,7 +32,7 @@ mkmk error: 'CATIPrtContainer_var' was not declared in this scope
 | `CATIPrtContainer` | `CATIPrtContainer.h` |
 | `CATIProduct` | `CATIProduct.h` |
 | `CATIMeasurable` | `CATIMeasurable.h` |
-| `CATIMechanicalUpdate` | `CATIMechanicalUpdate.h` |
+| `CATIUpdateError` | `CATIUpdateError.h` |
 | `CATIVisProperties` | `CATIVisProperties.h` |
 | `CATDlgDialog` | `CATDlgDialog.h` |
 | `CATPathElement` | `CATPathElement.h` |

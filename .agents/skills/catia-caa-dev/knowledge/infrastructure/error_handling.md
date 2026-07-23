@@ -142,8 +142,11 @@ HRESULT ATAutoRenameCmd::BatchRename(CATLISTV(CATISpecObject_var) &iObjects) {
         } else {
             failCount++;
             // 记录错误但不中断整个批量操作
-            CATError("ATAutoRenameCmd", "BatchRename",
-                     CATUnicodeString("Failed on object #") + CATUnicodeString::FromInt(i));
+            CATUnicodeString indexStr;
+            indexStr.BuildFromNum(i);
+            CATUnicodeString msg("Failed on object #");
+            msg.Append(indexStr);
+            CATError("ATAutoRenameCmd", "BatchRename", msg);
         }
     }
     
