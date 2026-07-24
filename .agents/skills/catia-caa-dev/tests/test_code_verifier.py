@@ -65,10 +65,15 @@ ck("no errors for valid file",
 # [4] verify_file — .h missing CATDeclareClass
 # ═══════════════════════════════════════════════════════════════
 print("\n[4] verify_file — .h missing macro")
-issues = v.verify_file("LocalInterfaces/BadDlg.h",
-    'class BadDlg { public: BadDlg(); };\n')
-ck("detects missing CATDeclareClass",
+issues = v.verify_file("LocalInterfaces/BadCmd.h",
+    'class BadCmd { public: BadCmd(); };\n')
+ck("detects missing CATDeclareClass (command class)",
    any("CATDeclareClass" in i.message for i in issues))
+# Dialog/helper classes do NOT need CATDeclareClass — must not be flagged
+issues2 = v.verify_file("LocalInterfaces/BadDlg.h",
+    'class BadDlg { public: BadDlg(); };\n')
+ck("dialog class NOT flagged for missing CATDeclareClass",
+   not any("CATDeclareClass" in i.message for i in issues2))
 
 # ═══════════════════════════════════════════════════════════════
 # [5] verify_file — valid .h

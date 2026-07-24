@@ -293,13 +293,29 @@ class CodeVerifier:
             self._check_includes(path, content)
             return
 
-        # Must have at least one CAA registration macro
-        has_macro = any(re.search(m + r'\s*\(', content) for m in REGISTRATION_MACROS)
-        if not has_macro:
-            self._error("macro", str(path), 0,
-                       f"Missing CAA registration macro in {filename} "
-                       f"(expected one of: {', '.join(REGISTRATION_MACROS)})",
-                       "Add: CATCreateClass(MyClass) or CATImplementClass(...)")
+        # Only CAA object files need registration macros. Helper classes
+        # (Allocator, Collector, Engine, Applicator, Builder, Config, ...)
+        # are plain C++ and must not be forced to register. Interface
+        # implementation files (I-prefixed) use TIE/BOA macros instead.
+        # Heuristic: check files whose names look like commands/addins/
+        # extensions, or any file that already contains a CAA macro.
+        stem = Path(filename).stem
+        if stem.startswith('I'):
+            self._check_includes(path, content)
+            self._check_base_classes(path, content)
+            self._check_method_calls(path, content)
+            return
+        looks_like_caa_object = (
+            stem.endswith(('Cmd', 'Addin', 'Impl', 'Extension', 'Undo'))
+            or any(m in content for m in REGISTRATION_MACROS)
+        )
+        if looks_like_caa_object:
+            has_macro = any(re.search(m + r'\s*\(', content) for m in REGISTRATION_MACROS)
+            if not has_macro:
+                self._error("macro", str(path), 0,
+                           f"Missing CAA registration macro in {filename} "
+                           f"(expected one of: {', '.join(REGISTRATION_MACROS)})",
+                           "Add: CATCreateClass(MyClass) or CATImplementClass(...)")
 
         # Should include its own header
         base = Path(filename).stem
@@ -321,16 +337,22 @@ class CodeVerifier:
         # Check for at least one CAA declaration macro or base class pattern.
         # .h files use DECLARE macros (CATDeclareClass / CATDeclareInterface /
         # CATDeclareHandler), not the .cpp REGISTRATION_MACROS.
-        has_macro = any(re.search(m + r'\s*;?', content)
-                        for m in ('CATDeclareClass', 'CATDeclareInterface',
-                                  'CATDeclareHandler'))
-        has_base = any(b in content for b in ('CATStateCommand', 'CATDlgDialog',
-                                               'CATBaseUnknown', 'CATISpecObject'))
-        if not has_macro and not has_base:
-            self._error("macro", str(path), 0,
-                       f"Missing CATDeclareClass or base class in {filename}",
-                       "Add CATDeclareClass (or inherit from "
-                       "CATStateCommand/CATDlgDialog)")
+        # Only enforced for CAA object headers (Cmd/Addin/Impl/Extension);
+        # helper class headers (Allocator, Config, Types, ...) are plain C++.
+        stem = Path(filename).stem
+        looks_like_caa_object = stem.endswith(
+            ('Cmd', 'Addin', 'Impl', 'Extension', 'Undo'))
+        if looks_like_caa_object:
+            has_macro = any(re.search(m + r'\s*;?', content)
+                            for m in ('CATDeclareClass', 'CATDeclareInterface',
+                                      'CATDeclareHandler'))
+            has_base = any(b in content for b in ('CATStateCommand', 'CATDlgDialog',
+                                                   'CATBaseUnknown', 'CATISpecObject'))
+            if not has_macro and not has_base:
+                self._error("macro", str(path), 0,
+                           f"Missing CATDeclareClass or base class in {filename}",
+                           "Add CATDeclareClass (or inherit from "
+                           "CATStateCommand/CATDlgDialog)")
 
         self._check_includes(path, content)
         self._check_base_classes(path, content)
@@ -374,11 +396,12 @@ class CodeVerifier:
 
     def _check_imakefile_content(self, path: Path, content: str):
         """Check Imakefile.mk completeness"""
-        # Must have SOURCES
+        # SOURCES is optional: CAA Wizard-generated Imakefiles rely on
+        # the mk system's implicit src/*.cpp scan. Downgrade to info.
         if "SOURCES" not in content:
-            self._error("imakefile", str(path), 0,
-                       "Imakefile missing SOURCES directive",
-                       "Add: SOURCES = src/MyCmd.cpp src/MyCmdHeader.cpp")
+            self._info("imakefile", str(path), 0,
+                      "Imakefile has no explicit SOURCES (using implicit scan)",
+                      "Add: SOURCES = src/MyCmd.cpp src/MyCmdHeader.cpp")
 
         # Must have LINK_WITH
         if "LINK_WITH" not in content:
