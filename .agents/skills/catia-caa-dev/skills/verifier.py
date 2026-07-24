@@ -310,6 +310,8 @@ class CodeVerifier:
 
         # Check #include references
         self._check_includes(path, content)
+        self._check_base_classes(path, content)
+        self._check_method_calls(path, content)
 
     def _check_h_content(self, path: Path, content: str):
         """Check a .h declaration file"""
@@ -325,6 +327,7 @@ class CodeVerifier:
                        "Inherit from CATStateCommand/CATDlgDialog or add CATDeclareClass")
 
         self._check_includes(path, content)
+        self._check_base_classes(path, content)
 
     def _check_interface_h_content(self, path: Path, content: str):
         """Check an interface .h file (I-prefixed)"""
@@ -456,12 +459,7 @@ class CodeVerifier:
         except ImportError:
             registry = None
 
-        # Load header_map for authoritative include validation
-        try:
-            from header_map import HeaderMap
-            _hm = HeaderMap.load(self._skill_root) if self._skill_root else None
-        except Exception:
-            _hm = None
+        _hm = self._load_header_map()
 
         includes = re.findall(r'#include\s+[<"]([^>"]+)[>"]', content)
         own_stem = path.stem.lstrip("I")  # MyCmd.cpp / IMyCmd.h → MyCmd
@@ -512,6 +510,119 @@ class CodeVerifier:
         """Find closest real headers from header_map for a suspect name."""
         from difflib import get_close_matches
         return get_close_matches(basename, sorted(hm._map.keys()), n=n, cutoff=0.70)
+
+    def _load_header_map(self):
+        """Load header_map once per verifier instance (lazy, cached)."""
+        if hasattr(self, "_hm_cache"):
+            return self._hm_cache
+        try:
+            from header_map import HeaderMap
+            self._hm_cache = HeaderMap.load(self._skill_root) if self._skill_root else None
+        except Exception:
+            self._hm_cache = None
+        return self._hm_cache
+
+    # CAA classes that exist but have no dedicated header of the same name
+    # (macros, template aliases, or nested classes).
+    _BASE_CLASS_WHITELIST = {
+        "CATBaseUnknown", "CATEventSubscriber",  # base COM classes
+    }
+
+    def _check_base_classes(self, path: Path, content: str):
+        """Check CAT-prefixed base classes in class declarations against header_map.
+
+        Fabricated base classes (e.g. CATDlgStandaloneCommand) compile-fail
+        at first build; catch them statically. Local project classes (no CAT
+        prefix) and template parameters are ignored.
+        """
+        hm = self._load_header_map()
+        if hm is None:
+            return
+        # Match: class Foo : public Bar, private Baz ...
+        for m in re.finditer(
+            r'class\s+\w+\s*:\s*((?:public|protected|private)\s+CAT\w[\w]*)',
+            content,
+        ):
+            base = m.group(1).split()[-1]  # strip access specifier
+            if base in self._BASE_CLASS_WHITELIST:
+                continue
+            if hm.lookup(base) is not None:
+                continue  # base class header exists → class is real
+            suggestions = self._hm_suggest(hm, base)
+            hint = f" Did you mean: {', '.join(suggestions)}?" if suggestions else \
+                   " This class does not exist in the CATIA installation."
+            self._error("naming", str(path), 0,
+                        f"Fabricated base class '{base}' (no such header in CATIA).{hint}",
+                        "Dialog commands inherit CATStateCommand + compose CATDlgDialog; "
+                        "dialogs inherit CATDlgDialog/CATDlgDocument")
+
+    def _load_method_index(self):
+        """Load method_index once per verifier instance (lazy, cached)."""
+        if hasattr(self, "_mi_cache"):
+            return self._mi_cache
+        try:
+            from method_index import MethodIndex
+            self._mi_cache = MethodIndex.load(self._skill_root) if self._skill_root else None
+            if self._mi_cache is not None and self._mi_cache.type_count == 0:
+                self._mi_cache = None  # cache not built yet — skip silently
+        except Exception:
+            self._mi_cache = None
+        return self._mi_cache
+
+    # Variable declaration:  CATIContainer_var spCont;  /  CATIContainer *pCont;
+    # (also matches function parameters and for-loop init, same-file scope)
+    _VAR_DECL_RE = re.compile(
+        r'\b(CAT[A-Za-z0-9_]*?)(?:_var)?\s*[\*&]?\s*([a-zA-Z_]\w*)\s*[,;=)]'
+    )
+    # Method call on a variable:  spCont->GetAllChildren(  /  spCont.ListMembersHere(
+    _CALL_RE = re.compile(r'\b(\w+)\s*(?:->|\.)\s*(\w+)\s*\(')
+
+    def _check_method_calls(self, path: Path, content: str):
+        """Check var->Method() calls against the receiver's declared CAA type.
+
+        Catches wrong-receiver fabrications like spCont->GetAllChildren()
+        where spCont is CATIContainer_var (GetAllChildren exists only on
+        CATIProduct/CATIParmPublisher). Heuristic: type must be declared in
+        the same file; unknown types and unknown methods are skipped silently
+        (warning only when the receiver type is known AND the method is
+        verifiably absent from it and all ancestors).
+        """
+        mi = self._load_method_index()
+        if mi is None:
+            return
+
+        # 1. Build var → CAT-type map from declarations in this file
+        var_types = {}
+        for m in self._VAR_DECL_RE.finditer(content):
+            cat_type, var = m.group(1), m.group(2)
+            if mi.has_type(cat_type):
+                var_types[var] = cat_type
+        if not var_types:
+            return
+
+        # 2. Check calls on those vars (each pair reported once)
+        seen = set()
+        for m in self._CALL_RE.finditer(content):
+            var, method = m.group(1), m.group(2)
+            cat_type = var_types.get(var)
+            if not cat_type or (cat_type, method) in seen:
+                continue
+            seen.add((cat_type, method))
+            ok = mi.method_exists(cat_type, method)
+            if ok is not False:
+                continue  # True → fine; None → unknown type, skip
+            owners = mi.owners_of(method)
+            sugg = mi.suggest_on(cat_type, method)
+            hint = ""
+            if sugg:
+                hint += f" Did you mean: {', '.join(sugg)}?"
+            if owners:
+                hint += f" ({method} exists on: {', '.join(owners)})"
+            self._warn("include", str(path), 0,
+                       f"'{cat_type}' has no method '{method}' (receiver: {var}).{hint}",
+                       "Verify against the SDK header — the method may belong to a "
+                       "different interface (e.g. GetAllChildren is on CATIProduct/"
+                       "CATIParmPublisher, NOT CATIContainer)")
 
     # ─── Issue recording ────────────────────────────────────────
 

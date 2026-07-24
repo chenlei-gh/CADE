@@ -124,3 +124,4 @@ void TraverseFeature(CATISpecObject_var pRoot) {
 | 判断类型 | `IsSubTypeOf("TypeName")` |
 | 获取名称 | `GetName()` |
 | 获取 Body | `CATIMfBRep::GetBody()` → `CATBody` |
+| 按名称查找容器成员（如几何集） | **不是** `GetAllChildren`——见 [container_lookup.md](container_lookup.md)：`CATIContainer::ListMembersHere("CATIAlias", seq)` |

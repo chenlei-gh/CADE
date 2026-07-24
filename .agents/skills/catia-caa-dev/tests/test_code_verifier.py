@@ -171,6 +171,63 @@ except FileNotFoundError:
     ck("header_map CLI runnable", False, "skills/header_map.py not found")
 
 # ═══════════════════════════════════════════════════════════════
+# [12] method_index CLI — type::method existence
+# ═══════════════════════════════════════════════════════════════
+print("\n[12] method_index CLI")
+_mi_cli = [sys.executable, str(SKILL / "skills" / "method_index.py")]
+try:
+    out = subprocess.run(_mi_cli + ["CATIProduct", "GetChildren", "GetAllChildren"],
+                         capture_output=True, text=True, timeout=60)
+    ck("real methods on correct type → OK + exit 0",
+       out.returncode == 0 and out.stdout.count("OK") == 2,
+       out.stdout.strip().replace("\n", " | "))
+
+    out2 = subprocess.run(_mi_cli + ["CATIContainer", "GetAllChildren"],
+                          capture_output=True, text=True, timeout=60)
+    ck("wrong receiver → NOT-FOUND with owners list",
+       out2.returncode == 1
+       and "NOT-FOUND" in out2.stdout
+       and "CATIProduct" in out2.stdout,
+       out2.stdout.strip())
+
+    out3 = subprocess.run(_mi_cli + ["CATIContainer", "ListMembersHere"],
+                          capture_output=True, text=True, timeout=60)
+    ck("real container method → OK",
+       out3.returncode == 0 and "OK" in out3.stdout,
+       out3.stdout.strip())
+except FileNotFoundError:
+    ck("method_index CLI runnable", False, "skills/method_index.py not found")
+
+# ═══════════════════════════════════════════════════════════════
+# [13] verifier — fabricated base class + wrong-receiver method
+# ═══════════════════════════════════════════════════════════════
+print("\n[13] verifier fabricated base class / method call")
+issues = v.verify_file("src/BadDlgCmd.cpp",
+    '#include "BadDlgCmd.h"\n'
+    '#include "CATDlgStandaloneCommand.h"\n'
+    'CATCreateClass(BadDlgCmd);\n'
+    'class BadDlgCmd : public CATDlgStandaloneCommand {};\n')
+ck("fabricated base class flagged as error",
+   any(i.severity == "error" and "CATDlgStandaloneCommand" in i.message
+       and "base class" in i.message for i in issues),
+   f"{len(issues)} issues")
+
+issues2 = v.verify_file("src/FindSetCmd.cpp",
+    '#include "FindSetCmd.h"\n'
+    '#include "CATIContainer.h"\n'
+    'CATCreateClass(FindSetCmd);\n'
+    'void Find(CATIContainer_var spCont, CATIProduct_var spProd) {\n'
+    '    CATListValCATBaseUnknown_var* p = spCont->GetAllChildren();\n'
+    '    CATListValCATBaseUnknown_var* c = spProd->GetAllChildren();\n'
+    '}\n')
+wrong = [i for i in issues2 if "has no method" in i.message]
+ck("wrong-receiver method flagged (CATIContainer::GetAllChildren)",
+   len(wrong) == 1 and "receiver: spCont" in wrong[0].message,
+   f"{len(wrong)} flagged")
+ck("correct receiver NOT flagged (CATIProduct::GetAllChildren)",
+   not any("receiver: spProd" in i.message for i in wrong))
+
+# ═══════════════════════════════════════════════════════════════
 # Cleanup
 # ═══════════════════════════════════════════════════════════════
 import shutil

@@ -20,6 +20,15 @@ CAA 对话框通过 `CATDlgDialog` 及相关控件构建，布局用 Grid 风格
 
 之前版本引用的 `CATDlgList` 经核实**不存在**。真实的列表控件是 `CATDlgSelectorList`（简单多选列表）和 `CATDlgTableView`（多列表格，CATIAApplicationFrame）。所有控件构造签名统一为 `(CATDialog* iParent, const CATString& iName, CATDlgStyle iStyle=NULL)`——**没有标题/文本参数**，显示文本来自 NLS 资源（.CATNls，按控件名索引）或继承自 `CATDialog::SetTitle()`。
 
+**基类陷阱（B28 核实）**：`CATDlgStandaloneCommand` **不存在**——AI 容易把"带对话框的独立命令"脑补成这个类名。真实的继承关系只有两条路：
+
+| 你要做什么 | 正确基类 |
+|---|---|
+| 对话框窗口本身 | `CATDlgDialog`（或 `CATDlgDocument`） |
+| 打开/驱动对话框的命令 | `CATStateCommand`（组合持有 Dialog 指针，**不是**继承 Dialog 类） |
+
+`CATDlgEditor` 的只读样式 `CATDlgEdtReadOnly` 真实存在（`CATDlgUtility.h` 的 `#define`，头文件注释里也列出），但它**不是头文件名**——`#include "CATDlgEdtReadOnly.h"` 会报文件不存在。
+
 ## 核心控件
 
 | 控件 | 类 | 用途 |
