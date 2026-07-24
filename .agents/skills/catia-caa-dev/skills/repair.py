@@ -316,7 +316,10 @@ class RepairLoop:
             # to correctly discover workspace frameworks (mkmk -u alone can
             # fail with "must be executed in a workspace containing at least
             # one framework" even when .edu directories exist).
-            result = build_workspace(self.workspace_root, options="-u -a", timeout=300)
+            # skip_gate: the repair loop needs RAW mkmk output to feed
+            # parse_mkmk_output/FixPlan; a gate BLOCK would starve it.
+            result = build_workspace(self.workspace_root, options="-u -a",
+                                     timeout=300, skip_gate=True)
 
             # Diagnose exactly this invocation. Reading build.json here can
             # accidentally report errors from an older build.

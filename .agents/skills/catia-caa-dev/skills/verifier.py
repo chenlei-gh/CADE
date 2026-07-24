@@ -297,7 +297,8 @@ class CodeVerifier:
         has_macro = any(re.search(m + r'\s*\(', content) for m in REGISTRATION_MACROS)
         if not has_macro:
             self._error("macro", str(path), 0,
-                       f"Missing CAA registration macro in {filename}",
+                       f"Missing CAA registration macro in {filename} "
+                       f"(expected one of: {', '.join(REGISTRATION_MACROS)})",
                        "Add: CATCreateClass(MyClass) or CATImplementClass(...)")
 
         # Should include its own header
@@ -317,14 +318,19 @@ class CodeVerifier:
         """Check a .h declaration file"""
         filename = path.name
 
-        # Check for at least one CAA macro or base class pattern
-        has_macro = any(re.search(m + r'\s*;?', content) for m in REGISTRATION_MACROS)
+        # Check for at least one CAA declaration macro or base class pattern.
+        # .h files use DECLARE macros (CATDeclareClass / CATDeclareInterface /
+        # CATDeclareHandler), not the .cpp REGISTRATION_MACROS.
+        has_macro = any(re.search(m + r'\s*;?', content)
+                        for m in ('CATDeclareClass', 'CATDeclareInterface',
+                                  'CATDeclareHandler'))
         has_base = any(b in content for b in ('CATStateCommand', 'CATDlgDialog',
                                                'CATBaseUnknown', 'CATISpecObject'))
         if not has_macro and not has_base:
             self._error("macro", str(path), 0,
-                       f"Missing CAA macro or base class in {filename}",
-                       "Inherit from CATStateCommand/CATDlgDialog or add CATDeclareClass")
+                       f"Missing CATDeclareClass or base class in {filename}",
+                       "Add CATDeclareClass (or inherit from "
+                       "CATStateCommand/CATDlgDialog)")
 
         self._check_includes(path, content)
         self._check_base_classes(path, content)

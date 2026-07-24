@@ -229,7 +229,8 @@ def diagnose_environment() -> dict:
 
 
 def build_workspace(
-    workspace_path: Path, options: str = "-u -a", timeout: int = 600
+    workspace_path: Path, options: str = "-u -a", timeout: int = 600,
+    skip_gate: bool = False,
 ) -> dict:
     """
     Build CAA workspace using mkmk with full Build Time environment.
@@ -280,6 +281,34 @@ def build_workspace(
         logger.write("CATIA not running — DLLs are writable")
     except ImportError:
         pass  # run.py not available in this context
+
+    # --- Pre-build gate: static verification of generated sources ---
+    # Blocks mkmk on error-level findings (fabricated headers/classes) — the
+    # AI-fabrication rework loop. Read-only, fail-open (a gate malfunction
+    # never blocks the build). Escape valve: --skip-gate.
+    try:
+        from build_gate import run_gate
+        gate = run_gate(workspace_path, skip=skip_gate)
+        logger.write(
+            f"Gate {gate['decision']}: {gate['errors']} error(s), "
+            f"{gate['warnings']} warning(s), {gate['files_checked']} files, "
+            f"{gate['duration_ms']}ms"
+        )
+        if gate.get("gate_error"):
+            logger.write(f"Gate fail-open: {gate['gate_error']}")
+        if gate["decision"] == "BLOCK":
+            top = "; ".join(
+                f"{f['module']}: {f['message']}"
+                for f in gate["findings"] if f["severity"] == "error"
+            )[:400]
+            return error_result(
+                f"Build gate BLOCKED — {gate['errors']} error-level finding(s) "
+                f"(fabricated APIs; compile would fail anyway): {top}. "
+                f"Fix the code, or bypass with --skip-gate. Log: {gate['log']}",
+                gate=gate,
+            )
+    except Exception as e:
+        logger.write(f"Gate crashed (fail-open): {e}")
 
     # --- Auto-configure workspace prerequisites (links to CATIA installation) ---
     # Only run if workspace looks like a real CAA workspace (has .edu directory)
@@ -816,6 +845,11 @@ def main():
     parser.add_argument(
         "--timeout", type=int, default=600, help="Timeout in seconds (default: 600)"
     )
+    parser.add_argument(
+        "--skip-gate",
+        action="store_true",
+        help="Skip the pre-build static verification gate (fabricated API check)",
+    )
     # mkmk options are positional values that begin with '-'. parse_known_args
     # keeps the documented `build.py <workspace> -a` form usable without
     # requiring callers to know argparse's `--` escape convention.
@@ -825,7 +859,10 @@ def main():
             parser.error("unrecognized arguments: " + " ".join(unknown))
         args.options = unknown[0]
 
-    result = build_workspace(Path(args.workspace).resolve(), args.options, args.timeout)
+    result = build_workspace(
+        Path(args.workspace).resolve(), args.options, args.timeout,
+        skip_gate=args.skip_gate,
+    )
     output_json(result, exit_code=0 if result["status"] == "success" else 1)
 
 

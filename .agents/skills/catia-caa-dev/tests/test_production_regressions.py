@@ -103,7 +103,7 @@ try:
     # The documented direct `build.py <workspace> -a` CLI form must remain valid.
     cli_calls = []
     with patch.object(sys, "argv", ["build.py", str(workspace), "-a"]), \
-            patch.object(build_module, "build_workspace", side_effect=lambda ws, opts, timeout: cli_calls.append((ws, opts, timeout)) or {"status": "success"}), \
+            patch.object(build_module, "build_workspace", side_effect=lambda ws, opts, timeout, **kw: cli_calls.append((ws, opts, timeout)) or {"status": "success"}), \
             patch.object(build_module, "output_json", return_value=None):
         build_module.main()
     check("build CLI accepts direct -a", bool(cli_calls) and cli_calls[0][1] == "-a", str(cli_calls))
@@ -249,7 +249,9 @@ try:
             patch.object(build_module.subprocess, "run", return_value=fake_process), \
             patch.object(build_module, "verify_build", return_value=failed_verification), \
             patch.object(build_module, "sync_runtime_view", return_value={"synced": [], "errors": [], "ok": True}):
-        mocked_build = build_module.build_workspace(build_ws)
+        # skip_gate: this fixture is intentionally minimal (no src/) and
+        # targets post-build verification, not the pre-build gate.
+        mocked_build = build_module.build_workspace(build_ws, skip_gate=True)
 
     final_cache = MemoryCache.instances[-1].data
     final_log = MemoryLogger.instances[-1].lines
@@ -268,7 +270,8 @@ try:
             patch.object(build_module.subprocess, "run", return_value=fake_process), \
             patch.object(build_module, "verify_build", return_value=successful_verification), \
             patch.object(build_module, "sync_runtime_view", return_value={"synced": [], "errors": [], "ok": True}):
-        successful_build = build_module.build_workspace(build_ws)
+        # skip_gate: intentionally minimal fixture (see above).
+        successful_build = build_module.build_workspace(build_ws, skip_gate=True)
     check("successful build returns verification evidence", successful_build.get("verification") == successful_verification, str(successful_build))
     check("successful cache stores verification evidence", MemoryCache.instances[-1].data.get("verification") == successful_verification, str(MemoryCache.instances[-1].data))
 

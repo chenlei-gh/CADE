@@ -5,7 +5,7 @@ CodeVerifier Contract Tests (L0-5)
 Verify static code checking on CADE-generated output.
 """
 
-import sys, tempfile
+import sys, tempfile, json
 from pathlib import Path
 
 SKILL = Path(__file__).parent.parent
@@ -226,6 +226,92 @@ ck("wrong-receiver method flagged (CATIContainer::GetAllChildren)",
    f"{len(wrong)} flagged")
 ck("correct receiver NOT flagged (CATIProduct::GetAllChildren)",
    not any("receiver: spProd" in i.message for i in wrong))
+
+# ═══════════════════════════════════════════════════════════════
+# [14] build_gate — fabricated module → BLOCK + JSONL telemetry
+# ═══════════════════════════════════════════════════════════════
+print("\n[14] build_gate BLOCK on fabricated API")
+import build_gate
+ws2 = Path(tempfile.mkdtemp(prefix="cade_gate_")).resolve()
+mod2 = ws2 / "BadFw.edu" / "BadMod.m"
+(mod2 / "src").mkdir(parents=True)
+(mod2 / "src" / "BadCmd.cpp").write_text(
+    '#include "CATDlgStandaloneCommand.h"\n'
+    'CATCreateClass(BadCmd);\n'
+    'class BadCmd : public CATDlgStandaloneCommand {};\n')
+r = build_gate.run_gate(ws2)
+ck("decision BLOCK on fabricated header + base class",
+   r["decision"] == "BLOCK" and r["errors"] >= 1,
+   f"decision={r['decision']} errors={r['errors']}")
+log_recs = []
+for l in build_gate.LOG_FILE.read_text(encoding="utf-8").splitlines():
+    try:
+        rec = json.loads(l)
+        if rec.get("workspace") == str(ws2):
+            log_recs.append(rec)
+    except Exception:
+        pass
+ck("JSONL has finding + run records (facts, incl. evidence/symbol)",
+   any(r.get("kind") == "finding" and r.get("evidence") == "header_map"
+       and r.get("symbol") for r in log_recs)
+   and any(r.get("kind") == "run" and r.get("decision") == "BLOCK" for r in log_recs))
+
+# ═══════════════════════════════════════════════════════════════
+# [15] build_gate — clean module has no errors; SKIP is logged
+# ═══════════════════════════════════════════════════════════════
+print("\n[15] build_gate clean / SKIP")
+ws3 = Path(tempfile.mkdtemp(prefix="cade_gate_clean_")).resolve()
+mod3 = ws3 / "GoodFw.edu" / "GoodMod.m"
+(mod3 / "src").mkdir(parents=True)
+(mod3 / "src" / "GoodCmd.cpp").write_text(
+    '#include "GoodCmd.h"\n\n'
+    'CATImplementClass(GoodCmd, DataExtension, CATBaseUnknown, GoodCmdStartUp);\n'
+    'GoodCmd::GoodCmd() {}\n')
+r3 = build_gate.run_gate(ws3)
+ck("clean module: no errors, decision PASS or WARN (never BLOCK)",
+   r3["errors"] == 0 and r3["decision"] in ("PASS", "WARN"),
+   f"decision={r3['decision']}")
+r4 = build_gate.run_gate(ws3, skip=True)
+ck("skip=True → decision SKIP, zero work",
+   r4["decision"] == "SKIP" and r4["files_checked"] == 0)
+log_recs3 = []
+for l in build_gate.LOG_FILE.read_text(encoding="utf-8").splitlines():
+    try:
+        rec = json.loads(l)
+        if rec.get("workspace") == str(ws3):
+            log_recs3.append(rec)
+    except Exception:
+        pass
+ck("SKIP recorded in JSONL (bypass visible in monthly stats)",
+   any(r.get("kind") == "run" and r.get("decision") == "SKIP" for r in log_recs3))
+
+# ═══════════════════════════════════════════════════════════════
+# [16] build_gate CLI + build.py CLI compatibility
+# ═══════════════════════════════════════════════════════════════
+print("\n[16] CLI contracts")
+out = subprocess.run(
+    [sys.executable, str(SKILL / "skills" / "build_gate.py"), str(ws2), "--json"],
+    capture_output=True, text=True, encoding="utf-8", errors="replace",
+    timeout=120)
+ck("build_gate CLI: BLOCK → exit 1 + JSON payload",
+   out.returncode == 1 and out.stdout.startswith("{")
+   and '"decision": "BLOCK"' in out.stdout,
+   f"exit={out.returncode} err={(out.stderr or '').strip()[:120]}")
+out2 = subprocess.run(
+    [sys.executable, str(SKILL / "skills" / "build_gate.py"), str(ws2), "--skip"],
+    capture_output=True, text=True, encoding="utf-8", errors="replace",
+    timeout=120)
+ck("build_gate CLI: --skip → exit 0 + SKIP",
+   out2.returncode == 0 and "SKIP" in out2.stdout)
+out3 = subprocess.run(
+    [sys.executable, str(SKILL / "skills" / "build.py"), "--help"],
+    capture_output=True, text=True, timeout=60)
+ck("build.py --help works and lists --skip-gate (argparse intact)",
+   out3.returncode == 0 and "--skip-gate" in out3.stdout
+   and "--timeout" in out3.stdout)
+import shutil as _shutil
+_shutil.rmtree(ws2, ignore_errors=True)
+_shutil.rmtree(ws3, ignore_errors=True)
 
 # ═══════════════════════════════════════════════════════════════
 # Cleanup
