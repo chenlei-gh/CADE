@@ -18,6 +18,7 @@ stats can distinguish "AI got better" from "everyone bypassed the gate".
 
 Usage:
   python build_gate.py <workspace> [--json] [--skip]
+  python build_gate.py --stats [--days N] [--log PATH]
   from build_gate import run_gate; result = run_gate(workspace_path)
 """
 
@@ -118,15 +119,78 @@ def run_gate(workspace, skip: bool = False) -> dict:
                 "gate_error": str(e)}
 
 
+def print_stats(days: int = 30, log_path=None) -> int:
+    """Aggregate the JSONL telemetry and print a monthly summary.
+
+    Answers the two questions Phase 2 investment depends on:
+      1. Is the gate catching real fabrications (BLOCK) or being bypassed (SKIP)?
+      2. Which rules/modules produce the most findings (where to invest next)?
+    """
+    from collections import Counter
+    log = Path(log_path) if log_path else LOG_FILE
+    if not log.exists():
+        print(f"No gate log found: {log}")
+        return 1
+    cutoff = datetime.now().timestamp() - days * 86400
+    runs, findings = [], []
+    for line in log.read_text(encoding="utf-8").splitlines():
+        try:
+            r = json.loads(line)
+            if datetime.fromisoformat(r["time"]).timestamp() < cutoff:
+                continue
+            (runs if r.get("kind") == "run" else findings).append(r)
+        except (ValueError, KeyError):
+            continue
+    if not runs:
+        print(f"No gate runs in the last {days} day(s): {log}")
+        return 1
+
+    dec = Counter(r["decision"] for r in runs)
+    total = sum(dec.values())
+    print(f"Build Gate stats — last {days} day(s), {total} run(s)")
+    print(f"  Log: {log}")
+    for d in ("PASS", "WARN", "BLOCK", "SKIP"):
+        if dec.get(d):
+            print(f"  {d:5s} {dec[d]:4d}  ({dec[d] * 100 // total}%)")
+    if dec.get("SKIP"):
+        print(f"  -> SKIP/BLOCK ratio: "
+              f"{dec['SKIP'] / max(dec.get('BLOCK', 0), 1):.1f} "
+              f"(high = people bypassing, not AI improving)")
+    errs = [f for f in findings if f.get("severity") == "error"]
+    if errs:
+        print(f"  Top error rules: "
+              + ", ".join(f"{k}({v})" for k, v in
+                          Counter(f["rule"] for f in errs).most_common(3)))
+        print(f"  Top error modules: "
+              + ", ".join(f"{k}({v})" for k, v in
+                          Counter(f["module"] for f in errs).most_common(3)))
+    durs = [r["duration_ms"] for r in runs if r.get("duration_ms")]
+    if durs:
+        print(f"  Duration: avg {sum(durs) // len(durs)}ms, max {max(durs)}ms")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Pre-compile static verification gate (fabricated API detection)")
-    parser.add_argument("workspace", help="Workspace path")
+    parser.add_argument("workspace", nargs="?", help="Workspace path")
     parser.add_argument("--json", action="store_true",
                         help="Print full result as JSON")
     parser.add_argument("--skip", action="store_true",
                         help="Bypass the gate (logged as SKIP)")
+    parser.add_argument("--stats", action="store_true",
+                        help="Print telemetry summary instead of running the gate")
+    parser.add_argument("--days", type=int, default=30,
+                        help="Stats window in days (default: 30)")
+    parser.add_argument("--log", default=None,
+                        help="Stats: read a different log file "
+                             "(e.g. another skill copy's build_gate_log.jsonl)")
     args = parser.parse_args()
+
+    if args.stats:
+        sys.exit(print_stats(args.days, args.log))
+    if not args.workspace:
+        parser.error("workspace is required unless --stats is given")
 
     result = run_gate(Path(args.workspace).resolve(), skip=args.skip)
 

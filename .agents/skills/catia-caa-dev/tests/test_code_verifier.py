@@ -310,10 +310,19 @@ ck("build_gate CLI: --skip → exit 0 + SKIP",
    out2.returncode == 0 and "SKIP" in out2.stdout)
 out3 = subprocess.run(
     [sys.executable, str(SKILL / "skills" / "build.py"), "--help"],
-    capture_output=True, text=True, timeout=60)
+    capture_output=True, text=True, encoding="utf-8", errors="replace",
+    timeout=60)
 ck("build.py --help works and lists --skip-gate (argparse intact)",
    out3.returncode == 0 and "--skip-gate" in out3.stdout
    and "--timeout" in out3.stdout)
+out4 = subprocess.run(
+    [sys.executable, str(SKILL / "skills" / "build_gate.py"), "--stats"],
+    capture_output=True, text=True, encoding="utf-8", errors="replace",
+    timeout=60)
+ck("build_gate --stats prints monthly summary with SKIP ratio",
+   out4.returncode == 0 and "Build Gate stats" in out4.stdout
+   and "SKIP" in out4.stdout,
+   out4.stdout.strip().splitlines()[0] if out4.stdout else "no output")
 import shutil as _shutil
 _shutil.rmtree(ws2, ignore_errors=True)
 _shutil.rmtree(ws3, ignore_errors=True)
