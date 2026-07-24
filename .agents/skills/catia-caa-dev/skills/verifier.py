@@ -523,10 +523,10 @@ class CodeVerifier:
         return self._hm_cache
 
     # CAA classes that exist but have no dedicated header of the same name
-    # (macros, template aliases, or nested classes).
-    _BASE_CLASS_WHITELIST = {
-        "CATBaseUnknown", "CATEventSubscriber",  # base COM classes
-    }
+    # (macros, template aliases, or nested classes). Verified against B28:
+    # CATBaseUnknown.h and CATEventSubscriber.h both exist (System framework),
+    # so they are NOT whitelisted — header_map validates them directly.
+    _BASE_CLASS_WHITELIST: set = set()
 
     def _check_base_classes(self, path: Path, content: str):
         """Check CAT-prefixed base classes in class declarations against header_map.

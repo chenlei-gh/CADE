@@ -215,15 +215,20 @@ pUdfEdit->Init();
 int outputCount = 0;
 pUdfEdit->GetOutputsNumber(outputCount);
 
+// GetOutputRole lives on CATIUdfFeatureUser, NOT on CATIUdfFeatureInstance.
+CATIUdfFeatureUser* pUdfUser = NULL;
+spUdfInstance->QueryInterface(IID_CATIUdfFeatureUser, (void**)&pUdfUser);
+
 for (int i = 1; i <= outputCount; i++) {
     CATBaseUnknown_var spOutput;
     pUdfEdit->GetOutput(i, spOutput);
-    // i == 1 is always the main User Feature result;
+    // i == 1 is always the main User Feature result (role "MainResult");
     // i == 2..N are the external outputs declared via CATIUdfFeatureUser::AddOutput()
     CATUnicodeString role;
-    pUdfEdit->GetOutputRole(i, role);
+    pUdfUser->GetOutputRole(i, role);
 }
 
+pUdfUser->Release();
 pUdfEdit->Reset();
 pUdfEdit->Release();
 ```
