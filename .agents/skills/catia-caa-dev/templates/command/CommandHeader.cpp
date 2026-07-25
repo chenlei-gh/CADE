@@ -2,7 +2,10 @@
 // [CADE] 模板生成文件。创建新命令请调 develop() 重新生成，勿复制改名。
 #include "<CommandHeaderClassName>.h"
 #include "CATCommandHeader.h"
-#include "CATAfrCommandHeader.h"
+// ⚠️ 2026-07 对 B28 全目录核实：CATAfrCommandHeader 类不存在（捏造），已移除。
+// 官方推荐方式只有 MacDeclareHeader 宏（CATCommandHeader.h L1138 实证）。
+// 需要自定义 header 时派生 CATAfrDialogCommandHeader（真实存在，见
+// ApplicationFrame/PublicInterfaces/CATAfrDialogCommandHeader.h）。
 
 // Command class
 #include "<CommandClassName>.h"
@@ -12,50 +15,20 @@
 //-----------------------------------------------------------------------------
 void <CommandHeaderClassName>::CreateCommandHeader()
 {
-    // Create command header using macro
-    // Syntax: MacDeclareHeader(HeaderName);
+    // 官方推荐：MacDeclareHeader 宏同时声明+定义一个可用的 header 类，
+    // 默认带按钮/菜单表示，绝大多数命令足够用（CATCommandHeader.h 文档原话：
+    // "In most cases it is sufficient"）。
     MacDeclareHeader(<CommandHeaderName>);
-
-    // Create header instance
-    // Parameters:
-    // 1. Header name (identifier)
-    // 2. Command class name
-    // 3. Command name (for resources)
-    // 4. Mode flags (CATCommandModeExclusive, CATCommandModeShared, etc.)
-    new CATAfrCommandHeader(
-        "<CommandHeaderName>",                    // Header ID
-        "<CommandClassName>",                     // Command class
-        "<CommandClassName>",                     // Resource name (for NLS)
-        (void*)NULL,                              // Argument (usually NULL)
-        "<FrameworkName>",                        // Framework name (for icon path)
-        CATFrmAvailable                           // Availability mode
-    );
 }
 
 //-----------------------------------------------------------------------------
-// Alternative: Using Macro (Simpler)
+// 需要自定义可用性/表示时：派生 CATAfrDialogCommandHeader
 //-----------------------------------------------------------------------------
 /*
-// In your workbench CreateCommands() method:
-
-#include "CATCommandHeader.h"
-
-MacDeclareHeader(<CommandHeaderName>);
-
-CATCommandHeader* pHeader = new CATAfrCommandHeader(
-    "<CommandHeaderName>",
-    "<CommandClassName>", 
-    "<CommandClassName>",
-    (void*)NULL,
-    "<FrameworkName>",
-    CATFrmAvailable
-);
-
-// Set icon (optional, reads from .CATRsc if not set)
-// pHeader->SetIcon("IconName");
-
-// Set help message (optional, reads from .CATNls if not set)
-// pHeader->SetShortHelp("Command short help");
-// pHeader->SetLongHelp("Command detailed help");
-
+// 自定义 header 必须（CATCommandHeader.h 文档）：
+//   1. 派生 CATCommandHeader（自定义可用性）或 CATAfrDialogCommandHeader（自定义表示）
+//   2. public: 调用基类构造的构造函数、析构、Clone()
+//   3. private: 带 CATCommandHeader* 参数的构造函数（调基类对应构造）
+//   4. 作为组件：.h 里 CATDeclareClass，.cpp 里 CATImplementClass
+// 参考：ApplicationFrame/PublicInterfaces/CATAfrDialogCommandHeader.h
 */

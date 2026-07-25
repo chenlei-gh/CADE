@@ -7,6 +7,10 @@
 //=============================================================================
 // This file declares all interface implementations for the feature
 // It serves as a central dependency declaration for the Dictionary
+//
+// ⚠️ 2026-07 对 B28 全目录核实：CATIMmiResultFeature.h / CATIMmiUseMechFeat.h
+// 不存在，已从本文件移除（原注释声称的这两个接口为捏造）。
+// 证据：knowledge/failure_patterns/fp_template_feature_apis.md
 
 // System Framework
 #include "CATBaseUnknown.h"
@@ -20,9 +24,8 @@
 #include "CATIReplace.h"
 
 // MechanicalModeler Framework - Mechanical feature interfaces
+// ⚠️ 已删除捏造头文件：CATIMmiResultFeature.h / CATIMmiUseMechFeat.h（B28 不存在）
 #include "CATIMmiMechanicalFeature.h"
-#include "CATIMmiResultFeature.h"
-#include "CATIMmiUseMechFeat.h"
 
 // Feature Visualization (optional)
 #include "CATI3DGeoVisu.h"
@@ -66,13 +69,10 @@ class {PREFIX}{FEATURE_NAME};
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
-// CATIMmiResultFeature Interface (Optional)
-//-----------------------------------------------------------------------------
-// Manages the feature's result geometry (CATBody)
-// Used to set and retrieve the geometric result
-//
-// Include this line in your Dictionary file if implementing:
-// {PREFIX}{FEATURE_NAME}  CATIMmiResultFeature  lib{FRAMEWORK_NAME}
+// ⚠️ CATIMmiResultFeature / CATIMmiUseMechFeat 接口不存在于 B28（2026-07 全目录核实）
+// 原模版此处的 Dictionary 声明为捏造，已移除。
+// 读取结果几何的真实接口：CATIGeometricalElement::GetBodyResult()
+// （头文件 MecModInterfaces/PublicInterfaces/CATIGeometricalElement.h）。
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
@@ -114,11 +114,11 @@ class {PREFIX}{FEATURE_NAME};
 //=============================================================================
 
 // Geometric Modeler Dependencies (if using geometric operations)
+// ⚠️ 已修正捏造名：CATTopBooleanOperator.h→CATTopOperator.h，CATTopRevolve.h→CATTopRevol.h
 /*
 #include "CATTopOperator.h"
-#include "CATTopBooleanOperator.h"
 #include "CATTopExtrude.h"
-#include "CATTopRevolve.h"
+#include "CATTopRevol.h"
 */
 
 // Topology Dependencies (if manipulating topology)

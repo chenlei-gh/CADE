@@ -454,27 +454,23 @@ class TemplateGenerator:
         return self._success(files, "component", name)
 
     def _gen_feature_spec(self, spec, out: Path) -> Dict:
-        files = []
-        name = spec.name
-        src = out / f"{name}.cpp"
-        src.write_text(
-            self._render("feature", name, FeatureClass=name), encoding="utf-8"
-        )
-        files.append(str(src))
-        if spec.with_factory:
-            factory_name = f"{name}Factory"
-            fac = out / f"{factory_name}.cpp"
-            fac.write_text(
-                self._render(
-                    "feature",
-                    factory_name,
-                    FeatureClass=name,
-                    FactoryClass=factory_name,
-                ),
-                encoding="utf-8",
-            )
-            files.append(str(fac))
-        return self._success(files, "feature", name)
+        # Circuit breaker: templates/feature/* were verified fabricated
+        # against the full B28 installation (2026-07) — CATIMmiResultFeature,
+        # CATIMmiUseMechFeat, SetResult, the whole catalog call chain do not
+        # exist. Refuse to generate known-broken code until the templates are
+        # rewritten against CATMecModUseItf (see fp_template_feature_apis.md).
+        # The original implementation is preserved in git history.
+        return {
+            "status": "error",
+            "type": "feature",
+            "name": spec.name,
+            "message": (
+                "Feature 模版已下架：经 B28 全目录核实，模版基于不存在的 API "
+                "(CATIMmiResultFeature / SetResult 等)。自定义特征需手工基于 "
+                "CATMecModUseItf 开发，详见 "
+                "knowledge/failure_patterns/fp_template_feature_apis.md"
+            ),
+        }
 
     def _gen_extension_spec(self, spec, out: Path) -> Dict:
         files = []

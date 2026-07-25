@@ -1,4 +1,14 @@
 // COPYRIGHT DASSAULT SYSTEMES 2026
+// ⚠️ KNOWN-FABRICATED（2026-07 对 B28 全目录核实）：本文件几乎全部 catalog
+// 调用均不存在于 B28：
+//   CATICatalog.h / CATFeatCont.h（头文件不存在）
+//   ::CreateCatalog / ::AccessCatalog（全局函数不存在）
+//   CATICatalogChapter::CreateStartUp / GetStartUp（接口无此方法）
+//   CATISpecAttrAccess::AddAttribute（在 CATISpecObject 上）
+//   CATISpecAttrKey::SetElementType / CATICatalogDescription::SetDescription（不存在）
+// 且 L52 有语法错误（::xxx<CreateCatalog）。本文件不可用于生成代码，
+// 整体待基于 CATOsmSUHandler + ComponentsCatalogsInterfaces 真实 API 重写。
+// 证据：knowledge/failure_patterns/fp_template_feature_apis.md
 //
 // StartUpCatalog.cpp
 // Creates and configures Feature StartUp and Catalog

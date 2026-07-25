@@ -1,6 +1,12 @@
 // COPYRIGHT DASSAULT SYSTEMES 2026
 //
 // FeatureBuild.cpp
+// ⚠️ KNOWN-FABRICATED（2026-07 对 B28 全目录核实）：本模版引用的
+// CATIMmiResultFeature.h 不存在；CATIMmiMechanicalFeature 上没有
+// GetBodyResult——真实的是 CATIGeometricalElement::GetBodyResult()
+// 返回 CATBody_var（MecModInterfaces）。SetResult 不存在。
+// 证据与替代方案：knowledge/failure_patterns/fp_template_feature_apis.md
+//
 // Dedicated file for CATIBuild interface implementation
 // This separation allows better code organization for complex build logic
 
@@ -16,10 +22,12 @@
 #include "CATISpecAttrKey.h"
 
 // MechanicalModeler Framework
+// ⚠️ 已删除捏造头文件 CATIMmiResultFeature.h（B28 不存在）
 #include "CATIMmiMechanicalFeature.h"
-#include "CATIMmiResultFeature.h"
+#include "CATIGeometricalElement.h"  // GetBodyResult 真实所在接口
 
 // GeometricObjects Framework
+// CATBody_var 由 CATBody.h 引入（_var 类型无独立头文件）
 #include "CATBody.h"
 
 // NOTE: This is an alternative implementation file
@@ -134,27 +142,31 @@ HRESULT {PREFIX}{FEATURE_NAME}::Build()
   CATBody* piInputBody2 = NULL;
 
   // Get geometry from first input
-  CATIMmiMechanicalFeature* piMechFeat1 = NULL;
-  hr = piInputSpec1->QueryInterface(IID_CATIMmiMechanicalFeature,
-                                    (void**)&piMechFeat1);
-  if (SUCCEEDED(hr) && piMechFeat1 != NULL)
+  // GetBodyResult 在 CATIGeometricalElement 上（返回 CATBody_var），
+  // 不在 CATIMmiMechanicalFeature 上。
+  CATIGeometricalElement* piGeoElem1 = NULL;
+  hr = piInputSpec1->QueryInterface(IID_CATIGeometricalElement,
+                                    (void**)&piGeoElem1);
+  if (SUCCEEDED(hr) && piGeoElem1 != NULL)
   {
-    piInputBody1 = piMechFeat1->GetBodyResult();
-    piMechFeat1->Release();
-    piMechFeat1 = NULL;
+    CATBody_var spBody1 = piGeoElem1->GetBodyResult();
+    piInputBody1 = (CATBody*)spBody1;
+    piGeoElem1->Release();
+    piGeoElem1 = NULL;
   }
 
   // Get geometry from second input (if exists)
   if (piInputSpec2 != NULL)
   {
-    CATIMmiMechanicalFeature* piMechFeat2 = NULL;
-    hr = piInputSpec2->QueryInterface(IID_CATIMmiMechanicalFeature,
-                                      (void**)&piMechFeat2);
-    if (SUCCEEDED(hr) && piMechFeat2 != NULL)
+    CATIGeometricalElement* piGeoElem2 = NULL;
+    hr = piInputSpec2->QueryInterface(IID_CATIGeometricalElement,
+                                      (void**)&piGeoElem2);
+    if (SUCCEEDED(hr) && piGeoElem2 != NULL)
     {
-      piInputBody2 = piMechFeat2->GetBodyResult();
-      piMechFeat2->Release();
-      piMechFeat2 = NULL;
+      CATBody_var spBody2 = piGeoElem2->GetBodyResult();
+      piInputBody2 = (CATBody*)spBody2;
+      piGeoElem2->Release();
+      piGeoElem2 = NULL;
     }
   }
 
@@ -181,16 +193,12 @@ HRESULT {PREFIX}{FEATURE_NAME}::Build()
   // =========================================================================
   // STEP 7: Update Feature Result
   // =========================================================================
+  // ⚠️ 原模版的 CATIMmiResultFeature::SetResult 不存在于 B28。
+  // 自定义特征结果写入无公开 SetResult API，此处留空待基于
+  // CATMecModUseItf 教程重写（见 fp_template_feature_apis.md）。
   if (piResultBody != NULL)
   {
-    CATIMmiResultFeature* piResultFeature = NULL;
-    hr = QueryInterface(IID_CATIMmiResultFeature, (void**)&piResultFeature);
-    if (SUCCEEDED(hr) && piResultFeature != NULL)
-    {
-      hr = piResultFeature->SetResult(piResultBody);
-      piResultFeature->Release();
-      piResultFeature = NULL;
-    }
+    hr = E_NOTIMPL;  // TODO: rewrite against real result-association API
   }
   else
   {

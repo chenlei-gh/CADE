@@ -213,17 +213,18 @@ HRESULT {PREFIX}{FEATURE_NAME}::ValidateInputCompatibility(CATISpecObject* iInpu
   // }
 
   // Example validation: Check if input has required geometry
-  // CATIMmiMechanicalFeature* piMechFeat = NULL;
-  // hr = iInput->QueryInterface(IID_CATIMmiMechanicalFeature,
-  //                             (void**)&piMechFeat);
-  // if (SUCCEEDED(hr) && piMechFeat != NULL)
+  // GetBodyResult 在 CATIGeometricalElement 上（不在 CATIMmiMechanicalFeature）
+  // CATIGeometricalElement* piGeoElem = NULL;
+  // hr = iInput->QueryInterface(IID_CATIGeometricalElement,
+  //                             (void**)&piGeoElem);
+  // if (SUCCEEDED(hr) && piGeoElem != NULL)
   // {
-  //   CATBody* piBody = piMechFeat->GetBodyResult();
-  //   if (piBody == NULL)
+  //   CATBody_var spBody = piGeoElem->GetBodyResult();
+  //   if (spBody == NULL)
   //   {
   //     hr = E_FAIL;  // Input has no geometry
   //   }
-  //   piMechFeat->Release();
+  //   piGeoElem->Release();
   // }
 
   return hr;

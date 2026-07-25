@@ -33,79 +33,18 @@ def create_feature(
     Automatically creates: Feature class, Factory, StartUp Catalog,
     attribute definitions, interface implementations, Dictionary registration.
     """
-    ctx.refresh()
-
-    validation = validate_module(ctx, module, framework)
-    if validation["status"] == "error":
-        return validation
-
-    master_cs = ChangeSet(
-        action="create_feature",
-        description=f"Create feature '{name}' in '{module}'",
-    )
-
-    components = {
-        "feature": name,
-        "factory": None,
-        "catalog": None,
-        "attributes": [],
-        "interfaces": ["CATIBuild", "CATIContextualSubMenu"],
-    }
-
-    comp_result = create_component(ctx, name=name, module=module, framework=framework)
-    if comp_result["status"] != "error":
-        merge_changeset(master_cs, changeset_from_dict(comp_result["changeset"]))
-
-    if with_factory:
-        factory_name = f"{name}Factory"
-        factory_result = create_component(
-            ctx, name=factory_name, module=module, framework=framework
-        )
-        if factory_result["status"] != "error":
-            merge_changeset(master_cs, changeset_from_dict(factory_result["changeset"]))
-            components["factory"] = factory_name
-
-    if attributes:
-        for attr in attributes:
-            components["attributes"].append(
-                {
-                    "name": attr.get("name", ""),
-                    "type": attr.get("type", "double"),
-                    "default": attr.get("default", ""),
-                }
-            )
-
-    master_cs.metadata.update(
-        {
-            "intent": "create_feature",
-            "feature": name,
-            "module": module,
-            "framework": framework,
-            "with_factory": with_factory,
-            "with_catalog": with_catalog,
-            "parent_feature": parent_feature,
-            "components": components,
-        }
-    )
-
-    next_steps = [
-        f"Implement {name} business logic",
-        f"Define attributes: {', '.join(a['name'] for a in (attributes or []))}"
-        if attributes
-        else "Define feature attributes",
-    ]
-    if with_factory:
-        next_steps.append("Register factory in Startup Catalog")
-    next_steps.append("Build and test the feature")
-
+    # Route degradation: feature templates verified fabricated against the
+    # full B28 installation (2026-07). See fp_template_feature_apis.md.
+    # The original implementation is preserved in git history.
     return {
-        "status": "pending",
+        "status": "error",
         "intent": "create_feature",
-        "message": f"Ready to create feature '{name}' with {len(attributes or [])} attributes",
-        "feature": components,
-        "changeset": master_cs.to_dict(),
-        "preview": master_cs.preview(),
-        "next_steps": next_steps,
+        "message": (
+            f"暂不支持自动创建特征 '{name}'：feature 模版经 B28 全目录核实"
+            "基于不存在的 API (CATIMmiResultFeature / SetResult / catalog "
+            "调用链)。请手工基于 CATMecModUseItf 开发，证据见 "
+            "knowledge/failure_patterns/fp_template_feature_apis.md"
+        ),
     }
 
 

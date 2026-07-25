@@ -1,4 +1,8 @@
 // COPYRIGHT DASSAULT SYSTEMES 2026
+// ⚠️ KNOWN-FABRICATED（2026-07 对 B28 全目录核实）：本模版引用的
+// CATMmrInterfaces.h / CATIMmiResultFeature.h / SetResult 均不存在于 B28。
+// 生成代码前必须基于 CATMecModUseItf 真实 API 重写。
+// 证据与替代方案：knowledge/failure_patterns/fp_template_feature_apis.md
 
 // Local Framework
 #include "{PREFIX}{FEATURE_NAME}.h"
@@ -12,9 +16,8 @@
 #include "CATISpecAttrKey.h"
 
 // MechanicalModeler Framework
-#include "CATMmrInterfaces.h"
+// ⚠️ 已删除捏造头文件 CATMmrInterfaces.h / CATIMmiResultFeature.h（B28 不存在）
 #include "CATIMmiMechanicalFeature.h"
-#include "CATIMmiResultFeature.h"
 
 // Include TIE for interface implementation
 #include "TIE_CATIBuild.h"
@@ -286,16 +289,9 @@ HRESULT {PREFIX}{FEATURE_NAME}::UpdateResult(CATBaseUnknown* iGeometry)
 
   HRESULT hr = E_FAIL;
 
-  // Get result feature interface
-  CATIMmiResultFeature* piResultFeature = NULL;
-  hr = QueryInterface(IID_CATIMmiResultFeature, (void**)&piResultFeature);
-  if (SUCCEEDED(hr) && piResultFeature != NULL)
-  {
-    // Set the result geometry
-    hr = piResultFeature->SetResult(iGeometry);
-    piResultFeature->Release();
-    piResultFeature = NULL;
-  }
-
-  return hr;
+  // ⚠️ CATIMmiResultFeature::SetResult 不存在于 B28——自定义特征的结果写入
+  // 没有公开的 SetResult API。真实做法：结果几何通过 CATIBuild::Build() 内部
+  // 状态关联到特征（参考 CATMecModUseItf 教程），本模版此函数留空待重写。
+  (void)iGeometry;
+  return E_NOTIMPL;  // TODO: rewrite against real CATMecModUseItf APIs
 }

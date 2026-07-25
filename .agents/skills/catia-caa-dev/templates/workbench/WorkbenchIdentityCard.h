@@ -1,53 +1,26 @@
 // COPYRIGHT DASSAULT SYSTEMES {{YEAR}}
 //===================================================================
 // {{PREFIX}}IdentityCard.h
-// Framework identity card - declares module dependencies
+// Framework identity card - declares prerequisite frameworks
+//===================================================================
+// ⚠️ 2026-07 对 B28 全目录核实：原模版的 CATFrmIdentityCard.h 及
+// AddHeaderAddin/AddHeaderWorkshop 宏均不存在于 B28，已全部移除。
+//
+// IdentityCard.h 的真实职责只有一个：声明本框架依赖的其它框架
+// （AddPrereqComponent），由 mkCreateIC 生成和维护。
+//
+// Addin/Workbench 注册不在本文件——在框架的 .dic 字典文件里：
+//   {{PREFIX}}Addin      CATIWorkbenchAddin        lib{{PREFIX}}Module
+//   {{PREFIX}}Workbench  CATIPrtWksConfiguration   lib{{PREFIX}}Module
+// （真实示例：B28 win_b64/code/dictionary/*.dic，如
+//  "CATStkPrtWksAddin  CATIWorkbenchAddin  libCATStkUIPrtWkbAddin"）
 //===================================================================
 
-/**
- * Module Identity Card
- * 
- * Declares framework dependencies and interface implementations for:
- * - {{PREFIX}}Workbench: Custom workbench
- * - {{PREFIX}}Addin: Addin for existing workbenches
- * 
- * Syntax:
- * - AddHeaderAddin: Declares addin for specific workbench
- *   Format: AddHeaderAddin("WorkbenchGUID", "AddinClass", "TargetWorkbenchName")
- * 
- * - AddHeaderWorkshop: Declares custom workbench
- *   Format: AddHeaderWorkshop("WorkbenchGUID", "WorkbenchClass", "WorkbenchName")
- * 
- * Standard CATIA Workbench GUIDs:
- * - Part Design:     PrtWks
- * - Assembly Design: AsmWks  
- * - Drafting:        DftWks
- * - Generative Shape Design: GSD
- * - Wireframe:       WireframeWks
- */
+// -->Prereq Components Declaration
+   AddPrereqComponent("System",Public);
+   AddPrereqComponent("ApplicationFrame",Public);
+   AddPrereqComponent("DialogEngine",Public);
 
-#include "CATFrmIdentityCard.h"
-
-//-----------------------------------------------------------------------
-// Addin Declaration - Integrate into existing workbenches
-//-----------------------------------------------------------------------
-// Add toolbar/commands to Part Design workbench
-AddHeaderAddin("CAA2", "{{PREFIX}}Addin", "PrtWks");
-
-// Add toolbar/commands to Assembly Design workbench
-// AddHeaderAddin("CAA2", "{{PREFIX}}Addin", "AsmWks");
-
-// Add toolbar/commands to other workbenches as needed
-// AddHeaderAddin("CAA2", "{{PREFIX}}Addin", "GSD");
-
-//-----------------------------------------------------------------------
-// Custom Workbench Declaration (optional)
-//-----------------------------------------------------------------------
-// Declare custom workbench (uncomment if using standalone workbench)
-// AddHeaderWorkshop("CAA2", "{{PREFIX}}Workbench", "{{PREFIX}}Wks");
-
-//-----------------------------------------------------------------------
-// Workshop Access Point (optional)
-//-----------------------------------------------------------------------
-// Define how to access the workbench (start menu, toolbar button, etc.)
-// Requires additional configuration in CATRsc file
+// 按需追加（目标 workbench 的接口框架），例如：
+//   AddPrereqComponent("MecModInterfaces",Public);     // Part Design
+//   AddPrereqComponent("ProductStructureInterfaces",Public); // Assembly
