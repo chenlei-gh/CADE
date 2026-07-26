@@ -31,6 +31,7 @@ tags: [playbook, update, save, batch, automation]
 | `CATSetPtrCATDocument` | 该容器类型不存在。真实的文档指针列表容器是 `CATLISTP(CATDocument)`（`ObjectModelerBase` 框架） |
 | `CATIDocument::IsReadOnly()` | 不存在这个便捷方法。只读状态同样通过 `CATIxPDMItem::GetReadOnlyStatus(CATBoolean& oIsReadOnly)` 获取 |
 | 从 `CATIProduct` 拿不到所属文档 | `CATIProduct` 的实现组件（如 `ASMPRODUCT`）同时实现 `CATILinkableObject`，QueryInterface 到它即可调用 `GetDocument()` 拿到该节点所属的 `CATDocument*`（注意：该方法不 AddRef 返回值，不要 Release） |
+| `#include "CATLISTP.h"` | 该文件不存在。`CATLISTP` 只是个宏（定义在 `CATCollec.h`），`CATLISTP(CATDocument)` 的模板实例化真正声明在 `CATDocumentsInSession.h`（`ObjectModelerBase` 框架，`CATDocument.h`/`CATSession.h` 等均这样引用） |
 
 ## 目标
 
@@ -67,7 +68,7 @@ tags: [playbook, update, save, batch, automation]
 #include "CATILinkableObject.h"
 #include "CATIProduct.h"
 #include "CATISpecObject.h"
-#include "CATLISTP.h"
+#include "CATDocumentsInSession.h"   // 声明 CATLISTP(CATDocument) 的真实头文件（CATLISTP.h 不存在）
 
 // 1. 递归收集装配树中所有唯一的 CATDocument*（每个 Product 节点通过
 //    CATILinkableObject::GetDocument() 反查其所属文档；该方法不 AddRef 返回值）
