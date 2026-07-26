@@ -333,6 +333,89 @@ _shutil.rmtree(ws3, ignore_errors=True)
 import shutil
 shutil.rmtree(ws, ignore_errors=True)
 
+# ═══════════════════════════════════════════════════════════════
+# [17] Regression set — real fabrication cases caught in templates/
+#      and playbooks/ dogfooding (2026-07). Each entry is a real
+#      case that was actually generated/reviewed and found fabricated;
+#      pinning them here measures verifier recall over time.
+#      See knowledge/failure_patterns/fp_template_feature_apis.md.
+# ═══════════════════════════════════════════════════════════════
+print("\n[17] Regression — historical fabrication cases (recall)")
+
+_hm = None
+_mi = None
+try:
+    from header_map import HeaderMap
+    _hm = HeaderMap.load(SKILL)
+except Exception:
+    pass
+try:
+    from method_index import MethodIndex
+    _mi = MethodIndex.load(SKILL)
+    if _mi is not None and _mi.type_count == 0:
+        _mi = None
+except Exception:
+    pass
+
+# (header, should_exist) — fabricated headers from the feature/catalog
+# template purge (fp_template_feature_apis.md) plus the CATLISTP.h case
+# found in pb_batch_update_save.md.
+_FABRICATED_HEADERS = [
+    "CATIMmiResultFeature", "CATIMmiUseMechFeat", "CATMmrInterfaces",
+    "CATFeatCont", "CATICatalog", "CATAfrCommandHeader",
+    "CATFrmIdentityCard", "CATTopBooleanOperator", "CATTopRevolve",
+    "CATLISTP",
+]
+if _hm is not None:
+    for h in _FABRICATED_HEADERS:
+        ck(f"header_map rejects fabricated '{h}'", _hm.lookup(h) is None)
+else:
+    ck("header_map available for regression set", False, "could not load")
+
+_REAL_HEADERS = ["CATTopRevol", "CATAfrDialogCommandHeader", "CATICatalogChapter"]
+if _hm is not None:
+    for h in _REAL_HEADERS:
+        ck(f"header_map accepts real '{h}'", _hm.lookup(h) is not None)
+
+# (type, method, expected) — fabricated method attribution caught by
+# grepping real B28 headers during the 2026-07 purge.
+# expected=False means: type is known to the index AND method is absent
+# (method_exists returns False). Some fabricated types are entirely
+# unknown to the index (None) — those are covered by the header_map
+# block above instead and listed here only when the type is real.
+_FABRICATED_METHODS_KNOWN_TYPE = [
+    ("CATICatalogChapter", "CreateStartUp"),
+    ("CATICatalogChapter", "GetStartUp"),
+    ("CATISpecAttrAccess", "AddAttribute"),
+    ("CATICatalogDescription", "SetDescription"),
+    ("CATIContainer", "GetAllChildren"),  # pre-existing case, kept for recall
+]
+if _mi is not None:
+    for typ, meth in _FABRICATED_METHODS_KNOWN_TYPE:
+        ck(f"method_index rejects '{typ}::{meth}' (known type, wrong attribution)",
+           _mi.method_exists(typ, meth) is False)
+else:
+    ck("method_index available for regression set", False, "could not load")
+
+# Types that are themselves fabricated (no header in B28) — the index
+# must not claim the method exists on them (None = unknown type is fine,
+# False is fine, True would be a regression).
+_FABRICATED_TYPES_METHODS = [
+    ("CATIMmiMechanicalFeature", "GetBodyResult"),
+    ("CATIMmiResultFeature", "SetResult"),
+]
+if _mi is not None:
+    for typ, meth in _FABRICATED_TYPES_METHODS:
+        res = _mi.method_exists(typ, meth)
+        ck(f"method_index never confirms '{typ}::{meth}' (fabricated type)",
+           res is not True)
+
+# The one true replacement fact from the purge: GetBodyResult really
+# lives on CATIGeometricalElement.
+if _mi is not None:
+    ck("method_index confirms real owner CATIGeometricalElement::GetBodyResult",
+       _mi.method_exists("CATIGeometricalElement", "GetBodyResult") is True)
+
 print(f"\n{'='*60}")
 print(f"  Total: {passed}/{total} passed")
 print(f"{'='*60}")
