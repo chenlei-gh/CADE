@@ -355,6 +355,31 @@ ck("disk cache hit on second load (no silent re-parse)",
 del _ci1, _ci2
 
 # ═══════════════════════════════════════════════════════════════
+# [16c] MethodIndex disk cache must engage and match a full rebuild.
+#      The source caadoc_index.json is ~38MB; the extracted method map
+#      pickles to ~0.5MB. Guard against the pickle silently drifting
+#      from the JSON (stale cache = verifier trusts wrong method lists).
+# ═══════════════════════════════════════════════════════════════
+print("\n[16c] MethodIndex disk cache consistent with full rebuild")
+import method_index as _mix
+_mi_full = _mix.MethodIndex.load(SKILL)   # may hit pickle
+_pickle = SKILL / "cache" / "method_index.pickle"
+ck("pickle cache exists after load", _pickle.exists())
+if _pickle.exists():
+    _mix.CACHE_STATS["disk_hit"] = 0
+    _mi_cached = _mix.MethodIndex.load(SKILL)
+    ck("second load hits disk cache",
+       _mix.CACHE_STATS["disk_hit"] == 1, str(_mix.CACHE_STATS))
+    ck("pickled methods identical to loaded methods",
+       _mi_cached._methods == _mi_full._methods)
+    ck("type count preserved", _mi_cached.type_count == _mi_full.type_count,
+       f"{_mi_full.type_count} types")
+    # Spot-check a known verdict through the cached path
+    ck("cached index still rejects CATIContainer::GetAllChildren",
+       _mi_cached.method_exists("CATIContainer", "GetAllChildren") is False)
+del _mi_full
+
+# ═══════════════════════════════════════════════════════════════
 # [17] Regression set — real fabrication cases caught in templates/
 #      and playbooks/ dogfooding (2026-07). Each entry is a real
 #      case that was actually generated/reviewed and found fabricated;

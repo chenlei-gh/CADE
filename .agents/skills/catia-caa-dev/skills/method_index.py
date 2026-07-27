@@ -9,6 +9,10 @@ so fabricated calls like ``spCont->GetAllChildren()`` on a
 Data sources (read-only, no rescanning):
   1. cache/caadoc_index.json  — per-class method lists parsed from the
      real SDK headers by tools/build_caadoc_index.py (authoritative).
+     The extracted type → method-name map is much smaller than the 38MB
+     source JSON, so it is cached to cache/method_index.pickle keyed by
+     the JSON mtime (same pattern as catalog.py). Without this cache
+     every CLI process pays ~200ms in json.loads on startup.
   2. SDK headers (via header_map paths) — parsed lazily, ONLY for base-
      class declarations, to walk the inheritance chain
      (e.g. CATIProduct → CATBaseUnknown). Results are memoized.
@@ -30,11 +34,15 @@ CLI:
 from __future__ import annotations
 
 import json
+import logging
+import pickle
 import re
 import sys
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Dict, List, Optional, Set
+
+logger = logging.getLogger(__name__)
 
 
 # Base-class declaration:  class ExportedByX CATIProduct : public CATBaseUnknown {
@@ -48,6 +56,12 @@ _UNIVERSAL_METHODS = {
     "GetName", "GetId", "GetFather", "GetReference",
 }
 _MAX_ANCESTOR_DEPTH = 8
+
+# Bump whenever the extraction logic (what we keep from caadoc_index.json)
+# changes so stale disk pickles are dropped.
+_CACHE_VERSION = 1
+# Observability counters (same rationale as catalog.CACHE_STATS).
+CACHE_STATS: Dict[str, int] = {"disk_hit": 0, "disk_miss": 0, "rebuilt": 0}
 
 
 class MethodIndex:
@@ -66,9 +80,19 @@ class MethodIndex:
         mi = cls()
         skill_root = Path(skill_root)
 
-        # 1. Method tables from the caadoc index cache (SDK header source)
+        # 1. Method tables from the caadoc index cache (SDK header source).
+        #    The full JSON is ~38MB; the extracted map pickles to ~MB and
+        #    loads in a few ms, so prefer the pickle when it is fresh.
         cache = skill_root / "cache" / "caadoc_index.json"
-        if cache.is_file():
+        try:
+            json_mtime = cache.stat().st_mtime
+        except OSError:
+            json_mtime = None
+
+        if json_mtime is not None and mi._load_disk_cache(skill_root, json_mtime):
+            CACHE_STATS["disk_hit"] += 1
+        elif cache.is_file():
+            CACHE_STATS["disk_miss"] += 1
             try:
                 data = json.loads(cache.read_text(encoding="utf-8"))
                 for rec in data.get("header_classes", []):
@@ -76,8 +100,11 @@ class MethodIndex:
                              for m in rec.get("methods", [])}
                     if names:
                         mi._methods.setdefault(rec["name"], set()).update(names)
-            except (json.JSONDecodeError, OSError):
-                pass
+                CACHE_STATS["rebuilt"] += 1
+                if json_mtime is not None:
+                    mi._save_disk_cache(skill_root, json_mtime)
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning("caadoc_index.json unreadable: %s", e)
 
         # 2. CATIA_INSTALL for lazy base-class header parsing
         try:
@@ -91,6 +118,45 @@ class MethodIndex:
 
         mi._loaded = True
         return mi
+
+    # ─── Disk cache ──────────────────────────────────────────────
+
+    @staticmethod
+    def _disk_cache_path(skill_root: Path) -> Path:
+        return skill_root / "cache" / "method_index.pickle"
+
+    def _load_disk_cache(self, skill_root: Path, json_mtime: float) -> bool:
+        """Populate _methods from the pickle cache; True on success."""
+        p = self._disk_cache_path(skill_root)
+        try:
+            with p.open("rb") as f:
+                payload = pickle.load(f)
+            if payload.get("json_mtime") != json_mtime:
+                return False
+            if payload.get("version") != _CACHE_VERSION:
+                return False
+            self._methods = payload["methods"]
+            return True
+        except FileNotFoundError:
+            return False
+        except Exception as e:
+            logger.warning("method_index disk cache ignored (%s): %s", p, e)
+            return False
+
+    def _save_disk_cache(self, skill_root: Path, json_mtime: float) -> None:
+        p = self._disk_cache_path(skill_root)
+        try:
+            payload = {
+                "version": _CACHE_VERSION,
+                "json_mtime": json_mtime,
+                "methods": self._methods,
+            }
+            with p.open("wb") as f:
+                pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception as e:
+            # Cache write is best-effort, but log it — a silently-failing
+            # cache is how the catalog bug went unnoticed.
+            logger.warning("method_index disk cache write failed: %s", e)
 
     @property
     def type_count(self) -> int:
