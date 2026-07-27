@@ -28,9 +28,19 @@ from utils import Cache, Logger, format_duration, output_json
 # ─── Health & Verification ──────────────────────────────────────
 
 def validate_workspace(workspace_path: Path) -> dict:
-    """Validate a CAA workspace before building. Returns issues list."""
+    """Validate a CAA workspace before building. Returns issues list.
+
+    Supports two modes:
+    - Workspace mode: path contains .edu framework directories
+    - Module mode: path IS a .m module directory with Imakefile.mk
+    """
     issues = []
     warnings = []
+
+    # Module-level build: path is a .m directory with Imakefile.mk
+    if workspace_path.name.endswith(".m") and (workspace_path / "Imakefile.mk").exists():
+        return {"can_build": True, "issues": issues, "warnings": warnings, "mode": "module"}
+
     fws = [p for p in workspace_path.iterdir() if p.is_dir() and p.name.endswith(".edu")]
 
     if not fws:
@@ -832,7 +842,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Build CATIA CAA workspace",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Examples:\n  python build.py\n  python build.py D:\\workspace\\MyFw.edu\n  python build.py . -g\n  python build.py --timeout 1200",
+        epilog="Examples:\n  python build.py                                    # build current workspace\n  python build.py D:\\workspace\\MyFw.edu             # build specific framework\n  python build.py . -g                                  # build with debug info\n  python build.py ./CAAAutoColor.edu/CAAAutoColorCmd.m  # module-scoped build\n  python build.py --timeout 1200",
     )
     parser.add_argument(
         "workspace", nargs="?", default=".", help="Workspace path (default: current)"
