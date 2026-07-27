@@ -9,6 +9,8 @@ frameworks: [ApplicationFrame]
 keywords: [toolbar, SetAccessChild, SetAccessNext, CreateToolbars, overwrite, only last button works]
 tags: [failure_pattern, runtime, ui, toolbar]
 release: [R19, R28]
+automation: rule
+static_rule: [ui_lint:ui_toolbar_access_chain]
 ---
 # SetAccessChild Overwrite / 多命令挂同一工具栏只有最后一个可点击
 

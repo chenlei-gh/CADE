@@ -9,6 +9,8 @@ frameworks: [DialogEngine]
 keywords: [dialog, close, Cancel, Desactivate, not closing, won't close, RequestDelayedDestruction, SetVisibility]
 tags: [failure_pattern, runtime, ui, dialog, lifecycle]
 release: [R19, R28]
+automation: rule
+static_rule: [ui_lint:ui_dialog_cancel_empty]
 ---
 # Dialog Close Goes Through Cancel Not Desactivate / 对话框关闭走 Cancel 而非 Desactivate
 

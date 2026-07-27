@@ -9,6 +9,8 @@ frameworks: []
 keywords: [imakefile, LINK_WITH, link, compile]
 tags: [failure_pattern, compile, infrastructure]
 release: [R19, R28]
+automation: rule
+static_rule: [diagnostics:_check_link_with_coverage]
 ---
 # Imakefile LINK_WITH Missing
 

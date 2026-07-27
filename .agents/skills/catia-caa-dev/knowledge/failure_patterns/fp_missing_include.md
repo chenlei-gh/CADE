@@ -9,6 +9,7 @@ frameworks: []
 keywords: [include, header, compile, missing]
 tags: [failure_pattern, compile, infrastructure]
 release: [R19, R28]
+automation: template
 ---
 # Missing #include
 

@@ -9,6 +9,8 @@ tags: [template, feature, catalog, fabricated, mecmod]
 apis: [CATIMmiResultFeature, CATIMmiUseMechFeat, CATMmrInterfaces, CATFeatCont, CATICatalog, CATAfrCommandHeader, CATFrmIdentityCard, CATTopBooleanOperator, CATTopRevolve, CATIGeometricalElement, CATOsmSUHandler]
 frameworks: [CATMecModUseItf, MecModInterfaces, ComponentsCatalogsInterfaces, ApplicationFrame]
 keywords: [feature, template, SetResult, GetBodyResult, StartUp, catalog, fabricated, AddHeaderAddin]
+automation: rule
+static_rule: [generator:_gen_feature_spec, verifier:_check_includes]
 ---
 
 # Feature/Catalog 模版成建制捏造

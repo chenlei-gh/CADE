@@ -9,6 +9,8 @@ frameworks: [MechanicalModeler, ObjectModelerBase]
 keywords: [paste, cross-document, 跨文档, CATPathElement, CATICutAndPastable, clipboard, 剪贴板, copy paste, runtime exception, crash, CAAPriCCP, Paste NULL, CCP]
 tags: [failure_pattern, crash, copy_paste, clipboard, cross_document]
 release: [R19, R28]
+automation: rule
+static_rule: [ui_lint:paste_explicit_targets]
 ---
 # Cross-Document Paste Must Not Pass CATPathElement Targets / 跨文档 Paste 不能传 CATPathElement targets
 

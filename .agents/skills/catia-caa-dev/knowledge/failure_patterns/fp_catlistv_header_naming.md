@@ -9,6 +9,8 @@ tags: [header, include, naming]
 apis: [CATListValCATBaseUnknown_var, CATLISTV_CATBaseUnknown, CATLISTV_CATISpecObject, CATLISTV_CATICst]
 frameworks: [System]
 keywords: [CATListVal, CATLISTV, header, include, naming, fabricated]
+automation: rule
+static_rule: [verifier:_check_includes]
 ---
 
 # CATListVal Type Name ≠ Header Name

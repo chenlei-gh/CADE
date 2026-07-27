@@ -9,6 +9,8 @@ frameworks: [System, ObjectModelerBase]
 keywords: [_var, smart pointer, forward declaration, 前向声明, C2146, missing semicolon, class CATI, include, header]
 tags: [failure_pattern, compile, smart_pointer]
 release: [R19, R28]
+automation: rule
+static_rule: [ui_lint:var_forward_decl]
 ---
 # _var Smart Pointer Needs Full Header Include / _var 智能指针必须完整 include
 

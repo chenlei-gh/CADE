@@ -9,6 +9,8 @@ frameworks: [DialogEngine, ApplicationFrame]
 keywords: [dialog, parent, NULL, invisible, not showing, CATApplicationFrame, GetMainWindow]
 tags: [failure_pattern, runtime, ui, dialog]
 release: [R19, R28]
+automation: rule
+static_rule: [ui_lint:ui_dialog_null_parent]
 ---
 # Dialog NULL Parent / 对话框无父窗口不可见
 

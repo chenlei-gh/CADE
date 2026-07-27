@@ -9,6 +9,7 @@ frameworks: []
 keywords: [class, CATDeclareClass, CATImplementClass, compile]
 tags: [failure_pattern, compile, infrastructure]
 release: [R19, R28]
+automation: template
 ---
 # Undeclared Class
 
