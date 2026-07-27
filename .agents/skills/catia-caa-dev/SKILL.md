@@ -1045,7 +1045,6 @@ from build import (
     workspace_info,          # mkwhereami + mkreadcpd
     workspace_where,         # mkwhereami
     workspace_config,        # mkreadcpd
-    workspace_build_config,  # mkreadbldcfg
     workspace_module_info,   # mkreadms
 
     # Framework (3)

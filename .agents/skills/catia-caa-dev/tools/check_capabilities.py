@@ -38,6 +38,78 @@ def collect_public_functions():
     return caps
 
 
+def collect_guarded_api():
+    """Names protected by the test_full_regression public-API contract.
+
+    Three guarded forms, all deliberate API-surface protection, not dead code:
+      1. every string in the MODULES dict  ("env": ["CAAEnvironment", ...])
+         — the test iterates it and asserts each name exists in its module
+      2. every attribute in callable(mod.name) checks
+         — the test asserts the symbol is present AND callable
+      3. every string passed to getattr(mod, "name") where the result feeds a
+         callable() check — the for-loop form of (2), e.g.
+             for fn_name in ["run_catia_with_env", ...]:
+                 check(..., callable(getattr(run_mod, fn_name)))
+    A name on this list is a CONTRACT-GUARDED public API: removing it breaks
+    the suite, so it is reported as GUARDED, never PHANTOM."""
+    guarded = set()
+    tfr = TESTS_DIR / "test_full_regression.py"
+    if not tfr.exists():
+        return guarded
+    try:
+        tree = ast.parse(tfr.read_text(encoding="utf-8"), filename=str(tfr))
+    except SyntaxError:
+        return guarded
+    for node in ast.walk(tree):
+        # MODULES = { "mod": ["a", "b"], ... } — collect every string member
+        if isinstance(node, ast.Assign):
+            if any(isinstance(t, ast.Name) and t.id == "MODULES"
+                   for t in node.targets):
+                for sub in ast.walk(node.value):
+                    if isinstance(sub, ast.Constant) \
+                            and isinstance(sub.value, str):
+                        if re.fullmatch(r"[A-Za-z_]\w*", sub.value):
+                            guarded.add(sub.value)
+        # callable(ref_mod.extract_interface) — collect the attribute name
+        if isinstance(node, ast.Call) \
+                and isinstance(node.func, ast.Name) \
+                and node.func.id == "callable" and node.args:
+            arg = node.args[0]
+            if isinstance(arg, ast.Attribute):
+                guarded.add(arg.attr)
+            elif isinstance(arg, ast.Name):
+                guarded.add(arg.id)
+        # getattr(run_mod, "run_catia_with_env") — string form of the contract
+        if isinstance(node, ast.Call) \
+                and isinstance(node.func, ast.Name) \
+                and node.func.id == "getattr" and len(node.args) >= 2:
+            s = node.args[1]
+            if isinstance(s, ast.Constant) and isinstance(s.value, str) \
+                    and re.fullmatch(r"[A-Za-z_]\w*", s.value):
+                guarded.add(s.value)
+        # for fn_name in ["run_catia_with_env", ...]: ... getattr(mod, fn_name)
+        # The contract list is the for-loop's iterable; the names are verified
+        # via getattr(mod, loop_var) inside the body.
+        if isinstance(node, ast.For) and isinstance(node.target, ast.Name):
+            loop_var = node.target.id
+            uses_getattr = any(
+                isinstance(sub, ast.Call)
+                and isinstance(sub.func, ast.Name)
+                and sub.func.id == "getattr"
+                and len(sub.args) >= 2
+                and isinstance(sub.args[1], ast.Name)
+                and sub.args[1].id == loop_var
+                for sub in ast.walk(node)
+            )
+            if uses_getattr:
+                for sub in ast.walk(node.iter):
+                    if isinstance(sub, ast.Constant) \
+                            and isinstance(sub.value, str) \
+                            and re.fullmatch(r"[A-Za-z_]\w*", sub.value):
+                        guarded.add(sub.value)
+    return guarded
+
+
 def collect_defined_symbols():
     """All top-level public names defined in skills/ — functions AND classes.
     Used only for the stale-doc check: a documented export that resolves to a
@@ -215,7 +287,7 @@ def collect_test_calls():
 
 
 def check(name, file_path, entry_src, test_src, doc_src,
-          imported_names, intra_calls, test_calls, doc_exports):
+          imported_names, intra_calls, test_calls, doc_exports, guarded):
     """Check one capability against the five-point contract."""
     has_entry = name in entry_src
     has_test = name in test_src
@@ -241,6 +313,11 @@ def check(name, file_path, entry_src, test_src, doc_src,
         has_entry = True
         has_runtime = True
     status = "OK" if (has_entry or has_runtime) else "PHANTOM"
+    # Contract-guarded public API: no live entry/runtime path, but the
+    # regression suite asserts it exists and stays callable.  Report it
+    # distinctly so it is never mistaken for a deletable phantom.
+    if status == "PHANTOM" and name in guarded:
+        status = "GUARDED"
     return {
         "name": name,
         "file": file_path,
@@ -263,17 +340,19 @@ def main():
     intra_calls = collect_intra_module_calls()
     test_calls = collect_test_calls()
     doc_exports = collect_doc_exports()
+    guarded = collect_guarded_api()
 
     rows = []
     for name, fpath in sorted(caps.items()):
         rows.append(check(name, fpath, entry_src, test_src, doc_src,
-                          imported_names, intra_calls, test_calls, doc_exports))
+                          imported_names, intra_calls, test_calls,
+                          doc_exports, guarded))
 
     # CLI commands are capabilities too
     for cmd, lineno in sorted(cli_cmds.items()):
         rows.append(check(cmd, f"cade.py:L{lineno}", entry_src, test_src,
                         doc_src, imported_names, intra_calls, test_calls,
-                        doc_exports))
+                        doc_exports, guarded))
 
     # Reverse phantom: documented in SKILL.md but absent from code.
     # Presence = a function, a CLI command, OR a class (classes aren't in caps).
@@ -288,6 +367,7 @@ def main():
     print(hdr)
     print("-" * len(hdr))
     phantom_count = 0
+    guarded_count = 0
     for r in rows:
         print(
             f"{r['name']:<40s} {r['file']:<40s} {r['entry']:<6s} "
@@ -295,8 +375,11 @@ def main():
         )
         if r["status"] == "PHANTOM":
             phantom_count += 1
+        elif r["status"] == "GUARDED":
+            guarded_count += 1
     print("-" * len(hdr))
-    print(f"  Total: {len(rows)} capabilities, {phantom_count} PHANTOM")
+    print(f"  Total: {len(rows)} capabilities, "
+          f"{phantom_count} PHANTOM, {guarded_count} GUARDED")
     if stale_docs:
         print(f"  STALE DOC (documented but missing from code): "
               f"{len(stale_docs)}")
