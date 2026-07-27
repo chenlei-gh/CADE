@@ -78,6 +78,67 @@ class Retrieval:
                 self._root, header_map=self.header_map)
         return self._method_index
 
+    # ─── Diagnostics ─────────────────────────────────────────────
+
+    def health(self) -> dict:
+        """Health report for all four indexes — Agent-facing diagnostics.
+
+        Each index reports independently so one broken index cannot hide
+        the state of the others. Top-level "ok" is True only when every
+        index loaded with data. Run from CLI:
+            python skills/retrieval.py
+        """
+        report: Dict[str, dict] = {}
+
+        try:
+            from catalog import CatalogIndex
+            cat = self.catalog
+            report["catalog"] = {
+                "ok": len(cat.entries) > 0,
+                "entries": len(cat.entries),
+                "aliases": len(cat.aliases),
+                "cache": dict(CatalogIndex.CACHE_STATS),
+            }
+        except Exception as e:
+            report["catalog"] = {"ok": False, "error": str(e)}
+
+        try:
+            import method_index as _mix
+            mi = self.method_index
+            report["method_index"] = {
+                "ok": mi.type_count > 0,
+                "types": mi.type_count,
+                "cache": dict(_mix.CACHE_STATS),
+            }
+        except Exception as e:
+            report["method_index"] = {"ok": False, "error": str(e)}
+
+        try:
+            from header_map import HeaderMap
+            hm = self.header_map
+            report["header_map"] = {
+                "ok": hm.header_count > 0,
+                "headers": hm.header_count,
+                "frameworks": hm.framework_count,
+                "proc_cached": str(self._root.resolve()) in HeaderMap._PROC_CACHE,
+            }
+        except Exception as e:
+            report["header_map"] = {"ok": False, "error": str(e)}
+
+        try:
+            reg = self.registry
+            report["api_registry"] = {
+                "ok": len(reg.apis) > 0,
+                "apis": len(reg.apis),
+                "headers": len(reg.headers),
+                "sources": reg.stats().get("sources", {}),
+            }
+        except Exception as e:
+            report["api_registry"] = {"ok": False, "error": str(e)}
+
+        report["ok"] = all(v.get("ok") for v in report.values())
+        return report
+
 
 # ─── Process-wide singleton ──────────────────────────────────────
 
@@ -92,3 +153,8 @@ def get_retrieval(skill_root: Optional[Path] = None) -> Retrieval:
     if key not in _CACHE:
         _CACHE[key] = Retrieval(Path(skill_root))
     return _CACHE[key]
+
+
+if __name__ == "__main__":
+    import json
+    print(json.dumps(get_retrieval().health(), indent=2, ensure_ascii=False))
