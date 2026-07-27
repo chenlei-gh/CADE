@@ -25,6 +25,17 @@ tags: [core, part, plane, origin]
 | 创建接口 | 无（不可再创建） | `CATIGSMUseFactory::CreatePlane*()` |
 | 所属框架 | MecModInterfaces | CATGSMUseItf / GSMInterfaces |
 
+## ⚠️ 命名推导陷阱（已核实的捏造）
+
+按 CAA 命名规律（`CATI + Domain + Object`）从 UI 树反推接口，容易“合理”地捏造出**根本不存在**的接口。以下两个已用 MethodIndex 核实为**捏造**（2026-07-27），不要生成：
+
+| 捏造 | 为什么听起来合理 | 实况 |
+|---|---|---|
+| `CATIPrtOriginElements` | 对应 UI 的 Origin / 原点元素节点 | MethodIndex `has_type` = False，B28 无此接口 |
+| `GetPlaneXY/YZ/ZX()` | 符合 `Get + 对象名` 命名习惯 | `owners_of` 为空，无任何接口拥有此方法 |
+
+**正确路径**：`CATIPrtContainer::GetPart()` → `CATIPrtPart::GetReferencePlanes()`（返回列表，非单个命名 getter）。教训：命名规律只能当**假设**，落代码前必须过 MethodIndex / HeaderMap 验证。
+
 ## 正确 API（B28 头文件核实，2026-07-27）
 
 ```cpp
