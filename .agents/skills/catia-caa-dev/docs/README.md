@@ -8,11 +8,20 @@
 
 ```
 docs/
+├── architecture/        # 架构契约（检索、能力、变更）
 ├── guides/              # 使用指南
 ├── references/          # 技术参考
 ├── examples/            # 示例代码
 └── reports/             # 测试和发布报告
 ```
+
+---
+
+## 🏛️ 架构契约 (architecture/)
+
+CADE 的架构级约束，定义"什么是权威来源、什么入口必须走、什么禁止做"：
+
+- **[retrieval.md](architecture/retrieval.md)** - 检索架构契约 v1（四索引模型、Decision Rules、禁止事项）
 
 ---
 

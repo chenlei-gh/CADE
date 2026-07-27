@@ -611,6 +611,21 @@ AI Agent 有需求
 📖 CAADoc (官方文档)         ← 查缺补漏
 ```
 
+### 检索规则（Retrieval Rules）
+
+CADE 的所有知识检索必须走统一门面，禁止绕过：
+
+- **Never scan knowledge/ directly** — 用 `CatalogIndex.search()`
+- **Never parse B28 headers directly** — 用 `HeaderMap`（接口存在性的权威）
+- **Never grep SDK for methods** — 用 `MethodIndex`（含继承链）
+- **Never infer capability from file existence** — 用 `capabilities.yaml`（防 Phantom）
+- **Use Retrieval facade only** — `from retrieval import get_retrieval`
+
+权威级别：HeaderMap > ApiRegistry > Knowledge 文档。
+Agent 诊断：`python skills/retrieval.py` 输出四索引健康报告。
+
+详细架构契约：[docs/architecture/retrieval.md](docs/architecture/retrieval.md)
+
 ### 架构层次
 
 > ⚠️ **EXPERIMENTAL**: Development Engine (Intent → Spec → Generator) 和 Specification 层
