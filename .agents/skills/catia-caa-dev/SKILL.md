@@ -1043,7 +1043,7 @@ python skills/build.py ./MyFw.edu/MyModule.m  # 只编译指定模块
 }
 ```
 
-### 2. Build Time 命名命令（35 个，AI 友好）
+### 2. Build Time 命名命令（27 个，AI 友好）
 
 ```python
 from build import (
@@ -1060,7 +1060,7 @@ from build import (
     create_runtime_view,            # mkCreateRuntimeView
     multi_create_runtime_view,      # mkMultiCreateRuntimeView
 
-    # Workspace (5)
+    # Workspace (4)
     workspace_info,          # mkwhereami + mkreadcpd
     workspace_where,         # mkwhereami
     workspace_config,        # mkreadcpd
@@ -1088,7 +1088,7 @@ from build import (
     # 导出 (1)
     export_symbols,      # mkexportsymbols
 
-    # 工具 (3)
+    # 工具 (2)
     run_executable,      # mkrun
     register_vs,         # mkManageDevenvReg
 )
