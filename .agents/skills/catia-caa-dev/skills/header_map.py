@@ -49,6 +49,12 @@ _ALWAYS_AVAILABLE = {"System", "ObjectModelerBase", "CATIAApplicationFrame",
 class HeaderMap:
     """Cached header → (module, framework) lookup table."""
 
+    # Process-wide cache (per skill_root + JSON cache mtime) — mirrors
+    # CatalogIndex/MethodIndex so every retrieval index shares the same
+    # lifecycle; callers never guess which load() is cached and which not.
+    _PROC_CACHE: Dict[str, "HeaderMap"] = {}
+    _PROC_CACHE_MTIME: Dict[str, float] = {}
+
     def __init__(self):
         self._map: Dict[str, Tuple[str, str]] = {}
         self._frameworks: Dict[str, List[str]] = {}  # fw → [module names]
@@ -97,9 +103,11 @@ class HeaderMap:
         """Load the cached header map, building it if necessary.
 
         The cache is keyed by CATIA version so a version upgrade
-        automatically triggers a rebuild.
+        automatically triggers a rebuild. Within a process the loaded
+        map is cached per skill_root and invalidated when the JSON
+        cache file's mtime changes (e.g. after --rebuild).
         """
-        hm = cls()
+        skill_root = Path(skill_root)
         cache_dir = skill_root / "cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -116,18 +124,30 @@ class HeaderMap:
             catia_install = ""
 
         cache_file = cache_dir / f"header_map_{catia_version}.json"
+        key = str(skill_root.resolve())
 
+        # Process-wide cache: valid while the JSON cache mtime is unchanged
+        if not force_rebuild:
+            try:
+                mtime: Optional[float] = cache_file.stat().st_mtime
+            except OSError:
+                mtime = None
+            if (mtime is not None
+                    and cls._PROC_CACHE_MTIME.get(key) == mtime
+                    and key in cls._PROC_CACHE):
+                return cls._PROC_CACHE[key]
+
+        hm = cls()
         if not force_rebuild and cache_file.exists():
             try:
                 data = json.loads(cache_file.read_text(encoding="utf-8"))
                 hm._map = {k: tuple(v) for k, v in data.get("map", {}).items()}
                 hm._frameworks = {k: list(v) for k, v in data.get("frameworks", {}).items()}
                 hm._loaded = True
-                return hm
             except (json.JSONDecodeError, KeyError):
                 pass  # corrupt cache, rebuild
 
-        if catia_install:
+        if not hm._loaded and catia_install:
             hm._build(catia_install)
             # Save cache
             try:
@@ -140,6 +160,16 @@ class HeaderMap:
                 pass  # cache write failed — still return in-memory map
 
         hm._loaded = True
+
+        # Populate the process cache keyed by the on-disk cache mtime.
+        # When no cache file exists (CATIA absent), skip caching so every
+        # call re-checks whether the file appeared.
+        try:
+            cls._PROC_CACHE[key] = hm
+            cls._PROC_CACHE_MTIME[key] = cache_file.stat().st_mtime
+        except OSError:
+            cls._PROC_CACHE.pop(key, None)
+            cls._PROC_CACHE_MTIME.pop(key, None)
         return hm
 
     def _build(self, catia_install: str):

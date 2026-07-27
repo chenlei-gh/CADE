@@ -380,6 +380,32 @@ if _pickle.exists():
 del _mi_full
 
 # ═══════════════════════════════════════════════════════════════
+# [16d] HeaderMap process cache engages and invalidates on mtime.
+#      HeaderMap was the last retrieval index without a process-wide
+#      cache; all indexes now share the same load lifecycle so callers
+#      never guess which load() is cached.
+# ═══════════════════════════════════════════════════════════════
+print("\n[16d] HeaderMap process cache engages")
+import os as _os
+from header_map import HeaderMap as _HM
+_hm_jsons = sorted((SKILL / "cache").glob("header_map_*.json"))
+if _hm_jsons:
+    _HM._PROC_CACHE.clear(); _HM._PROC_CACHE_MTIME.clear()
+    _h1 = _HM.load(SKILL)
+    _h2 = _HM.load(SKILL)
+    ck("second load returns the cached instance", _h1 is _h2)
+    _jf = _hm_jsons[0]
+    _st = _jf.stat()
+    _os.utime(_jf, (_st.st_atime, _st.st_mtime + 2))
+    _h3 = _HM.load(SKILL)
+    ck("mtime change invalidates the process cache", _h3 is not _h1)
+    ck("reloaded map has identical data", _h3.header_count == _h1.header_count,
+       f"{_h3.header_count} headers")
+    del _h1, _h2, _h3
+else:
+    ck("header_map JSON cache present", False, "no header_map_*.json — run a build first")
+
+# ═══════════════════════════════════════════════════════════════
 # [17] Regression set — real fabrication cases caught in templates/
 #      and playbooks/ dogfooding (2026-07). Each entry is a real
 #      case that was actually generated/reviewed and found fabricated;
