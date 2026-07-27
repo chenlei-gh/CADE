@@ -334,6 +334,27 @@ import shutil
 shutil.rmtree(ws, ignore_errors=True)
 
 # ═══════════════════════════════════════════════════════════════
+# [16b] CatalogIndex disk cache must actually engage.
+#      Regression: _load_disk_cache referenced self._CACHE_VERSION inside
+#      a @classmethod (NameError swallowed by except Exception), so the
+#      disk cache NEVER hit and every load silently re-parsed index.yaml.
+# ═══════════════════════════════════════════════════════════════
+print("\n[16b] CatalogIndex disk cache engages")
+from catalog import CatalogIndex
+CatalogIndex.reset_stats()
+CatalogIndex._PROC_CACHE.clear(); CatalogIndex._PROC_CACHE_MTIME.clear()
+_ci1 = CatalogIndex.load(SKILL)
+CatalogIndex._PROC_CACHE.clear(); CatalogIndex._PROC_CACHE_MTIME.clear()
+_ci2 = CatalogIndex.load(SKILL)
+ck("entries identical across reloads",
+   len(_ci1.entries) == len(_ci2.entries) and len(_ci2.entries) > 0,
+   f"{len(_ci2.entries)} entries")
+ck("disk cache hit on second load (no silent re-parse)",
+   CatalogIndex.CACHE_STATS["disk_hit"] >= 1,
+   str(CatalogIndex.CACHE_STATS))
+del _ci1, _ci2
+
+# ═══════════════════════════════════════════════════════════════
 # [17] Regression set — real fabrication cases caught in templates/
 #      and playbooks/ dogfooding (2026-07). Each entry is a real
 #      case that was actually generated/reviewed and found fabricated;

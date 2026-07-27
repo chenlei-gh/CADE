@@ -10,11 +10,14 @@ Design principle:
 
 from __future__ import annotations
 
+import logging
 import pickle
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -83,6 +86,9 @@ class CatalogIndex:
     _SEARCH_CACHE_MAX = 128
     # Bump whenever parsing/scoring changes so stale disk pickles are dropped.
     _CACHE_VERSION = 2
+    # Observability counters — tests assert the disk cache actually engages
+    # (a silently-failing cache went unnoticed here once before).
+    CACHE_STATS: Dict[str, int] = {"disk_hit": 0, "disk_miss": 0, "rebuilt": 0}
 
     @classmethod
     def load(cls, skill_root: Path) -> "CatalogIndex":
@@ -115,10 +121,16 @@ class CatalogIndex:
             content = catalog_file.read_text(encoding="utf-8", errors="replace")
             index._parse(content)
             index._save_disk_cache(skill_root, catalog_file, mtime)
+            cls.CACHE_STATS["rebuilt"] += 1
 
         cls._PROC_CACHE[key] = index
         cls._PROC_CACHE_MTIME[key] = mtime
         return index
+
+    @classmethod
+    def reset_stats(cls) -> None:
+        for k in cls.CACHE_STATS:
+            cls.CACHE_STATS[k] = 0
 
     # ─── Disk cache ──────────────────────────────────────────────
 
@@ -134,17 +146,28 @@ class CatalogIndex:
             with p.open("rb") as f:
                 payload = pickle.load(f)
             if payload.get("mtime") != mtime:
+                cls.CACHE_STATS["disk_miss"] += 1
                 return None
             # Parser version guards against stale pickles when the scoring/
             # parsing logic changes but index.yaml does not. Bump on change.
-            if payload.get("version") != self._CACHE_VERSION:
+            if payload.get("version") != cls._CACHE_VERSION:
+                cls.CACHE_STATS["disk_miss"] += 1
                 return None
             index = cls()
             index.entries = payload["entries"]
             index.aliases = payload["aliases"]
             index._entry_refs = payload.get("refs", [[] for _ in index.entries])
+            cls.CACHE_STATS["disk_hit"] += 1
             return index
-        except Exception:
+        except FileNotFoundError:
+            cls.CACHE_STATS["disk_miss"] += 1
+            return None
+        except Exception as e:
+            # Corrupt/incompatible pickle must not break retrieval, but must
+            # not fail silently either — that is how the broken cache above
+            # went unnoticed.
+            logger.warning("catalog disk cache ignored (%s): %s", p, e)
+            cls.CACHE_STATS["disk_miss"] += 1
             return None
 
     def _save_disk_cache(self, skill_root: Path, catalog_file: Path,
