@@ -619,6 +619,7 @@ CADE 的所有知识检索必须走统一门面，禁止绕过：
 - **Never parse B28 headers directly** — 用 `HeaderMap`（接口存在性的权威）
 - **Never grep SDK for methods** — 用 `MethodIndex`（含继承链）
 - **Never infer capability from file existence** — 用 `capabilities.yaml`（防 Phantom）
+- **Never assert header path / framework without lookup** — 头文件路径、框架归属的陈述必须附 `HeaderMap.lookup()` 或 CAADoc `headers_by_name` 证据；查不到就只能说“未找到”，禁止按命名规律外推
 - **Use Retrieval facade only** — `from retrieval import get_retrieval`
 
 权威级别：HeaderMap > ApiRegistry > Knowledge 文档。
