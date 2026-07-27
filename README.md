@@ -313,8 +313,8 @@ cade suggest                      # AI recommends next action
 cade docs                         # auto-generate documentation
 cade prereq MyModule              # view prerequisites
 cade rv                           # create Runtime View
-cade test --quick                 # run all 31 suites (~8s)
-cade test                         # full: 32 suites (~60s)
+cade test --quick                 # run 40 suites (~16s)
+cade test                         # full: 41 suites (launches CATIA)
 ```
 
 > 🔌 Also available as **MCP Server** (3 modes) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
