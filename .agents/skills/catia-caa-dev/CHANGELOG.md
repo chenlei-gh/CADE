@@ -10,6 +10,17 @@
 
 ## [未发布]
 
+### 🧭 检索架构 (2026-07-27)
+
+- **新增 Retrieval 统一门面**：`skills/retrieval.py`，所有知识检索必须走 `get_retrieval()`，禁止直接 `XxxIndex.load()`。
+- **新增检索架构契约**：`docs/architecture/retrieval.md` v1，固化四索引模型、权威来源、Decision Rules、禁止事项。
+- **修复 catalog 磁盘缓存**：`_load_disk_cache` 是 `@classmethod` 却引用 `self._CACHE_VERSION`，NameError 被 `except` 吞掉，导致缓存从未生效。修复后冷启动 1.4ms → 0.35ms。
+- **MethodIndex 磁盘缓存**：38MB `caadoc_index.json` 每次全量 `json.loads`（~300ms），改为 pickle 缓存（523KB，~5ms），mtime + 版本号双失效。
+- **HeaderMap 进程缓存**：补齐四个索引统一的生命周期，消除"哪个 load() 有缓存"的猜测空间。
+- **新增 `Retrieval.health()`**：`python skills/retrieval.py` 输出四索引 JSON 健康报告，供 Agent 诊断。
+- **新增检索基准测试**：`tests/test_retrieval_benchmark.py`（第 41 套件），作为缓存回归防线。
+- **能力治理**：`skills/capabilities.yaml` 声明层 + `expose_service` router 隔离 + `specification.py` 移入 `experimental/`。
+
 ### 🔧 模板与生成器 (2026-07-23)
 
 - **对话框 NLS 模式对齐生产实证**：改用 `CATMsgCatalog::BuildMessage(catalog, key, NULL, 0, fallback)` + 英文 fallback 保底，替代之前推的零代码控制路径。fallback 编译进二进制，catalog 缺失/条目缺失时界面仍可读；catalog 改用 framework 共享名（`msgcatalog/<Framework>.CATNls`），多对话框/命令的消息合并进同一文件；key 用语义名（`类名.控件名`），不与控件对象名耦合。
