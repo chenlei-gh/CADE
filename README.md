@@ -38,7 +38,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `38/38 suites (quick, 100%)` | **650+ checks** | *2026-07-20*
+> 🟢 **CI Status**: `40/40 suites (quick, 100%)` | **42 test files** | *2026-07-27*
 
 > ✅ **Production readiness**: Conditional GO — see [SKILL.md § Production Readiness](.agents/skills/catia-caa-dev/SKILL.md#-生产就绪评估) before deploying
 
@@ -213,18 +213,43 @@ Retrieval path: **Capability → Playbook → Knowledge → Framework → CAADoc
 
 ### 🔍 Deep Audit
 
-26-suite test suite catches drift early:
+41-suite test suite catches drift early:
 
 ```bash
-cade test --quick   # 31 suites (~8s), quick mode skips CATIA tests
-cade test           # 32 suites (~60s), full including CATIA lifecycle
+cade test --quick   # 40 suites (~60s), quick mode skips CATIA lifecycle
+cade test           # 41 suites, full including CATIA lifecycle
 ```
 
-> 🟢 **Verified**: 32/32 suites (100%) — last full run 2026-07-11
+> 🟢 **Verified**: 40/40 suites quick (100%) — last run 2026-07-27
 
 - **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
 - **Hardcoded Path Detection** — 92 files scanned
+- **Retrieval Benchmark** — cache-engagement tripwire for the 4 indexes
+
+### 🧭 Retrieval Architecture Contract (v1)
+
+All knowledge lookup in CADE now goes through a **single facade** with a uniform cache lifecycle. No feature code scans B28 headers, greps `knowledge/`, or infers capability from file existence.
+
+```
+Agent / CLI / Kernel
+        │
+        ▼
+  Retrieval facade (get_retrieval)   ← single entry point
+        │
+   ┌────┼────────┬───────────┐
+   ▼    ▼        ▼           ▼
+Catalog ApiRegistry HeaderMap MethodIndex
+  │        │          │           │
+index.yaml md files  B28 scan    caadoc_index
+                     (cached)    (pickle cache)
+```
+
+- **4 indexes, one lifecycle** — process cache → disk cache (mtime + version) → full rebuild
+- **Decision Rules** — HeaderMap is authority for existence, MethodIndex for method validity, capabilities.yaml for capability truth
+- **Agent diagnostics** — `python skills/retrieval.py` prints a JSON health report for all four indexes
+
+→ Full contract: [docs/architecture/retrieval.md](.agents/skills/catia-caa-dev/docs/architecture/retrieval.md)
 
 ---
 
@@ -297,7 +322,7 @@ cade test                         # full: 32 suites (~60s)
 ### ⚡ Test Results
 
 <details>
-<summary>39 suites (38 quick + 1 CATIA lifecycle) · 40 files · 650+ checks · 2026-07-20</summary>
+<summary>41 suites (40 quick + 1 CATIA lifecycle) · 42 files · 700+ checks · 2026-07-27</summary>
 
 | | | |
 |---|---|---|
@@ -314,12 +339,13 @@ cade test                         # full: 32 suites (~60s)
 | Token Optimizer ✅ | CAA Structure ✅ | Intent Planner ✅ |
 | AI Integration ✅ | Deep Audit ✅ | System Health ✅ |
 | Multi-Intent ✅ | Kernel Edges ✅ | UI Scenario ✅ |
+| Capability Contract ✅ | Retrieval Benchmark ✅ | |
 
 </details>
 
 ```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 38 suites (~60s)
-python .agents/skills/catia-caa-dev/tests/test_master.py           # 39 suites (starts CATIA)
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 40 suites (~60s)
+python .agents/skills/catia-caa-dev/tests/test_master.py           # 41 suites (starts CATIA)
 ```
 
 ---
@@ -375,19 +401,20 @@ graph TD
 
 | | |
 |---|---|
-| Suites | 39 (38 quick + 1 CATIA lifecycle) |
-| Files | 40 |
-| Checks | 650+ |
+| Suites | 41 (40 quick + 1 CATIA lifecycle) |
+| Files | 42 |
+| Checks | 700+ |
 | Pass Rate | 100% |
-| Templates | 75 (16 types) |
+| Templates | 82 (19 types) |
 | APIs | 15 (Intent + Action) |
-| CLI Commands | 22 |
+| CLI Commands | 24 |
 | MCP Modes | 3 (develop / analyze / repair) |
 | Build Commands | 35 |
 | Spec Types | 8 |
 | Refactor Ops | 3 |
 | Domain Entities | 10 |
-| Knowledge Assets | 240+ (29K + 14P + 13C + 14PB + 149FW + 6PH + 3FP + 3DT) |
+| Knowledge Assets | 233 (46K + 15P + 13C + 148FW + 10FP + 6PH) |
+| Retrieval Indexes | 4 (Catalog / ApiRegistry / HeaderMap / MethodIndex) |
 
 ---
 
@@ -397,22 +424,27 @@ graph TD
 your_project/
 ├── .agents/skills/catia-caa-dev/   ← CADE (drop-in)
 │   ├── SKILL.md                    ← Main documentation
-│   ├── skills/                     ← Engine (29 modules)
+│   ├── skills/                     ← Engine (33 modules)
 │   │   ├── kernel.py               ← Development Kernel (3-mode)
 │   │   ├── cade.py                 ← CLI: build / dev / run / refactor
 │   │   ├── build.py                ← mkmk build pipeline
 │   │   ├── run.py                  ← CNEXT runtime launcher
 │   │   ├── actions.py              ← Atomic dev actions (CRUD)
-│   │   ├── generator.py            ← Template engine (16 types)
+│   │   ├── generator.py            ← Template engine (19 types)
 │   │   ├── icon_provider.py        ← 107 geometric icons, RGBA multi-color
 │   │   ├── verifier.py             ← Static + mkmk code verifier
 │   │   ├── repair.py               ← Repair loop
 │   │   ├── refactor.py             ← Rename / move / extract
 │   │   ├── diagnostics.py          ← Issue detection + fix plans
+│   │   ├── retrieval.py            ← Unified retrieval facade (4 indexes)
+│   │   ├── catalog.py              ← Knowledge catalog index
+│   │   ├── header_map.py           ← B28 header→framework map
+│   │   ├── method_index.py         ← Type→method existence check
+│   │   ├── api_registry.py         ← Knowledge-driven API whitelist
 │   │   ├── intent/                 ← Intent Engine (Planner + Impact + Optimizer)
 │   │   ├── intents/                ← Intent-specific handlers
 │   │   └── ...
-│   ├── templates/                  ← 75 code templates (16 types)
+│   ├── templates/                  ← 82 code templates (19 types)
 │   ├── capabilities/               ← CAA capability docs
 │   ├── playbooks/                  ← Solution playbooks
 │   ├── knowledge/                  ← CAA knowledge base
@@ -422,7 +454,7 @@ your_project/
 │   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
 │   ├── patterns/                   ← Architecture patterns
 │   ├── examples/                   ← Real CAA project examples
-│   ├── tests/                      ← 39 suites, ~11,000 lines
+│   ├── tests/                      ← 41 suites, ~12,000 lines
 │   ├── docs/                       ← Full documentation
 │   ├── tools/                      ← Setup, validation, utilities
 │   └── config/                     ← Editor MCP templates
@@ -570,14 +602,14 @@ cade rollback --id latest           # 撤销任意操作
 ```bash
 cade suggest                        # AI 推荐下一步
 cade docs                           # 自动生成文档
-cade test --quick                   # 31 套件快速测试 (~8s)
-cade test                           # 32 套件全量测试 (~60s)
+cade test --quick                   # 40 套件快速测试 (~60s)
+cade test                           # 41 套件全量测试 (启动 CATIA)
 ```
 
 ### ⚡ 测试结果
 
 <details>
-<summary>39 套件（快速模式 38 套 + 1 套 CATIA 生命周期）· 40 文件 · 650+ 检查 · 2026-07-20</summary>
+<summary>41 套件（快速模式 40 套 + 1 套 CATIA 生命周期）· 42 文件 · 700+ 检查 · 2026-07-27</summary>
 
 | | | |
 |---|---|---|
@@ -594,6 +626,7 @@ cade test                           # 32 套件全量测试 (~60s)
 | Token 优化 ✅ | CAA 结构 ✅ | Intent 规划 ✅ |
 | AI 集成 ✅ | 深度审计 ✅ | 系统健康 ✅ |
 | 多意图 ✅ | Kernel 边界 ✅ | UI 场景 ✅ |
+| 能力契约 ✅ | 检索基准 ✅ | |
 
 </details>
 
@@ -606,26 +639,30 @@ Kernel（多意图分解 → 需求澄清 → 规划 → 生成 → 验证 → �
      ↓
 Primitives（actions / generator / diagnostics / refactor / build / run）
      ↓
+Retrieval（统一检索门面：Catalog / ApiRegistry / HeaderMap / MethodIndex）
+     ↓
 Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework → CAADoc）
 ```
 
 > **核心理念**：系统能力增长靠沉淀知识资产，不靠修改代码。
+> **检索契约**：所有知识查询必须走 Retrieval 门面，权威来源与禁止事项见 [docs/architecture/retrieval.md](.agents/skills/catia-caa-dev/docs/architecture/retrieval.md)。
 
 ### 📊 数据
 
 | | |
 |---|---|
-| **测试套件** | 39（快速模式  38 套 + 1 套 CATIA 生命周期） |
-| **测试文件** | 40 |
-| **检查项** | 650+ |
+| **测试套件** | 41（快速模式  40 套 + 1 套 CATIA 生命周期） |
+| **测试文件** | 42 |
+| **检查项** | 700+ |
 | **通过率** | 100% |
-| **模板** | 75（16 类型） |
+| **模板** | 82（19 类型） |
 | **API** | 15（Intent + Action） |
-| **CLI 命令** | 22 |
+| **CLI 命令** | 24 |
 | **MCP 模式** | 3（develop / analyze / repair） |
 | **Build 命令** | 35 |
 | **领域实体** | 10 |
-| **知识资产** | 240+（29K + 14P + 13C + 14PB + 149FW + 1E + 6PH + 3FP + 3DT） |
+| **知识资产** | 233（46K + 15P + 13C + 148FW + 10FP + 6PH） |
+| **检索索引** | 4（Catalog / ApiRegistry / HeaderMap / MethodIndex） |
 
 ### 📂 项目结构
 
@@ -633,22 +670,27 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 你的项目/
 ├── .agents/skills/catia-caa-dev/   ← CADE（直接放入即可）
 │   ├── SKILL.md                    ← 主文档
-│   ├── skills/                     ← 引擎（29 模块）
+│   ├── skills/                     ← 引擎（33 模块）
 │   │   ├── kernel.py               ← 开发内核（3 模式）
 │   │   ├── cade.py                 ← CLI：build / dev / run / refactor
 │   │   ├── build.py                ← mkmk 编译管线
 │   │   ├── run.py                  ← CNEXT 运行时启动器
 │   │   ├── actions.py              ← 原子开发动作（增删改查）
-│   │   ├── generator.py            ← 模板引擎（16 种类型）
+│   │   ├── generator.py            ← 模板引擎（19 种类型）
 │   │   ├── icon_provider.py        ← 107 种几何图标，RGBA 多色渲染
 │   │   ├── verifier.py             ← 静态 + mkmk 代码验证
 │   │   ├── repair.py               ← 修复闭环
 │   │   ├── refactor.py             ← 重命名 / 移动 / 提取
 │   │   ├── diagnostics.py          ← 问题检测 + 修复计划
+│   │   ├── retrieval.py            ← 统一检索门面（4 索引）
+│   │   ├── catalog.py              ← 知识目录索引
+│   │   ├── header_map.py           ← B28 头文件→框架映射
+│   │   ├── method_index.py         ← 类型→方法存在性检查
+│   │   ├── api_registry.py         ← 知识驱动 API 白名单
 │   │   ├── intent/                 ← 意图引擎（规划 + 影响分析 + 优化）
 │   │   ├── intents/                ← 意图处理器
 │   │   └── ...
-│   ├── templates/                  ← 82 个代码模板（16 种类型）
+│   ├── templates/                  ← 82 个代码模板（19 种类型）
 │   ├── capabilities/               ← CAA 能力文档
 │   ├── playbooks/                  ← 解决方案手册
 │   ├── knowledge/                  ← CAA 知识库
@@ -658,7 +700,7 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 │   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
 │   ├── patterns/                   ← 架构模式
 │   ├── examples/                   ← 真实 CAA 项目示例
-│   ├── tests/                      ← 39 套件、~11,000 行
+│   ├── tests/                      ← 41 套件、~12,000 行
 │   ├── docs/                       ← 完整文档
 │   ├── tools/                      ← 安装、验证、工具
 │   └── config/                     ← 编辑器 MCP 模板
