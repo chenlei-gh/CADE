@@ -71,7 +71,7 @@ try:
 
     from actions import ActionContext
     from changeset import ChangeSet
-    from intents import create_executable_command, create_ui_dialog, expose_service
+    from intents import create_executable_command, expose_service
     from intents.helpers import generate_tooltip, merge_changeset
 
     ctx = ActionContext(WORKSPACE)
@@ -116,24 +116,13 @@ try:
             framework="TestFramework",
             methods=[{"name": "GetData", "params": [], "return": "HRESULT"}],
         )
-        check("expose service returns pending", result.get("status") == "pending", result.get("message", ""))
-        check("service interface is reported", result.get("service", {}).get("interface") == "ITestComponent")
-        check("service changeset is non-empty", result.get("changeset", {}).get("total_changes", 0) > 0)
+        # expose_service is experimental and returns error (not wired into kernel)
+        check("expose service returns error", result.get("status") == "error", result.get("message", ""))
+        check("error mentions experimental", "experimental" in result.get("message", ""))
 
     run_case("expose service", test_service)
 
-    def test_ui_dialog():
-        result = create_ui_dialog(
-            ctx,
-            name="TestIntentDlg",
-            module="TestModule.m",
-            framework="TestFramework",
-            controls=[{"type": "Editor", "name": "ValueEditor"}],
-        )
-        check("UI dialog returns pending", result.get("status") == "pending", result.get("message", ""))
-        check("UI dialog metadata", result.get("dialog", {}).get("controls") == ["ValueEditor"])
 
-    run_case("create UI dialog", test_ui_dialog)
 
     def test_validation():
         result = create_executable_command(

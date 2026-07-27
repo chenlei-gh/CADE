@@ -32,6 +32,19 @@ def expose_service(
 
     Automatically creates: IDL, C++ header, TIE, Dictionary registration, IID.
     """
+    # CAA service exposure is experimental and NOT wired into the kernel
+    # intent router. Failing loudly here beats silently producing the wrong
+    # artifact (a command masquerading as a service).
+    return {
+        "status": "error",
+        "intent": "expose_service",
+        "message": (
+            "CAA service exposure is experimental and not enabled in this "
+            "build. No runtime route exists (kernel._detect_intent_type has no "
+            "service keyword). See git history for the full implementation."
+        ),
+    }
+
     ctx.refresh()
 
     if not interface_name:

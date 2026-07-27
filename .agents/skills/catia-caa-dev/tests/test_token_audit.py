@@ -21,9 +21,9 @@ from actions import (
 )
 from intents import (
     create_executable_command, create_feature, create_extension,
-    suggest_next_action, expose_service,
+    expose_service,
 )
-from diagnostics import diagnose_workspace, diagnose_and_fix
+from diagnostics import diagnose_workspace
 from build import error_result
 from specification import CommandSpec, FeatureSpec
 from token_optimizer import optimize
@@ -80,12 +80,10 @@ measure("create_command   ", create_executable_command, ctx, "AuditCmd", "TestMo
 measure("create_feature   ", create_feature, ctx, "AuditFeat", "TestMod.m")
 measure("create_extension ", create_extension, ctx, "AuditExt", "CATPart", "TestMod.m")
 measure("expose_service   ", expose_service, ctx, "AuditComp", "TestMod.m")
-measure("suggest_next     ", suggest_next_action, ctx)
 
 # ═══ Diagnostics ═══════════════════════════════════════════
 print("  Diagnostics:")
 measure("diagnose_workspace", diagnose_workspace, ctx)
-measure("diagnose_and_fix  ", diagnose_and_fix, ctx, dry_run=True)
 
 # ═══ Errors ═══════════════════════════════════════════════
 print("  Errors:")

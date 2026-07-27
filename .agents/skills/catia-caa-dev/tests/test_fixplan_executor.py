@@ -18,7 +18,6 @@ from diagnostics import (
     Severity,
     apply_all_fixplans,
     apply_fixplan,
-    diagnose_and_fix,
     diagnose_workspace,
 )
 from meta_model import Command, Framework, Module, WorkspaceSnapshot
@@ -147,22 +146,7 @@ content4 = newf.read_text()
 ck("3.3 line inserted", "Inserted line" in content4, content4.strip())
 
 # ═══════════════════════════════════════════════════════════════════
-print("\n[4] diagnose_and_fix — full cycle")
-
-# Create a genuine auto-fixable diagnostic. Command dictionary entries and
-# explicit SOURCES lists are not required by B28 and must not be used merely
-# to make this executor test produce a ChangeSet.
-(nls_dir / "TestFW.CATNls").unlink()
-ctx.refresh()
-result = diagnose_and_fix(ctx, auto_only=True, dry_run=True)
-ck("4.1 status ok", result["status"] == "ok")
-ck("4.2 has diagnostics", "diagnostics" in result)
-ck("4.3 has fixes", "fixes" in result)
-ck("4.4 dry_run mode", result["fixes"]["dry_run"] == True)
-ck("4.5 changeset available", result["fixes"]["changeset_available"] == True)
-
-# ═══════════════════════════════════════════════════════════════════
-print("\n[5] apply_all_fixplans")
+print("\n[4] apply_all_fixplans")
 
 ctx.refresh()
 r = apply_all_fixplans(ctx, auto_only=True)

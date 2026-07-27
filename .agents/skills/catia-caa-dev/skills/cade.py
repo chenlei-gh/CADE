@@ -174,8 +174,6 @@ def main():
         cmd_plan(args)
     elif cmd == "impact":
         cmd_impact(args)
-    elif cmd == "optimize":
-        cmd_optimize(args)
     elif cmd == "prereq":
         cmd_prereq_manager(args)
     elif cmd == "check":
@@ -518,6 +516,7 @@ def cmd_rollback(args):
 
 def cmd_expose(args):
     """Expose via Kernel — routes through develop()."""
+    print("[cade] CAA service exposure is experimental/unavailable")
     comp = args[0] if args else input("Component name: ")
     mod = args[1] if len(args) > 1 else input("Module name: ")
     text = f"expose service from {comp} in {mod}"
@@ -576,11 +575,6 @@ def cmd_impact(args):
     _print_result(result.to_dict())
 
 
-def cmd_optimize(args):
-    """Recommend best plan from alternatives."""
-    from intent import recommend
-    result = recommend([])
-    print(result or "No plans to optimize.")
 
 
 def cmd_prereq_manager(args):

@@ -137,17 +137,13 @@ check("optimized much smaller", len(json.dumps(r_opt)) <= len(json.dumps(r)),
 
 
 # ═══════════════════════════════════════════════════════════
-# 6. AI requests suggestions
+# 6. AI requests suggestions — removed (phantom capability)
 # ═══════════════════════════════════════════════════════════
 print("\n" + "=" * 70)
-print("  6. AI: 'what should I do next?'")
+print("  6. AI: 'what should I do next?' — REMOVED")
 print("=" * 70)
 
-from intents import suggest_next_action
-
-r = suggest_next_action(ctx)
-check("suggest returns dict", isinstance(r, dict))
-check("has content", len(r) > 0, f"keys={list(r.keys())[:5]}")
+# suggest_next_action was a phantom capability and has been removed.
 
 
 # ═══════════════════════════════════════════════════════════
@@ -246,11 +242,7 @@ results["diagnose"] = r
 total_tokens += len(json.dumps(r))
 check("Step 4: diagnose ok", isinstance(r, dict))
 
-# Step 5: Suggest
-r = suggest_next_action(ctx)
-results["suggest"] = r
-total_tokens += len(json.dumps(r))
-check("Step 5: suggest ok", isinstance(r, dict))
+# Step 5: Suggest — removed (suggest_next_action was a phantom capability)
 
 check(f"Total raw tokens: {total_tokens}", total_tokens > 0)
 

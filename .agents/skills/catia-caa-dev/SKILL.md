@@ -613,6 +613,10 @@ AI Agent 有需求
 
 ### 架构层次
 
+> ⚠️ **EXPERIMENTAL**: Development Engine (Intent → Spec → Generator) 和 Specification 层
+> 目前 **未接入 kernel 生产路径**。当前生产管线为 Intent → intents/ → changeset → build_gate。
+> 以下架构图描述的是目标架构，不是当前运行路径。
+
 ```
 AI / CLI / MCP
      │
@@ -620,13 +624,13 @@ AI / CLI / MCP
 API Layer (intents.py + actions.py)
      │
      ▼
-Development Engine (Intent → Spec → Generator)
+Development Engine (Intent → Spec → Generator)  ← EXPERIMENTAL / 未接入 kernel
      │
      ▼
-Validation + Specification
+Validation + Specification                      ← EXPERIMENTAL / 未接入 kernel
      │
      ▼
-Generator (generator.py + templates/)
+Generator (generator.py + templates/)            ← EXPERIMENTAL / 未接入 kernel
      │
      ▼
 Writer (changeset.py)
@@ -820,8 +824,7 @@ result = find_orphaned_files(ctx)
 ```python
 from intents import (
     create_executable_command,
-    expose_service,
-    create_ui_dialog
+    expose_service,  # experimental — 返回 error（未接入 kernel）
 )
 
 # 创建完整的可执行命令（一次调用完成所有工作）
@@ -835,7 +838,7 @@ result = create_executable_command(
 )
 # 自动创建：Command、Dialog、Header、Catalog、NLS、Icon、Dictionary
 
-# 暴露组件服务
+# 暴露组件服务（experimental — 返回 error）
 result = expose_service(
     ctx,
     component_name="DataManager",
@@ -845,21 +848,9 @@ result = expose_service(
         {"name": "SaveData", "params": ["path"], "return": "HRESULT"}
     ]
 )
-# 自动创建：Interface、IDL、TIE、Dictionary
+# 返回 error：CAA service exposure is experimental and not enabled
 
-# 创建交互式对话框
-result = create_ui_dialog(
-    ctx,
-    name="ConfigDialog",
-    module="UIModule.m",
-    controls=[
-        {"type": "Label", "text": "Enter value:"},
-        {"type": "Editor", "name": "ValueEditor"},
-        {"type": "PushButton", "name": "OKButton"}
-    ],
-    layout="vertical"
-)
-# 自动创建：Dialog、控件、回调骨架、NLS
+# create_ui_dialog 已删除 — 对话框创建通过 create_executable_command(with_dialog=True) 实现
 ```
 
 ### 回滚支持 (Phase 3 新增)
@@ -890,7 +881,9 @@ print(f"删除了 {len(result['deleted'])} 个旧备份")
 ### 高级意图 (Phase 4 新增)
 
 ```python
-from intents import create_feature, create_extension, suggest_next_action
+from intents import create_feature, create_extension
+
+# suggest_next_action 已删除 — 无生产路由，为 phantom capability
 
 # 创建 Feature 对象
 result = create_feature(
@@ -915,14 +908,12 @@ result = create_extension(
     implements=["CATIMyExt"]
 )
 # 自动创建：Extension、DataExtension 声明、TIE、Dictionary
-
-# 智能推荐下一步操作
-result = suggest_next_action(ctx)
-for sug in result["suggestions"][:3]:
-    print(f"[{sug['priority']}] {sug['action']}: {sug['reason']}")
 ```
 
 ### Specification 层 (P1 新增)
+
+> ⚠️ **EXPERIMENTAL** — 未接入 kernel 生产路径。当前生产管线为 Intent → intents/ → changeset → build_gate。
+> 此层为 Spec-driven generation 研究方向保留，不作为生产 API 使用。
 
 Specification 是 Intent 和 Generator 之间的契约层：
 
@@ -1257,11 +1248,10 @@ python tests/test_master.py --quick
 ├── .gitignore                        # Git 忽略文件
 │
 ├── skills/                           # Python 模块
-│   ├── intents/                      # Intent Layer (6 文件)
+│   ├── intents/                      # Intent Layer (5 文件)
 │   │   ├── commands.py               # 命令意图
 │   │   ├── services.py               # 服务意图
 │   │   ├── objects.py                # 对象意图
-│   │   ├── recommendation.py         # 智能推荐
 │   │   └── helpers.py                # 辅助函数
 │   ├── actions.py                    # Development Engine
 │   ├── specification.py              # Spec 层 (8 种 Spec)
@@ -1280,7 +1270,7 @@ python tests/test_master.py --quick
 │   ├── clean.py                      # 清理管理
 │   ├── workspace.py                  # 工作区验证
 │   ├── runtime_view.py               # Runtime View 管理
-│   ├── cade.py                       # CLI 入口 (22 命令)
+│   ├── cade.py                       # CLI 入口 (21 命令)
 │   ├── mcp_server.py                 # MCP Server (3 Mode, v3.0)
 │   ├── kernel.py                     # Development Kernel (v3.0)
 │   ├── catalog.py                    # Knowledge Catalog Index (v3.0)
@@ -1300,7 +1290,6 @@ python tests/test_master.py --quick
 │   │   ├── models.py                 # Intent / Plan 数据模型
 │   │   ├── planner.py                # 意图→计划转换
 │   │   ├── impact.py                 # 影响分析 (P1)
-│   │   ├── optimizer.py              # 方案评分排序 (P2)
 │   │   └── templates/                # Task Templates
 │
 ├── templates/                        # 模板库（17+ 类型）

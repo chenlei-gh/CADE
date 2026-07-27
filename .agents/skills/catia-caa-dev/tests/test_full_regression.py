@@ -230,12 +230,10 @@ MODULES = {
     "docgen": ["generate_all"],
     "intents": [
         "create_executable_command",
-        "create_ui_dialog",
         "expose_service",
         "create_component_with_interfaces",
         "create_feature",
         "create_extension",
-        "suggest_next_action",
     ],
     "mcp_server": [],
     "cade": [],
@@ -252,7 +250,7 @@ for mod_name, expected_symbols in MODULES.items():
 
 # ── 1.3 Intent sub-modules ──────────────────────────────────────────
 
-for sub in ["commands", "services", "objects", "recommendation", "helpers"]:
+for sub in ["commands", "services", "objects", "helpers"]:
     full = f"intents.{sub}"
     mod, err = safe_import(full)
     check(f"1.3 import {full}", mod is not None, err or "ok")
@@ -467,7 +465,6 @@ if diag_mod:
     check("4.5 diagnose_workspace fn", callable(diag_mod.diagnose_workspace))
     check("4.6 apply_fixplan fn", callable(diag_mod.apply_fixplan))
     check("4.7 apply_all_fixplans fn", callable(diag_mod.apply_all_fixplans))
-    check("4.8 diagnose_and_fix fn", callable(diag_mod.diagnose_and_fix))
 
     fp = diag_mod.FixPlan(
         action=diag_mod.FixAction.REPLACE_LINE, file="test.h", description="Test fix"
@@ -516,15 +513,13 @@ print("=" * 70)
 int_mod, _ = safe_import("intents")
 if int_mod:
     check("6.1 create_executable_command", callable(int_mod.create_executable_command))
-    check("6.2 create_ui_dialog", callable(int_mod.create_ui_dialog))
-    check("6.3 expose_service", callable(int_mod.expose_service))
+    check("6.2 expose_service", callable(int_mod.expose_service))
     check(
         "6.4 create_component_with_interfaces",
         callable(int_mod.create_component_with_interfaces),
     )
     check("6.5 create_feature", callable(int_mod.create_feature))
     check("6.6 create_extension", callable(int_mod.create_extension))
-    check("6.7 suggest_next_action", callable(int_mod.suggest_next_action))
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1126,13 +1121,7 @@ if int_mod and act_mod:
         r.get("status", "?"),
     )
 
-    # Test suggest_next_action
-    r = int_mod.suggest_next_action(ctx)
-    check(
-        "19.3 suggest_next_action returns ok",
-        r.get("status") == "ok",
-        f"suggestions={len(r.get('suggestions', []))}",
-    )
+
 
 # 19.2 Action → ChangeSet chain
 if act_mod and cs_mod:

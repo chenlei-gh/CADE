@@ -109,7 +109,7 @@ tree_modules = re.findall(r"^│   ├── (\w+)\.py\s+#", skill_md, re.MULTIL
 tree_modules = [m for m in tree_modules if not m.startswith("test_")]
 for mod in tree_modules:
     # Skip modules under intents/ sub-tree (indented deeper)
-    if mod in ["commands", "services", "objects", "recommendation", "helpers"]:
+    if mod in ["commands", "services", "objects", "helpers"]:
         continue
     exists = (SKILLS_DIR / f"{mod}.py").exists()
     check(f"Tree module -> skills/{mod}.py", exists)
@@ -255,7 +255,6 @@ intent_subs = [
     "commands.py",
     "services.py",
     "objects.py",
-    "recommendation.py",
     "helpers.py",
 ]
 for sub in intent_subs:

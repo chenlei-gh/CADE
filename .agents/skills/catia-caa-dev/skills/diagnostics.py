@@ -892,47 +892,4 @@ def apply_all_fixplans(ctx, auto_only: bool = True) -> dict:
     }
 
 
-def diagnose_and_fix(ctx, auto_only: bool = True, dry_run: bool = True) -> dict:
-    """
-    One-shot: diagnose workspace and apply all auto-fixable fixes.
 
-    Args:
-        ctx: ActionContext
-        auto_only: Only apply auto-fixable fixes
-        dry_run: If True, preview only (don't write files)
-
-    Returns:
-        {"status": "ok", "diagnostics": {...}, "fixes": {...}}
-    """
-    ctx.refresh()
-
-    # Step 1: Diagnose
-    diag = diagnose_workspace(ctx)
-
-    # Step 2: Fix
-    fixes = apply_all_fixplans(ctx, auto_only=auto_only)
-
-    # Step 3: Optionally apply
-    if not dry_run and fixes.get("changeset"):
-        from changeset import ChangeSet
-
-        cs = ChangeSet.from_dict(fixes["changeset"])
-        apply_result = cs.apply(dry_run=False, workspace_root=ctx.workspace_root)
-        fixes["apply_result"] = apply_result
-
-    return {
-        "status": "ok",
-        "diagnostics": {
-            "total": diag.get("total", 0),
-            "errors": diag.get("errors", 0),
-            "warnings": diag.get("warnings", 0),
-        },
-        "fixes": {
-            "applied": fixes.get("applied", 0),
-            "skipped": fixes.get("skipped", 0),
-            "changeset_available": fixes.get("changeset") is not None,
-            "dry_run": dry_run,
-        },
-        "changeset": fixes.get("changeset"),
-        "details": fixes.get("details", []),
-    }

@@ -49,7 +49,7 @@ ck(
 )
 
 # Check intents sub-modules
-for sub in ["commands", "services", "objects", "recommendation"]:
+for sub in ["commands", "services", "objects"]:
     mod_name = f"intents.{sub}"
     try:
         mod = __import__(mod_name, fromlist=[sub])

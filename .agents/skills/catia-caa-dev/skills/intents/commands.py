@@ -113,36 +113,4 @@ def create_executable_command(
     }
 
 
-def create_ui_dialog(
-    ctx: ActionContext,
-    name: str,
-    module: str,
-    framework: str = None,
-    *,
-    controls=None,
-    layout: str = "vertical",
-    with_callbacks: bool = True,
-    modal: bool = True,
-) -> Dict:
-    """Create an interactive UI dialog with controls."""
-    ctx.refresh()
-    result = create_dialog(ctx, name, module, framework)
-    if result["status"] == "error":
-        return result
 
-    result["intent"] = "create_ui_dialog"
-    result["dialog"] = {
-        "name": name,
-        "controls": [c.get("name") for c in (controls or [])],
-        "layout": layout,
-        "modal": modal,
-        "with_callbacks": with_callbacks,
-    }
-    if controls:
-        result["next_steps"] = [
-            "Add control declarations to dialog header",
-            "Implement Build() method with layout",
-            "Add callback functions for buttons",
-            "Add NLS resources for labels",
-        ]
-    return result

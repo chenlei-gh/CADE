@@ -1,4 +1,9 @@
 """
+STATUS: EXPERIMENTAL — not wired into the CADE kernel pipeline.
+Retained for future Spec-driven generation research. Production code
+generation uses changeset.render_template via intents/. Do not add new
+callers without wiring it into kernel first.
+
 CATIA CAA Generator
 ====================
 Template-based code generation for CAA components.

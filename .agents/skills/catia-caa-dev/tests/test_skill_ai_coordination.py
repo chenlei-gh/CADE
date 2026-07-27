@@ -38,9 +38,7 @@ from intents import (
     create_executable_command,
     create_extension,
     create_feature,
-    create_ui_dialog,
     expose_service,
-    suggest_next_action,
 )
 
 ctx = ActionContext(str(SKILL_ROOT.parent.parent))  # D:\test
@@ -75,7 +73,6 @@ triggers_map = [
     ("find orphaned", "actions.find_orphaned_files", find_orphaned_files),
     # 创建类 (Intent)
     ("create command", "intents.create_executable_command", create_executable_command),
-    ("create dialog", "intents.create_ui_dialog", create_ui_dialog),
     ("expose service", "intents.expose_service", expose_service),
     ("create feature", "intents.create_feature", create_feature),
     ("create extension", "intents.create_extension", create_extension),
@@ -85,9 +82,6 @@ triggers_map = [
     ("rollback", "actions.rollback_operation", rollback_operation),
     ("undo", "actions.rollback_operation", rollback_operation),
     ("list backups", "actions.list_rollback_points", list_rollback_points),
-    # 推荐类
-    ("suggest next", "intents.suggest_next_action", suggest_next_action),
-    ("recommend", "intents.suggest_next_action", suggest_next_action),
 ]
 
 for trigger, api_path, fn in triggers_map:
@@ -108,12 +102,10 @@ print("\n[Part 2] API Parameter Validation")
 api_checks = [
     # (fn, 必需的 ctx 之外的参数名称列表)
     (create_executable_command, ["name", "module"]),
-    (create_ui_dialog, ["name", "module"]),
     (expose_service, ["component_name", "module"]),
     (create_component_with_interfaces, ["name", "module"]),
     (create_feature, ["name", "module"]),
     (create_extension, ["name", "target_object", "module"]),
-    (suggest_next_action, []),  # only ctx is required
     (get_dependencies, ["entity_name"]),
     (get_dependents, ["entity_name"]),
     (visualize_dependencies, []),
@@ -159,16 +151,12 @@ examples = [
     ("validate_workspace", lambda: validate_workspace(ctx)),
     ("find_orphaned_files", lambda: find_orphaned_files(ctx)),
     ("list_rollback_points", lambda: list_rollback_points(ctx)),
-    ("suggest_next_action", lambda: suggest_next_action(ctx)),
     # Intent functions return pending/error without real module
     (
         "create_executable_command",
         lambda: create_executable_command(ctx, name="Test", module="TestModule.m"),
     ),
-    (
-        "create_ui_dialog",
-        lambda: create_ui_dialog(ctx, name="TestDlg", module="TestModule.m"),
-    ),
+
     (
         "expose_service",
         lambda: expose_service(ctx, component_name="Test", module="TestModule.m"),
@@ -311,11 +299,9 @@ imports_from_docs = [
     ("actions", "list_rollback_points"),
     ("actions", "cleanup_old_backups"),
     ("intents", "create_executable_command"),
-    ("intents", "create_ui_dialog"),
     ("intents", "expose_service"),
     ("intents", "create_feature"),
     ("intents", "create_extension"),
-    ("intents", "suggest_next_action"),
     ("refactor", "rename_command"),
     ("diagnostics", "DiagnosticsEngine"),
     ("build", "build_workspace"),
@@ -341,13 +327,12 @@ print("  Part 7: Runtime API Response Chain")
 print("=" * 70)
 
 from build import build_workspace, full_build, incremental_build
-from diagnostics import diagnose_and_fix, diagnose_workspace
+from diagnostics import diagnose_workspace
 from intents import (
     create_executable_command,
     create_extension,
     create_feature,
     expose_service,
-    suggest_next_action,
 )
 from meta_model import WorkspaceSnapshot
 from refactor import move_command, rename_command
@@ -425,19 +410,11 @@ d = diagnose_workspace(ctx)
 ck("diagnose_workspace returns dict", isinstance(d, dict))
 ck("has status", "status" in d)
 
-d2 = diagnose_and_fix(ctx, dry_run=True)
-ck("diagnose_and_fix returns dict", isinstance(d2, dict))
-ck("fixplan generated", "fixplan" in d2 or "fixes" in d2 or "issues" in d2)
+d2 = diagnose_workspace(ctx)
+ck("diagnose_workspace (2nd) returns dict", isinstance(d2, dict))
+ck("has diagnostics", "total" in d2 or "diagnostics" in d2)
 
-# 7.6 Suggest
-print("\n  [7.6] Suggest (AI asks: what next?)")
-s = suggest_next_action(ctx)
-ck("suggest returns dict", isinstance(s, dict))
-ck(
-    "has suggestion/response",
-    isinstance(s, dict) and len(s) > 0,
-    f"keys={list(s.keys())[:5]}",
-)
+# 7.6 Suggest — removed (suggest_next_action was a phantom capability)
 
 # 7.7 Refactor
 print("\n  [7.7] Refactor")
@@ -449,7 +426,6 @@ print("\n  [7.8] Full Loop (snapshot→create→diagnose→fix→suggest)")
 ctx.refresh(label="loop_1")
 ck("refresh ok", ctx.snapshot is not None)
 ck("diagnose runs", isinstance(diagnose_workspace(ctx), dict))
-ck("suggest runs", isinstance(suggest_next_action(ctx), dict))
 
 # 7.9 Build Commands
 print("\n  [7.9] Build Commands")
@@ -467,8 +443,8 @@ except Exception as e:
     ck("diagnose bad path", True, f"handled: {type(e).__name__}")
 try:
     bad_ctx2 = ActionContext("Z:/nonexistent")
-    r2 = diagnose_and_fix(bad_ctx2, dry_run=True)
-    ck("fix bad path", isinstance(r2, dict), f"status={r2.get('status', '?')}")
+    r2 = diagnose_workspace(bad_ctx2)
+    ck("diagnose bad path (2nd)", isinstance(r2, dict), f"status={r2.get('status', '?')}")
 except Exception as e:
     ck("fix bad path", True, f"handled: {type(e).__name__}")
 r3 = rename_command(ctx.snapshot, "NoMod", "NoSuchCmd", "NewCmd")

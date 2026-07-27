@@ -17,7 +17,6 @@ from intents import (
     create_component_with_interfaces,
     create_extension,
     create_feature,
-    suggest_next_action,
 )
 
 # Test configuration
@@ -41,7 +40,6 @@ try:
         create_component_with_interfaces,
         create_extension,
         create_feature,
-        suggest_next_action,
     )
 
     print("[OK] All Phase 4 functions imported successfully")
@@ -220,143 +218,11 @@ except Exception as e:
     print(f"[FAIL] Exception: {e}")
 
 # ============================================================================
-# Test 8: suggest_next_action - basic
+# Test 8-11: suggest_next_action / workspace health — REMOVED (phantom)
 # ============================================================================
 
-print("\n[Test 8] suggest_next_action - Basic")
-print("-" * 80)
-
-try:
-    result = suggest_next_action(ctx)
-
-    if result["status"] == "ok":
-        print("[OK] Recommendation system works")
-        print(f"     Total suggestions: {result['total_suggestions']}")
-        print(f"     Warnings: {len(result['warnings'])}")
-        print(f"     Workspace health: {result['workspace_health']['health']}")
-        print(f"     Health rating: {result['workspace_health']['rating']}")
-
-        if result["suggestions"]:
-            print(f"\n     Top suggestions:")
-            for sug in result["suggestions"][:3]:
-                print(f"       [{sug['priority']}] {sug['action']}")
-                print(f"            {sug['reason']}")
-    else:
-        print(f"[FAIL] Recommendation failed")
-except Exception as e:
-    print(f"[FAIL] Exception: {e}")
-    import traceback
-
-    traceback.print_exc()
-
-# ============================================================================
-# Test 9: suggest_next_action - with last action
-# ============================================================================
-
-print("\n[Test 9] suggest_next_action - With last action")
-print("-" * 80)
-
-try:
-    # Simulate last action being create_executable_command
-    last_action = {
-        "intent": "create_executable_command",
-        "components": {
-            "command": "TestCmd",
-            "dialog": "TestCmdDlg",
-            "workbench": None,
-            "module": "TestModule.m",
-        },
-        "dialog_configured": False,
-    }
-
-    result = suggest_next_action(ctx, last_action=last_action)
-
-    if result["status"] == "ok":
-        print("[OK] Context-aware recommendations work")
-        print(f"     Total suggestions: {result['total_suggestions']}")
-
-        # Check that build is suggested
-        build_suggested = any(
-            s["action"] == "build_module" for s in result["suggestions"]
-        )
-        wb_suggested = any(
-            s["action"] == "add_command_to_workbench" for s in result["suggestions"]
-        )
-
-        print(f"     Build suggested: {build_suggested}")
-        print(f"     Workbench suggested: {wb_suggested}")
-
-        if build_suggested and wb_suggested:
-            print("[OK] Key recommendations present")
-    else:
-        print(f"[FAIL] Context-aware recommendations failed")
-except Exception as e:
-    print(f"[FAIL] Exception: {e}")
-    import traceback
-
-    traceback.print_exc()
-
-# ============================================================================
-# Test 10: suggest_next_action - expose_service context
-# ============================================================================
-
-print("\n[Test 10] suggest_next_action - Expose service context")
-print("-" * 80)
-
-try:
-    last_action = {
-        "intent": "expose_service",
-        "service": {
-            "interface": "IMyComponent",
-            "component": "MyComponent",
-            "methods": ["DoSomething", "GetData"],
-        },
-    }
-
-    result = suggest_next_action(ctx, last_action=last_action)
-
-    if result["status"] == "ok":
-        print("[OK] Expose service recommendations work")
-
-        impl_suggested = any(
-            s["action"] == "implement_service_methods" for s in result["suggestions"]
-        )
-        print(f"     Implementation suggested: {impl_suggested}")
-
-        if impl_suggested:
-            print("[OK] Correct context-specific recommendation")
-except Exception as e:
-    print(f"[FAIL] Exception: {e}")
-
-# ============================================================================
-# Test 11: Workspace health analysis
-# ============================================================================
-
-print("\n[Test 11] Workspace Health Analysis")
-print("-" * 80)
-
-try:
-    from intents.recommendation import _analyze_workspace_health
-
-    ctx.refresh()
-    snapshot = ctx.snapshot
-
-    health = _analyze_workspace_health(snapshot)
-
-    print(f"[OK] Workspace health analysis works")
-    print(f"     Health: {health['health']}")
-    print(f"     Rating: {health['rating']}")
-    print(f"     Frameworks: {health['total_frameworks']}")
-    print(f"     Modules: {health['total_modules']}")
-    print(f"     Commands: {health['total_commands']}")
-    print(f"     Issues: {health['issues_count']}")
-
-    print("[OK] All health ratings correct")
-except Exception as e:
-    print(f"[FAIL] Exception: {e}")
-    import traceback
-
-    traceback.print_exc()
+# suggest_next_action and _analyze_workspace_health were phantom capabilities
+# (no production route) and have been removed.
 
 # ============================================================================
 # Summary
@@ -373,8 +239,4 @@ print("  [OK] create_extension (with interfaces)")
 print("  [OK] create_extension (simple)")
 print("  [OK] create_component_with_interfaces")
 print("  [OK] create_component_with_interfaces (simple)")
-print("  [OK] suggest_next_action (basic)")
-print("  [OK] suggest_next_action (context-aware)")
-print("  [OK] suggest_next_action (expose service)")
-print("  [OK] Workspace health analysis")
 print("\nPhase 4 enhancements verified!")

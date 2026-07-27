@@ -260,9 +260,9 @@ try:
     )
     from intents import (
         create_executable_command, create_feature, create_extension,
-        suggest_next_action, expose_service,
+        expose_service,
     )
-    from diagnostics import diagnose_workspace, diagnose_and_fix
+    from diagnostics import diagnose_workspace
     from build import error_result as build_err
     from specification import CommandSpec, FeatureSpec
     import json as _json
@@ -305,11 +305,9 @@ try:
     measure("create_feature   ", create_feature, actx, "OptFeat", "TestMod.m")
     measure("create_extension ", create_extension, actx, "OptExt", "CATPart", "TestMod.m")
     measure("expose_service   ", expose_service, actx, "OptComp", "TestMod.m")
-    measure("suggest_next     ", suggest_next_action, actx)
 
     # Diagnostics
     measure("diagnose_workspace", diagnose_workspace, actx)
-    measure("diagnose_and_fix  ", diagnose_and_fix, actx, dry_run=True)
 
     # Error result
     measure("build_error      ", build_err, "Build failed: missing include",
