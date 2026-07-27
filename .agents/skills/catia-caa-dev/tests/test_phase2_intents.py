@@ -116,9 +116,12 @@ try:
             framework="TestFramework",
             methods=[{"name": "GetData", "params": [], "return": "HRESULT"}],
         )
-        # expose_service is experimental and returns error (not wired into kernel)
-        check("expose service returns error", result.get("status") == "error", result.get("message", ""))
-        check("error mentions experimental", "experimental" in result.get("message", ""))
+        # expose_service is experimental and returns a blocked/do_not_fix state
+        # (not wired into kernel).  blocked, not error: this is a design state,
+        # not a runtime failure, so agents must not try to repair it.
+        check("expose service returns blocked", result.get("status") == "blocked", result.get("message", ""))
+        check("blocked is do_not_fix", result.get("action") == "do_not_fix", result.get("message", ""))
+        check("message mentions experimental", "experimental" in result.get("message", ""))
 
     run_case("expose service", test_service)
 

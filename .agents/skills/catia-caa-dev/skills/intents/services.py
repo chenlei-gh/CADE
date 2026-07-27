@@ -33,15 +33,22 @@ def expose_service(
     Automatically creates: IDL, C++ header, TIE, Dictionary registration, IID.
     """
     # CAA service exposure is experimental and NOT wired into the kernel
-    # intent router. Failing loudly here beats silently producing the wrong
+    # intent router.  Return a machine-readable 'blocked' state (not 'error'):
+    # an agent must read this as a deliberate design state and must NOT try to
+    # repair it.  Failing loudly here beats silently producing the wrong
     # artifact (a command masquerading as a service).
     return {
-        "status": "error",
+        "status": "blocked",
+        "reason": "experimental",
+        "action": "do_not_fix",
+        "capability": "expose_service",
         "intent": "expose_service",
         "message": (
             "CAA service exposure is experimental and not enabled in this "
             "build. No runtime route exists (kernel._detect_intent_type has no "
-            "service keyword). See git history for the full implementation."
+            "service keyword). This is a deliberate design state, not a runtime "
+            "failure — do not attempt to repair. See git history for the full "
+            "implementation."
         ),
     }
 

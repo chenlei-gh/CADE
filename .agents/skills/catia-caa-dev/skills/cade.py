@@ -515,13 +515,23 @@ def cmd_rollback(args):
 
 
 def cmd_expose(args):
-    """Expose via Kernel — routes through develop()."""
-    print("[cade] CAA service exposure is experimental/unavailable")
-    comp = args[0] if args else input("Component name: ")
-    mod = args[1] if len(args) > 1 else input("Module name: ")
-    text = f"expose service from {comp} in {mod}"
-    result = _kernel("develop", text)
-    _print_kernel(result)
+    """expose_service capability boundary — router-level interception.
+
+    Do NOT route into develop(): that would make the agent read this as
+    'execution failed' and trigger a repair loop.  Instead report the
+    capability's declared state directly: it exists but is not enabled in
+    this build.  This is a design state, not a runtime failure."""
+    _print_kernel({
+        "status": "blocked",
+        "reason": "experimental",
+        "action": "do_not_fix",
+        "capability": "expose_service",
+        "message": (
+            "CAA service exposure is an experimental capability and is not "
+            "enabled in this build (no kernel route). This is a deliberate "
+            "design state, not a runtime failure — do not attempt to repair."
+        ),
+    })
 
 
 def cmd_suggest(args):

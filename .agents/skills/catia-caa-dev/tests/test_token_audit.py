@@ -13,6 +13,7 @@ from pathlib import Path
 
 SKILL_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL_ROOT / "skills"))
+sys.path.insert(0, str(SKILL_ROOT / "skills" / "experimental"))
 
 from actions import (
     ActionContext, list_modules, list_commands, list_interfaces,

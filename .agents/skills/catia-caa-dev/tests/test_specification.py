@@ -6,6 +6,7 @@ from pathlib import Path
 
 skill_root = Path(__file__).parent.parent
 sys.path.insert(0, str(skill_root / "skills"))
+sys.path.insert(0, str(skill_root / "skills" / "experimental"))
 
 from specification import (
     AttributeSpec,

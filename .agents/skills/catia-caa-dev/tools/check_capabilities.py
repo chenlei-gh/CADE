@@ -19,6 +19,63 @@ SKILL_ROOT = Path(__file__).parent.parent
 SKILLS_DIR = SKILL_ROOT / "skills"
 TESTS_DIR = SKILL_ROOT / "tests"
 SKILL_MD = SKILL_ROOT / "SKILL.md"
+REGISTRY = SKILLS_DIR / "capabilities.yaml"
+
+
+def collect_registry():
+    """Parse skills/capabilities.yaml into {file_path: declared_state}.
+
+    The registry is the DECLARATION layer of the capability contract (the
+    'Capability != File' model); this checker is the DETECTION layer.  We map
+    each capability's `implementation` files to its declared `status`/`action`
+    so a capability whose code lives in a declared-unavailable file is
+    reported against intent, not mistaken for an accidental phantom.
+
+    Pure-stdlib line parser — the project deliberately has no PyYAML dep and
+    parses SKILL.md frontmatter by hand, so we do the same for this small,
+    fixed-structure file.  Only reads status / action / implementation keys."""
+    # Map BOTH the capability name and its implementation files to the
+    # declared state.  Capability-name matching is precise (a file can host
+    # several capabilities — services.py holds both the unavailable
+    # expose_service and the active create_component_with_interfaces); file
+    # matching is kept as a fallback for whole-file experimental modules.
+    declared = {"by_name": {}, "by_file": {}}
+    if not REGISTRY.exists():
+        return declared
+    cur_cap = None
+    cur_status = None
+    cur_action = None
+    in_impl = False
+    for raw in REGISTRY.read_text(encoding="utf-8").splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        # capability key: 2-space indented 'name:' with no value
+        if indent == 2 and stripped.endswith(":") and not stripped.startswith("-"):
+            cur_cap = stripped[:-1].strip()
+            cur_status = None
+            cur_action = None
+            in_impl = False
+        elif stripped.startswith("status:"):
+            cur_status = stripped.split(":", 1)[1].strip()
+            in_impl = False
+        elif stripped.startswith("action:"):
+            cur_action = stripped.split(":", 1)[1].strip()
+            in_impl = False
+        elif stripped.startswith("implementation:"):
+            in_impl = True
+        elif in_impl and stripped.startswith("- "):
+            f = stripped[2:].strip()
+            declared["by_file"][f] = {"status": cur_status, "action": cur_action}
+        elif indent == 0:
+            in_impl = False
+            cur_cap = None
+        if cur_cap and cur_status:
+            declared["by_name"][cur_cap] = {"status": cur_status,
+                                            "action": cur_action}
+    return declared
 
 
 def collect_public_functions():
@@ -287,7 +344,8 @@ def collect_test_calls():
 
 
 def check(name, file_path, entry_src, test_src, doc_src,
-          imported_names, intra_calls, test_calls, doc_exports, guarded):
+          imported_names, intra_calls, test_calls, doc_exports, guarded,
+          registry):
     """Check one capability against the five-point contract."""
     has_entry = name in entry_src
     has_test = name in test_src
@@ -318,6 +376,26 @@ def check(name, file_path, entry_src, test_src, doc_src,
     # distinctly so it is never mistaken for a deletable phantom.
     if status == "PHANTOM" and name in guarded:
         status = "GUARDED"
+    # Declaration layer: if this capability's file is declared in the registry
+    # as unavailable/experimental, surface that intent.  An OK capability in a
+    # declared-unavailable file is NOT an ordinary production capability — it
+    # is a deliberate design state, so say so instead of leaving it ambiguous.
+    rel = file_path.replace("\\", "/")
+    if rel.startswith("skills/"):
+        rel = rel[len("skills/"):]
+    # Capability-name match is precise and applies to any declared status.
+    # File fallback is ONLY safe for 'experimental' (a whole-file research
+    # module like specification.py); it must NOT be used for 'unavailable',
+    # which is a single-capability property — services.py hosts both the
+    # unavailable expose_service and the active create_component_with_interfaces,
+    # so a file-level unavailable tag would smear the active capability.
+    declared = registry.get("by_name", {}).get(name)
+    if not declared:
+        by_file = registry.get("by_file", {}).get(rel)
+        if by_file and by_file.get("status") == "experimental":
+            declared = by_file
+    if declared and declared.get("status") in ("unavailable", "experimental"):
+        status = f"DECL-{declared['status']}"
     return {
         "name": name,
         "file": file_path,
@@ -341,18 +419,19 @@ def main():
     test_calls = collect_test_calls()
     doc_exports = collect_doc_exports()
     guarded = collect_guarded_api()
+    registry = collect_registry()
 
     rows = []
     for name, fpath in sorted(caps.items()):
         rows.append(check(name, fpath, entry_src, test_src, doc_src,
                           imported_names, intra_calls, test_calls,
-                          doc_exports, guarded))
+                          doc_exports, guarded, registry))
 
     # CLI commands are capabilities too
     for cmd, lineno in sorted(cli_cmds.items()):
         rows.append(check(cmd, f"cade.py:L{lineno}", entry_src, test_src,
                         doc_src, imported_names, intra_calls, test_calls,
-                        doc_exports, guarded))
+                        doc_exports, guarded, registry))
 
     # Reverse phantom: documented in SKILL.md but absent from code.
     # Presence = a function, a CLI command, OR a class (classes aren't in caps).

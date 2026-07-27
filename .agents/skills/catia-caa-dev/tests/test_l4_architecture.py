@@ -16,6 +16,7 @@ from pathlib import Path
 
 SKILL = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL / "skills"))
+sys.path.insert(0, str(SKILL / "skills" / "experimental"))
 
 total = passed = 0
 

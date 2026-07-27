@@ -45,7 +45,7 @@ class SystemHealthCheck:
 
         required_modules = [
             "skills/actions.py",
-            "skills/specification.py",
+            "skills/experimental/specification.py",
             "skills/diagnostics.py",
             "skills/refactor.py",
             "skills/generator.py",

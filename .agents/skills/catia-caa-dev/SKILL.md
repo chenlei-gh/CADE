@@ -1253,7 +1253,8 @@ python tests/test_master.py --quick
 │   │   ├── objects.py                # 对象意图
 │   │   └── helpers.py                # 辅助函数
 │   ├── actions.py                    # Development Engine
-│   ├── specification.py              # Spec 层 (8 种 Spec)
+│   ├── experimental/                 # 研究实验区（非生产路径）
+│   │   └── specification.py          # Spec 层 (8 种 Spec, EXPERIMENTAL)
 │   ├── diagnostics.py                # Diagnostics + FixPlan
 │   ├── refactor.py                   # 安全重构
 │   ├── generator.py                  # 代码生成器

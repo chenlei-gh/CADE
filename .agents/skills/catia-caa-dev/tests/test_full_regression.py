@@ -57,6 +57,7 @@ from pathlib import Path
 
 SKILL_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL_ROOT / "skills"))
+sys.path.insert(0, str(SKILL_ROOT / "skills" / "experimental"))
 sys.path.insert(0, str(SKILL_ROOT))
 
 _parser = argparse.ArgumentParser(description="CADE full regression suite")
