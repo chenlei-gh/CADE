@@ -48,18 +48,6 @@ class Severity(Enum):
 
 
 @dataclass
-class DecisionRecord:
-    """A single decision made during requirements analysis"""
-    id: str
-    question: str
-    answer: str
-    options: List[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        return {"id": self.id, "question": self.question, "answer": self.answer}
-
-
-@dataclass
 class Intent:
     """Structured development intent — bridges RequirementDocument to Planner."""
     type: IntentType

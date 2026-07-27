@@ -135,6 +135,7 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 | fp.paste_cross_doc_catpathelement | knowledge/failure_patterns/fp_paste_cross_doc_catpathelement.md | 跨文档 Paste 传 CATPathElement targets 崩溃 |
 | fp.var_forward_decl | knowledge/failure_patterns/fp_var_forward_decl.md | _var 智能指针类型不能前向声明 |
 | fp.catlistv_header_naming | knowledge/failure_patterns/fp_catlistv_header_naming.md | CATListVal 类型名 ≠ 头文件名（CATLISTV_Xxx.h） |
+| fp.template_feature_apis | knowledge/failure_patterns/fp_template_feature_apis.md | feature/catalog 模版成建制捏造（B28 全目录核实） |
 
 ### Knowledge 索引
 
@@ -170,7 +171,6 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 | infra.memory | knowledge/infrastructure/memory_management.md | memory, AddRef, Release, leak, smart pointer | CATBaseUnknown, AddRef | R19+ |
 | infra.naming | knowledge/infrastructure/naming_conventions.md | naming, convention, prefix, suffix | | R19+ |
 | infra.state_commands | knowledge/infrastructure/state_commands.md | state command, BuildGraph, transition, wizard | CATStateCommand, CATDialogState | R19+ |
-| mecmod.feature_patterns | knowledge/mecmod/feature_patterns.md | feature, attribute, StartUp, factory | CATISpecObject, CATISpecAttribute | R19+ |
 
 ### Pattern 索引
 

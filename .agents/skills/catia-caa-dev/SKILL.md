@@ -1290,7 +1290,6 @@ python tests/test_master.py --quick
 │   ├── build_gate.py              # 编译前静态门禁（虚构 API 拦截；PASS/WARN/BLOCK/SKIP + JSONL 遥测；build.py --skip-gate 可绕过）
 │   ├── ui_lint.py                    # UI 失效模式静态检查器（failure_patterns）
 │   ├── requirements.py               # Requirements Clarifier (v3.0)
-│   │   └── decision_trees/          # 决策树 (3 个)
 │   ├── verifier.py                   # Code Verifier — static + mkmk (v3.0)
 │   ├── icon_provider.py              # 107 geometric icons, 4x SSAA, RGBA multi-color (v3.2)
 │   ├── repair.py                     # Repair Loop (v3.0)

@@ -855,7 +855,7 @@ check("13.1 prerequisites_manager.py exists", prereq_path.exists())
 cade_mod, _ = safe_import("cade")
 if cade_mod:
     check("13.2 cmd_prereq_manager", callable(cade_mod.cmd_prereq_manager))
-    check("13.3 cmd_get_prereq", callable(cade_mod.cmd_get_prereq))
+    check("13.3 cmd_prereq script path", prereq_path.exists())
 
 # Test via actions
 if act_mod:
@@ -981,7 +981,6 @@ if cade_mod:
         "cmd_expose",
         "cmd_suggest",
         "cmd_prereq_manager",
-        "cmd_get_prereq",
         "cmd_setup",
         "cmd_snapshot",
         "cmd_version",

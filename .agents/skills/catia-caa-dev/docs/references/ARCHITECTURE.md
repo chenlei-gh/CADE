@@ -379,7 +379,6 @@ cache/build.json          ← 编译缓存
 cache/generate.json       ← 生成缓存
 cache/runtime.json        ← 运行时状态
 intent/templates/task_templates.json ← 任务模板
-requirements/decision_trees/*.yaml   ← 决策树 (3)
 ```
 
 ## Token 优化策略

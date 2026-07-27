@@ -587,11 +587,6 @@ def run_catia_with_env(
     )
 
 
-def run_catia_with_runtime(workspace_path: str, timeout: int = 60) -> dict:
-    """Start CATIA with Runtime View from workspace (CNEXT -direnv)"""
-    return start_catia_runtime(workspace_path=workspace_path, timeout=timeout)
-
-
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(

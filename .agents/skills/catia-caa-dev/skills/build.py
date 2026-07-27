@@ -297,8 +297,11 @@ def build_workspace(
         if gate.get("gate_error"):
             logger.write(f"Gate fail-open: {gate['gate_error']}")
         if gate["decision"] == "BLOCK":
+            # Include the verifier's concrete suggestion (e.g. the real header
+            # to use) — without it the user knows WHAT is wrong but not the fix.
             top = "; ".join(
                 f"{f['module']}: {f['message']}"
+                + (f" → {f['suggestion']}" if f.get("suggestion") else "")
                 for f in gate["findings"] if f["severity"] == "error"
             )[:400]
             return error_result(
@@ -605,11 +608,6 @@ def workspace_where(workspace_path: Path) -> dict:
 def workspace_config(workspace_path: Path) -> dict:
     """Read workspace config (mkreadcpd)"""
     return _exec_build_cmd("mkreadcpd", workspace_path)
-
-
-def workspace_build_config(workspace_path: Path) -> dict:
-    """Read build configuration (mkreadbldcfg)"""
-    return _exec_build_cmd("mkreadbldcfg", workspace_path)
 
 
 def workspace_module_info(workspace_path: Path, module: str = None) -> dict:

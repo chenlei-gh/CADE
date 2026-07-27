@@ -225,7 +225,7 @@ print("=" * 70)
 
 # 6a. Core layer modules must exist
 LAYERS = [
-    ("API Layer", ["intents.py", "actions.py"]),
+    ("API Layer", ["intents/__init__.py", "actions.py"]),
     ("Specification", ["specification.py"]),
     ("Diagnostics", ["diagnostics.py"]),
     ("CodeModel", ["meta_model.py"]),

@@ -28,10 +28,28 @@ Usage:
 
 from __future__ import annotations
 
+import json
+import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# Kernel execution telemetry — append-only JSONL, same shape as build_gate's
+# log so monthly stats can answer "where does the agent fail/rework most?"
+_KERNEL_LOG = Path(__file__).resolve().parent.parent / "cache" / "kernel_log.jsonl"
+
+
+def _log_kernel(record: dict) -> None:
+    """Append one telemetry record. Fail-silent: telemetry never breaks execution."""
+    try:
+        _KERNEL_LOG.parent.mkdir(parents=True, exist_ok=True)
+        record.setdefault("time", datetime.now().isoformat(timespec="seconds"))
+        with open(_KERNEL_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
 
 
 # ─── Enums ────────────────────────────────────────────────────────
@@ -176,25 +194,37 @@ class Kernel:
             ).to_dict()
 
         policy = POLICIES[mode]
+        t0 = time.perf_counter()
+        result: dict
 
         try:
             if mode == KernelMode.DEVELOP:
-                return self._handle_develop(request, policy, preview=preview)
+                result = self._handle_develop(request, policy, preview=preview)
             elif mode == KernelMode.ANALYZE:
-                return self._handle_analyze(request, policy, detail=detail)
+                result = self._handle_analyze(request, policy, detail=detail)
             elif mode == KernelMode.REPAIR:
-                return self._handle_repair(request, policy)
+                result = self._handle_repair(request, policy)
             else:
-                return KernelResult(
+                result = KernelResult(
                     status="error", mode=mode.value,
                     message=f"Unknown mode: {mode}",
                 ).to_dict()
         except Exception as e:
             self._state = KernelState.FAILED
-            return KernelResult(
+            result = KernelResult(
                 status="error", mode=mode.value, state=self._state.value,
                 message=str(e),
             ).to_dict()
+
+        _log_kernel({
+            "kind": "run",
+            "mode": mode.value,
+            "status": result.get("status", "?"),
+            "end_state": self._state.value,
+            "multi_intent": bool(result.get("sub_intents")),
+            "duration_ms": round((time.perf_counter() - t0) * 1000),
+        })
+        return result
 
     # ─── Mode Handlers ─────────────────────────────────────────
 
@@ -728,6 +758,12 @@ class Kernel:
                 if apply_result.get("status") == "applied":
                     result["status"] = "ok"
                     result["message"] = result.get("message", "") + " (applied)"
+                    # Surface rollback_id so the user/agent can undo this batch.
+                    # Without this, the backup exists but nobody knows its ID.
+                    rb = apply_result.get("rollback_id")
+                    if rb:
+                        result["rollback_id"] = rb
+                        result["message"] += f" [rollback_id: {rb}]"
                 else:
                     result["status"] = "error"
                     result["message"] = (

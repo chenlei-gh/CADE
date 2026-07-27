@@ -618,16 +618,6 @@ def cmd_check(args):
     return result.returncode
 
 
-def cmd_get_prereq(args):
-    """Get prerequisite info (mkGetPreq wrapper)."""
-    from build import get_prerequisite
-
-    ws = _get_ws(args)
-    target = args[0] if args else ""
-    result = get_prerequisite(Path(ws), target=target)
-    return _print_result(result)
-
-
 def cmd_setup(args):
     """Setup workspace environment."""
     import subprocess
@@ -704,7 +694,8 @@ def cmd_test(args):
     import subprocess
 
     quick = "--quick" in args
-    runner = SKILL_ROOT / "tests" / "test_master.py"
+    # tests/ lives at the skill root (sibling of skills/), not under skills/.
+    runner = SKILL_ROOT.parent / "tests" / "test_master.py"
     if runner.exists():
         cmd = [sys.executable, str(runner)]
         if quick:

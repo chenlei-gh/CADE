@@ -203,8 +203,11 @@ def main():
         print(f"Gate {result['decision']}: {result['errors']} error(s), "
               f"{result['warnings']} warning(s)")
         for f in result["findings"]:
-            print(f"  [{f['severity']}][{f['rule']}] {f['module']}: "
-                  f"{f['message']}")
+            line = (f"  [{f['severity']}][{f['rule']}] {f['module']}: "
+                    f"{f['message']}")
+            if f.get("suggestion"):
+                line += f" → {f['suggestion']}"
+            print(line)
         if result.get("gate_error"):
             print(f"  (gate fail-open: {result['gate_error']})")
 
