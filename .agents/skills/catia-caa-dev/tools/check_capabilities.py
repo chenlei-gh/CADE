@@ -387,6 +387,12 @@ def main():
             print(f"    - {n}  (from {doc_exports[n]} import ...)")
     print("=" * len(hdr))
 
+    # Stable success marker for the master-test verify string.  Printed only
+    # when the contract is fully clean so the suite does not depend on the
+    # (changing) capability/GUARDED counts.
+    if not phantom_count and not stale_docs:
+        print("CAPABILITY CONTRACT OK")
+
     return 1 if (phantom_count or stale_docs) else 0
 
 

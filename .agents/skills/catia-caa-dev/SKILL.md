@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（29K+14P+13Capability+15Playbook+148Framework+6Philosophy+3Failure+3DecisionTree），107几何图标+RGBA多色、75模板(16类型)、39测试套件、cade dev一键闭环。"
+description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（29K+14P+13Capability+15Playbook+148Framework+6Philosophy+3Failure+3DecisionTree），107几何图标+RGBA多色、75模板(16类型)、40测试套件、cade dev一键闭环。"
 triggers:
   - CAA component
   - CATIA component
@@ -229,7 +229,7 @@ triggers:
 
 **版本**: 3.2.1
 **状态**: ✅ 活跃开发  
-**测试**: 39 套件（快速模式执行 38 套，跳过 1 套 CATIA 生命周期测试）
+**测试**: 40 套件（快速模式执行 39 套，跳过 1 套 CATIA 生命周期测试）
 
 这是一个**智能的 CAA 开发引擎（Development Kernel）**，将模糊的开发需求，经过需求分析、规划、知识推理和验证，稳定地转化为可执行实现。
 
@@ -301,7 +301,7 @@ AI 只知道 3 个 Mode:
 6. **代码验证** — 生成后自动静态检查（宏/头文件/命名规范），无需 mkmk
 7. **自动修复** — Repair Loop：诊断→修复→验证，最多 3 次重试
 8. **高性能** — 模板生成约50ms，比 RADE 工具快 100 倍
-9. **完整测试** — 39 套件，快速模式执行 38 套
+9. **完整测试** — 40 套件，快速模式执行 39 套
 10. **依赖图管理** — 完整的实体关系图和 Mermaid 可视化
 11. **知识体系** — Capability→Playbook→Knowledge→Philosophy→Framework→CAADoc + Failure Patterns + Decision Trees
 
@@ -1202,7 +1202,7 @@ python tests/test_full_integration.py
 python tests/test_full_regression.py --quick
 ```
 
-**Master quick**: 39 套中执行 38 套，跳过 1 套 CATIA 生命周期测试
+**Master quick**: 40 套中执行 39 套，跳过 1 套 CATIA 生命周期测试
 ```bash
 python tests/test_master.py --quick
 ```
@@ -1692,7 +1692,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 ### 部署前检查清单
 
 - [ ] 已阅读并接受上方「非阻塞残余风险」的使用规程（尤其：生成代码后必须在真实工作区跑一次 Build）
-- [ ] 已跑通 `python tests/test_master.py --quick`，确认本机环境下 38/38 通过
+- [ ] 已跑通 `python tests/test_master.py --quick`，确认本机环境下 39/39 通过
 - [ ] 已确认目标 CATIA 版本 ≥ R19（工具在 B28 上做过实机验证；跨版本首次使用建议先在测试工作区跑一次 `develop()`/`repair()` 全流程）
 - [ ] 团队已知晓 `KNOWLEDGE_AUDIT_STATUS.md` 中「未核实清单」范围，涉及这些 API 时纳入代码审查重点
 - [ ] 首次在新工作区使用时，先用小范围改动验证 ChangeSet 应用 + Build 闭环，再扩大到完整开发任务
@@ -1707,7 +1707,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 2. **多个命令挂同一个工具栏时，只有最后一个按钮可点击**：`CreateToolbars()` 生成代码对每个命令都调用 `SetAccessChild(pToolbar, X)`——这个 API 是“设置唯一子节点”，每次调用都会**覆盖**前一个，不是追加。结果是同一工具栏里先注册的命令按钮全部失效（不可见/不可点）。已修复：第一个 Starter 用 `SetAccessChild`，之后每个新增的 Starter 改用 `SetAccessNext(prev, new)` 链接成单链表（与官方 `CAAAfrGeometryWks.cpp` 的写法一致）。
 3. **对话框打开后点击“关闭”没有任何反应**：生成的 `AddTransition(pDlgState, NULL, IsOutputSetCondition(_pDlgAgent))` 这种“回到 NULL 结束态”写法，在对话框被关闭时框架实际调用的是 **`Cancel()`**，不是 `Desactivate()`（通过在 `Activate`/`Desactivate`/`Cancel` 里加日志实机追踪确认）。之前生成的代码只在 `Desactivate()` 里隐藏/销毁对话框，`Cancel()` 是空的，所以点击关闭没有效果。已修复为与官方样例一致的模式：`Desactivate()` 和 `Cancel()` 都只调用 `_pDialog->SetVisibility(CATDlgHide)`（隐藏，不销毁），真正的 `_pDialog->RequestDelayedDestruction()` 只放在析构函数里。**切勿在 `Cancel()`/`Desactivate()` 里直接 `delete _pDialog` 或调用非 delayed 的销毁——对话框可能仍在处理待发的通知，直接销毁会导致崩溃或悬空指针。**
 
-这 3 处修复目前只覆盖生成器对 `--dialog` 分支的代码模板；已存在的旧生成代码（在本次修复之前创建的项目）需要手工按上述模式回填，生成器不会自动迁移历史文件。回归：`test_master.py --quick` 38/38 通过（含修复前后各一次基线对比）。诊断脚本已归档到 `skills/debug_tools/`（`cade_enumwin.ps1`/`cade_findbtn.ps1` 等，用于从进程外部检查 CATIA 窗口/工具栏；详见该目录的 README）。
+这 3 处修复目前只覆盖生成器对 `--dialog` 分支的代码模板；已存在的旧生成代码（在本次修复之前创建的项目）需要手工按上述模式回填，生成器不会自动迁移历史文件。回归：`test_master.py --quick` 39/39 通过（含修复前后各一次基线对比）。诊断脚本已归档到 `skills/debug_tools/`（`cade_enumwin.ps1`/`cade_findbtn.ps1` 等，用于从进程外部检查 CATIA 窗口/工具栏；详见该目录的 README）。
 
 ### 📚 知识库可信度（与上述 Kernel 开发流程无关的另一个维度）
 
@@ -1720,7 +1720,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 ### 已验证范围
 
-- **测试套件**: 39 套；快速模式执行 38 套，跳过 1 套 CATIA 生命周期测试。
+- **测试套件**: 40 套；快速模式执行 39 套，跳过 1 套 CATIA 生命周期测试。
 - **Full Integration**: 49/49 通过。
 - **Full Regression quick**: 394/398；4 项 quarantine 不计作通过。
 - **真实 mkmk Build（Tier B，非 quick 模式）**: 对 `TTEST` 工作区执行 `incremental_build()`，0 error，DLL 校验通过且已刷新（`Int-1 Build & Run` 套件，约 33s）。
@@ -1762,4 +1762,4 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 **最后更新**: 2026-07-17  
 **维护者**: Kiro AI Agent  
 **状态**: ✅ 活跃开发（已通过 P0-P2 安全审计）  
-**测试**: 39 套件可用
+**测试**: 40 套件可用
