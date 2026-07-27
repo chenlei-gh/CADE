@@ -1026,6 +1026,9 @@ python skills/build.py                        # 编译当前目录
 python skills/build.py D:\workspace\MyFw.edu  # 编译指定 Framework
 python skills/build.py . -g                   # 全局编译
 python skills/build.py . --timeout 1200       # 自定义超时
+
+# 模块级编译（变更最小化，不影响其他工具）
+python skills/build.py ./MyFw.edu/MyModule.m  # 只编译指定模块
 ```
 
 **输出**:
