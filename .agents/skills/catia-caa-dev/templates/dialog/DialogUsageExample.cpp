@@ -3,6 +3,7 @@
 
 #include "<DialogClassName>.h"
 #include "CATApplicationFrame.h"
+#include "CATFrmWindow.h"
 #include <iostream.h>
 
 /**
@@ -11,11 +12,12 @@
  */
 void ShowMyDialog()
 {
-    // Get application frame as parent (optional, can be NULL)
-    CATApplicationFrame* pAppFrame = CATApplicationFrame::GetFrame();
-    
+    // Parent MUST be the main window — a NULL or non-CATDialog parent makes
+    // the dialog silently invisible (see knowledge/failure_patterns/fp_dialog_null_parent.md)
+    CATFrmWindow* pMainWindow = CATApplicationFrame::GetFrame()->GetMainWindow();
+
     // Create dialog instance
-    <DialogClassName>* pDialog = new <DialogClassName>(pAppFrame, "<DialogClassName>");
+    <DialogClassName>* pDialog = new <DialogClassName>(pMainWindow, "<DialogClassName>");
     
     if (pDialog) {
         // Build UI (must call after constructor)
@@ -37,10 +39,11 @@ void ShowMyDialog()
  */
 void ShowMyDialogNonModal()
 {
-    CATApplicationFrame* pAppFrame = CATApplicationFrame::GetFrame();
-    
+    // Same rule: never NULL parent (fp_dialog_null_parent)
+    CATFrmWindow* pMainWindow = CATApplicationFrame::GetFrame()->GetMainWindow();
+
     // Create with CATDlgWndNoModal flag (modify constructor in .h/.cpp)
-    <DialogClassName>* pDialog = new <DialogClassName>(pAppFrame, "<DialogClassName>");
+    <DialogClassName>* pDialog = new <DialogClassName>(pMainWindow, "<DialogClassName>");
     
     if (pDialog) {
         pDialog->Build();
