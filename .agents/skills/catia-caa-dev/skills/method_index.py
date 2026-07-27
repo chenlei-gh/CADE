@@ -71,13 +71,16 @@ class MethodIndex:
         self._methods: Dict[str, Set[str]] = {}   # type → bare method names
         self._bases: Dict[str, str] = {}          # type → direct base class
         self._catia_install = ""
+        self._hm = None                           # injected HeaderMap (optional)
         self._loaded = False
 
     # ─── Loading ─────────────────────────────────────────────────
 
     @classmethod
-    def load(cls, skill_root: Path) -> "MethodIndex":
+    def load(cls, skill_root: Path, header_map=None) -> "MethodIndex":
         mi = cls()
+        mi._hm = header_map  # shared instance from retrieval; avoids
+                             # re-loading the header map per unknown type
         skill_root = Path(skill_root)
 
         # 1. Method tables from the caadoc index cache (SDK header source).
@@ -219,9 +222,10 @@ class MethodIndex:
         if not self._catia_install:
             return None
         try:
-            from header_map import HeaderMap
-            hm = HeaderMap.load(Path(self._catia_install).parent if False else
-                                Path(__file__).resolve().parent.parent)
+            hm = self._hm
+            if hm is None:
+                from header_map import HeaderMap
+                hm = HeaderMap.load(Path(__file__).resolve().parent.parent)
             entry = hm.lookup(type_name)
         except Exception:
             return None

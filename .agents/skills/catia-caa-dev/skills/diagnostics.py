@@ -230,8 +230,8 @@ class DiagnosticsEngine:
     def _check_imakefile(self):
         """Check Imakefile.mk for completeness and framework/module confusion."""
         try:
-            from header_map import HeaderMap
-            hm = HeaderMap.load(Path(__file__).resolve().parent.parent)
+            from retrieval import get_retrieval
+            hm = get_retrieval(Path(__file__).resolve().parent.parent).header_map
         except Exception:
             hm = None
 
@@ -304,10 +304,10 @@ class DiagnosticsEngine:
         - Error #4: LINK_WITH module in non-prerequisite framework (ignored)
         """
         try:
-            from header_map import HeaderMap
-            # Build the header map from the skill root
+            from retrieval import get_retrieval
+            # Header map via the shared retrieval layer (once per process)
             skill_root = Path(__file__).resolve().parent.parent
-            hm = HeaderMap.load(skill_root)
+            hm = get_retrieval(skill_root).header_map
         except Exception:
             return
         if not hm._loaded or hm.header_count == 0:

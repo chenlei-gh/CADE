@@ -541,12 +541,13 @@ class CodeVerifier:
         return get_close_matches(basename, sorted(hm._map.keys()), n=n, cutoff=0.70)
 
     def _load_header_map(self):
-        """Load header_map once per verifier instance (lazy, cached)."""
+        """Header map via the shared retrieval layer (once per process)."""
         if hasattr(self, "_hm_cache"):
             return self._hm_cache
         try:
-            from header_map import HeaderMap
-            self._hm_cache = HeaderMap.load(self._skill_root) if self._skill_root else None
+            from retrieval import get_retrieval
+            self._hm_cache = get_retrieval(self._skill_root).header_map \
+                if self._skill_root else None
         except Exception:
             self._hm_cache = None
         return self._hm_cache
@@ -586,12 +587,13 @@ class CodeVerifier:
                         "dialogs inherit CATDlgDialog/CATDlgDocument")
 
     def _load_method_index(self):
-        """Load method_index once per verifier instance (lazy, cached)."""
+        """Method index via the shared retrieval layer (once per process)."""
         if hasattr(self, "_mi_cache"):
             return self._mi_cache
         try:
-            from method_index import MethodIndex
-            self._mi_cache = MethodIndex.load(self._skill_root) if self._skill_root else None
+            from retrieval import get_retrieval
+            self._mi_cache = get_retrieval(self._skill_root).method_index \
+                if self._skill_root else None
             if self._mi_cache is not None and self._mi_cache.type_count == 0:
                 self._mi_cache = None  # cache not built yet — skip silently
         except Exception:
