@@ -103,6 +103,49 @@ if claimed_suites:
         f"SKILL says {claimed}, master has {actual_suite_count}",
     )
 
+# 2b2. README.md (project root) suite / test-file counts.
+# The README is the project's public face and drifts independently of
+# SKILL.md — e.g. it claimed 38/39/32/31 suites in different sections
+# at the same time (fixed 2026-07-27). Every number attached to
+# "suites"/"套件" must be the actual total or the quick count, and every
+# number attached to "files"/"文件" (in a test context) must match the
+# real test_*.py count.
+readme_path = CADE_ROOT / "README.md"
+quick_suite_count = actual_suite_count - len(skip_keys) if skip_match else actual_suite_count
+if readme_path.exists():
+    readme_md = readme_path.read_text(encoding="utf-8")
+    valid_suite_numbers = {actual_suite_count, quick_suite_count}
+    claimed_suite_numbers = (
+        [int(m) for m in re.findall(r"(\d+)\s*suites", readme_md)]
+        + [int(m) for m in re.findall(r"Suites\s*\|\s*(\d+)", readme_md)]
+        + [int(m) for m in re.findall(r"(\d+)\s*套件", readme_md)]
+        + [int(m) for m in re.findall(r"测试套件\*\*\s*\|\s*(\d+)", readme_md)]
+        + [int(m) for m in re.findall(r"(\d+)/\d+\s*suites", readme_md)]  # CI badge numerator
+    )
+    bad_suites = sorted({n for n in claimed_suite_numbers if n not in valid_suite_numbers})
+    check(
+        f"README suite counts (total={actual_suite_count}, quick={quick_suite_count})",
+        not bad_suites,
+        f"stale numbers: {bad_suites}" if bad_suites else f"{len(claimed_suite_numbers)} references OK",
+    )
+
+    test_file_count = len(list(TESTS_DIR.glob("test_*.py")))
+    claimed_file_numbers = (
+        [int(m) for m in re.findall(r"(\d+)\s*test files", readme_md)]
+        + [int(m) for m in re.findall(r"\|\s*Files\s*\|\s*(\d+)", readme_md)]
+        + [int(m) for m in re.findall(r"测试文件\*\*\s*\|\s*(\d+)", readme_md)]
+        + [int(m) for m in re.findall(r"·\s*(\d+)\s*files\s*·", readme_md)]
+        + [int(m) for m in re.findall(r"·\s*(\d+)\s*文件\s*·", readme_md)]
+    )
+    bad_files = sorted({n for n in claimed_file_numbers if n != test_file_count})
+    check(
+        f"README test-file counts (actual={test_file_count})",
+        not bad_files,
+        f"stale numbers: {bad_files}" if bad_files else f"{len(claimed_file_numbers)} references OK",
+    )
+else:
+    check("README.md found at project root", False, str(readme_path))
+
 # 2c. Skills modules listed in SKILL.md tree must exist
 # Look for lines like: │   ├── module_name.py  (but NOT test_*.py from tests section)
 tree_modules = re.findall(r"^│   ├── (\w+)\.py\s+#", skill_md, re.MULTILINE)
