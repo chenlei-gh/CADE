@@ -65,6 +65,8 @@ SUITES = {
     "UI Scenario": "test_ui_scenario.py",
     # ── Capability Contract (phantom / stale-doc audit) ──
     "Capability Contract": "test_capability_contract.py",
+    # ── Retrieval layer (cache / health tripwire) ──
+    "Retrieval Benchmark": "test_retrieval_benchmark.py",
     }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
@@ -110,6 +112,7 @@ VERIFY_STRINGS = {
     "test_kernel_edge_cases.py": "All kernel edge case tests passed",
     "test_ui_scenario.py": "ALL REAL-WORLD UI TESTS PASSED",
     "test_capability_contract.py": "CAPABILITY CONTRACT OK",
+    "test_retrieval_benchmark.py": "passed",
     }
 
 

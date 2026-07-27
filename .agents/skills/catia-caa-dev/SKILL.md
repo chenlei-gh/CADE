@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（29K+14P+13Capability+15Playbook+148Framework+6Philosophy+3Failure+3DecisionTree），107几何图标+RGBA多色、75模板(16类型)、40测试套件、cade dev一键闭环。"
+description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（29K+14P+13Capability+15Playbook+148Framework+6Philosophy+3Failure+3DecisionTree），107几何图标+RGBA多色、75模板(16类型)、41测试套件、cade dev一键闭环。"
 triggers:
   - CAA component
   - CATIA component
@@ -229,7 +229,7 @@ triggers:
 
 **版本**: 3.2.1
 **状态**: ✅ 活跃开发  
-**测试**: 40 套件（快速模式执行 39 套，跳过 1 套 CATIA 生命周期测试）
+**测试**: 41 套件（快速模式执行 40 套，跳过 1 套 CATIA 生命周期测试）
 
 这是一个**智能的 CAA 开发引擎（Development Kernel）**，将模糊的开发需求，经过需求分析、规划、知识推理和验证，稳定地转化为可执行实现。
 
@@ -301,7 +301,7 @@ AI 只知道 3 个 Mode:
 6. **代码验证** — 生成后自动静态检查（宏/头文件/命名规范），无需 mkmk
 7. **自动修复** — Repair Loop：诊断→修复→验证，最多 3 次重试
 8. **高性能** — 模板生成约50ms，比 RADE 工具快 100 倍
-9. **完整测试** — 40 套件，快速模式执行 39 套
+9. **完整测试** — 41 套件，快速模式执行 40 套
 10. **依赖图管理** — 完整的实体关系图和 Mermaid 可视化
 11. **知识体系** — Capability→Playbook→Knowledge→Philosophy→Framework→CAADoc + Failure Patterns + Decision Trees
 
@@ -1202,7 +1202,7 @@ python tests/test_full_integration.py
 python tests/test_full_regression.py --quick
 ```
 
-**Master quick**: 40 套中执行 39 套，跳过 1 套 CATIA 生命周期测试
+**Master quick**: 41 套中执行 40 套，跳过 1 套 CATIA 生命周期测试
 ```bash
 python tests/test_master.py --quick
 ```
@@ -1430,7 +1430,8 @@ python tests/test_master.py --quick
 │   ├── test_l6_fault_injection.py    # 故障注入
 │   ├── test_knowledge_system.py      # 知识系统
 │   ├── test_catia_detection.py       # CATIA 检测
-│   └── test_system_health.py         # 健康检查
+│   ├── test_system_health.py         # 健康检查
+│   └── test_retrieval_benchmark.py   # 检索基准（缓存/健康防线）
 │
 ├── tools/                            # 辅助工具(与 skills/ 无关,不属于 Kernel 模块)
 │   ├── build_caadoc_index.py         (CAADoc API 签名/实现关系索引与核实工具: --query/--search/--repl; 同步扫描 SDK PublicInterfaces/*.h 与 refman 交叉比对)
@@ -1722,7 +1723,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 ### 已验证范围
 
-- **测试套件**: 40 套；快速模式执行 39 套，跳过 1 套 CATIA 生命周期测试。
+- **测试套件**: 41 套；快速模式执行 40 套，跳过 1 套 CATIA 生命周期测试。
 - **Full Integration**: 49/49 通过。
 - **Full Regression quick**: 394/398；4 项 quarantine 不计作通过。
 - **真实 mkmk Build（Tier B，非 quick 模式）**: 对 `TTEST` 工作区执行 `incremental_build()`，0 error，DLL 校验通过且已刷新（`Int-1 Build & Run` 套件，约 33s）。
@@ -1764,4 +1765,4 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 **最后更新**: 2026-07-17  
 **维护者**: Kiro AI Agent  
 **状态**: ✅ 活跃开发（已通过 P0-P2 安全审计）  
-**测试**: 40 套件可用
+**测试**: 41 套件可用
