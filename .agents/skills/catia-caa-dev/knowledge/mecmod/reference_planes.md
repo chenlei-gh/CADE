@@ -25,16 +25,20 @@ tags: [core, part, plane, origin]
 | 创建接口 | 无（不可再创建） | `CATIGSMUseFactory::CreatePlane*()` |
 | 所属框架 | MecModInterfaces | CATGSMUseItf / GSMInterfaces |
 
-## ⚠️ 命名推导陷阱（已核实的捏造）
+## ⚠️ 跨层污染陷阱（已核实的捏造）
 
-按 CAA 命名规律（`CATI + Domain + Object`）从 UI 树反推接口，容易“合理”地捏造出**根本不存在**的接口。以下两个已用 MethodIndex 核实为**捏造**（2026-07-27），不要生成：
+CATIA 有**两套 API 体系**，对象模型高度相似但接口名不同，AI 极易把 Automation 层的对象“翻译”成看似合规的 CAA 接口：
 
-| 捏造 | 为什么听起来合理 | 实况 |
+| | Automation / COM 层 | CAA C++ 层 |
 |---|---|---|
-| `CATIPrtOriginElements` | 对应 UI 的 Origin / 原点元素节点 | MethodIndex `has_type` = False，B28 无此接口 |
-| `GetPlaneXY/YZ/ZX()` | 符合 `Get + 对象名` 命名习惯 | `owners_of` 为空，无任何接口拥有此方法 |
+| 前缀 | `CATIA*`（如 `CATIAOriginElements`） | `CATI*`（如 `CATIPrtPart`） |
+| 方法风格 | COM 属性 `get_PlaneXY()` | 普通方法 `GetReferencePlanes()` |
+| 位置 | `PublicGenerated/`（IDL 生成） | `PublicInterfaces/` |
+| 调用方式 | VBA / COM 互操作 | C++ 直接调用 |
 
-**正确路径**：`CATIPrtContainer::GetPart()` → `CATIPrtPart::GetReferencePlanes()`（返回列表，非单个命名 getter）。教训：命名规律只能当**假设**，落代码前必须过 MethodIndex / HeaderMap 验证。
+**已核实的捏造**（2026-07-27）：`CATIPrtOriginElements` 和 `GetPlaneXY/YZ/ZX()` 在 CAA C++ 层**不存在**——它们是把 Automation 层真实存在的 `CATIAOriginElements::get_PlaneXY()`（`MecModInterfaces/PublicGenerated/win_b64/CATIAOriginElements.h:31`）去掉 `A`、加上 `Get` 前缀“翻译”出来的。MethodIndex `has_type('CATIPrtOriginElements')` = False，`owners_of('GetPlaneXY')` = 空。
+
+**正确路径**：`CATIPrtContainer::GetPart()` → `CATIPrtPart::GetReferencePlanes()`（返回列表，非单个命名 getter）。教训：`CATIA*` 前缀是 Automation 层信号，看到它就知道**不能直接当 CAA 接口用**；命名相似不代表跨层存在，落代码前必须过 MethodIndex / HeaderMap 验证。
 
 ## 正确 API（B28 头文件核实，2026-07-27）
 
