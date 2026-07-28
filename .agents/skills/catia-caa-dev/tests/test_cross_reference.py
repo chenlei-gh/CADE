@@ -360,6 +360,36 @@ catalog_files = list(catalog_dir.rglob("*")) if catalog_dir.is_dir() else []
 catalog_files = [f for f in catalog_files if f.is_file()]
 check(f"Catalog index exists (files={len(catalog_files)})", len(catalog_files) > 0)
 
+# Failure-pattern registry must stay in sync with the catalog index.
+# catalog/index.yaml is a hand-maintained table (NOT auto-scanned from
+# knowledge/), so a newly added fp_*.md is invisible to retrieval until it
+# is registered there — this drift has already happened twice (a knowledge
+# file was written but never indexed, so GetStartUp/SetHideStatus lookups
+# missed it). Bidirectional check:
+#   - every fp_*.md on disk is registered in catalog/index.yaml (no orphans)
+#   - every registered fp path actually exists on disk (no dead links)
+catalog_yaml = catalog_dir / "index.yaml"
+catalog_src = catalog_yaml.read_text(encoding="utf-8", errors="replace") if catalog_yaml.exists() else ""
+registered_fps = set(re.findall(r"knowledge/failure_patterns/(fp_\w+\.md)", catalog_src))
+fp_dir = SKILL_ROOT / "knowledge" / "failure_patterns"
+on_disk_fps = (
+    {f.name for f in fp_dir.glob("fp_*.md")} if fp_dir.is_dir() else set()
+)
+
+orphan_fps = sorted(on_disk_fps - registered_fps)
+check(
+    "All failure patterns registered in catalog",
+    not orphan_fps,
+    f"unregistered: {', '.join(orphan_fps)}" if orphan_fps else f"{len(on_disk_fps)} registered",
+)
+
+dead_fps = sorted(registered_fps - on_disk_fps)
+check(
+    "No dead failure-pattern links in catalog",
+    not dead_fps,
+    f"missing files: {', '.join(dead_fps)}" if dead_fps else f"{len(registered_fps)} links valid",
+)
+
 # Docs directory
 docs_dir = SKILL_ROOT / "docs"
 if docs_dir.is_dir():
