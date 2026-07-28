@@ -45,5 +45,6 @@ not_automatable_because: "..."                  # automation=manual 时必填
 | fp_toolbar_setaccesschild_overwrite | rule | `ui_lint:ui_toolbar_access_chain` |
 | fp_undeclared_class | template | Component 模板内置 CATDeclareClass/CATImplementClass |
 | fp_var_forward_decl | rule | `ui_lint:var_forward_decl` |
+| fp_startup_interface_qi | manual | 见 `not_automatable_because`（接口挂在哪一层对象暂无静态数据，待建层级数据后升级 verifier 规则） |
 
-**转化率：11/11（rule 9 + template 2，manual 0）。**
+**转化率：11/12（rule 9 + template 2 + manual 1）。**
