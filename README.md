@@ -38,7 +38,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `40/40 suites (quick, 100%)` | **42 test files** | *2026-07-27*
+> 🟢 **CI Status**: `41/41 suites (quick, 100%)` | **43 test files** | *2026-07-28*
 
 > ✅ **Production readiness**: Conditional GO — see [SKILL.md § Production Readiness](.agents/skills/catia-caa-dev/SKILL.md#-生产就绪评估) before deploying
 
@@ -216,11 +216,11 @@ Retrieval path: **Capability → Playbook → Knowledge → Framework → CAADoc
 41-suite test suite catches drift early:
 
 ```bash
-cade test --quick   # 40 suites (~60s), quick mode skips CATIA lifecycle
+cade test --quick   # 41 suites (~60s), quick mode skips CATIA lifecycle
 cade test           # 41 suites, full including CATIA lifecycle
 ```
 
-> 🟢 **Verified**: 40/40 suites quick (100%) — last run 2026-07-27
+> 🟢 **Verified**: 41/41 suites quick (100%) — last run 2026-07-28
 
 - **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
@@ -313,7 +313,7 @@ cade suggest                      # AI recommends next action
 cade docs                         # auto-generate documentation
 cade prereq MyModule              # view prerequisites
 cade rv                           # create Runtime View
-cade test --quick                 # run 40 suites (~16s)
+cade test --quick                 # run 41 suites (~16s)
 cade test                         # full: 41 suites (launches CATIA)
 ```
 
@@ -322,7 +322,7 @@ cade test                         # full: 41 suites (launches CATIA)
 ### ⚡ Test Results
 
 <details>
-<summary>41 suites (40 quick + 1 CATIA lifecycle) · 42 files · 700+ checks · 2026-07-27</summary>
+<summary>42 suites (41 quick + 1 CATIA lifecycle) · 43 files · 700+ checks · 2026-07-28</summary>
 
 | | | |
 |---|---|---|
@@ -344,7 +344,7 @@ cade test                         # full: 41 suites (launches CATIA)
 </details>
 
 ```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 40 suites (~60s)
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 41 suites (~60s)
 python .agents/skills/catia-caa-dev/tests/test_master.py           # 41 suites (starts CATIA)
 ```
 
@@ -401,8 +401,8 @@ graph TD
 
 | | |
 |---|---|
-| Suites | 41 (40 quick + 1 CATIA lifecycle) |
-| Files | 42 |
+| Suites | 42 (41 quick + 1 CATIA lifecycle) |
+| Files | 43 |
 | Checks | 700+ |
 | Pass Rate | 100% |
 | Templates | 82 (19 types) |
@@ -602,14 +602,14 @@ cade rollback --id latest           # 撤销任意操作
 ```bash
 cade suggest                        # AI 推荐下一步
 cade docs                           # 自动生成文档
-cade test --quick                   # 40 套件快速测试 (~60s)
-cade test                           # 41 套件全量测试 (启动 CATIA)
+cade test --quick                   # 41 套件快速测试 (~60s)
+cade test                           # 42 套件全量测试 (启动 CATIA)
 ```
 
 ### ⚡ 测试结果
 
 <details>
-<summary>41 套件（快速模式 40 套 + 1 套 CATIA 生命周期）· 42 文件 · 700+ 检查 · 2026-07-27</summary>
+<summary>42 套件（快速模式 41 套 + 1 套 CATIA 生命周期）· 43 文件 · 700+ 检查 · 2026-07-28</summary>
 
 | | | |
 |---|---|---|
@@ -651,8 +651,8 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 
 | | |
 |---|---|
-| **测试套件** | 41（快速模式  40 套 + 1 套 CATIA 生命周期） |
-| **测试文件** | 42 |
+| **测试套件** | 42（快速模式  41 套 + 1 套 CATIA 生命周期） |
+| **测试文件** | 43 |
 | **检查项** | 700+ |
 | **通过率** | 100% |
 | **模板** | 82（19 类型） |
@@ -700,7 +700,7 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 │   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
 │   ├── patterns/                   ← 架构模式
 │   ├── examples/                   ← 真实 CAA 项目示例
-│   ├── tests/                      ← 41 套件、~12,000 行
+│   ├── tests/                      ← 42 套件、~12,000 行
 │   ├── docs/                       ← 完整文档
 │   ├── tools/                      ← 安装、验证、工具
 │   └── config/                     ← 编辑器 MCP 模板

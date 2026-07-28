@@ -12,9 +12,9 @@ extend this contract, not bypass it.
 
 ---
 
-## 1. The Four-Index Model
+## 1. The Five-Index Model
 
-All retrieval in CADE goes through four indexes, each with a single
+All retrieval in CADE goes through five indexes, each with a single
 authoritative data source and a single lifecycle:
 
 | Index | Authoritative source | What it answers | Snapshot (2026-07) |
@@ -23,6 +23,14 @@ authoritative data source and a single lifecycle:
 | **ApiRegistry** | `capabilities/*.md` + `templates/**` + `knowledge/frameworks/*.md` + `knowledge/failure_patterns/*.md` | "Is this API name real?" | 342 APIs |
 | **HeaderMap** | B28 install `<FW>/PublicInterfaces/*.h` scan → `cache/header_map_<ver>.json` | "Does this class/header exist in CATIA?" | 5500 headers, 503 frameworks |
 | **MethodIndex** | `cache/caadoc_index.json` (pre-parsed SDK headers) → `cache/method_index.pickle` | "Does type X really have method M?" | 2655 types |
+| **UseCaseIndex** | CAADoc use-case `.cpp` scan → `cache/usecase_index.json` (builder: `tools/build_usecase_index.py`) | "Has CAA officially used X this way?" | 1214 examples |
+
+**UseCaseIndex boundary**: it records *presence only* — which official
+sample `#include`s an interface, calls a method, or uses an enum. It never
+infers method→interface ownership (join with `MethodIndex.owners_of()` at
+query time) and never marks anything "recommended" (that is Knowledge's
+job). A miss means "no official example found", NOT "the API does not
+exist" — existence is HeaderMap/MethodIndex's authority.
 
 The snapshot numbers are illustrative, not contractual; they change as
 the knowledge base and CATIA versions grow. The sources are contractual.
@@ -40,6 +48,11 @@ hm = r.header_map        # HeaderMap (process-cached)
 mi = r.method_index      # MethodIndex (HeaderMap injected)
 reg = r.registry         # ApiRegistry (process-cached)
 cat = r.catalog          # CatalogIndex (disk + process cached)
+uc = r.usecase_index     # UseCaseIndex (presence evidence)
+
+# UseCase presence queries (passive, on-demand — never auto-injected):
+r.find_usecases_for_interface("CATIVisProperties")   # -> [example names]
+r.find_usecases_for_method("SetPropertiesAtt")        # -> {owners, examples}
 ```
 
 Rules:
@@ -57,7 +70,7 @@ Agent-facing diagnostics:
 python skills/retrieval.py
 ```
 
-prints a JSON health report for all four indexes. Use this first when
+prints a JSON health report for all five indexes. Use this first when
 any lookup result looks wrong.
 
 ---

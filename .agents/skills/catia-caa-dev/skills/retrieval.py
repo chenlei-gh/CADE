@@ -42,6 +42,7 @@ class Retrieval:
         self._registry = None
         self._header_map = None
         self._method_index = None
+        self._usecase_index = None
 
     @property
     def skill_root(self) -> Path:
@@ -77,6 +78,41 @@ class Retrieval:
             self._method_index = MethodIndex.load(
                 self._root, header_map=self.header_map)
         return self._method_index
+
+    @property
+    def usecase_index(self) -> dict:
+        """Lazy-load cache/usecase_index.json (Official Example Presence).
+
+        Read-only presence evidence: WHERE a token appears in CAADoc
+        use cases. Ownership/recommendation are NOT stored here — join
+        with method_index.owners_of() at query time.
+        """
+        if self._usecase_index is None:
+            import json
+            p = self._root / "cache" / "usecase_index.json"
+            if p.exists():
+                self._usecase_index = json.loads(p.read_text(encoding="utf-8"))
+            else:
+                self._usecase_index = {"examples": {}, "by_interface": {},
+                                       "by_method": {}, "by_symbol": {}}
+        return self._usecase_index
+
+    # ─── UseCase presence queries (passive, on-demand) ───────────
+
+    def find_usecases_for_interface(self, interface: str) -> list:
+        """Official CAADoc examples that #include this interface. [] if none."""
+        return self.usecase_index.get("by_interface", {}).get(interface, [])
+
+    def find_usecases_for_method(self, method: str) -> dict:
+        """Official examples calling this method + ownership join.
+
+        Returns {"owners": [...], "examples": [...]}. owners comes from
+        MethodIndex (authority), examples from UseCaseIndex (presence).
+        Empty examples = no official example found (not an error).
+        """
+        owners = self.method_index.owners_of(method)
+        examples = self.usecase_index.get("by_method", {}).get(method, [])
+        return {"owners": owners, "examples": examples}
 
     # ─── Diagnostics ─────────────────────────────────────────────
 
@@ -135,6 +171,18 @@ class Retrieval:
             }
         except Exception as e:
             report["api_registry"] = {"ok": False, "error": str(e)}
+
+        try:
+            uc = self.usecase_index
+            n_ex = len(uc.get("examples", {}))
+            report["usecase_index"] = {
+                "ok": n_ex > 0,
+                "examples": n_ex,
+                "interfaces": len(uc.get("by_interface", {})),
+                "methods": len(uc.get("by_method", {})),
+            }
+        except Exception as e:
+            report["usecase_index"] = {"ok": False, "error": str(e)}
 
         report["ok"] = all(v.get("ok") for v in report.values())
         return report
