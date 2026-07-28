@@ -360,35 +360,100 @@ catalog_files = list(catalog_dir.rglob("*")) if catalog_dir.is_dir() else []
 catalog_files = [f for f in catalog_files if f.is_file()]
 check(f"Catalog index exists (files={len(catalog_files)})", len(catalog_files) > 0)
 
-# Failure-pattern registry must stay in sync with the catalog index.
-# catalog/index.yaml is a hand-maintained table (NOT auto-scanned from
-# knowledge/), so a newly added fp_*.md is invisible to retrieval until it
-# is registered there — this drift has already happened twice (a knowledge
+# The catalog index is a hand-maintained table (NOT auto-scanned from the
+# content dirs), so any newly added .md is invisible to retrieval until it
+# is registered there — this drift has already happened (a failure-pattern
 # file was written but never indexed, so GetStartUp/SetHideStatus lookups
-# missed it). Bidirectional check:
-#   - every fp_*.md on disk is registered in catalog/index.yaml (no orphans)
-#   - every registered fp path actually exists on disk (no dead links)
+# missed it). Generalize the guard to every content dir the catalog claims
+# to fully index. Bidirectional check per dir:
+#   - every content .md on disk is registered in catalog/index.yaml (no orphans)
+#   - every registered path actually exists on disk (no dead links)
+#
+# Full-index dirs (catalog enumerates ALL their content .md files) get both
+# orphan + dead-link checks. Excluded:
+#   - knowledge/frameworks/  — auto-scanned from CAADoc, not hand-registered
+#   - knowledge/gaps/        — intentionally unregistered (unresolved TODOs)
+#   - examples/, docs/examples/ — selective registration (not full index);
+#     checked for dead links only, below.
 catalog_yaml = catalog_dir / "index.yaml"
 catalog_src = catalog_yaml.read_text(encoding="utf-8", errors="replace") if catalog_yaml.exists() else ""
-registered_fps = set(re.findall(r"knowledge/failure_patterns/(fp_\w+\.md)", catalog_src))
-fp_dir = SKILL_ROOT / "knowledge" / "failure_patterns"
-on_disk_fps = (
-    {f.name for f in fp_dir.glob("fp_*.md")} if fp_dir.is_dir() else set()
+
+# Every registered .md path in the catalog, as a project-relative posix path.
+registered_paths = set(
+    re.findall(r"\b((?:capabilities|playbooks|knowledge|patterns|examples|docs)/[^\s|]+?\.md)\b", catalog_src)
 )
 
-orphan_fps = sorted(on_disk_fps - registered_fps)
-check(
-    "All failure patterns registered in catalog",
-    not orphan_fps,
-    f"unregistered: {', '.join(orphan_fps)}" if orphan_fps else f"{len(on_disk_fps)} registered",
-)
+# Directories the catalog fully indexes (hand-maintained, complete enumeration).
+FULL_INDEX_DIRS = [
+    "capabilities",
+    "playbooks",
+    "knowledge/philosophy",
+    "knowledge/failure_patterns",
+    "knowledge/mecmod",
+    "knowledge/part",
+    "knowledge/product",
+    "knowledge/drawing",
+    "knowledge/surface",
+    "knowledge/fta",
+    "knowledge/ui",
+    "knowledge/infrastructure",
+    "patterns",  # recursed; per-subdir grouping happens naturally via rglob
+]
 
-dead_fps = sorted(registered_fps - on_disk_fps)
-check(
-    "No dead failure-pattern links in catalog",
-    not dead_fps,
-    f"missing files: {', '.join(dead_fps)}" if dead_fps else f"{len(registered_fps)} links valid",
-)
+for rel_dir in FULL_INDEX_DIRS:
+    dir_path = SKILL_ROOT / rel_dir
+    on_disk = (
+        {f.relative_to(SKILL_ROOT).as_posix() for f in dir_path.rglob("*.md") if f.name != "README.md"}
+        if dir_path.is_dir() else set()
+    )
+    registered_here = {p for p in registered_paths if p.startswith(rel_dir + "/")}
+
+    orphans = sorted(on_disk - registered_here)
+    dead = sorted(registered_here - on_disk)
+    ok = not orphans and not dead
+    detail_parts = []
+    if orphans:
+        detail_parts.append("unregistered: " + ", ".join(p.split("/")[-1] for p in orphans))
+    if dead:
+        detail_parts.append("missing: " + ", ".join(p.split("/")[-1] for p in dead))
+    detail = "; ".join(detail_parts) if detail_parts else f"{len(on_disk)} in sync"
+    check(f"Catalog in sync: {rel_dir}/", ok, detail)
+
+# Selectively-registered dirs: catalog need not list every file, but whatever
+# it DOES list must exist (dead links only — orphan check would be wrong here).
+# Entries may be a directory (examples/geometry/fillet_checker/) or a file
+# (docs/examples/EXAMPLE_COMMAND.md); a trailing-slash dir entry is satisfied
+# by either the directory itself OR a same-named .md file beside it.
+#
+# Parse table rows cell-by-cell (split on '|') rather than a global regex, so
+# 'examples/' never accidentally matches inside 'docs/examples/', and stray
+# punctuation (e.g. the '(docs/examples/)' heading) is not captured as a path.
+def _registered_under(root):
+    prefix = root.rstrip("/") + "/"
+    found = set()
+    for line in catalog_src.splitlines():
+        if "|" not in line:
+            continue
+        for cell in line.split("|"):
+            cell = cell.strip()
+            # exact prefix at a path boundary — excludes 'docs/examples/' when
+            # root is 'examples' (cell would start with 'docs/', not 'examples/')
+            if cell.startswith(prefix):
+                found.add(cell.rstrip("/"))
+    return found
+
+for rel_dir in ["examples", "docs/examples"]:
+    registered_here = _registered_under(rel_dir)
+    dead = []
+    for p in sorted(registered_here):
+        if (SKILL_ROOT / p).exists() or (SKILL_ROOT / (p + ".md")).exists():
+            continue
+        dead.append(p)
+    check(
+        f"No dead links in catalog: {rel_dir}/",
+        not dead,
+        f"missing: {', '.join(dead)}" if dead else f"{len(registered_here)} links valid",
+    )
 
 # Docs directory
 docs_dir = SKILL_ROOT / "docs"
