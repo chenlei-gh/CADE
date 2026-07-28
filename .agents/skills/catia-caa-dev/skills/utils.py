@@ -13,6 +13,25 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
+def ensure_utf8_stdio() -> None:
+    """Reconfigure stdout/stderr to UTF-8 so printing unicode never crashes.
+
+    On Windows the console default code page is often GBK (cp936). Any
+    ``print`` of a character outside that page (em-dash, CJK, the ``\\ufffd``
+    replacement char that appears in decoded subprocess output) raises
+    ``UnicodeEncodeError`` and kills the caller — e.g. test_master.py crashing
+    while trying to print a failing suite's details, masking the real failure.
+    Reconfiguring to UTF-8 with ``errors=\"replace\"`` makes output robust on
+    any code page. Idempotent and safe to call multiple times; a no-op where
+    ``reconfigure`` is unavailable (very old Python / redirected streams).
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 class Logger:
     """Simple logger for skills (P2-007 fix: optional workspace-scoped logging)"""
 
@@ -156,6 +175,7 @@ def output_json(data: Dict[str, Any], exit_code: int = 0):
         data: Dictionary to output
         exit_code: Exit code (0=success, 1=error)
     """
+    ensure_utf8_stdio()
     print(json.dumps(data, indent=2, ensure_ascii=False))
     sys.exit(exit_code)
 

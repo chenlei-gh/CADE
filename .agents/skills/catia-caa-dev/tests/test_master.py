@@ -8,9 +8,18 @@ Organized by L1-L7 pyramid. Run with: python test_master.py
 import subprocess
 import sys
 import time
+import os
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(SKILL_ROOT / "skills"))
+
+from utils import ensure_utf8_stdio  # noqa: E402
+
+# Force UTF-8 stdio before any print: on a GBK Windows console, printing a
+# failing suite's details (em-dash, decoded subprocess \ufffd) would raise
+# UnicodeEncodeError and kill the runner, masking the real failure.
+ensure_utf8_stdio()
 
 SUITES = {
     # ── L1: Unit Tests ──
@@ -125,6 +134,14 @@ def run(quick: bool = False):
     total_time = 0
     cnext_started = False
 
+    # Child test scripts print unicode (CJK, em-dash, status glyphs). On a GBK
+    # Windows console they inherit the GBK code page and crash inside their own
+    # print() with UnicodeEncodeError. Force UTF-8 mode in every child via env
+    # so the suite result reflects the real test outcome, not an encoding crash.
+    child_env = dict(os.environ)
+    child_env["PYTHONUTF8"] = "1"
+    child_env["PYTHONIOENCODING"] = "utf-8"
+
     print("=" * 70)
     print("  CADE Test Suite — Master Runner")
     print(f"  Python {sys.version.split()[0]} | {time.strftime('%Y-%m-%d %H:%M')}")
@@ -164,6 +181,7 @@ def run(quick: bool = False):
                 encoding="utf-8",
                 errors="replace",
                 timeout=300,
+                env=child_env,
             )
         except subprocess.TimeoutExpired:
             print(f" TIMEOUT")
