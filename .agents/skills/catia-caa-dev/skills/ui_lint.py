@@ -14,6 +14,8 @@ Checks (each maps 1:1 to a failure_patterns/fp_*.md entry):
                             → dialog close button dead
   ui_toolbar_access_chain — repeated SetAccessChild(pTlb, ...) on the
                             same toolbar → only last button clickable
+  visu_sethidestatus      — SetHideStatus on mechanical features
+                            → runtime crash (use SetPropertiesAtt)
 
 Design principle:
   Regex-based heuristics over generated source — not a C++ parser.
@@ -103,6 +105,13 @@ _FWD_DECL_RE = re.compile(r"^\s*class\s+(?P<name>CATI\w+)\s*;", re.MULTILINE)
 _VAR_USAGE_RE = re.compile(r"\b(?P<name>CATI\w+)_var\b")
 _INCLUDE_RE = re.compile(r'#include\s+[<"](?P<name>CATI\w+)\.h[>"]')
 
+# Rule 6: CATIMechanicalVisu::SetHideStatus — compiles fine but crashes
+# CATIA at runtime when hiding mechanical features (datum planes).
+# Official path: CATIVisProperties::SetPropertiesAtt + CATVPShow +
+# CATModifyVisProperties (CAADoc CAAMmrSetShowModeCmd).
+# fp_sethidestatus_crash.md
+_SETHIDESTATUS_RE = re.compile(r"->\s*SetHideStatus\s*\(")
+
 
 class UILinter:
     """Static linter for the documented CAA UI failure patterns."""
@@ -139,6 +148,7 @@ class UILinter:
         findings.extend(self._check_toolbar_access_chain(file_label, content))
         findings.extend(self._check_paste_explicit_targets(file_label, content))
         findings.extend(self._check_var_forward_decl(file_label, content))
+        findings.extend(self._check_sethidestatus(file_label, content))
         return findings
 
     # ─── Rule 1: NULL-parent dialog ──────────────────────────────
@@ -302,4 +312,35 @@ class UILinter:
                     ),
                     knowledge_ref="knowledge/failure_patterns/fp_var_forward_decl.md",
                 ))
+        return out
+
+    # ─── Rule 6: SetHideStatus hides mechanical feature ─────────
+
+    def _check_sethidestatus(self, file_label: str, content: str) -> List[UIFinding]:
+        out = []
+        for m in _SETHIDESTATUS_RE.finditer(content):
+            line = content[:m.start()].count("\n") + 1
+            out.append(UIFinding(
+                rule="visu_sethidestatus",
+                severity="warning",
+                file=file_label,
+                line=line,
+                problem=f"CATIMechanicalVisu::SetHideStatus call: {m.group(0)}",
+                reason=(
+                    "SetHideStatus is a bare setter — it does not update the "
+                    "graphic property table nor send a visu-change notification. "
+                    "Calling it to hide mechanical features (datum planes) "
+                    "crashes CATIA at runtime (observed in both assembly-loop "
+                    "and standalone-part contexts, R28). Method exists, "
+                    "compiles fine — the crash only shows at runtime."
+                ),
+                fix_hint=(
+                    "Use the official CAADoc path instead: query CATIVisProperties "
+                    "on the feature, then SetPropertiesAtt(values, CATVPShow, "
+                    "CATVPGlobalType) with CATNoShowAttr, and send a "
+                    "CATModifyVisProperties notification (sample: "
+                    "CAAMmrSetShowModeCmd)."
+                ),
+                knowledge_ref="knowledge/failure_patterns/fp_sethidestatus_crash.md",
+            ))
         return out

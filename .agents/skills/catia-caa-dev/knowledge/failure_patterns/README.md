@@ -40,9 +40,10 @@ not_automatable_because: "..."                  # automation=manual 时必填
 | fp_imakefile_link | rule | `diagnostics:_check_link_with_coverage` |
 | fp_missing_include | template | 模板默认 include |
 | fp_paste_cross_doc_catpathelement | rule | `ui_lint:paste_explicit_targets`（跨文档 error / 同文档 warning） |
+| fp_sethidestatus_crash | rule | `ui_lint:visu_sethidestatus`（warning，官方通路 `CATIVisProperties::SetPropertiesAtt`） |
 | fp_template_feature_apis | rule | `generator:_gen_feature_spec` 熔断 + `verifier:_check_includes` |
 | fp_toolbar_setaccesschild_overwrite | rule | `ui_lint:ui_toolbar_access_chain` |
 | fp_undeclared_class | template | Component 模板内置 CATDeclareClass/CATImplementClass |
 | fp_var_forward_decl | rule | `ui_lint:var_forward_decl` |
 
-**转化率：10/10（rule 8 + template 2，manual 0）。**
+**转化率：11/11（rule 9 + template 2，manual 0）。**
