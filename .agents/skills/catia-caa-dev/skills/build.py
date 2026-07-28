@@ -65,6 +65,21 @@ def validate_workspace(workspace_path: Path) -> dict:
     return {"can_build": can_build, "issues": issues, "warnings": warnings}
 
 
+def _resolve_workspace_root(workspace_path: Path) -> Path:
+    """Resolve the workspace root from a module-scoped build path.
+
+    Module-scoped builds pass a .m directory (e.g.
+    <root>/<FW>.edu/<Module>.m), but mkmk always emits DLLs to the
+    workspace-root <root>/<arch>/code/bin — never under the module dir.
+    Detect the .m case and walk up (<Module>.m → <FW>.edu → <root>).
+    In full-workspace mode the path already IS the root; return as-is.
+    """
+    p = workspace_path
+    if p.name.endswith(".m") and p.parent.name.endswith(".edu"):
+        return p.parent.parent
+    return p
+
+
 def verify_build(
     workspace_path: Path,
     expected_modules: Optional[List[str]] = None,
@@ -74,7 +89,8 @@ def verify_build(
     """Post-build verification: check that fresh, plausible DLLs were produced.
 
     Args:
-        workspace_path: Workspace root
+        workspace_path: Workspace root, or a module (.m) dir for module-scoped
+                        builds — resolved to the root via _resolve_workspace_root.
         expected_modules: Optional list of module names (e.g. ['TTModule']) to verify.
                           If provided, each is checked individually.
         build_start_time: Start of the current build. Used as the staleness
@@ -100,7 +116,8 @@ def verify_build(
     except Exception:
         pass
 
-    bin_dir = workspace_path / arch / "code" / "bin"
+    ws_root = _resolve_workspace_root(workspace_path)
+    bin_dir = ws_root / arch / "code" / "bin"
     dlls = list(bin_dir.glob("*.dll")) if bin_dir.exists() else []
     issues = []
 
@@ -324,19 +341,22 @@ def build_workspace(
         logger.write(f"Gate crashed (fail-open): {e}")
 
     # --- Auto-configure workspace prerequisites (links to CATIA installation) ---
-    # Only run if workspace looks like a real CAA workspace (has .edu directory)
+    # Only run if workspace looks like a real CAA workspace (has .edu directory).
+    # In module-scoped builds workspace_path is the .m dir — resolve to the root
+    # so the framework scan and prereq link target the real workspace.
+    prereq_root = _resolve_workspace_root(workspace_path)
     has_framework = any(
         p.is_dir() and p.name.endswith(".edu")
-        for p in workspace_path.iterdir()
+        for p in prereq_root.iterdir()
     )
     if has_framework:
         # Cache check: skip if already configured (mkGetPreq is idempotent but slow)
         cache_data = cache.load()
         last_prereq = cache_data.get("prereq_workspace", "")
-        if last_prereq != str(workspace_path):
-            prereq_result = setup_prerequisite_path(workspace_path)
+        if last_prereq != str(prereq_root):
+            prereq_result = setup_prerequisite_path(prereq_root)
             if prereq_result.get("status") == "success":
-                cache_data["prereq_workspace"] = str(workspace_path)
+                cache_data["prereq_workspace"] = str(prereq_root)
                 cache.save(cache_data)
                 logger.write("Prerequisites configured")
             else:
@@ -453,16 +473,26 @@ def build_workspace(
         # Preserve prerequisite state in the final cache entry. The completed
         # build result is cached only after post-build verification has had a
         # chance to change its status.
-        build_result["prereq_workspace"] = str(workspace_path)
+        build_result["prereq_workspace"] = str(_resolve_workspace_root(workspace_path))
 
         # Post-build verification (P1-005 fix)
-        # Discover expected module names from frameworks
+        # Discover expected module names from frameworks. In module-scoped
+        # builds workspace_path is the .m dir, which contains no .edu
+        # subdirs — resolve to the workspace root so verify_build's DLL
+        # lookup lands in the real <root>/<arch>/code/bin. But scope the
+        # expected-module list to just the module being built (not every
+        # module in the workspace), because a module-scoped mkmk run only
+        # produces this one module's DLL.
+        verify_root = _resolve_workspace_root(workspace_path)
         expected_mods = []
-        for fw_dir in workspace_path.iterdir():
-            if fw_dir.is_dir() and fw_dir.name.endswith(".edu"):
-                for mod_dir in fw_dir.iterdir():
-                    if mod_dir.is_dir() and mod_dir.name.endswith(".m"):
-                        expected_mods.append(mod_dir.name.replace(".m", ""))
+        if workspace_path.name.endswith(".m"):
+            expected_mods.append(workspace_path.name.replace(".m", ""))
+        else:
+            for fw_dir in verify_root.iterdir():
+                if fw_dir.is_dir() and fw_dir.name.endswith(".edu"):
+                    for mod_dir in fw_dir.iterdir():
+                        if mod_dir.is_dir() and mod_dir.name.endswith(".m"):
+                            expected_mods.append(mod_dir.name.replace(".m", ""))
 
         # Determine which modules mkmk actually compiled/linked this run
         # (via '# make:  <Framework>.edu\<Module>.m...' lines). mkmk is
