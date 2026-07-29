@@ -1,7 +1,7 @@
 """
-CADE Icon Provider v3.4
+CADE Icon Provider v3.5
 =======================
-123 geometric patterns, 4x supersampling, true multi-color RGBA rendering.
+127 geometric patterns, 4x supersampling, true multi-color RGBA rendering.
 
 Design: draw at 4x on RGBA with explicit colors, LANCZOS scale down,
 quantize to 8-bit BMP. Each pattern can use BODY, EDGE, DIM, ACCENT colors.
@@ -28,7 +28,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # ─── Official CATIA icon style (sampled from B28 win_b64 resources) ───
 CATIA_BG = (192, 192, 192)        # dominant official background gray
 CATIA_INK = (24, 16, 82)          # dominant official dark-navy outline
-CACHE_VER = "v6"                  # bump when render style changes (v6: 官方伪3D等轴测+光照)
+CACHE_VER = "v7"                  # bump when render style changes (v7: fillet/chamfer/split 特征实体化+深红高亮)
 
 # ─── Domain → Icon ───────────────────────────────────────────────
 DOMAIN_MAP = {
@@ -36,9 +36,9 @@ DOMAIN_MAP = {
     "drill":"drill","machine":"settings","cog":"settings","gear":"settings",
     "assemble":"cube","part":"cube","product":"package","component":"cube",
     "constrain":"link","pad":"cube","extrude":"arrow-up","revolve":"circle",
-    "fillet":"arc","chamfer":"cut","sketch":"pencil","surface":"wave",
+    "fillet":"fillet","chamfer":"chamfer","sketch":"pencil","surface":"wave",
     "wireframe":"grid","point":"point","line":"line","curve":"curve",
-    "split":"cut","trim":"cut","join":"merge","transform":"move",
+    "split":"split","trim":"cut","join":"merge","transform":"move",
     "measure":"ruler","distance":"ruler","angle":"angle","analyze":"chart",
     "check":"check","verify":"check","report":"doc","statistic":"chart",
     "select":"cursor","pick":"cursor","dialog":"window","setting":"settings",
@@ -293,6 +293,10 @@ def _render_icon(icon_name: str, badge: str = None) -> Path:
         "star": (255, 200, 0, 255),
         "heart": (255, 100, 100, 255),
         "target": (255, 0, 0, 255),
+        "fillet": (155, 0, 0, 255),
+        "chamfer": (155, 0, 0, 255),
+        "split": (155, 0, 0, 255),
+        "rotate": (75, 230, 255, 255),
     }
     if icon_name in acmap:
         accent = acmap[icon_name]
@@ -343,11 +347,36 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
         _iso_block(3*S, 8*S, 11*S, 11*S, 5*S)
 
     def _fillet_block():
-        # Official I_Fillet: block with convex rounded top-right corner
+        # Flat profile with convex rounded top-right corner (wireframe 'arc' uses this)
         pts=[(3*S,20*S),(3*S,10*S),(10*S,10*S)]
         pts+=[(10*S+int(6*S*cos(-pi/2+i*pi/12)),16*S+int(6*S*sin(-pi/2+i*pi/12))) for i in range(1,13)]
         pts+=[(16*S,20*S)]
         P(pts,fill=B); P(pts,outline=E)
+
+    def _fillet_solid():
+        # Official I_Fillet: extruded solid, teal body + 深红高亮圆角边
+        pts=[(3*S,20*S),(3*S,10*S),(10*S,10*S)]
+        pts+=[(10*S+int(6*S*cos(-pi/2+i*pi/12)),16*S+int(6*S*sin(-pi/2+i*pi/12))) for i in range(1,13)]
+        pts+=[(16*S,20*S)]
+        _extrude_profile_col(pts,4*S,(59,159,164,255))
+        ac=AC if AC else FRED
+        for i in range(2,len(pts)-2):
+            L([pts[i],pts[i+1]],fill=ac,width=S)
+
+    def _chamfer_solid():
+        # Official I_Chamfer: cream body + sky chamfer face + 深红高亮斜边
+        pts=[(3*S,20*S),(3*S,8*S),(11*S,8*S),(16*S,13*S),(16*S,20*S)]
+        _extrude_profile(pts,4*S)
+        # re-fill chamfer face (the diagonal edge) with sky blue
+        P([pts[2],pts[3],(pts[3][0]+4*S,pts[3][1]-4*S),(pts[2][0]+4*S,pts[2][1]-4*S)],fill=(91,169,208,255),outline=E)
+        ac=AC if AC else FRED
+        L([pts[2],pts[3]],fill=ac,width=S)
+
+    def _split_solid():
+        # Official I_Split: iso solid + 半透明切割面(白面红边)
+        _iso_block(2*S,8*S,11*S,11*S,4*S)
+        ac=AC if AC else FRED
+        P([4*S,15*S,15*S,5*S,18*S,9*S,7*S,19*S],fill=(255,255,255,200),outline=ac)
 
     def _hole_block():
         # Official I_Hole: iso block + bored hole, gray gradient = depth
@@ -367,6 +396,8 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
     # Palette sampled from B28 mainstream icons (I_Pad/I_Pocket/I_Hole):
     # white top highlight, cream front face, gray right face, navy ink.
     WHITE=(255,255,255,255); SHADE=(106,106,106,255); DSHADE=(75,75,75,255)
+    # 官方特征高亮深红 (155,0,0) —— 采样自 I_Fillet/I_Chamfer 边高亮
+    FRED=(155,0,0,255)
 
     def _iso_block(x,y,w,h,depth):
         """Iso cube: white top + gray right + cream front, ink outlines."""
@@ -377,10 +408,14 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
     def _extrude_profile(pts, depth):
         """Extrude a 2D profile toward upper-right: gray side walls,
         white back face, cream front face — official I_Pad style."""
+        _extrude_profile_col(pts, depth, B)
+
+    def _extrude_profile_col(pts, depth, front):
+        """Extrude with custom front-face color (teal/sky feature bodies)."""
         off=[(px+depth,py-depth) for px,py in pts]
         for i in range(len(pts)):
             j=(i+1)%len(pts); P([pts[i],pts[j],off[j],off[i]], fill=SHADE, outline=E)
-        P(off, fill=WHITE, outline=E); P(pts, fill=B, outline=E)
+        P(off, fill=WHITE, outline=E); P(pts, fill=front, outline=E)
 
     def _ngon(cx,cy,r,n):
         pts=[(cx+r*cos(-pi/2+2*pi*i/n),cy+r*sin(-pi/2+2*pi*i/n)) for i in range(n)]
@@ -396,6 +431,9 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
 "point":     lambda:[O([c-6*S,c-6*S,c+6*S,c+6*S],fill=B),O([c-6*S,c-6*S,c+6*S,c+6*S],outline=E,width=S),O([c-2*S,c-2*S,c+2*S,c+2*S],fill=E)],
 "line":      lambda:L([2*S,c,19*S,c],fill=E,width=4*S),
 "arc":       lambda:_fillet_block(),
+"fillet":    lambda:_fillet_solid(),
+"chamfer":   lambda:_chamfer_solid(),
+"split":     lambda:_split_solid(),
 "wave":      lambda:[L([(1*S+i*18*S//16,c+int(5*S*sin(i*pi/8))) for i in range(17)],fill=B,width=3*S),L([(1*S+i*18*S//16,c+6*S+int(3*S*sin(i*pi/8))) for i in range(17)],fill=D,width=2*S)],
 "grid":      lambda:[L([3*S,8*S,18*S,8*S],fill=D,width=S),L([3*S,14*S,18*S,14*S],fill=D,width=S),L([8*S,3*S,8*S,18*S],fill=D,width=S),L([14*S,3*S,14*S,18*S],fill=D,width=S)],
 "play":      lambda:[P([4*S,2*S,4*S,19*S,19*S,c],fill=B),P([4*S,2*S,4*S,19*S,19*S,c],outline=E)],
@@ -511,7 +549,7 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
 "boolean":   lambda:[O([3*S,5*S,13*S,16*S],fill=B),O([3*S,5*S,13*S,16*S],outline=E),O([9*S,5*S,19*S,16*S],fill=D),O([9*S,5*S,19*S,16*S],outline=E)],
 "axis":      lambda:[L([c,2*S,c,20*S],fill=E,width=S),L([2*S,c,20*S,c],fill=E,width=S),O([c-4*S,c-4*S,c+4*S,c+4*S],outline=B,width=2*S)],
 "hole":      lambda:_hole_block(),
-"rotate":    lambda:[AR([3*S,3*S,19*S,19*S],30,330,fill=B,width=3*S),P([15*S,2*S,20*S,6*S,13*S,8*S],fill=B)],
+"rotate":    lambda:[AR([3*S,3*S,19*S,19*S],30,330,fill=B,width=3*S),P([15*S,2*S,20*S,6*S,13*S,8*S],fill=AC if AC else (75,230,255,255)),P([15*S,2*S,20*S,6*S,13*S,8*S],outline=E)],
 "explode":   lambda:[R([8*S,8*S,14*S,14*S],fill=B),R([8*S,8*S,14*S,14*S],outline=E),L([c,1*S,c,6*S],fill=E,width=2*S),L([c,16*S,c,21*S],fill=E,width=2*S),L([1*S,c,6*S,c],fill=E,width=2*S),L([16*S,c,21*S,c],fill=E,width=2*S),P([c,1*S,c-2*S,4*S,c+2*S,4*S],fill=E),P([c,21*S,c-2*S,18*S,c+2*S,18*S],fill=E),P([1*S,c,4*S,c-2*S,4*S,c+2*S],fill=E),P([21*S,c,18*S,c-2*S,18*S,c+2*S],fill=E)],
 "material":  lambda:[R([3*S,3*S,19*S,19*S],fill=B),R([3*S,3*S,19*S,19*S],outline=E),R([5*S,5*S,9*S,9*S],fill=D),R([13*S,5*S,17*S,9*S],fill=D),R([9*S,9*S,13*S,13*S],fill=D),R([5*S,13*S,9*S,17*S],fill=D),R([13*S,13*S,17*S,17*S],fill=D)],
 "dimension": lambda:[L([4*S,3*S,4*S,10*S],fill=E,width=S),L([18*S,3*S,18*S,10*S],fill=E,width=S),L([4*S,7*S,18*S,7*S],fill=B,width=2*S),P([4*S,7*S,7*S,5*S,7*S,9*S],fill=B),P([18*S,7*S,15*S,5*S,15*S,9*S],fill=B),R([7*S,12*S,15*S,17*S],fill=BG,outline=E,width=S)],

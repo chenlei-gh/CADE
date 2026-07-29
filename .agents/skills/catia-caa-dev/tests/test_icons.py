@@ -2,7 +2,7 @@
 """
 Icon System Test Suite (v3.2)
 ==============================
-Validates all 107 geometric patterns, color mapping, BMP format,
+Validates all geometric patterns, color mapping, BMP format,
 and rendering pipeline integrity.
 
 Run: python test_icons.py
@@ -110,7 +110,10 @@ for name in all_patterns:
     render_ok += 1
 
 check("All patterns render", render_fail == 0,
-      f"{render_ok}/{render_ok+render_fail} pass, {dup_count} duplicates")
+      f"{render_ok}/{render_ok+render_fail} pass")
+
+check("No duplicate renders (fallback collision guard)", dup_count == 0,
+      f"{dup_count} duplicate pixel hashes across {len(all_patterns)} patterns")
 
 check("Average visible pixels >= 100", render_ok > 0,
       f"{render_ok} patterns verified")
