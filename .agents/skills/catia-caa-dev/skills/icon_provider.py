@@ -1,5 +1,5 @@
 """
-CADE Icon Provider v3.5
+CADE Icon Provider v3.6
 =======================
 127 geometric patterns, 4x supersampling, true multi-color RGBA rendering.
 
@@ -28,7 +28,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # ─── Official CATIA icon style (sampled from B28 win_b64 resources) ───
 CATIA_BG = (192, 192, 192)        # dominant official background gray
 CATIA_INK = (24, 16, 82)          # dominant official dark-navy outline
-CACHE_VER = "v7"                  # bump when render style changes (v7: fillet/chamfer/split 特征实体化+深红高亮)
+CACHE_VER = "v8"                  # bump when render style changes (v8: BOX降采样+粗轮廓)
 
 # ─── Domain → Icon ───────────────────────────────────────────────
 DOMAIN_MAP = {
@@ -242,7 +242,7 @@ def _render_badge_plate(badge: str, S: int) -> Image.Image:
     gd = ImageDraw.Draw(glyph)
     _draw_icon_4x_rgba(gd, badge, S, (10, 0, 255, 255), (*CATIA_INK, 255),
                        (0, 0, 150, 255), None)
-    glyph = glyph.resize((plate_sz - 2*S, plate_sz - 2*S), Image.LANCZOS)
+    glyph = glyph.resize((plate_sz - 2*S, plate_sz - 2*S), Image.BOX)
     plate.alpha_composite(glyph, (S, S))
     pd = ImageDraw.Draw(plate)
     pd.rectangle([0, 0, plate_sz-1, plate_sz-1], outline=(*CATIA_INK, 255),
@@ -312,7 +312,7 @@ def _render_icon(icon_name: str, badge: str = None) -> Path:
         img_big.alpha_composite(plate, (big_w - plate.width, big_h - plate.height))
 
     # Scale down, flatten to RGB, halftone large fills, quantize w/o dither
-    img = img_big.resize((22, 22), Image.LANCZOS).convert("RGB")
+    img = img_big.resize((22, 22), Image.BOX).convert("RGB")
     img = _apply_checker(img, (r, g, b))
     img_p = img.quantize(256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE)
 
@@ -326,9 +326,22 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
     W,H=22*S,22*S; c=W//2; B,E,D,AC=BODY,EDGE,DIM,ACCENT
     BG=(*CATIA_BG,255)  # cutout color: shows the gray background through
 
-    def R(xy,**kw): draw.rectangle(xy,**kw)
-    def O(xy,**kw): draw.ellipse(xy,**kw)
-    def P(pts,**kw): draw.polygon(pts,**kw)
+    def R(xy,**kw):
+        if kw.get('outline') and 'width' not in kw: kw['width']=S
+        draw.rectangle(xy,**kw)
+    def O(xy,**kw):
+        if kw.get('outline') and 'width' not in kw: kw['width']=S
+        draw.ellipse(xy,**kw)
+    def P(pts,**kw):
+        o=kw.get('outline')
+        if o and 'width' not in kw:
+            f=kw.get('fill')
+            if f: draw.polygon(pts,fill=f)
+            p=list(pts)
+            p=p+[p[0],p[1]] if isinstance(p[0],(int,float)) else p+[p[0]]
+            draw.line(p,fill=o,width=S,joint='curve')
+        else:
+            draw.polygon(pts,**kw)
     def L(xy,**kw): draw.line(xy,**kw)
     def AR(xy,s,e,**kw): draw.arc(xy,s,e,**kw)
 
