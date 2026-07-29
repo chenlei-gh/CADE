@@ -23,8 +23,10 @@
 #   - available:false 延期到第一个 experimental 能力登记时再加
 #   - 知识挂载不建字段：Knowledge/FP 通过 knowledge_ref 反向引用能力名
 #
-# 覆盖范围（P1）：sync + build + retrieval 三家族，7 能力。
-# 其余 cade 子命令（create/analyze/diagnose/...）待 v0 验收后按批登记。
+# 覆盖范围：sync + build + retrieval 三家族 7 能力（P1）
+#         + cade 子命令批量登记 18 能力（P2，v0 验收通过后）。
+# 未登记：expose（lifecycle unavailable，不可路由）、version（元信息）、
+#         validate/suggest（analyze 薄 alias，见 analyze_workspace.note）。
 
 capabilities:
 
@@ -113,3 +115,193 @@ capabilities:
       - check-file
     bindings:
       cli: python tools/build_caadoc_index.py --query <name>
+
+  # ── kernel 路由类（经 Kernel develop/analyze/repair；只有 cli binding，
+  #    因为 kernel 入口是 Kernel 类 execute() 而非顶层函数）──
+  - name: develop_feature
+    description: 自然语言→CAA 代码全流程（生成+知识注入+静态验证+可选应用）
+    triggers:
+      - 开发
+      - 生成代码
+      - 创建命令
+      - 自然语言生成
+      - develop
+    bindings:
+      cli: cade develop <请求> [--workspace 路径] [--preview]
+    note: --preview 只生成 ChangeSet 不应用（可评审后再执行，配合 rollback）
+
+  - name: create_component
+    description: 创建 CAA 构件（command/feature/extension/workbench/dialog/interface/module/framework）
+    triggers:
+      - 创建command
+      - 创建feature
+      - 新建命令
+      - 新建模块
+      - create
+    bindings:
+      cli: cade create <类型> <名称> <模块>
+    note: 全部经 develop() 路由；类型见 cade create 用法行
+
+  - name: analyze_workspace
+    description: 工作区分析（模块/命令/依赖/影响图），知识问题经 analyze(detail=true) 返回排序内容
+    triggers:
+      - 分析
+      - 列出模块
+      - 依赖分析
+      - 知识问题
+      - analyze
+    bindings:
+      cli: cade analyze [workspace] [--modules|--commands|--deps|--graph]
+    note: cade validate / cade suggest 是本能力的薄 alias（同走 kernel analyze），不单列
+
+  - name: diagnose_workspace
+    description: 诊断工作区问题（经 kernel analyze 的诊断路径）
+    triggers:
+      - 诊断
+      - 什么问题
+      - 哪里错了
+      - diagnose
+    bindings:
+      cli: cade diagnose [workspace]
+
+  - name: fix_workspace
+    description: 诊断+自动修复工作区问题（经 kernel repair）
+    triggers:
+      - 修复
+      - 自动修复
+      - fix
+    bindings:
+      cli: cade fix [workspace]
+    forbidden:
+      - 手动改生成代码（应走 repair，见 SKILL.md 强制工作流）
+
+  - name: refactor_code
+    description: 重构（rename/move 命令与模块）
+    triggers:
+      - 重构
+      - 重命名命令
+      - 移动模块
+      - refactor
+    bindings:
+      cli: cade refactor rename|move ...
+
+  - name: rollback_changes
+    description: 回滚到变更前状态（配 develop --preview 使用）
+    triggers:
+      - 回滚
+      - 撤销
+      - 恢复之前
+      - rollback
+    bindings:
+      cli: cade rollback [--list|--id 编号]
+
+  - name: snapshot_workspace
+    description: 工作区快照（创建/diff/history）
+    triggers:
+      - 快照
+      - 对比变更
+      - snapshot
+    bindings:
+      cli: cade snapshot [--diff|--history]
+
+  - name: plan_development
+    description: 从意图生成开发计划（command/feature/extension）
+    triggers:
+      - 开发计划
+      - 规划
+      - plan
+    bindings:
+      cli: cade plan <类型> <名称> <模块> [--fw 框架]
+
+  - name: analyze_impact
+    description: 变更影响分析（某实体的某操作影响谁）
+    triggers:
+      - 影响分析
+      - 改了会影响什么
+      - impact
+    bindings:
+      cli: cade impact <实体> <类型> <操作>
+
+  # ── 运行/文档 ──
+  - name: run_catia
+    description: 启停 CATIA Runtime（CNEXT）、跑宏、查状态
+    triggers:
+      - 启动CATIA
+      - 停止CATIA
+      - 运行宏
+      - CNEXT
+      - run
+    bindings:
+      cli: cade run [workspace] [--stop|--macro|--status]
+      python: run.start_catia_runtime
+    note: python binding 仅覆盖启动；停止/宏/状态分别见 run.stop_catia / run.run_catia_macro / run.check_catia_running
+
+  - name: dev_cycle
+    description: 编译+运行一键闭环（build 后立即启动 CATIA 验证）
+    triggers:
+      - 编译并运行
+      - 一键开发
+      - dev
+    bindings:
+      cli: cade dev <workspace>
+      python: build.incremental_build
+    note: python binding 只覆盖 build 段；run 段由 run_catia 承担
+
+  - name: generate_docs
+    description: 生成项目文档（CADE_Docs）
+    triggers:
+      - 生成文档
+      - 项目文档
+      - docs
+    bindings:
+      cli: cade docs [workspace] [-o 输出目录]
+      python: docgen.generate_all
+
+  # ── 环境/治理 ──
+  - name: manage_prereq
+    description: Framework Prerequisites 管理（AddPrereqComponent 增删查/校验/建议/初始化）
+    triggers:
+      - 添加依赖
+      - prereq
+      - 框架依赖
+      - AddPrereqComponent
+    bindings:
+      cli: cade prereq add|remove|list|validate|suggest|init ...
+
+  - name: readiness_check
+    description: 生产就绪审计（10 类：代码质量/文档/测试/安全/性能等）
+    triggers:
+      - 就绪检查
+      - 发布前检查
+      - production readiness
+    bindings:
+      cli: cade check
+
+  - name: setup_environment
+    description: 工作区环境初始化/CATIA 安装检测/配置查看
+    triggers:
+      - 环境配置
+      - 检测CATIA
+      - setup
+    bindings:
+      cli: cade setup [workspace] [--detect|--show]
+
+  - name: run_tests
+    description: 跑 CADE 测试套件（master，--quick 快速）
+    triggers:
+      - 跑测试
+      - 测试套件
+      - test
+    bindings:
+      cli: cade test [--quick]
+
+  - name: workspace_health
+    description: 环境+工作区健康诊断（CAA 配置/构建环境/结构校验）
+    triggers:
+      - 健康检查
+      - 环境诊断
+      - health
+    bindings:
+      cli: cade health [workspace]
+      python: build.validate_workspace
+    note: python binding 只覆盖 workspace 校验；环境诊断见 build.diagnose_environment
