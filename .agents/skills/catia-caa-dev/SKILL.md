@@ -220,6 +220,7 @@ triggers:
 
 > ## ⛔ 强制工作流（AI 必读，不可跳过）
 >
+> 0. **意图路由** → 先查 [`capabilities.yaml`](capabilities.yaml)（25 个能力的触发词与 binding）。意图命中能力后按其 binding 调用（优先级 mcp > cli > python）；**能力未声明的入口 = 不可用，不是“可以猜”**；`forbidden` 列出的路径禁止。契约与实现的一致性由 `tools/check_capabilities.py` 对账。
 > 1. **创建/生成** → 调 `develop()`。它**自动注入相关知识内容**（`knowledge_content`）并**自动静态验证**。**先读响应里的 `knowledge_content` 再写代码**；若出现 `verification_failed: true`，**必须先修复 `verification_errors` 再继续**。
 > 2. **知识/API 问题** → 调 `analyze(request, detail=true)`，一次返回排序后的知识**文件内容**，不要再 grep / 多轮读文件。
 > 3. **编译错/修复** → 调 `repair()`，不要手动改生成代码。
@@ -277,7 +278,7 @@ AI 只知道 3 个 Mode:
 | 🔍 **只读操作用 analyze()** | 所有查询、诊断、分析用 `analyze()`。它永不会修改文件，无需确认。 |
 | 📄 **知识问题加 detail=true** | 问 CAA API/Pattern/做法类问题时调 `analyze(request, detail=true)`，一次调用直接返回排序后的知识**文件内容**，不要再 analyze → read 文件 → grep 定位的多轮往返。返回已按相关性排序并带 reading_guide。 |
 | 🔧 **修复用 repair()** | 修复诊断问题、重构（重命名/移动）、回滚用 `repair()`。Kernel 内部运行 diagnose → fix → verify 最多重试 3 次。 |
-| ⚡ **永远不需要判断"走哪个"** | 用户说"创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`。基于自然语言的动词分类，不需要思考。 |
+| ⚡ **两层路由，都不靠猜** | **Tier 1 意图**（3 Mode）："创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`——动词分类。**Tier 2 能力**（25 个）：查 [`capabilities.yaml`](capabilities.yaml) 的触发词定能力、按 binding 调用——受约束查表，不自由发挥。 |
 | 🚫 **新工具禁止复制旧工具骨架** | 创建新命令/对话框/工作台时，必须调 `develop()` 走模板生成器，**不要**把工作区里现有工具的 .cpp/.h/.CATNls/.CATRsc 复制一份再改名。旧工具可能还带着已修复的历史 bug（如硬编码 `SetTitle`、错误的 `_Chinese.CATNls` 约定），复制 = 把 bug 克隆进新工具，还会错过模板/图标/双语 NLS 的持续更新。已有工具**只可参考业务逻辑**（API 组合、算法、项目命名习惯）；文件骨架、资源文件、注册代码永远以生成器输出为准。 |
 | 🎨 **图标是 develop() 的自动产物，不要手动补** | `develop()` 创建命令时图标已连同骨架一起生成（verb-object 解析自动选 123 个几何图案 + 角标，如 `PartToAsmCmd` → cube+arrow），无需再调 `icon_provider.py`。只有**换图标风格**时才单独调：`from icon_provider import get_icon; get_icon("CmdName")`（自动解析，不要先列图案库人工挑）。首次编译时图标会随 Runtime View 同步自动生效。 |
 | 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架 → 再精准打开 `<CATIA_INSTALL>/CAADoc/` 对应页面。不要跳过 Framework 直接全文搜 CAADoc。 |
@@ -584,7 +585,7 @@ AI Agent 有需求
 | 调试一个错误 | CLI | MCP | 开发者需要看完整输出 |
 | 重构影响分析 | Python `intent.impact` | MCP | 需要编程式评估结果 |
 
-> ⚠️ **AI Agent 永远优先用 MCP**。CLI 和 Python API 是给人类和脚本用的。
+> ⚠️ **AI Agent 优先用 MCP**；某能力未声明 MCP binding 时，按 [`capabilities.yaml`](capabilities.yaml) 中该能力已声明的最高优先级 binding 调用（mcp > cli > python），未声明 = 不可用。CLI 和 Python API 主要给人类和脚本用。
 
 ---
 
