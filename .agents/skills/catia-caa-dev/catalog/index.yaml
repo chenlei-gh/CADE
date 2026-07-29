@@ -138,6 +138,7 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 | fp.template_feature_apis | knowledge/failure_patterns/fp_template_feature_apis.md | feature/catalog 模版成建制捏造（B28 全目录核实） |
 | fp.sethidestatus_crash | knowledge/failure_patterns/fp_sethidestatus_crash.md | SetHideStatus 隐藏特征崩溃（官方通路 SetPropertiesAtt） |
 | fp.startup_interface_qi | knowledge/failure_patterns/fp_startup_interface_qi.md | 操作类接口（CATIIsolate/CATIOsmUpdate）在 GetStartUp 的 StartUp 上 QI 而非特征本体 |
+| fp.runtime_resource_not_synced | knowledge/failure_patterns/fp_runtime_resource_not_synced.md | 资源未同步到 Runtime View（dico/icons/NLS）导致按钮消失、图标缺失 |
 
 ### Knowledge 索引
 

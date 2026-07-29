@@ -527,8 +527,9 @@ def build_workspace(
             sync = sync_runtime_view(workspace_path)
             if sync["synced"]:
                 logger.write(f"Runtime View synced: {len(sync['synced'])} files")
-        except Exception:
-            pass
+        except Exception as e:
+            # 不能静默：同步失败 = 按钮消失/无图标/旧 dico，必须留痕 (FP-13)
+            logger.write(f"WARNING: Runtime View sync failed: {e}")
         cache.save(build_result)
         logger.write(
             f"Status: {build_result['status']} | Errors: {parsed['error_count']} | Duration: {format_duration(duration)}"

@@ -46,5 +46,6 @@ not_automatable_because: "..."                  # automation=manual 时必填
 | fp_undeclared_class | template | Component 模板内置 CATDeclareClass/CATImplementClass |
 | fp_var_forward_decl | rule | `ui_lint:var_forward_decl` |
 | fp_startup_interface_qi | manual | 见 `not_automatable_because`（接口挂在哪一层对象暂无静态数据，待建层级数据后升级 verifier 规则） |
+| fp_runtime_resource_not_synced | manual | 同步动作已由 `build.py:sync_runtime_view` 自动执行；漏洞在绕过 build.py 的编译路径（手动 mkmk/VS），属流程行为，见 `not_automatable_because` |
 
-**转化率：11/12（rule 9 + template 2 + manual 1）。**
+**转化率：11/13（rule 9 + template 2 + manual 2）。**

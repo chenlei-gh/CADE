@@ -1,0 +1,111 @@
+# CADE Capability Contract Layer — v0
+# =====================================
+# 性质：契约层，不是事实源。
+#   - 意图面（triggers/description）：本文件是事实源（别处没有）
+#   - 存在面（实现/binding 目标）：本文件是契约，代码/测试是事实源，
+#     由 Capability Checker 双向对账（Registry↔Reality）
+#
+# 查询边界（必须遵守）：
+#   Registry  = 能力导航（做什么、调哪个能力）
+#   Index     = 技术事实（方法/头文件/API 是否存在）
+#   Knowledge = 规则解释（为什么这样做）
+#
+# Agent 路由规则：
+#   1. 意图 → 在 triggers 中匹配唯一能力（受约束查表，非自由推理）
+#   2. 入口 → 取该能力已声明 binding 中优先级最高者：mcp > cli > python
+#   3. 能力未声明某入口 = 该入口不可用，不是"可以猜"
+#   4. forbidden 列出的路径禁止使用
+#
+# 字段纪律（v0）：name / description / triggers / bindings / forbidden(可选)
+#   - 不引入 status/domain/owner/dependency 字段；domain 仅作注释分组
+#   - available:false 延期到第一个 experimental 能力登记时再加
+#   - 知识挂载不建字段：Knowledge/FP 通过 knowledge_ref 反向引用能力名
+#
+# 覆盖范围（P1）：sync + build + retrieval 三家族，7 能力。
+# 其余 cade 子命令（create/analyze/diagnose/...）待 v0 验收后按批登记。
+
+capabilities:
+
+  # ── sync ──────────────────────────────────────────────
+  - name: agent_workspace_sync
+    description: 同步 CADE skill 到其他 AI agent 的工作目录（robocopy 镜像）
+    triggers:
+      - 同步skill
+      - 同步到其他agent
+      - sync agents
+      - 更新agent工作区
+    bindings:
+      cli: sh sync_agents.sh
+
+  # ── build ─────────────────────────────────────────────
+  - name: build_workspace
+    description: 编译 CAA workspace（mkmk 增量/全量），成功后自动同步资源到 Runtime View
+    triggers:
+      - 编译
+      - 构建
+      - build
+      - mkmk
+      - 编译workspace
+    bindings:
+      cli: cade build
+      python: build.build_workspace
+    forbidden:
+      - 直接运行 mkmk（绕过资源同步与验证，见 FP-13）
+      - VS 内编译后不补资源同步
+    note: 成功路径自动执行 runtime_publish；cade dev = build + run 组合
+
+  - name: runtime_publish
+    description: 同步 CNext 资源（dictionary/icons/NLS）到 win_b64 Runtime View
+    triggers:
+      - 同步资源
+      - 同步资源到win_b64
+      - 同步图标到runtime
+      - 同步dico
+      - 同步NLS
+      - 按钮消失
+      - 没有图标
+    bindings:
+      python: build.sync_runtime_view
+    note: 通常由 build_workspace 自动调用；仅手动 mkmk/VS 编译后需单独执行（FP-13）。
+          与 create_runtime_view 的区别：本能力拷贝资源文件，不重建 RV 结构。
+
+  - name: create_runtime_view
+    description: 创建/重建 Runtime View 结构（mkCreateRuntimeView + dictionary 拷贝）
+    triggers:
+      - 创建runtime view
+      - 重建runtime view
+      - mkCreateRuntimeView
+      - runtime view坏了
+    bindings:
+      cli: cade rv
+      python: build.create_runtime_view
+
+  # ── retrieval（查询能力，facade 与索引本体是内部管道不登记）──
+  - name: header_lookup
+    description: 查 CAA 类型的头文件位置（框架/模块/绝对路径），禁止凭前缀猜路径
+    triggers:
+      - 查头文件
+      - 头文件在哪
+      - 头文件位置
+      - 哪个框架
+    bindings:
+      cli: python skills/header_map.py <Name> [Name2 ...]
+
+  - name: method_lookup
+    description: 核实类型是否真有某方法（含继承链），NOT-FOUND 给出相近方法与真实归属接口
+    triggers:
+      - 有没有这个方法
+      - 方法存在吗
+      - 核实方法
+    bindings:
+      cli: python skills/method_index.py <Type> <Method1> [Method2 ...]
+
+  - name: api_lookup
+    description: 核实 API/接口/框架名真实性（SDK 头文件 + refman 交叉比对），支持 --check-file 批量
+    triggers:
+      - 核实API
+      - API存在吗
+      - 批量核实
+      - check-file
+    bindings:
+      cli: python tools/build_caadoc_index.py --query <name>
