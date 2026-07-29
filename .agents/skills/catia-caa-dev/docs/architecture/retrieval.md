@@ -115,7 +115,9 @@ Forbidden:
 
 Priority:
 
-1. **`skills/capabilities.yaml`** — the declared capability registry.
+1. **`skills/lifecycle.yaml`** — the declared lifecycle registry (can it
+   be used?).  For *which capability handles an intent*, see the routing
+   contract `capabilities.yaml` at the skill root.
 2. **ApiRegistry** — for API-level facts.
 3. **Knowledge documents** — for rationale.
 
@@ -179,5 +181,6 @@ shows the need.
 ---
 
 *Related: `docs/CAPABILITY_HISTORY.md` (removed capabilities),
-`skills/capabilities.yaml` (declared capability registry),
-`tests/test_retrieval_benchmark.py` (cache regression tripwire).*
+`skills/lifecycle.yaml` (lifecycle registry), `capabilities.yaml`
+(routing contract), `tests/test_retrieval_benchmark.py` (cache regression
+tripwire).*

@@ -26,6 +26,8 @@ automation: rule | template | manual
 
 static_rule: [ui_lint:ui_dialog_null_parent]   # automation=rule 时必填，格式 module:symbol
 not_automatable_because: "..."                  # automation=manual 时必填
+capabilities: [runtime_publish]                 # 可选：关联的路由契约能力名（capabilities.yaml），
+                                                # 供“问题→fp→该调哪个能力”反查；find_capability 实现前的人工桥
 ```
 
 规则 ID 必须引用**真实存在的**符号（`ui_lint` 的 rule id、`verifier`/`diagnostics` 的方法名、`generator` 的熔断函数），禁止凭命名规律推断。

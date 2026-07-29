@@ -1,42 +1,12 @@
-# CADE Capability Registry (v0)
-# ==============================
-# Declares the LIFECYCLE of capabilities, independent of which file implements
-# them.  The principle is "Capability != File": a file is just the current
-# implementation carrier; what the AI must reason about is the capability's
-# declared state.
+# DEPRECATED ALIAS — DO NOT EDIT
+# ================================
+# This file was renamed to lifecycle.yaml (it declares capability LIFECYCLE,
+# not capability routing).  The routing contract lives at ../capabilities.yaml.
 #
-# This is the DECLARATION layer.  tools/check_capabilities.py is the DETECTION
-# layer.  The two are cross-checked: a declared state that contradicts the
-# detected reality is a contract violation.
+# This alias exists only so older scripts/docs that reference the old path
+# fail loudly with a pointer instead of silently reading a stale file.
+# It will be deleted once no references remain (grep: skills/capabilities.yaml).
 #
-# status values:
-#   active       — production capability, safe for the AI to use
-#   experimental — research/exploratory; NOT wired into production paths
-#   unavailable  — deliberately not enabled in this build; a design state,
-#                  NOT a runtime failure.  Agents must not try to repair it.
-#
-# Keep this file minimal.  Do NOT add owner/dependencies/maturity/history yet —
-# those belong to a later phase once the registry has proven its value.
-
-capabilities:
-
-  template_generation:
-    status: active
-    implementation:
-      - generator.py
-    note: 17 validated B28 templates; the production code-generation engine.
-
-  spec_generation:
-    status: experimental
-    implementation:
-      - experimental/specification.py
-    note: Spec-driven generation research. Not wired into the kernel pipeline.
-      Production generation uses changeset.render_template via intents/.
-
-  expose_service:
-    status: unavailable
-    action: do_not_fix
-    implementation:
-      - intents/services.py
-    note: CAA service exposure. Returns a blocked/do_not_fix state by design;
-      no kernel route exists. Not a bug.
+# See:
+#   skills/lifecycle.yaml   — lifecycle declarations (status / action)
+#   ../capabilities.yaml    — routing contract (triggers / bindings)

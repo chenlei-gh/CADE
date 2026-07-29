@@ -8,9 +8,9 @@
 > 应来这里确认它是被有意移除的，而不是一个待补的缺口。
 >
 > 范围：只记录**已删除 (removed)** 和**有意不可用 (unavailable)** 的能力。
-> 活能力见 `skills/capabilities.yaml`（声明层）和 `tools/check_capabilities.py`
-> （检测层）。保持文档级——不要在这里加 owner/maturity/依赖等字段，
-> 那些属于 registry 的后续阶段。
+> 活能力见 `skills/lifecycle.yaml`（生命周期声明层）、`capabilities.yaml`
+> （路由契约层）和 `tools/check_capabilities.py`（检测层）。保持文档级——
+> 不要在这里加 owner/maturity/依赖等字段，那些属于 registry 的后续阶段。
 
 ---
 
@@ -62,7 +62,7 @@
 ## Unavailable（有意关闭，非 bug）
 
 ### expose_service
-- **Status**: unavailable（见 `skills/capabilities.yaml`）
+- **Status**: unavailable（见 `skills/lifecycle.yaml`）
 - **Since**: commit `71a6ad7`
 - **Why not enabled**: CAA service exposure 是实验能力，未接 kernel intent
   router（`_detect_intent_type` 无 service 关键字）。
@@ -70,14 +70,14 @@
   不进入 `develop()` 业务路径——让 Agent 读到"能力未开放"而非"执行失败"，
   避免触发自动修复循环。`services.py expose_service` 返回同样结构。
 - **Enable condition**: kernel intent router 增加 service 意图并接通实现后，
-  将 `capabilities.yaml` 中状态改为 active。
+  将 `lifecycle.yaml` 中状态改为 active。
 
 ---
 
 ## 维护规程
 
 - 删除一个能力时：在此追加一条（removed/commit/reason/restore condition）。
-- 关闭一个能力时：登记到 Unavailable + `capabilities.yaml`。
-- 恢复一个能力时：从对应条目删除，并在 `capabilities.yaml` 标记 active。
+- 关闭一个能力时：登记到 Unavailable + `skills/lifecycle.yaml`。
+- 恢复一个能力时：从对应条目删除，并在 `lifecycle.yaml` 标记 active。
 - **不要**把本文件扩成完整生命周期 registry——状态机留给
-  `capabilities.yaml` 的后续阶段。本文件只负责"为什么不存在"。
+  `lifecycle.yaml` 的后续阶段。本文件只负责"为什么不存在"。

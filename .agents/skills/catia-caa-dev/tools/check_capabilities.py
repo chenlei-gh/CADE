@@ -19,11 +19,14 @@ SKILL_ROOT = Path(__file__).parent.parent
 SKILLS_DIR = SKILL_ROOT / "skills"
 TESTS_DIR = SKILL_ROOT / "tests"
 SKILL_MD = SKILL_ROOT / "SKILL.md"
-REGISTRY = SKILLS_DIR / "capabilities.yaml"
+# Lifecycle declarations (can the capability be used?).  Routing contract
+# (which capability handles an intent) lives at SKILL_ROOT/capabilities.yaml.
+LIFECYCLE = SKILLS_DIR / "lifecycle.yaml"
+CONTRACT = SKILL_ROOT / "capabilities.yaml"
 
 
 def collect_registry():
-    """Parse skills/capabilities.yaml into {file_path: declared_state}.
+    """Parse skills/lifecycle.yaml into {file_path: declared_state}.
 
     The registry is the DECLARATION layer of the capability contract (the
     'Capability != File' model); this checker is the DETECTION layer.  We map
@@ -40,13 +43,13 @@ def collect_registry():
     # expose_service and the active create_component_with_interfaces); file
     # matching is kept as a fallback for whole-file experimental modules.
     declared = {"by_name": {}, "by_file": {}}
-    if not REGISTRY.exists():
+    if not LIFECYCLE.exists():
         return declared
     cur_cap = None
     cur_status = None
     cur_action = None
     in_impl = False
-    for raw in REGISTRY.read_text(encoding="utf-8").splitlines():
+    for raw in LIFECYCLE.read_text(encoding="utf-8").splitlines():
         line = raw.rstrip()
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
@@ -76,6 +79,212 @@ def collect_registry():
             declared["by_name"][cur_cap] = {"status": cur_status,
                                             "action": cur_action}
     return declared
+
+
+# ────────────────────────────────────────────────────────────────────
+# Routing contract checks (SKILL_ROOT/capabilities.yaml)
+# ────────────────────────────────────────────────────────────────────
+# v0 contract fields.  Anything else is a WARNING (exploration is allowed),
+# not an error — the schema must not block v0 iteration.
+CONTRACT_FIELDS = {"name", "description", "triggers", "bindings",
+                   "forbidden", "note"}
+# Binding types the router understands, in agent-priority order.
+BINDING_TYPES = ("mcp", "cli", "python")
+
+
+def parse_contract():
+    """Parse the routing contract into [{name, triggers, bindings, ...}].
+
+    Same pure-stdlib line style as collect_registry (no PyYAML dep).  The
+    contract is a fixed-structure list under a top-level `capabilities:` key;
+    each entry starts at '- name:' (2-space indent), scalar fields are
+    4-space indented, list fields (triggers/forbidden) carry 6-space '- '
+    items, and `bindings:` maps type -> command string at 6-space indent.
+    Unknown fields are captured in `_unknown` for the schema warning."""
+    caps = []
+    if not CONTRACT.exists():
+        return caps
+    cur = None
+    list_field = None      # 'triggers' | 'forbidden' | None
+    in_bindings = False
+    for raw in CONTRACT.read_text(encoding="utf-8").splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        if indent == 0:
+            # top-level key (e.g. 'capabilities:') — close any open entry
+            if cur:
+                caps.append(cur)
+                cur = None
+            list_field = None
+            in_bindings = False
+            continue
+        if indent == 2 and stripped.startswith("- "):
+            if cur:
+                caps.append(cur)
+            cur = {"_unknown": [], "triggers": [], "forbidden": [],
+                   "bindings": {}}
+            list_field = None
+            in_bindings = False
+            body = stripped[2:]
+            if ":" in body:
+                k, v = body.split(":", 1)
+                cur[k.strip()] = v.strip()
+            continue
+        if cur is None:
+            continue
+        if indent == 4 and stripped.endswith(":"):
+            key = stripped[:-1]
+            if key == "bindings":
+                in_bindings = True
+                list_field = None
+            else:
+                list_field = key if key in ("triggers", "forbidden") else None
+                in_bindings = False
+                if key not in CONTRACT_FIELDS:
+                    cur["_unknown"].append(key)
+            continue
+        if indent == 4 and ":" in stripped:
+            k, v = stripped.split(":", 1)
+            k, v = k.strip(), v.strip()
+            if k in CONTRACT_FIELDS:
+                cur[k] = v
+            else:
+                cur["_unknown"].append(k)
+            list_field = None
+            in_bindings = False
+            continue
+        if in_bindings and indent >= 6 and ":" in stripped:
+            k, v = stripped.split(":", 1)
+            cur["bindings"][k.strip()] = v.strip()
+            continue
+        if list_field and indent >= 6 and stripped.startswith("- "):
+            cur[list_field].append(stripped[2:].strip())
+            continue
+    if cur:
+        caps.append(cur)
+    return caps
+
+
+def parse_binding(raw):
+    """Parse one binding command string into a typed target.
+
+    Returns {type, ...} so the checker can validate each kind without
+    hard-coding any single executable:
+      cli 'cade build'                    -> {exe:'cade',    cmd:'build'}
+      cli 'python skills/header_map.py..' -> {exe:'python',  script:Path}
+      cli 'sh sync_agents.sh'             -> {exe:'sh',      script:Path}
+      python 'build.sync_runtime_view'    -> {module:'build', func:'sync_runtime_view'}
+      mcp  'cade.build'                   -> {server:'cade', tool:'build'}
+    Unknown shapes return {'raw': ...} and validate as unverifiable."""
+    parts = raw.split()
+    if not parts:
+        return {"raw": raw}
+    exe = parts[0]
+    if exe == "cade" and len(parts) >= 2:
+        return {"exe": "cade", "cmd": parts[1]}
+    if exe == "python" and len(parts) >= 2 and parts[1].endswith(".py"):
+        return {"exe": "python", "script": parts[1]}
+    if exe == "sh" and len(parts) >= 2:
+        return {"exe": "sh", "script": parts[1]}
+    return {"raw": raw}
+
+
+def _defined_functions(py_path):
+    """Top-level function names defined in one python file (ast, safe)."""
+    try:
+        tree = ast.parse(py_path.read_text(encoding="utf-8"),
+                         filename=str(py_path))
+    except (SyntaxError, OSError):
+        return set()
+    return {n.name for n in ast.iter_child_nodes(tree)
+            if isinstance(n, ast.FunctionDef)}
+
+
+def check_contract_schema(caps):
+    """Field whitelist + required-field presence.  (errors, warnings)"""
+    errors, warnings = [], []
+    for c in caps:
+        name = c.get("name", "<unnamed>")
+        for k in c.get("_unknown", []):
+            warnings.append(f"{name}: unknown field '{k}' "
+                            f"(v0 fields: {sorted(CONTRACT_FIELDS)})")
+        if not c.get("name"):
+            errors.append("contract entry missing 'name'")
+        if not c.get("triggers"):
+            errors.append(f"{name}: no triggers (router cannot match it)")
+        if not c.get("bindings"):
+            errors.append(f"{name}: no bindings (router cannot invoke it)")
+        for bt in c.get("bindings", {}):
+            if bt not in BINDING_TYPES:
+                warnings.append(f"{name}: unknown binding type '{bt}' "
+                                f"(known: {list(BINDING_TYPES)})")
+    return errors, warnings
+
+
+def check_contract_bindings(caps):
+    """Every declared binding target must actually exist.  (errors,)"""
+    errors = []
+    cade_src = (SKILLS_DIR / "cade.py").read_text(encoding="utf-8") \
+        if (SKILLS_DIR / "cade.py").exists() else ""
+    cade_cmds = set(re.findall(r'cmd == "([^"]+)"', cade_src))
+    for c in caps:
+        name = c.get("name", "<unnamed>")
+        for btype, raw in c.get("bindings", {}).items():
+            if btype == "cli":
+                t = parse_binding(raw)
+                if t.get("exe") == "cade":
+                    if t["cmd"] not in cade_cmds:
+                        errors.append(f"{name}: cli binding 'cade {t['cmd']}' "
+                                      f"has no dispatch entry in cade.py")
+                elif "script" in t:
+                    # script paths are skill-root relative; ../../ escape ok
+                    p = (SKILL_ROOT / t["script"]).resolve()
+                    if not p.exists():
+                        errors.append(f"{name}: cli script '{t['script']}' "
+                                      f"not found (resolved: {p})")
+                else:
+                    errors.append(f"{name}: cli binding '{raw}' has an "
+                                  f"unverifiable shape")
+            elif btype == "python":
+                if "." not in raw:
+                    errors.append(f"{name}: python binding '{raw}' is not "
+                                  f"module.func")
+                    continue
+                mod, func = raw.rsplit(".", 1)
+                py = SKILLS_DIR / f"{mod}.py"
+                if not py.exists():
+                    errors.append(f"{name}: python module '{mod}.py' not "
+                                  f"found in skills/")
+                elif func not in _defined_functions(py):
+                    errors.append(f"{name}: '{mod}.py' defines no "
+                                  f"function '{func}'")
+            elif btype == "mcp":
+                # MCP bindings are validated by the MCP server, not here.
+                pass
+    return (errors,)
+
+
+def check_cross_reference(caps, registry):
+    """Same-named capability should exist in both lifecycle and contract.
+
+    One-sided declarations are a WARNING, not an error: a routing capability
+    may have no lifecycle entry (all 7 v0 capabilities are implicitly active)
+    and a lifecycle entry may have no route yet (unavailable/experimental).
+    The warning exists so the two files cannot silently drift apart."""
+    warnings = []
+    contract_names = {c.get("name") for c in caps if c.get("name")}
+    lifecycle_names = set(registry.get("by_name", {}))
+    for n in sorted(contract_names - lifecycle_names):
+        warnings.append(f"{n}: in routing contract but not lifecycle.yaml "
+                        f"(implicitly active — ok for v0)")
+    for n in sorted(lifecycle_names - contract_names):
+        warnings.append(f"{n}: in lifecycle.yaml but not routing contract "
+                        f"(unroutable by intent — ok if unavailable/"
+                        f"experimental)")
+    return warnings
 
 
 def collect_public_functions():
@@ -438,6 +647,14 @@ def main():
     code_names = set(caps) | set(cli_cmds) | collect_defined_symbols()
     stale_docs = sorted(n for n in doc_exports if n not in code_names)
 
+    # ── Routing contract checks (capabilities.yaml ↔ reality) ──
+    contract = parse_contract()
+    schema_errors, schema_warnings = check_contract_schema(contract)
+    (binding_errors,) = check_contract_bindings(contract)
+    xref_warnings = check_cross_reference(contract, registry)
+    contract_errors = schema_errors + binding_errors
+    contract_warnings = schema_warnings + xref_warnings
+
     # Print matrix
     hdr = f"{'Name':<40s} {'File':<40s} {'Entry':<6s} {'Test':<6s} {'Doc':<6s} {'Runtime':<8s} {'Status'}"
     print("=" * len(hdr))
@@ -466,13 +683,29 @@ def main():
             print(f"    - {n}  (from {doc_exports[n]} import ...)")
     print("=" * len(hdr))
 
+    # ── Routing contract section ──
+    print(f"\n  Routing Contract ({CONTRACT.name}): "
+          f"{len(contract)} capabilities")
+    if contract_errors:
+        print(f"  CONTRACT ERRORS (binding promises a non-existent path):")
+        for e in contract_errors:
+            print(f"    ✗ {e}")
+    if contract_warnings:
+        print(f"  contract warnings (non-blocking):")
+        for w in contract_warnings:
+            print(f"    ! {w}")
+    if not contract_errors and not contract_warnings:
+        print("  contract clean")
+    print("=" * len(hdr))
+
     # Stable success marker for the master-test verify string.  Printed only
     # when the contract is fully clean so the suite does not depend on the
     # (changing) capability/GUARDED counts.
-    if not phantom_count and not stale_docs:
+    has_error = phantom_count or stale_docs or contract_errors
+    if not has_error:
         print("CAPABILITY CONTRACT OK")
 
-    return 1 if (phantom_count or stale_docs) else 0
+    return 1 if has_error else 0
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ keywords: [runtime view, sync, dictionary, dico, icons, msgcatalog, NLS, button 
 tags: [failure_pattern, runtime, build, resource, dictionary, toolbar]
 release: [R19, R28]
 automation: manual
+capabilities: [runtime_publish, build_workspace]
 not_automatable_because: "同步动作本身已自动化（build.py:sync_runtime_view 在每次 build 后自动执行），但『非 build.py 编译路径』（手动 mkmk / VS 编译 / 仅拷 DLL）绕过该钩子，无法在静态侧检测——是否同步发生在构建工具的选择时刻，属于流程行为而非代码形态。可规则化方向：verifier 对比 CNext/resources 与 win_b64/resources 内容哈希，发现漂移即报警（类似 build.py:verify_build 的 DLL 校验），当前未实现。"
 ---
 

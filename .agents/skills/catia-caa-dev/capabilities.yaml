@@ -1,5 +1,7 @@
 # CADE Capability Contract Layer — v0
 # =====================================
+# 生命周期（能不能用）见 skills/lifecycle.yaml；本文件只管路由（该调什么）。
+#
 # 性质：契约层，不是事实源。
 #   - 意图面（triggers/description）：本文件是事实源（别处没有）
 #   - 存在面（实现/binding 目标）：本文件是契约，代码/测试是事实源，
@@ -35,7 +37,9 @@ capabilities:
       - sync agents
       - 更新agent工作区
     bindings:
-      cli: sh sync_agents.sh
+      cli: sh ../../../sync_agents.sh
+    note: 路径相对 skill 根解析后为 DevTools 根/sync_agents.sh（在 CADE repo 之外）；
+          人机惯例是从 DevTools 根执行 sh sync_agents.sh，等效
 
   # ── build ─────────────────────────────────────────────
   - name: build_workspace
