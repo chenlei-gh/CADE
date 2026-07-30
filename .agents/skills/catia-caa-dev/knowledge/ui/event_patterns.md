@@ -217,8 +217,28 @@ CATStatusChangeRC MyCmd::Desactivate(CATCommand *iFromClient,
 }
 ```
 
+## 常驻非模态面板的回调归属（红线）
+
+**回调必须挂在与面板同寿命的对象上，不得靠延长命令寿命维持。**
+
+常驻非模态面板（如 check header 切换的工具面板）应做成 `CATDlgDialog` 子类，**面板自订阅自己的控件通知**——`CATDlgDialog` 继承自 `CATCommand`，`this` 即面板单例，寿命与面板一致：
+
+```cpp
+class MyPanelDlg : public CATDlgDialog {
+    MyPanelDlg(CATDialog *p) : CATDlgDialog(p, "Panel", CATDlgGridLayout|CATDlgWndNoButton|CATDlgWndNoDecoration) {
+        _pList = new CATDlgMultiList(this, "List");
+        AddAnalyseNotificationCB(_pList, _pList->GetListSelectNotification(),
+            (CATCommandMethod)&MyPanelDlg::OnSelect, NULL);
+    }
+    ~MyPanelDlg() { RemoveAnalyseNotificationCB(_pList, _pList->GetListSelectNotification(), NULL); }
+};
+```
+
+对应的开关命令保持**普通短寿命 `CATCommand`**（构造函数干活 + `RequestDelayedDestruction()`）。**禁止**为保回调把开关命令写成 `CATStateCommand`——StateCommand 作为 editor 当前 agent 运行，有文档时会与活动命令竞争导致 `Activate` 不被调用（check header 有文档不弹窗、无文档正常）。详见 [fp_statecommand_check_header](../failure_patterns/fp_statecommand_check_header.md)。
+
 ## AI 生成规则
 
+- [ ] 常驻面板回调挂面板自身（CATDlgDialog 子类自订阅），禁止用 CATStateCommand 给回调续命
 - [ ] 回调用 `(CATCommandMethod)&ClassName::MethodName` 绑定
 - [ ] 回调方法签名为 `void Method(CATCommand*, CATNotification*, CATCommandClientData)`（**无**返回值，非 `CATStatusChangeRC`）
 - [ ] Radio 组手动实现互斥
