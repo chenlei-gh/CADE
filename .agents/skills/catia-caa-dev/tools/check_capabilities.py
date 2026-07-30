@@ -12,7 +12,9 @@ Pure stdlib.  Run:  python tools/check_capabilities.py
 
 import ast
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).parent.parent
@@ -242,27 +244,161 @@ def check_contract_schema(caps):
     return errors, warnings
 
 
+def _cade_dispatch_map():
+    """AST-precise {cmd_string: handler_func_name} from cade.py's main()
+    if/elif chain.
+
+    Replaces a bare regex scan (re.findall(r'cmd == "..."')) which only
+    proves the *string* 'cmd == "build"' appears somewhere in the file --
+    even inside a comment or docstring -- not that it is a real dispatch
+    branch calling a real handler.  Walking the actual if/elif AST and
+    resolving the first call in each branch's body catches that gap."""
+    cade_py = SKILLS_DIR / "cade.py"
+    if not cade_py.exists():
+        return {}
+    try:
+        tree = ast.parse(cade_py.read_text(encoding="utf-8"), filename=str(cade_py))
+    except SyntaxError:
+        return {}
+    mapping = {}
+
+    def branch_names(test):
+        if isinstance(test, ast.Compare) and len(test.ops) == 1:
+            op, right = test.ops[0], test.comparators[0]
+            if isinstance(op, ast.Eq) and isinstance(right, ast.Constant) \
+                    and isinstance(right.value, str):
+                return [right.value]
+            if isinstance(op, ast.In) and isinstance(right, (ast.Tuple, ast.List)):
+                return [e.value for e in right.elts
+                        if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+        return []
+
+    def first_call_name(body):
+        for stmt in body:
+            call = None
+            if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Call):
+                call = stmt.value
+            elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+                call = stmt.value
+            if call and isinstance(call.func, ast.Name):
+                return call.func.id
+        return None
+
+    def walk_chain(node):
+        for n in branch_names(node.test):
+            mapping[n] = first_call_name(node.body)
+        if len(node.orelse) == 1 and isinstance(node.orelse[0], ast.If):
+            walk_chain(node.orelse[0])
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "main":
+            for stmt in node.body:
+                if isinstance(stmt, ast.If):
+                    walk_chain(stmt)
+            break
+    return mapping
+
+
+# Cache: relative script path -> (ok, error_tail).  Several capabilities
+# share the same underlying script/module, so probe each real file once.
+_IMPORT_PROBE_CACHE = {}
+
+
+def _module_import_probe(py_path):
+    """Try loading one skills/*.py file as a module, in a subprocess whose
+    cwd is deliberately NOT SKILL_ROOT and NOT the file's own directory.
+
+    This is the concrete failure mode 'Agent Shell 调用契约' (SKILL.md) warns
+    about: a stateless shell agent invokes a script by absolute path from an
+    arbitrary cwd, and any cwd-relative import/sys.path assumption inside
+    the script breaks silently until run for real.  exec_module only runs
+    top-level module code (imports + def/class), never main() -- every
+    skills/*.py entry point is guarded by `if __name__ == '__main__'` --
+    so this cannot trigger a real build/run/mkmk side effect.
+
+    Returns (ok: bool, error_tail: Optional[str])."""
+    key = str(py_path)
+    if key in _IMPORT_PROBE_CACHE:
+        return _IMPORT_PROBE_CACHE[key]
+    if not py_path.exists():
+        result = (False, f"file not found: {py_path}")
+        _IMPORT_PROBE_CACHE[key] = result
+        return result
+    probe_src = (
+        "import importlib.util as u\n"
+        f"spec = u.spec_from_file_location('_capability_probe', r'{py_path}')\n"
+        "mod = u.module_from_spec(spec)\n"
+        "spec.loader.exec_module(mod)\n"
+    )
+    with tempfile.TemporaryDirectory() as tmp_cwd:
+        try:
+            r = subprocess.run(
+                [sys.executable, "-c", probe_src],
+                cwd=tmp_cwd, capture_output=True, text=True, timeout=20,
+            )
+        except subprocess.TimeoutExpired:
+            result = (False, "timed out (20s) probing import -- module may "
+                             "have a top-level blocking call")
+            _IMPORT_PROBE_CACHE[key] = result
+            return result
+    if r.returncode != 0:
+        tail = (r.stderr or r.stdout).strip().splitlines()
+        result = (False, tail[-1] if tail else f"exit code {r.returncode}")
+    else:
+        result = (True, None)
+    _IMPORT_PROBE_CACHE[key] = result
+    return result
+
+
 def check_contract_bindings(caps):
-    """Every declared binding target must actually exist.  (errors,)"""
+    """Every declared binding target must actually exist AND be loadable.
+
+    Two layers, both required:
+      1. Static: dispatch entry / function definition exists (AST).
+      2. Dynamic: the target script/module can actually be imported from a
+         cwd other than SKILL_ROOT, in a real subprocess (see
+         _module_import_probe).  A binding can pass layer 1 and still be
+         broken for the exact consumer this contract exists for -- a
+         stateless shell agent calling by absolute path from an arbitrary
+         cwd -- if the script has a hidden cwd-relative assumption; static
+         AST checks cannot see that class of failure.
+    (errors,)"""
     errors = []
-    cade_src = (SKILLS_DIR / "cade.py").read_text(encoding="utf-8") \
-        if (SKILLS_DIR / "cade.py").exists() else ""
-    cade_cmds = set(re.findall(r'cmd == "([^"]+)"', cade_src))
+    cade_cmds = _cade_dispatch_map()
+    cade_py = SKILLS_DIR / "cade.py"
+    cade_defined = _defined_functions(cade_py)
     for c in caps:
         name = c.get("name", "<unnamed>")
         for btype, raw in c.get("bindings", {}).items():
             if btype == "cli":
                 t = parse_binding(raw)
                 if t.get("exe") == "cade":
-                    if t["cmd"] not in cade_cmds:
+                    handler = cade_cmds.get(t["cmd"])
+                    if handler is None:
                         errors.append(f"{name}: cli binding 'cade {t['cmd']}' "
                                       f"has no dispatch entry in cade.py")
+                    elif handler not in cade_defined:
+                        errors.append(f"{name}: cli binding 'cade {t['cmd']}' "
+                                      f"dispatches to '{handler}', which is "
+                                      f"not defined in cade.py")
+                    else:
+                        ok, err = _module_import_probe(cade_py)
+                        if not ok:
+                            errors.append(f"{name}: cli binding 'cade {t['cmd']}' "
+                                          f"-- cade.py failed to import from a "
+                                          f"non-skill-root cwd: {err}")
                 elif "script" in t:
                     # script paths are skill-root relative; ../../ escape ok
                     p = (SKILL_ROOT / t["script"]).resolve()
                     if not p.exists():
                         errors.append(f"{name}: cli script '{t['script']}' "
                                       f"not found (resolved: {p})")
+                    elif p.suffix == ".py":
+                        ok, err = _module_import_probe(p)
+                        if not ok:
+                            errors.append(f"{name}: cli script '{t['script']}' "
+                                          f"failed to import from a "
+                                          f"non-skill-root cwd: {err}")
                 else:
                     errors.append(f"{name}: cli binding '{raw}' has an "
                                   f"unverifiable shape")
@@ -279,6 +415,12 @@ def check_contract_bindings(caps):
                 elif func not in _defined_functions(py):
                     errors.append(f"{name}: '{mod}.py' defines no "
                                   f"function '{func}'")
+                else:
+                    ok, err = _module_import_probe(py)
+                    if not ok:
+                        errors.append(f"{name}: python binding '{raw}' -- "
+                                      f"'{mod}.py' failed to import from a "
+                                      f"non-skill-root cwd: {err}")
             elif btype == "mcp":
                 # MCP bindings are validated by the MCP server, not here.
                 pass

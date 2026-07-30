@@ -20,6 +20,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+# Make this importable as `from build import build_workspace` regardless of
+# caller cwd/sys.path (a bare relative `from env import ...` below only
+# works if skills/ happens to already be on sys.path -- true when run as
+# `python build.py` from inside skills/, or via cade.py which does this
+# same insert, but NOT true for a direct python-binding import from an
+# arbitrary cwd; see capabilities.yaml python: build.build_workspace).
+sys.path.insert(0, str(Path(__file__).parent))
+
 from env import CAAEnvironment
 from parser import parse_mkmk_output
 from utils import Cache, Logger, format_duration, output_json
@@ -113,8 +121,16 @@ def verify_build(
         from env import CAAEnvironment
         env = CAAEnvironment(); env.load_config()
         arch = env.get_architecture() or "win_b64"
-    except Exception:
-        pass
+    except Exception as exc:
+        # Fall back to the win_b64 default, but log it -- a silent fallback
+        # here previously made verification look at the wrong bin/ dir on
+        # non-default architectures with no trace of why (see CHANGELOG).
+        try:
+            Logger("build.log", workspace_root=_resolve_workspace_root(workspace_path)).write(
+                f"verify_build: CAAEnvironment.load_config() failed ({exc}); "
+                f"falling back to arch='win_b64'", level="WARN")
+        except Exception:
+            pass
 
     ws_root = _resolve_workspace_root(workspace_path)
     bin_dir = ws_root / arch / "code" / "bin"

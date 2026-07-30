@@ -15,6 +15,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+# See build.py for why this is required: a bare `from env import ...` only
+# works if skills/ happens to already be on sys.path (true for `python
+# run.py` or via cade.py's own insert; not true for a direct python-binding
+# import from an arbitrary cwd, e.g. capabilities.yaml python: run.start_catia_runtime).
+sys.path.insert(0, str(Path(__file__).parent))
+
 from env import CAAEnvironment
 from utils import Cache, Logger, output_json
 
