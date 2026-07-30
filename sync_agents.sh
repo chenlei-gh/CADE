@@ -10,6 +10,13 @@
 #   remembering the incantation — that knowledge should not live only in
 #   someone's head.
 #
+# /MIR (mirror): DST is made byte-identical to SRC, including deleting any
+#   file/dir in DST that no longer exists in SRC. This is intentional —
+#   FSWorkspaces is a read-only shadow copy, not a place to keep original
+#   work. If you have files only in DST (e.g. debug_tools scripts written
+#   directly in FSWorkspaces), copy them back into SRC BEFORE running this,
+#   or they will be permanently deleted.
+#
 # robocopy exit codes: 0 = nothing to do, 1 = files copied OK. Both are success.
 # (>=8 is a real failure.)
 
@@ -18,7 +25,7 @@ set -u
 SRC="D:\Vault\DevTools\CADE\.agents"
 DST="D:\Vault\FSWorkspaces\.agents"
 
-MSYS2_ARG_CONV_EXCL="*" robocopy "$SRC" "$DST" /E /XD .git /R:2 /W:2 /NP
+MSYS2_ARG_CONV_EXCL="*" robocopy "$SRC" "$DST" /MIR /XD .git /R:2 /W:2 /NP
 code=$?
 
 if [ "$code" -ge 8 ]; then
