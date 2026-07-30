@@ -1068,7 +1068,6 @@ tool_pys = [
     "prerequisites_manager.py",
     "setup_environment.py",
     "setup_mcp.py",
-    "setup_prerequisites.py",
 ]
 for tp in tool_pys:
     p = SKILL_ROOT / "tools" / tp

@@ -43,7 +43,7 @@ dir "CADE project directory"
 **测试环境初始化工具**:
 ```cmd
 cd CADE project directory
-initialize_caa_env.bat
+python tools\setup_environment.py --detect
 
 # 预期输出 (机器可读格式):
 # STATUS=SUCCESS
@@ -77,10 +77,10 @@ tools\generate_guid_ai.bat ICalculator
 AI 应该：
 1. ✅ 识别到 CAA 关键词
 2. ✅ 自动加载 `catia-caa-dev` skill
-3. ✅ 调用 `initialize_caa_env.bat` 检测环境
-4. ✅ 调用 `generate_guid_ai.bat` 生成 IID
+3. ✅ 调用 `tools/setup_environment.py` 检测环境
+4. ✅ 调用 `tools/generate_guid_ai.bat` 生成 IID
 5. ✅ 生成 7 个文件
-6. ✅ 调用 `validate_component_ai.bat` 验证结构
+6. ✅ 调用 `tools/validate_component_ai.bat` 验证结构
 7. ✅ 报告验证结果
 
 **方法 B: 直接引用 skill**
@@ -127,21 +127,19 @@ templates/
 └── Framework.edu.dico
 ```
 
-### 工具脚本（8 个）
+### 工具脚本（tools/ 目录）
 ```
-├── initialize_caa_env.bat                # 环境初始化 (AI 专用)
-├── validate_caa_component.bat            # 组件验证 (人工使用)
-├── generate_guid.bat                     # GUID 生成 (人工使用)
-└── tools/
-    ├── validate_component_ai.bat         # 组件验证 (AI 专用)
-    ├── generate_guid_ai.bat              # GUID 生成 (AI 专用)
-    ├── check_code_reuse.bat              # 代码重用检查
-    └── check_code_reuse.py               # 代码重用检查 (Python)
+tools/
+├── setup_environment.py / .bat       # 环境初始化 + Prerequisites 配置
+├── validate_component_ai.bat         # 组件验证 (AI 专用，机器可读输出)
+├── generate_guid_ai.bat              # GUID 生成 (AI 专用，机器可读输出)
+├── check_code_reuse.py               # 代码重用检查
+├── catia_detector.py                 # CATIA 安装动态检测
+├── prerequisites_manager.py          # Prerequisites 依赖管理
+└── production_readiness_check.py     # 生产就绪度检查
 ```
 
-**AI 工具 vs 人工工具**:
-- **AI 工具**: 无交互，机器可读输出，退出码指示状态
-- **人工工具**: 交互式提示，彩色输出，暂停等待
+所有 `tools/*.bat` 均为 AI 专用工具：无交互，机器可读输出（`KEY=VALUE` 格式），退出码指示状态。
 
 ### 演进追踪
 ```
@@ -196,13 +194,13 @@ cd D:\your_caa_workspace
 ```cmd
 # 在命令行运行验证脚本
 cd "CADE project directory"
-validate_caa_component.bat "D:\your_workspace\YourFramework.edu"
+tools\validate_component_ai.bat "D:\your_workspace\YourFramework.edu"
 
-# 输出:
-# ✅ Step 1: IdentityCard.h - OK
-# ✅ Step 2: Interface headers - OK
-# ✅ Step 3: Interface implementation - OK
+# 输出 (机器可读 KEY=VALUE 格式):
+# CHECK1_IDENTITYCARD=PASS
+# CHECK2_PUBLICINTERFACES=PASS
 # ...
+# VALIDATION_RESULT=PASS
 ```
 
 ---
@@ -220,7 +218,7 @@ copy "你的模板.cpp" "CADE project directory\templates\"
 
 ### 2. 自定义验证规则
 
-编辑 `validate_caa_component.bat`，添加公司特定检查。
+编辑 `tools/validate_component_ai.bat`，添加公司特定检查。
 
 ### 3. 添加内部文档引用
 
@@ -248,7 +246,7 @@ copy "你的模板.cpp" "CADE project directory\templates\"
 1. 阅读 `GETTING_STARTED.md` (2 分钟)
 2. 查看 `EXAMPLE_CALCULATOR.md` (5 分钟)
 3. 在 Zed 中生成第一个组件 (10 分钟)
-4. 运行 `validate_caa_component.bat` (1 分钟)
+4. 运行 `tools/validate_component_ai.bat` (1 分钟)
 
 ### 进阶 (1-3 天)
 1. 阅读 `ARCHITECTURE.md` (查看 16 个架构图)
@@ -345,16 +343,16 @@ findstr /C:"2.1.0" "CHANGELOG.md"
 
 ### 问题 3: 验证脚本找不到
 
-**症状**: `validate_caa_component.bat` 运行失败
+**症状**: `tools/validate_component_ai.bat` 运行失败
 
 **解决方案**:
 ```cmd
 # 验证脚本存在
-dir "CADE project directory\validate_caa_component.bat"
+dir "CADE project directory\tools\validate_component_ai.bat"
 
 # 如果存在，检查路径
 # 确保在 skill 目录运行，或使用完整路径:
-"CADE project directory\validate_caa_component.bat" "你的框架路径"
+"CADE project directory\tools\validate_component_ai.bat" "你的框架路径"
 ```
 
 ---
@@ -400,7 +398,7 @@ cat "CADE project directory\evolution\error_log.json"
 1. 先查官方文档（API Reference）
 2. 在 Zed 中告诉 AI 你找到的 API
 3. 让 AI 基于官方 API 生成代码
-4. 运行 validate_caa_component.bat
+4. 运行 tools/validate_component_ai.bat
 5. 编译测试
 ```
 
@@ -468,7 +466,7 @@ type "CADE project directory\CHANGELOG.md" | findstr "##"
 
 **验证方式**:
 ```cmd
-validate_caa_component.bat "你的框架路径"
+tools\validate_component_ai.bat "你的框架路径"
 ```
 
 **文档位置**: 

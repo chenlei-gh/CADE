@@ -151,11 +151,11 @@ cade setup --catia-root <path>   # 指定 CATIA 路径
 
 ## 架构集成
 
-新增文件：
-- `tools/setup_prerequisites.py` - Prerequisites 配置工具
-- `tools/setup_prerequisites.bat` - Windows 批处理包装
-- `skills/cade.py` - 添加 `cmd_setup()` 函数
-- `skills/mcp_server.py` - 添加 `setup_workspace_prerequisites` MCP 工具
+相关文件：
+- `tools/setup_environment.py` - Prerequisites 配置工具（含 `--prereqs` 相关能力）
+- `tools/setup_environment.bat` - Windows 批处理包装
+- `skills/cade.py` - 提供 `cmd_setup()` 函数
+- `skills/mcp_server.py` - 提供 `setup_workspace_prerequisites` MCP 工具
 
 ---
 
