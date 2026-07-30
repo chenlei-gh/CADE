@@ -19,7 +19,7 @@ authoritative data source and a single lifecycle:
 
 | Index | Authoritative source | What it answers | Snapshot (2026-07) |
 |---|---|---|---|
-| **CatalogIndex** | `catalog/index.yaml` | "Which knowledge file matches this intent?" | 86 entries, 34 aliases |
+| **CatalogIndex** | `catalog/index.yaml` (hand-listed) + `knowledge/frameworks/*.md` (auto-scanned, `_scan_frameworks`) | "Which knowledge file matches this intent?" | 239 entries (91 hand-listed + 148 auto-scanned), 34 aliases |
 | **ApiRegistry** | `capabilities/*.md` + `templates/**` + `knowledge/frameworks/*.md` + `knowledge/failure_patterns/*.md` | "Is this API name real?" | 342 APIs |
 | **HeaderMap** | B28 install `<FW>/PublicInterfaces/*.h` scan → `cache/header_map_<ver>.json` | "Does this class/header exist in CATIA?" | 5500 headers, 503 frameworks |
 | **MethodIndex** | `cache/caadoc_index.json` (pre-parsed SDK headers) → `cache/method_index.pickle` | "Does type X really have method M?" | 2655 types |

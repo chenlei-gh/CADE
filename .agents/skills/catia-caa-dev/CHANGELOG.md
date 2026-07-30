@@ -10,6 +10,12 @@
 
 ## [未发布]
 
+### 🧭 检索架构 (2026-07-31)
+
+- **修复 CatalogIndex 未收录 148 个 Framework 导航文件**：`catalog/index.yaml` 里 `knowledge/frameworks/*.md` 长期只以一行文件计数（`| 149 | 自动扫描 |`）出现，从未被解析成可检索条目，导致 CatalogIndex 实际只覆盖 91/239（约 38%）的知识文件，SKILL.md 却指示 AI 优先查这些文件定位 Framework——查不到只能靠 AI 现场猜测。修复：`CatalogIndex` 新增 `_scan_frameworks()`，从每个文件统一的 frontmatter（`title`/`keywords`）自动生成 `category="framework"` 条目，无需在 `index.yaml` 手写 148 行。条目数 91 → 239。
+- **缓存签名升级**：`CatalogIndex` 的缓存失效信号从单一 `index.yaml` mtime 改为 `(index.yaml mtime, knowledge/frameworks/ 目录 mtime)` 元组，防止新增/删除 framework 文件后读到脏缓存。磁盘缓存 payload 结构变化，`_CACHE_VERSION` 2 → 3（旧 pickle 自动作废重建）。
+- **新增覆盖率回归测试**：`tests/test_retrieval_benchmark.py` `[5]` 断言 `knowledge/`、`patterns/`、`playbooks/`、`capabilities/` 下所有 `.md` 文件都能在 `CatalogIndex.entries` 中找到对应条目，防止同类“索引只算数量、不建条目”的缺口再次悄悄出现。
+
 ### 🧭 检索架构 (2026-07-27)
 
 - **新增 Retrieval 统一门面**：`skills/retrieval.py`，所有知识检索必须走 `get_retrieval()`，禁止直接 `XxxIndex.load()`。

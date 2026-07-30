@@ -85,47 +85,70 @@ class CatalogIndex:
     _PROC_CACHE_MTIME: Dict[str, float] = {}
     _SEARCH_CACHE_MAX = 128
     # Bump whenever parsing/scoring changes so stale disk pickles are dropped.
-    _CACHE_VERSION = 2
+    _CACHE_VERSION = 3
     # Observability counters — tests assert the disk cache actually engages
     # (a silently-failing cache went unnoticed here once before).
     CACHE_STATS: Dict[str, int] = {"disk_hit": 0, "disk_miss": 0, "rebuilt": 0}
 
     @classmethod
     def load(cls, skill_root: Path) -> "CatalogIndex":
-        """Parse catalog/index.yaml into structured model.
+        """Parse catalog/index.yaml into structured model, then merge in
+        auto-discovered knowledge/frameworks/*.md entries (see
+        _scan_frameworks).
 
         Three-tier loading, fastest first:
-          1. process-wide cache (valid while index.yaml mtime unchanged)
+          1. process-wide cache (valid while catalog+frameworks signature
+             unchanged)
           2. on-disk pickle cache in cache/catalog_index.pickle
-          3. full YAML parse (then populate both caches)
+          3. full YAML parse + frameworks scan (then populate both caches)
         """
         catalog_file = skill_root / "catalog" / "index.yaml"
-        try:
-            mtime = catalog_file.stat().st_mtime
-        except OSError:
+        sig = cls._compute_sig(skill_root, catalog_file)
+        if sig is None:
             return cls()
 
         # Tier 1: process-wide cache
         key = str(Path(skill_root).resolve())
         if (key in cls._PROC_CACHE
-                and cls._PROC_CACHE_MTIME.get(key) == mtime):
+                and cls._PROC_CACHE_MTIME.get(key) == sig):
             return cls._PROC_CACHE[key]
 
         # Tier 2: on-disk pickle cache (survives process restarts —
         # this is what makes CLI/MCP cold-start retrieval sub-ms)
-        index = cls._load_disk_cache(skill_root, catalog_file, mtime)
+        index = cls._load_disk_cache(skill_root, catalog_file, sig)
 
         # Tier 3: full parse
         if index is None:
             index = cls()
             content = catalog_file.read_text(encoding="utf-8", errors="replace")
             index._parse(content)
-            index._save_disk_cache(skill_root, catalog_file, mtime)
+            index._scan_frameworks(skill_root)
+            index._save_disk_cache(skill_root, catalog_file, sig)
             cls.CACHE_STATS["rebuilt"] += 1
 
         cls._PROC_CACHE[key] = index
-        cls._PROC_CACHE_MTIME[key] = mtime
+        cls._PROC_CACHE_MTIME[key] = sig
         return index
+
+    @classmethod
+    def _compute_sig(cls, skill_root: Path, catalog_file: Path):
+        """Cache-invalidation signature: (index.yaml mtime, frameworks dir mtime).
+
+        The frameworks directory mtime is included because its 148 files are
+        auto-discovered by _scan_frameworks() rather than hand-listed in
+        index.yaml — adding/removing a framework file must invalidate the
+        cache even though index.yaml itself did not change.
+        """
+        try:
+            catalog_mtime = catalog_file.stat().st_mtime
+        except OSError:
+            return None
+        fw_dir = skill_root / "knowledge" / "frameworks"
+        try:
+            fw_mtime = fw_dir.stat().st_mtime
+        except OSError:
+            fw_mtime = 0.0
+        return (catalog_mtime, fw_mtime)
 
     @classmethod
     def reset_stats(cls) -> None:
@@ -140,12 +163,12 @@ class CatalogIndex:
 
     @classmethod
     def _load_disk_cache(cls, skill_root: Path, catalog_file: Path,
-                         mtime: float) -> "Optional[CatalogIndex]":
+                         sig) -> "Optional[CatalogIndex]":
         p = cls._disk_cache_path(skill_root, catalog_file)
         try:
             with p.open("rb") as f:
                 payload = pickle.load(f)
-            if payload.get("mtime") != mtime:
+            if payload.get("sig") != sig:
                 cls.CACHE_STATS["disk_miss"] += 1
                 return None
             # Parser version guards against stale pickles when the scoring/
@@ -171,13 +194,13 @@ class CatalogIndex:
             return None
 
     def _save_disk_cache(self, skill_root: Path, catalog_file: Path,
-                         mtime: float) -> None:
+                         sig) -> None:
         p = self._disk_cache_path(skill_root, catalog_file)
         try:
             p.parent.mkdir(parents=True, exist_ok=True)
             payload = {
                 "version": self._CACHE_VERSION,
-                "mtime": mtime,
+                "sig": sig,
                 "entries": self.entries,
                 "aliases": self.aliases,
                 "refs": self._entry_refs,
@@ -469,6 +492,43 @@ class CatalogIndex:
             # Parse comma-separated keywords
             keywords = [k.strip().lower() for k in alias_values.replace("，", ",").split(",") if k.strip()]
             self.aliases[alias_key] = keywords
+
+    def _scan_frameworks(self, skill_root: Path) -> None:
+        # Auto-discover knowledge/frameworks/*.md as category=framework entries.
+        fw_dir = skill_root / "knowledge" / "frameworks"
+        if not fw_dir.is_dir():
+            return
+        fm_re = re.compile(r"^---\n(.*?)\n---\n", re.S)
+        for p in sorted(fw_dir.glob("*.md")):
+            if p.name == "README.md":
+                continue
+            try:
+                text = p.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            m = fm_re.match(text)
+            if not m:
+                continue
+            fm = m.group(1)
+            title_m = re.search(r"^title:\s*(.+)$", fm, re.M)
+            title = title_m.group(1).strip() if title_m else p.stem
+            kw_m = re.search(r"^keywords:\s*\[(.*?)\]", fm, re.M)
+            keywords = []
+            if kw_m:
+                for tok in kw_m.group(1).split(","):
+                    tok = tok.strip().strip("'\"")
+                    if len(tok) >= 3:
+                        keywords.append(tok.lower())
+            rel = p.relative_to(skill_root).as_posix()
+            self.entries.append(CatalogEntry(
+                id=f"framework.{p.stem}",
+                file=rel,
+                title=title,
+                category="framework",
+                keywords=keywords,
+                raw_line="",
+            ))
+            self._entry_refs.append([])
 
     def _expand_aliases(self, query: str) -> str:
         """Expand Chinese aliases in query to their English keywords."""

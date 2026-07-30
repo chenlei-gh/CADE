@@ -115,6 +115,31 @@ ck("header_map non-empty", _h["header_map"]["headers"] > 0,
 ck("api_registry non-empty", _h["api_registry"]["apis"] > 0,
    f"{_h['api_registry']['apis']} apis")
 
+# ═══════════════════════════════════════════════════════════════
+# [5] Catalog coverage: every knowledge/pattern/playbook/capability
+#     markdown file must be reachable via CatalogIndex.entries.
+#     Why: knowledge/frameworks/*.md (148 files) went unindexed for
+#     months because index.yaml only recorded a file count, not real
+#     table rows — this guards against that class of silent gap.
+# ═══════════════════════════════════════════════════════════════
+print("\n[5] Catalog coverage vs. disk")
+indexed_files = {e.file for e in _cat.entries if e.file}
+missing = []
+for sub in ("knowledge", "patterns", "playbooks", "capabilities"):
+    d = SKILL / sub
+    if not d.is_dir():
+        continue
+    for p in d.rglob("*.md"):
+        if p.name == "README.md":
+            continue
+        rel = p.relative_to(SKILL).as_posix()
+        if rel not in indexed_files:
+            missing.append(rel)
+
+ck("all knowledge/pattern/playbook/capability .md files are indexed",
+   len(missing) == 0,
+   f"{len(missing)} missing" + (f": {missing[:5]}" if missing else ""))
+
 print("\n-- health JSON --")
 print(json.dumps(_h, indent=2, ensure_ascii=False))
 

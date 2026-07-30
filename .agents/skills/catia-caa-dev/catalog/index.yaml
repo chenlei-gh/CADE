@@ -106,9 +106,13 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 
 ### Framework 索引 (CAADoc)
 
+> 此处不手写表格行。148 个 `knowledge/frameworks/*.md` 由 `CatalogIndex._scan_frameworks()`
+> 在加载时自动扫描并生成 `category="framework"` 的可检索条目（见 `skills/catalog.py`），
+> 不需要在此处逐个列出。
+
 | 文件数 | 生成方式 |
 |--------|---------|
-| 149 |  自动扫描 |
+| 148 |  自动扫描（可检索） |
 
 
 ### Philosophy 索引 (v3.0 新增)
