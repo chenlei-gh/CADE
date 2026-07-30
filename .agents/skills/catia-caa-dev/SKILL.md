@@ -220,7 +220,8 @@ triggers:
 
 > ## ⛔ 强制工作流（AI 必读，不可跳过）
 >
-> 0. **意图路由** → 先查 [`capabilities.yaml`](capabilities.yaml)（25 个能力的触发词与 binding）。意图命中能力后按其 binding 调用（优先级 mcp > cli > python）；**能力未声明的入口 = 不可用，不是“可以猜”**；`forbidden` 列出的路径禁止。契约与实现的一致性由 `tools/check_capabilities.py` 对账。
+> 0. **意图路由** → 先查 [`capabilities.yaml`](capabilities.yaml)（25 个能力的触发词与 binding）。意图命中能力后按其 binding 调用（优先级 mcp > cli > python）；**能力未声明的入口 = 不可用，不是“可以猜”**；`forbidden` 列出的路径禁止。**触发词零命中** → 禁止猜测/直接 shell/自行发挥，退回 develop/analyze/repair 三个 kernel 兜底模式或询问用户；**命中多个能力** → 报告候选列表交由用户消歧。契约与实现的一致性由 `tools/check_capabilities.py` 对账。
+> 0.5 **无状态 shell 调用** → 若你（AI）通过 terminal/shell 工具直接执行命令（而不是经 MCP），你没有持久 cwd/PATH：调用任何 capabilities.yaml 的 cli/python binding 前先解析一次本技能的 SKILL_ROOT 绝对路径，之后一律用绝对路径调用，禁止裸相对路径、禁止假设 PATH 上有 cade。详见下方“Agent Shell 调用契约”。
 > 1. **创建/生成** → 调 `develop()`。它**自动注入相关知识内容**（`knowledge_content`）并**自动静态验证**。**先读响应里的 `knowledge_content` 再写代码**；若出现 `verification_failed: true`，**必须先修复 `verification_errors` 再继续**。
 > 2. **知识/API 问题** → 调 `analyze(request, detail=true)`，一次返回排序后的知识**文件内容**，不要再 grep / 多轮读文件。
 > 3. **编译错/修复** → 调 `repair()`，不要手动改生成代码。
@@ -586,6 +587,32 @@ AI Agent 有需求
 | 重构影响分析 | Python `intent.impact` | MCP | 需要编程式评估结果 |
 
 > ⚠️ **AI Agent 优先用 MCP**；某能力未声明 MCP binding 时，按 [`capabilities.yaml`](capabilities.yaml) 中该能力已声明的最高优先级 binding 调用（mcp > cli > python），未声明 = 不可用。CLI 和 Python API 主要给人类和脚本用。
+>
+> **MCP 覆盖范围声明**：`mcp_server.py` 目前只暴露 3 个 kernel 模式（`develop`/`analyze`/`repair`），其余 22 个 `capabilities.yaml` 能力没有 mcp binding。这是设计内决定，不是遗漏：这 22 个能力是开发/构建/诊断类操作，经由 kernel 三模式间接貆达或属于人类/CI 场景，不需要为它们单独开 MCP 入口。若以后真需要（例如某个 cli-only 能力频繁被 AI 误触发），再补 mcp binding，不要现在预先补齐。
+
+---
+
+### 🖥️ Agent Shell 调用契约
+
+> 适用对象：通过 `terminal`/shell 工具直接执行命令的 AI agent（不经 MCP）。MCP client 的 cwd 由 `config/editors/*.json` 中的 `"cwd": ".agents/skills/catia-caa-dev"` 固定，本节不适用。
+
+根因：无状态 shell 执行的 agent 每次调用都是全新进程，**不继承上一次调用的 cwd 或 PATH**。“刚刚在 A 目录 cd 过去跑通了”对下一次调用无效。`cade` 目前也未安装为 PATH 可执行命令（无 `bin/cade` 包装层），假设它在 PATH 上一定会失败。
+
+规则：
+
+1. 任务开始时解析一次 `SKILL_ROOT`（本技能根目录，即 `capabilities.yaml` 所在目录）的绝对路径，之后全部调用复用这个绝对路径。
+2. 禁止裸相对路径（如 `python skills/build.py`）——只有 cwd 恰巧等于 SKILL_ROOT 时才能跑通，你无法保证下一次调用时 cwd 仍然如此。
+3. 禁止假设 PATH 上有 `cade`。
+4. 所有 `capabilities.yaml` 中 `cli`/`python` binding 一律用 `SKILL_ROOT` 拼出的绝对路径调用，例如：
+
+   ```
+   python "<SKILL_ROOT>/skills/build.py" <workspace> [options]
+   python "<SKILL_ROOT>/skills/cade.py" build <workspace>
+   ```
+
+5. 若未来出现第三类调用主体（如 CI runner），到那时再补一条规则；不要现在预先设计通用 execution-context 字段（Rule of Three，目前只有 2 个已验证消费者类型）。
+
+说明：这不是在“修 bug”，而是将之前隐含的运行约束显式化——`bin/cade` 包装脚本是给人类/CI 的 UX 便利层，不是本契约的前提，未实施不影响以上规则的有效性。
 
 ---
 

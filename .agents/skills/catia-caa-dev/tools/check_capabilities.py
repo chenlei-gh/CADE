@@ -125,7 +125,7 @@ def parse_contract():
             if cur:
                 caps.append(cur)
             cur = {"_unknown": [], "triggers": [], "forbidden": [],
-                   "bindings": {}}
+                   "bindings": {}, "_dup_list": [], "_dup_bindings": []}
             list_field = None
             in_bindings = False
             body = stripped[2:]
@@ -158,10 +158,16 @@ def parse_contract():
             continue
         if in_bindings and indent >= 6 and ":" in stripped:
             k, v = stripped.split(":", 1)
-            cur["bindings"][k.strip()] = v.strip()
+            k = k.strip()
+            if k in cur["bindings"]:
+                cur["_dup_bindings"].append(k)
+            cur["bindings"][k] = v.strip()
             continue
         if list_field and indent >= 6 and stripped.startswith("- "):
-            cur[list_field].append(stripped[2:].strip())
+            item = stripped[2:].strip()
+            if item in cur[list_field]:
+                cur["_dup_list"].append(f"{list_field}:{item}")
+            cur[list_field].append(item)
             continue
     if cur:
         caps.append(cur)
@@ -204,7 +210,14 @@ def _defined_functions(py_path):
 
 
 def check_contract_schema(caps):
-    """Field whitelist + required-field presence.  (errors, warnings)"""
+    """Field whitelist + required-field presence + contract integrity.
+
+    Integrity checks are deliberately limited to structural duplicates
+    (duplicate triggers, duplicate binding keys) -- NOT semantic overlap
+    between different capabilities' triggers.  Judging whether two trigger
+    phrases 'mean the same thing' is an NLP problem, not a contract-
+    integrity problem; encoding it here would turn the checker into a
+    second router that itself needs maintenance.  (errors, warnings)"""
     errors, warnings = [], []
     for c in caps:
         name = c.get("name", "<unnamed>")
@@ -221,6 +234,11 @@ def check_contract_schema(caps):
             if bt not in BINDING_TYPES:
                 warnings.append(f"{name}: unknown binding type '{bt}' "
                                 f"(known: {list(BINDING_TYPES)})")
+        for dup in c.get("_dup_list", []):
+            errors.append(f"{name}: duplicate list entry '{dup}'")
+        for dup in c.get("_dup_bindings", []):
+            errors.append(f"{name}: duplicate binding key '{dup}' "
+                          f"(second declaration silently overwrote the first)")
     return errors, warnings
 
 

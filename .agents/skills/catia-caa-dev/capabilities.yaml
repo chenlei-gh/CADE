@@ -17,6 +17,24 @@
 #   2. 入口 → 取该能力已声明 binding 中优先级最高者：mcp > cli > python
 #   3. 能力未声明某入口 = 该入口不可用，不是"可以猜"
 #   4. forbidden 列出的路径禁止使用
+#   5. 触发词零命中 -> 禁止猜测/直接shell/自行发挥；报告未命中已声明能力，
+#      退回 develop/analyze/repair 三个 kernel 兜底模式，或询问用户
+#   6. 触发词命中多个能力 -> 不要凭感觉选一个；报告候选能力列表，
+#      交由用户或更具体的后续输入消歧
+#
+# 调用契约（Execution）：
+#   本文件面向两类无持久状态的调用主体，规则相同：
+#     - MCP client（经 skills/mcp_server.py；cwd 由 MCP 配置固定，本条不适用）
+#     - 无状态 shell 执行的 agent（如 terminal 工具驱动的 coding agent；
+#       每次调用是全新进程，不继承 cwd/PATH）
+#   无状态 shell agent 调用 cli/python binding 时必须：
+#     - 先解析一次 SKILL_ROOT 绝对路径（本文件所在目录）
+#     - 禁止裸相对路径（如 python skills/build.py）——只有 cwd==SKILL_ROOT 时才凑巧成立
+#     - 禁止假设 PATH 上有 cade——当前未安装为可执行命令
+#     - 一律用 SKILL_ROOT 拼出的绝对路径调用，如：
+#       python <SKILL_ROOT>/skills/build.py <workspace>
+#   若未来出现第三类调用主体（如 CI runner），到那时再补一条规则，
+#   不要现在预留 execution-context 字段（Rule of Three）。
 #
 # 字段纪律（v0）：name / description / triggers / bindings / forbidden(可选)
 #   - 不引入 status/domain/owner/dependency 字段；domain 仅作注释分组
