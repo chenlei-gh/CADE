@@ -1234,7 +1234,7 @@ SUITE_MARKERS = {
     "test_l5_semantic.py": "100%",
     "test_l6_fault_injection.py": "100%",
     "test_knowledge_system.py": "ALL CHECKS PASSED",
-    "test_skill_ai_coordination.py": "Perfect —",
+    "test_skill_ai_coordination.py": "Perfect",
     "test_system_health.py": None,
     "test_catia_detection.py": "ALL CATIA DETECTION TESTS PASSED",
     "test_build_and_run.py": "All Build Time & Run Time commands working",
@@ -1250,6 +1250,8 @@ for script in EXISTING_SUITES:
         continue
 
     print(f"\n  [SUITE] {script} ...", end="", flush=True)
+    _child_env = dict(os.environ)
+    _child_env["PYTHONIOENCODING"] = "utf-8"
     try:
         r = subprocess.run(
             [sys.executable, str(script_path)],
@@ -1259,6 +1261,7 @@ for script in EXISTING_SUITES:
             errors="replace",
             timeout=120,
             cwd=str(SKILL_ROOT / "tests"),
+            env=_child_env,
         )
     except subprocess.TimeoutExpired:
         print(" TIMEOUT")
