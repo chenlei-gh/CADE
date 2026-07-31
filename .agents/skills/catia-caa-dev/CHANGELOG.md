@@ -10,6 +10,10 @@
 
 ## [未发布]
 
+### 🛠 工具 (2026-07-31)
+
+- **哈希桶只增不减的结构性修复**：`skills/utils.py` 的 `Logger`/`Cache` 按 workspace 路径 MD5 分桶（`logs/<hash>/`、`cache/<hash>/`），但只写不删——每个测试临时目录、每个已删除的旧 workspace 都留下永久桶（2026-07-31 手工清理出 662 个）。新增 `gc_stale_buckets()`：在 workspace-scoped `Logger`/`Cache` 初始化时对兄弟桶做保留期 GC，删除最新文件超过 30 天的桶（死 workspace 的桶永不再被触碰，自然老化；活跃桶每次构建都会刷新 mtime）。安全约束：仅匹配 8 位 hex 目录（`cache/` 根的索引/遥测文件不受影响）、每天最多扫描一次（`.gc_marker` 节流）、全程 try/except（GC 失败不会打断构建）。`tests/test_production_regressions.py` 新增 5 条断言覆盖：删旧桶/保留活桶/不碰非桶文件/24h 节流/异常不抛出。
+
 ### 🧭 检索架构 (2026-07-31)
 
 - **修复 CatalogIndex 未收录 148 个 Framework 导航文件**：`catalog/index.yaml` 里 `knowledge/frameworks/*.md` 长期只以一行文件计数（`| 149 | 自动扫描 |`）出现，从未被解析成可检索条目，导致 CatalogIndex 实际只覆盖 91/239（约 38%）的知识文件，SKILL.md 却指示 AI 优先查这些文件定位 Framework——查不到只能靠 AI 现场猜测。修复：`CatalogIndex` 新增 `_scan_frameworks()`，从每个文件统一的 frontmatter（`title`/`keywords`）自动生成 `category="framework"` 条目，无需在 `index.yaml` 手写 148 行。条目数 91 → 239。

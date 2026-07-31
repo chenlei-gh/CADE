@@ -7,10 +7,55 @@ Purpose: Common utilities for all skills
 import hashlib
 import json
 import os
+import re
+import shutil
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+# Workspace-scoped Logger/Cache buckets (logs/<hash>/, cache/<hash>/) are
+# append-only: every test run or new workspace creates a bucket that is never
+# reclaimed, so they accumulate forever (662 stale buckets were pruned by hand
+# on 2026-07-31). gc_stale_buckets() reclaims any bucket whose newest file is
+# older than _BUCKET_TTL_DAYS. Dead workspaces age out automatically; active
+# ones stay fresh because every build touches their bucket.
+_BUCKET_NAME = re.compile(r"^[0-9a-f]{8}$")
+_BUCKET_TTL_DAYS = 30
+_GC_INTERVAL_SEC = 86400  # scan at most once per day per bucket root
+
+
+def gc_stale_buckets(bucket_root: Path) -> int:
+    """Delete workspace buckets under bucket_root idle for > _BUCKET_TTL_DAYS.
+
+    Only 8-hex-char directories are candidates; regular files at the root
+    (indexes, telemetry) are never touched. Throttled to one scan per day via
+    a marker file. Best-effort: any failure returns 0 and never raises — GC
+    must not break a build.
+    """
+    try:
+        marker = bucket_root / ".gc_marker"
+        now = time.time()
+        if marker.exists() and now - marker.stat().st_mtime < _GC_INTERVAL_SEC:
+            return 0
+        marker.touch()
+
+        cutoff = now - _BUCKET_TTL_DAYS * 86400
+        removed = 0
+        for bucket in bucket_root.iterdir():
+            if not bucket.is_dir() or not _BUCKET_NAME.match(bucket.name):
+                continue
+            newest = max(
+                (f.stat().st_mtime for f in bucket.rglob("*") if f.is_file()),
+                default=bucket.stat().st_mtime,
+            )
+            if newest < cutoff:
+                shutil.rmtree(bucket, ignore_errors=True)
+                removed += 1
+        return removed
+    except Exception:
+        return 0
 
 
 def ensure_utf8_stdio() -> None:
@@ -47,6 +92,7 @@ class Logger:
         if workspace_root:
             ws_hash = hashlib.md5(str(workspace_root.resolve()).encode()).hexdigest()[:8]
             self.log_path = self.skill_root / "logs" / ws_hash / log_file
+            gc_stale_buckets(self.skill_root / "logs")
         else:
             self.log_path = self.skill_root / "logs" / log_file
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -109,6 +155,7 @@ class Cache:
         if workspace_root:
             ws_hash = hashlib.md5(str(workspace_root.resolve()).encode()).hexdigest()[:8]
             self.cache_path = self.skill_root / "cache" / ws_hash / cache_file
+            gc_stale_buckets(self.skill_root / "cache")
         else:
             self.cache_path = self.skill_root / "cache" / cache_file
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)

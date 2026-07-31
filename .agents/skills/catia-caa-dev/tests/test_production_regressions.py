@@ -23,7 +23,7 @@ from diagnostics import DiagnosticsEngine
 from generator import TemplateGenerator
 from parser import parse_mkmk_output
 from repair import RepairLoop, RepairState
-from utils import Cache
+from utils import Cache, gc_stale_buckets
 
 workspace = Path(tempfile.mkdtemp(prefix="cade_production_regressions_"))
 total = passed = 0
@@ -354,6 +354,31 @@ try:
     check("workbench names are unique", len(workbench_names) == len(set(workbench_names)), str(workbench_names))
 finally:
     shutil.rmtree(workspace, ignore_errors=True)
+
+# ── gc_stale_buckets: workspace bucket retention ─────────────────────────
+# Buckets accumulate forever otherwise (662 stale ones pruned on 2026-07-31).
+gc_root = Path(tempfile.mkdtemp(prefix="cade_gc_test_"))
+try:
+    stale = gc_root / "deadbeef"
+    stale.mkdir()
+    (stale / "build.log").write_text("old", encoding="utf-8")
+    past = (datetime.now() - timedelta(days=31)).timestamp()
+    os.utime(stale / "build.log", (past, past))
+    os.utime(stale, (past, past))
+    fresh = gc_root / "cafef00d"
+    fresh.mkdir()
+    (fresh / "build.log").write_text("new", encoding="utf-8")
+    (gc_root / "index.json").write_text("{}", encoding="utf-8")  # non-bucket file
+
+    removed = gc_stale_buckets(gc_root)
+    check("gc removes bucket idle > 30 days", removed == 1 and not stale.exists())
+    check("gc keeps fresh bucket", fresh.exists())
+    check("gc never touches non-bucket files", (gc_root / "index.json").exists())
+    check("gc throttles rescan within 24h", gc_stale_buckets(gc_root) == 0)
+    check("gc never raises on missing root",
+          gc_stale_buckets(gc_root / "nonexistent_xyz") == 0)
+finally:
+    shutil.rmtree(gc_root, ignore_errors=True)
 
 print(f"\nProduction regressions: {passed}/{total}")
 if failures:
