@@ -2,7 +2,7 @@
 """
 UseCaseIndex Acceptance Suite
 ==============================
-Three acceptance cases for the Official Example Presence Index:
+Four acceptance cases for the Official Example Presence Index:
 
   Case 1 — find by interface: CATIVisProperties must locate the
            verified official sample CAAMmrSetShowModeCmd.
@@ -10,6 +10,10 @@ Three acceptance cases for the Official Example Presence Index:
            UseCaseIndex (examples) with MethodIndex (owners).
   Case 3 — negative: a fabricated name must return empty
            ("No official example found"), never a guessed hit.
+  Case 4 — regression guard (2026-07-31): stem collisions (e.g. 9
+           different modules each shipping their own main.cpp) must
+           not silently drop files or cross-contaminate token lookups
+           between unrelated modules.
 
 Boundary under test: the index records PRESENCE only. Ownership comes
 from MethodIndex at query time; the builder never infers it.
@@ -61,6 +65,35 @@ fake_iface = r.find_usecases_for_interface("CATFakeInterface")
 fake_meth = r.find_usecases_for_method("SetShowNonexistent")
 ck("Case3: CATFakeInterface -> no official example", fake_iface == [])
 ck("Case3: fabricated method -> empty examples", fake_meth["examples"] == [])
+
+# ── Case 4: stem-collision regression guard (2026-07-31) ──────────
+# 1233 files on disk share only 1214 unique .cpp stems (9 modules each
+# ship their own main.cpp). The builder must key colliding stems as
+# "stem (module.m)" so no file is dropped and no module's tokens bleed
+# into another module's lookup results.
+main_keys = [k for k in uc.get("examples", {}) if k.startswith("main")]
+ck("Case4: colliding stems disambiguated (9 distinct main.cpp entries)",
+   len(main_keys) >= 9, f"{len(main_keys)} main.cpp keys: {main_keys}")
+
+disk_count = 0
+try:
+    from env import CAAEnvironment
+    _env = CAAEnvironment()
+    _env.load_config()
+    _catia = _env.config.get("CATIA_INSTALL", "")
+    if _catia:
+        _caadoc = Path(_catia) / "CAADoc"
+        if _caadoc.is_dir():
+            disk_count = len(list(_caadoc.glob("*.edu/*/src/**/*.cpp")))
+except Exception:
+    disk_count = 0
+
+if disk_count:
+    ck("Case4: no file dropped (examples count == files on disk)",
+       len(uc.get("examples", {})) == disk_count,
+       f"index={len(uc.get('examples', {}))} disk={disk_count}")
+else:
+    print("  [SKIP] Case4 disk-count check: CATIA_INSTALL not configured")
 
 print("-" * 60)
 print(f"  RESULT: {passed}/{total} passed")

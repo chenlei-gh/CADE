@@ -79,25 +79,49 @@ def cache_path():
 
 
 def build_index(caadoc_root: Path) -> dict:
-    """Scan all use-case .cpp under *.edu/*/src/ and build the index."""
+    """Scan all use-case .cpp under *.edu/*/src/ and build the index.
+
+    Key collision fix (2026-07-31): 1233 files on disk share only 1214
+    unique .cpp stems (e.g. 9 different modules each ship their own
+    main.cpp). Using the bare stem as the examples[] dict key silently
+    dropped 19 files, and worse, made by_interface/by_method/by_symbol
+    point a different module's tokens at whichever file happened to be
+    written last during the scan (verified: by_method["Release"] listed
+    "main", but examples["main"]["file"] resolved to a main.cpp that
+    never calls Release() — the token actually came from a different
+    main.cpp). Fix: only the files whose stem collides get a
+    disambiguated key "stem (module.m)"; the 1203 non-colliding files
+    keep their bare stem unchanged, so existing lookups by plain example
+    name (e.g. "CAAMmrSetShowModeCmd") are unaffected.
+    """
     t0 = time.time()
+
+    cpp_files = sorted(caadoc_root.glob("*.edu/*/src/**/*.cpp"))
+
+    stem_counts: dict = {}
+    for cpp in cpp_files:
+        stem_counts[cpp.stem] = stem_counts.get(cpp.stem, 0) + 1
+
     examples = {}
     by_interface = {}
     by_method = {}
     by_symbol = {}
 
-    cpp_files = sorted(caadoc_root.glob("*.edu/*/src/**/*.cpp"))
     for cpp in cpp_files:
-        name = cpp.stem
         tokens = _scan_cpp(cpp)
         rel = str(cpp.relative_to(caadoc_root)).replace("\\", "/")
-        examples[name] = {"file": rel, **tokens}
+        if stem_counts[cpp.stem] > 1:
+            module = next((part for part in cpp.parts if part.endswith(".m")), cpp.parent.name)
+            key = f"{cpp.stem} ({module})"
+        else:
+            key = cpp.stem
+        examples[key] = {"file": rel, **tokens}
         for iface in tokens["interfaces"]:
-            by_interface.setdefault(iface, []).append(name)
+            by_interface.setdefault(iface, []).append(key)
         for meth in tokens["methods"]:
-            by_method.setdefault(meth, []).append(name)
+            by_method.setdefault(meth, []).append(key)
         for sym in tokens["symbols"]:
-            by_symbol.setdefault(sym, []).append(name)
+            by_symbol.setdefault(sym, []).append(key)
 
     return {
         "meta": {
@@ -107,7 +131,7 @@ def build_index(caadoc_root: Path) -> dict:
             "method_token_count": len(by_method),
             "symbol_token_count": len(by_symbol),
             "build_seconds": round(time.time() - t0, 2),
-            "schema": 1,
+            "schema": 2,
         },
         "examples": examples,
         "by_interface": by_interface,
