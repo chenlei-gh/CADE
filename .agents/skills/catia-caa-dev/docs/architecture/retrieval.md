@@ -23,7 +23,7 @@ authoritative data source and a single lifecycle:
 | **ApiRegistry** | `capabilities/*.md` + `templates/**` + `knowledge/frameworks/*.md` + `knowledge/failure_patterns/*.md` | "Is this API name real?" | 342 APIs |
 | **HeaderMap** | B28 install `<FW>/PublicInterfaces/*.h` scan → `cache/header_map_<ver>.json` | "Does this class/header exist in CATIA?" | 5500 headers, 503 frameworks |
 | **MethodIndex** | `cache/caadoc_index.json` (pre-parsed SDK headers) → `cache/method_index.pickle` | "Does type X really have method M?" | 2655 types |
-| **UseCaseIndex** | CAADoc use-case `.cpp` scan → `cache/usecase_index.json` (builder: `tools/build_usecase_index.py`) | "Has CAA officially used X this way?" | 1214 examples |
+| **UseCaseIndex** | CAADoc use-case `.cpp` scan → `cache/usecase_index.json` (builder: `tools/build_usecase_index.py`) | "Has CAA officially used X this way?" | 1233 examples |
 
 **UseCaseIndex boundary**: it records *presence only* — which official
 sample `#include`s an interface, calls a method, or uses an enum. It never
@@ -31,6 +31,18 @@ infers method→interface ownership (join with `MethodIndex.owners_of()` at
 query time) and never marks anything "recommended" (that is Knowledge's
 job). A miss means "no official example found", NOT "the API does not
 exist" — existence is HeaderMap/MethodIndex's authority.
+
+**caadoc_index.json storage boundary (schema 2)**: the builder persists
+*facts only* — the 5 raw keys (`types`/`dico_entries`/`sdk_dic_entries`/
+`header_classes`/`header_enums`), with every `file` field stored as a
+`CATIA_INSTALL`-relative path (`meta.path_base` declares the root once).
+All 6+2 reverse-lookup maps (`*_by_name`, `implements_by_*`,
+`sdk_implements_by_*`) are *derived views* — rebuilt in memory by
+`ensure_views()` after a cache load, never written to disk. This took the
+artifact from 38MB to 16MB and keeps the file honest: disk holds what was
+scanned, memory holds what was computed. `meta.scan_headers` /
+`meta.source_version` let consumers degrade loudly instead of silently
+going blind.
 
 The snapshot numbers are illustrative, not contractual; they change as
 the knowledge base and CATIA versions grow. The sources are contractual.

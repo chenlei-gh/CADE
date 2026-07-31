@@ -148,7 +148,23 @@ _METHOD_RE = re.compile(r'^\s*o\s+(\S.*)$', re.MULTILINE)
 _TAG_RE = re.compile(r'<[^>]*>')
 
 
-def parse_refman_file(path: Path, refman_root: Path):
+def _rel(path: Path, root: Path) -> str:
+    """Store path relative to `root` (CATIA_INSTALL) using forward slashes.
+
+    Falls back to the absolute path if `path` is not under `root` (shouldn't
+    happen for any of the four sources, but keeps the file self-describing
+    rather than crashing on an unexpected layout).
+    """
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return str(path)
+
+
+_OUTPUT_SCHEMA_VERSION = 2
+
+
+def parse_refman_file(path: Path, refman_root: Path, catia_root: Path = None):
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
     except Exception:
@@ -189,12 +205,12 @@ def parse_refman_file(path: Path, refman_root: Path):
         "name": name,
         "kind": kind,
         "framework": framework,
-        "file": str(path),
+        "file": _rel(path, catia_root) if catia_root else str(path),
         "methods": unique_methods,
     }
 
 
-def scan_refman(caadoc_root: Path):
+def scan_refman(caadoc_root: Path, catia_root: Path = None):
     refman = caadoc_root / "Doc" / "generated" / "refman"
     if not refman.is_dir():
         print(f"WARNING: refman not found at {refman}", file=sys.stderr)
@@ -203,7 +219,7 @@ def scan_refman(caadoc_root: Path):
     for hf in refman.glob("**/*.htm"):
         if hf.stem.lower() == "visidx.txt":
             continue  # global index page, not a type/framework doc
-        rec = parse_refman_file(hf, refman)
+        rec = parse_refman_file(hf, refman, catia_root)
         if rec:
             records.append(rec)
     return records
@@ -212,7 +228,7 @@ def scan_refman(caadoc_root: Path):
 _DICO_LINE_RE = re.compile(r'^\s*(\S+)\s+(\S+)\s+(\S+)\s*$')
 
 
-def scan_dico(caadoc_root: Path):
+def scan_dico(caadoc_root: Path, catia_root: Path = None):
     """Parse component -> interface -> library dictionary files.
 
     Lines look like:
@@ -238,7 +254,7 @@ def scan_dico(caadoc_root: Path):
                 "component": component,
                 "interface": interface,
                 "library": library,
-                "file": str(df),
+                "file": _rel(df, catia_root) if catia_root else str(df),
             })
     return entries
 
@@ -297,7 +313,7 @@ def scan_sdk_dictionaries(catia_root: Path):
                 "component": component,
                 "interface": interface,
                 "library": library,
-                "file": str(df),
+                "file": _rel(df, catia_root),
             })
     return entries
 
@@ -342,7 +358,7 @@ def _find_matching_brace(text: str, open_brace_pos: int) -> int:
     return i
 
 
-def parse_header_file(path: Path, framework: str):
+def parse_header_file(path: Path, framework: str, catia_root: Path = None):
     """Extract interface classes (name + pure-virtual method signatures) and
     enums (name + value list, keeping any trailing '// Comment' which is
     often the only place an enum value's real meaning is documented) from a
@@ -351,6 +367,8 @@ def parse_header_file(path: Path, framework: str):
         text = path.read_text(encoding="utf-8", errors="ignore")
     except Exception:
         return [], []
+
+    rel_file = _rel(path, catia_root) if catia_root else str(path)
 
     classes = []
     for m in _HDR_CLASS_RE.finditer(text):
@@ -365,7 +383,7 @@ def parse_header_file(path: Path, framework: str):
         classes.append({
             "name": name,
             "framework": framework,
-            "file": str(path),
+            "file": rel_file,
             "methods": methods,
         })
 
@@ -389,7 +407,7 @@ def parse_header_file(path: Path, framework: str):
             enums.append({
                 "name": enum_name,
                 "framework": framework,
-                "file": str(path),
+                "file": rel_file,
                 "values": values,
             })
 
@@ -403,7 +421,7 @@ def scan_sdk_headers(catia_root: Path):
     header_enums = []
     for hf in catia_root.glob("*/PublicInterfaces/*.h"):
         framework = hf.parent.parent.name
-        classes, enums = parse_header_file(hf, framework)
+        classes, enums = parse_header_file(hf, framework, catia_root)
         header_classes.extend(classes)
         header_enums.extend(enums)
     return header_classes, header_enums
@@ -448,9 +466,20 @@ def build_header_method_index(header_classes):
 
 
 def build_index(caadoc_root: Path, catia_root=None, scan_headers: bool = True):
+    """Scan the four sources and return the RAW FACTS ONLY.
+
+    Schema 2 (2026-07-31): derived reverse maps (types_by_name,
+    headers_by_name, enums_by_name, methods_by_name,
+    header_methods_by_name, implements_by_*, sdk_implements_by_*) are no
+    longer persisted -- they are O(n) rebuilds from the primary lists and
+    made up ~17MB of the old 38MB file. They are rebuilt in memory at load
+    time by ensure_views(). Paths are stored relative to CATIA_INSTALL
+    (forward slashes); meta.path_base declares the base so loaders don't
+    have to guess.
+    """
     t0 = time.time()
-    refman_records = scan_refman(caadoc_root)
-    dico_entries = scan_dico(caadoc_root)
+    refman_records = scan_refman(caadoc_root, catia_root)
+    dico_entries = scan_dico(caadoc_root, catia_root)
     header_classes, header_enums = ([], [])
     sdk_dic_entries = []
     if catia_root is not None:
@@ -459,66 +488,103 @@ def build_index(caadoc_root: Path, catia_root=None, scan_headers: bool = True):
         sdk_dic_entries = scan_sdk_dictionaries(catia_root)
     elapsed = time.time() - t0
 
+    return {
+        "meta": {
+            "schema_version": _OUTPUT_SCHEMA_VERSION,
+            "path_base": "CATIA_INSTALL",
+            "source_version": _detect_source_version(catia_root),
+            "scan_headers": scan_headers,
+            "caadoc_root": str(caadoc_root),
+            "catia_root": str(catia_root) if catia_root else None,
+            "refman_type_count": len(refman_records),
+            "dico_entry_count": len(dico_entries),
+            "sdk_dic_entry_count": len(sdk_dic_entries),
+            "header_class_count": len(header_classes),
+            "header_enum_count": len(header_enums),
+            "build_seconds": round(elapsed, 2),
+        },
+        "types": refman_records,
+        "dico_entries": dico_entries,
+        "sdk_dic_entries": sdk_dic_entries,
+        "header_classes": header_classes,
+        "header_enums": header_enums,
+    }
+
+
+def _detect_source_version(catia_root) -> str:
+    """Best-effort CATIA release tag (e.g. 'B28') from the install dir name.
+    Used by loaders to detect 'index built for a different CATIA release
+    than the one currently configured' -- a stale-index condition that
+    previously failed silently."""
+    if catia_root is None:
+        return ""
+    name = Path(catia_root).name
+    return name if re.match(r"^B\d+$", name) else ""
+
+
+_DERIVED_KEYS = (
+    "types_by_name", "headers_by_name", "enums_by_name",
+    "methods_by_name", "header_methods_by_name",
+    "implements_by_interface", "implements_by_component",
+    "sdk_implements_by_interface", "sdk_implements_by_component",
+)
+
+
+def ensure_views(index: dict) -> dict:
+    """Rebuild the in-memory derived reverse maps if absent (idempotent).
+
+    Called once after loading the JSON so query()/search()/check_file() can
+    keep using the same index[key] access pattern as before the schema-2
+    split -- the only difference is the maps are now computed (~30ms for
+    73k .dic entries) instead of deserialized (~17MB of the old file).
+    """
+    if "types_by_name" in index:
+        return index  # already materialized (or an old schema-1 cache file)
+
+    types = index.get("types", [])
+    header_classes = index.get("header_classes", [])
+    header_enums = index.get("header_enums", [])
+    dico_entries = index.get("dico_entries", [])
+    sdk_dic_entries = index.get("sdk_dic_entries", [])
+
     by_name = {}
-    for rec in refman_records:
+    for rec in types:
         by_name.setdefault(rec["name"], []).append(rec)
+    index["types_by_name"] = by_name
+
+    headers_by_name = {}
+    for rec in header_classes:
+        headers_by_name.setdefault(rec["name"], []).append(rec)
+    index["headers_by_name"] = headers_by_name
+
+    enums_by_name = {}
+    for rec in header_enums:
+        enums_by_name.setdefault(rec["name"], []).append(rec)
+    index["enums_by_name"] = enums_by_name
+
+    index["methods_by_name"] = build_method_index(types)
+    index["header_methods_by_name"] = build_header_method_index(header_classes)
 
     implements_by_interface = {}
     implements_by_component = {}
     for e in dico_entries:
         implements_by_interface.setdefault(e["interface"], []).append(e["component"])
         implements_by_component.setdefault(e["component"], []).append(e["interface"])
+    index["implements_by_interface"] = implements_by_interface
+    index["implements_by_component"] = implements_by_component
 
-    # The shipped-product dictionary is a separate, much larger source; keep
-    # it in its own maps (rather than merging into implements_by_*) so query()
-    # can label which source a hit came from -- CAADoc .dico entries are a
-    # curated subset used in official tutorials, while the shipped .dic
-    # entries are the ground truth for what's actually compiled and
-    # delivered.
+    # Kept in their own maps (rather than merged into implements_by_*) so
+    # query() can label which source a hit came from: CAADoc .dico entries
+    # are a curated tutorial subset, shipped .dic entries are ground truth.
     sdk_implements_by_interface = {}
     sdk_implements_by_component = {}
     for e in sdk_dic_entries:
         sdk_implements_by_interface.setdefault(e["interface"], []).append(e["component"])
         sdk_implements_by_component.setdefault(e["component"], []).append(e["interface"])
+    index["sdk_implements_by_interface"] = sdk_implements_by_interface
+    index["sdk_implements_by_component"] = sdk_implements_by_component
 
-    methods_by_name = build_method_index(refman_records)
-    header_methods_by_name = build_header_method_index(header_classes)
-
-    headers_by_name = {}
-    for rec in header_classes:
-        headers_by_name.setdefault(rec["name"], []).append(rec)
-
-    enums_by_name = {}
-    for rec in header_enums:
-        enums_by_name.setdefault(rec["name"], []).append(rec)
-
-    return {
-        "meta": {
-            "caadoc_root": str(caadoc_root),
-            "catia_root": str(catia_root) if catia_root else None,
-            "refman_type_count": len(refman_records),
-            "dico_entry_count": len(dico_entries),
-            "sdk_dic_entry_count": len(sdk_dic_entries),
-            "method_name_count": len(methods_by_name),
-            "header_class_count": len(header_classes),
-            "header_enum_count": len(header_enums),
-            "build_seconds": round(elapsed, 2),
-        },
-        "types": refman_records,
-        "types_by_name": by_name,
-        "dico_entries": dico_entries,
-        "implements_by_interface": implements_by_interface,
-        "implements_by_component": implements_by_component,
-        "sdk_dic_entries": sdk_dic_entries,
-        "sdk_implements_by_interface": sdk_implements_by_interface,
-        "sdk_implements_by_component": sdk_implements_by_component,
-        "methods_by_name": methods_by_name,
-        "header_methods_by_name": header_methods_by_name,
-        "header_classes": header_classes,
-        "headers_by_name": headers_by_name,
-        "header_enums": header_enums,
-        "enums_by_name": enums_by_name,
-    }
+    return index
 
 
 def load_cached_index(path: Path):
@@ -536,6 +602,16 @@ def _method_base_names(methods):
     return {m.split("(", 1)[0].strip() for m in methods}
 
 
+def _abs(index: dict, rel: str) -> str:
+    """Re-absolutize a stored CATIA_INSTALL-relative path for display.
+    Old schema-1 caches stored absolute paths; those pass through unchanged
+    because they are not relative (they contain a drive letter / leading /)."""
+    if not rel or ":" in rel or rel.startswith("/"):
+        return rel
+    base = (index.get("meta") or {}).get("catia_root")
+    return str(Path(base) / rel) if base else rel
+
+
 def _print_header_cross_check(index: dict, name: str, refman_methods):
     """Compare refman-derived methods against the real SDK header (if any
     class with this name was found there) and flag any mismatch. This is
@@ -549,7 +625,7 @@ def _print_header_cross_check(index: dict, name: str, refman_methods):
 
     for hrec in header_recs:
         header_methods = hrec["methods"]
-        print(f"\nSDK header {hrec['file']}:")
+        print(f"\nSDK header {_abs(index, hrec['file'])}:")
         if header_methods:
             print(f"  methods ({len(header_methods)}):")
             for m in header_methods:
@@ -789,7 +865,7 @@ def query(index: dict, name: str, quiet: bool = False):
     if matches:
         for rec in matches:
             print(f"\n=== {rec['kind']} {rec['name']}  [{rec['framework']}] ===")
-            print(f"file: {rec['file']}")
+            print(f"file: {_abs(index, rec['file'])}")
             if rec["methods"]:
                 print(f"methods ({len(rec['methods'])}):")
                 for m in rec["methods"]:
@@ -846,7 +922,7 @@ def query(index: dict, name: str, quiet: bool = False):
     enum_hits = index.get("enums_by_name", {}).get(name)
     if enum_hits:
         for erec in enum_hits:
-            print(f"\nSDK header enum {erec['name']} [{erec['framework']}] ({erec['file']}):")
+            print(f"\nSDK header enum {erec['name']} [{erec['framework']}] ({_abs(index, erec['file'])}):")
             for v in erec["values"]:
                 comment = f"  // {v['comment']}" if v["comment"] else ""
                 print(f"  {v['value']}{comment}")
@@ -995,7 +1071,6 @@ if __name__ == "__main__":
                 f"Loaded cached index from {cache_file} "
                 f"({meta['refman_type_count']} types, {meta['dico_entry_count']} dico entries, "
                 f"{meta.get('sdk_dic_entry_count', 0)} shipped .dic entries, "
-                f"{meta.get('method_name_count', '?')} unique method names, "
                 f"{meta.get('header_class_count', 0)} SDK header classes, "
                 f"{meta.get('header_enum_count', 0)} SDK header enums)"
             )
@@ -1027,6 +1102,10 @@ if __name__ == "__main__":
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(index, f, ensure_ascii=False)
         print(f"Wrote index to {cache_file} ({cache_file.stat().st_size // 1024} KB)")
+
+    # Views are needed only by the interactive consumers below; built AFTER
+    # --write so the derived maps never end up back in the persisted file.
+    ensure_views(index)
 
     for name in args.query:
         query(index, name, quiet=args.quiet)

@@ -73,6 +73,7 @@ class MethodIndex:
         self._catia_install = ""
         self._hm = None                           # injected HeaderMap (optional)
         self._loaded = False
+        self._pending_meta: Dict = {}             # meta from last JSON parse
 
     # ─── Loading ─────────────────────────────────────────────────
 
@@ -84,8 +85,9 @@ class MethodIndex:
         skill_root = Path(skill_root)
 
         # 1. Method tables from the caadoc index cache (SDK header source).
-        #    The full JSON is ~38MB; the extracted map pickles to ~MB and
-        #    loads in a few ms, so prefer the pickle when it is fresh.
+        #    The full JSON is ~16MB (schema 2: raw facts only, derived maps
+        #    removed); the extracted map pickles to ~0.5MB and loads in a few
+        #    ms, so prefer the pickle when it is fresh.
         cache = skill_root / "cache" / "caadoc_index.json"
         try:
             json_mtime = cache.stat().st_mtime
@@ -98,6 +100,7 @@ class MethodIndex:
             CACHE_STATS["disk_miss"] += 1
             try:
                 data = json.loads(cache.read_text(encoding="utf-8"))
+                mi._pending_meta = data.get("meta") or {}
                 for rec in data.get("header_classes", []):
                     names = {m.split("(", 1)[0].strip()
                              for m in rec.get("methods", [])}
@@ -116,8 +119,35 @@ class MethodIndex:
             env = CAAEnvironment()
             env.load_config()
             mi._catia_install = env.config.get("CATIA_INSTALL", "")
+            cur_ver = env.config.get("CATIA_VERSION", "")
         except Exception:
-            pass
+            cur_ver = ""
+
+        # 3. Schema-2 guard rails (only evaluated when the JSON was actually
+        #    parsed this run -- a fresh pickle inherits the same checks from
+        #    the run that built it).
+        meta = mi._pending_meta
+        if meta:
+            # An index built with --no-headers has empty header_classes,
+            # which would silently blind the method verifier (every method
+            # check would fall through to 'unknown'). Warn loudly instead
+            # of passing silently.
+            if meta.get("scan_headers") is False:
+                logger.warning(
+                    "caadoc_index.json was built with --no-headers: method "
+                    "verification is degraded (no SDK header method tables). "
+                    "Rebuild without --no-headers to restore full verification."
+                )
+            # Version skew: index describes a different CATIA release than
+            # the one currently configured -- ground truth has moved.
+            idx_ver = meta.get("source_version") or ""
+            if idx_ver and cur_ver and idx_ver != cur_ver:
+                logger.warning(
+                    "caadoc_index.json was built for %s but CATIA_VERSION is "
+                    "now %s -- rerun tools/build_caadoc_index.py --write to "
+                    "re-index the current release.",
+                    idx_ver, cur_ver,
+                )
 
         mi._loaded = True
         return mi
