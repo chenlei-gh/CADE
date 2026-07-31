@@ -362,6 +362,36 @@ CATCmdContainer* BadAddin::CreateToolbars() {
 check("SetAccessChild overwrite flagged",
       any(f.rule == "ui_toolbar_access_chain" for f in f3))
 
+# Rule 6: SetHideStatus on mechanical feature → runtime crash
+# (fp_sethidestatus_crash.md — hides a datum plane, crashes CATIA at
+# runtime in both assembly-loop and standalone-part contexts, R28)
+f6 = linter.lint_source("BadVisuCmd.cpp", '''
+CATStatusChangeRC BadVisuCmd::Activate(CATCommand *c, CATNotification *n) {
+    CATIMechanicalVisu_var spVisu = spFeature;
+    spVisu->SetHideStatus(1);
+    return CATStatusChangeRCCompleted;
+}
+''')
+check("SetHideStatus call flagged (fp_sethidestatus_crash)",
+      any(f.rule == "visu_sethidestatus" for f in f6))
+
+# Official replacement path (CATIVisProperties::SetPropertiesAtt +
+# CATModifyVisProperties notification, per CAAMmrSetShowModeCmd) must
+# NOT be flagged — the rule targets the crashing call, not the feature.
+f6_ok = linter.lint_source("GoodVisuCmd.cpp", '''
+CATStatusChangeRC GoodVisuCmd::Activate(CATCommand *c, CATNotification *n) {
+    CATIVisProperties_var spVisProps = spFeature;
+    CATVisPropertiesValues visValues;
+    spVisProps->GetPropertiesAtt(visValues, CATVPShow, CATVPGlobalType);
+    visValues.SetShowAttribut(CATNoShowAttr);
+    spVisProps->SetPropertiesAtt(visValues, CATVPShow, CATVPGlobalType);
+    CATModifyVisProperties notif(spFeature, NULL, CATVPGlobalType, CATVPShow, visValues);
+    return CATStatusChangeRCCompleted;
+}
+''')
+check("SetPropertiesAtt official path not flagged",
+      not any(f.rule == "visu_sethidestatus" for f in f6_ok))
+
 # Clean code → no findings
 clean = f1 + f2 + f3  # sanity: findings exist on bad code
 f_clean = linter.lint_source("GoodAddin.cpp", '''
