@@ -798,12 +798,20 @@ def create_command(
                     icons_dir = fw.path / "CNext" / "resources" / "graphic" / "icons" / "normal"
                     ico_name = f"I_{icon_name.replace(' ', '_')}.bmp"
                     target = icons_dir / ico_name
-                    # Freshness guarantee: overwrite any stale/foreign icon
-                    # with the current CADE render (old CADE versions or
-                    # other tools may have left an icon with the same name).
-                    new_bytes = ico_path.read_bytes()
-                    if not target.exists() or target.read_bytes() != new_bytes:
-                        cs.add_create_binary(target, new_bytes)
+                    # Custom-icon override: a project-drawn bmp placed under
+                    # icons/custom/ (e.g. a 24x24 panel icon) shadows the
+                    # CADE-rendered default — never overwritten. See
+                    # knowledge/failure_patterns/fp_runtime_resource_not_synced.md.
+                    custom = icons_dir.parent / "custom" / ico_name
+                    if custom.exists():
+                        pass
+                    else:
+                        # Freshness guarantee: overwrite any stale/foreign icon
+                        # with the current CADE render (old CADE versions or
+                        # other tools may have left an icon with the same name).
+                        new_bytes = ico_path.read_bytes()
+                        if not target.exists() or target.read_bytes() != new_bytes:
+                            cs.add_create_binary(target, new_bytes)
             except Exception:
                 pass  # icon failure never blocks generation
 

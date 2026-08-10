@@ -36,6 +36,11 @@ CATIA 运行时不直接读 Framework 工作区下的 `CNext/`，而是读 **Run
 | `*.edu/CNext/resources/graphic/icons/` | `win_b64/resources/graphic/icons/` | 无图标 |
 | `*.edu/CNext/resources/msgcatalog/` | `win_b64/resources/msgcatalog/` | NLS 文本缺失/过期 |
 
+**图标分区约定（2026-08 起）**：`graphic/icons/` 下分两个语义区，同步逻辑（`build.py:sync_runtime_view`）按内容哈希递归同步两者，但生成逻辑区别对待——
+
+- `icons/normal/`：**CADE 自管**。命令图标由 `icon_provider` 生成（22×22 8bpp），每次 `create_command` 用当前渲染强制刷新，手改会被覆盖。
+- `icons/custom/`：**项目自管**。放手工绘制的定制图标（任意尺寸，如面板按钮的 24×24），CADE 永不自动生成、永不覆盖（`actions.py` 在生成命令图标前检查同名 custom bmp，存在即跳过）。`I_BomExport.bmp`（24×24 表格+导出箭头，`CAABOMTool.edu/Tools/gen_bomexport_icon.py` 生成）即属此类。
+
 **编译（mkmk）只产出 DLL，从不拷贝这些资源。** 资源同步是一个独立动作，容易被漏掉。
 
 注意（2026-07-29 核实，避免误记根因）：

@@ -223,7 +223,10 @@ def sync_runtime_view(workspace_path: Path, arch: str = "win_b64") -> dict:
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(f, dst)
                     synced.append(f"msgcatalog/{rel.as_posix()}")
-        # Icons
+        # Icons. CADE owns icons/normal/ and refreshes those files from
+        # icon_provider on every command generation. Project-drawn custom
+        # icons (any size, e.g. 24x24 panel buttons) live in icons/custom/ —
+        # CADE never auto-generates or overwrites there, only syncs them.
         icon_src = cnext / "resources" / "graphic" / "icons"
         if icon_src.exists():
             icon_dst = rv / "resources" / "graphic" / "icons"
@@ -232,7 +235,10 @@ def sync_runtime_view(workspace_path: Path, arch: str = "win_b64") -> dict:
                 rel = f.relative_to(icon_src)
                 dst = icon_dst / rel
                 dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(f, dst)
+                # Content compare, not mtime: git checkout restores old
+                # mtimes, and a stale custom icon must still be refreshed.
+                if not dst.exists() or dst.read_bytes() != f.read_bytes():
+                    shutil.copy2(f, dst)
                 synced.append(f"icons/{rel.as_posix()}")
     return {"synced": synced, "errors": errors, "ok": len(errors) == 0}
 
