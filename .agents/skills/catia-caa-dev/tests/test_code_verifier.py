@@ -62,6 +62,22 @@ ck("no errors for valid file",
    f"errors={sum(1 for i in issues if i.severity=='error')}")
 
 # ═══════════════════════════════════════════════════════════════
+# [3b] verify_file — CATCreateClassArg variant must satisfy the
+#      registration-macro check. Regression: real-world false BLOCK
+#      on CAABOMToolCmd.cpp (2026-08), which registers a short-lived
+#      toggle command taking a void* constructor arg — see
+#      knowledge/failure_patterns/fp_statecommand_check_header.md.
+# ═══════════════════════════════════════════════════════════════
+print("\n[3b] verify_file — CATCreateClassArg variant accepted")
+issues = v.verify_file("src/ArgCmd.cpp",
+    '#include "ArgCmd.h"\n\n'
+    'ArgCmd::ArgCmd(void *arg) {}\n'
+    'CATCreateClassArg(ArgCmd, void *);\n')
+ck("no missing-macro error for CATCreateClassArg",
+   not any("registration macro" in i.message for i in issues),
+   f"errors={sum(1 for i in issues if i.severity=='error')}")
+
+# ═══════════════════════════════════════════════════════════════
 # [4] verify_file — .h missing CATDeclareClass
 # ═══════════════════════════════════════════════════════════════
 print("\n[4] verify_file — .h missing macro")

@@ -143,6 +143,7 @@ CAA_INCLUDES = {
 # CAA macros — .cpp files need one of these for component registration
 REGISTRATION_MACROS = [
     "CATCreateClass",       # Commands, Dialogs (external objects)
+    "CATCreateClassArg",    # Variant of CATCreateClass with extra constructor arg
     "CATImplementClass",    # DataExtension, Implementation classes
     "CATImplementBOA",      # BOA implementation
     "CATImplementTIE",      # TIE interface implementation
