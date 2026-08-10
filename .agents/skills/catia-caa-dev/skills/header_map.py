@@ -28,6 +28,7 @@ Python API:
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -149,6 +150,7 @@ class HeaderMap:
 
         if not hm._loaded and catia_install:
             hm._build(catia_install)
+            _warn_knowledge_release_gap(skill_root, catia_version)
             # Save cache
             try:
                 cache_file.write_text(json.dumps({
@@ -219,6 +221,67 @@ class HeaderMap:
                     stem = hdr.stem
                     if stem not in self._map:
                         self._map[stem] = (mod_names[0] if mod_names else fw_name, fw_name)
+
+
+# ─── Knowledge-base release coverage check ─────────────────────────
+
+_KB_RELEASE_RE = re.compile(r"^release:\s*\[([^\]]*)\]", re.M)
+
+def _normalize_release(tok: str) -> Optional[str]:
+    """Normalize a release token to a bare number string.
+
+    CATIA_VERSION uses B-style ('B28'), knowledge frontmatter uses R-style
+    ('R19', 'R28') — they denote the same releases, so both reduce to '28'.
+    Returns None for unrecognized tokens (never raises).
+    """
+    tok = tok.strip().upper()
+    for prefix in ("V5-6R", "V5R", "R", "B"):
+        if tok.startswith(prefix):
+            tok = tok[len(prefix):]
+            break
+    return tok if tok.isdigit() else None
+
+def _warn_knowledge_release_gap(skill_root: Path, catia_version: str) -> None:
+    """After a header-map rebuild, warn if the knowledge base predates the
+    detected CATIA release. Verifier falls back to knowledge whitelists when
+    a header is absent from the map; if the whitelist predates the install,
+    post-release APIs risk being flagged as fabricated.
+
+    Fail-open by design: any error is swallowed and this never blocks a build.
+    """
+    try:
+        target = _normalize_release(catia_version)
+        if not target:
+            return
+        kbase = Path(skill_root) / "knowledge"
+        if not kbase.is_dir():
+            return
+        covered = set()
+        scanned = 0
+        for md in kbase.rglob("*.md"):
+            scanned += 1
+            try:
+                head = md.read_text(encoding="utf-8", errors="replace")[:2048]
+            except OSError:
+                continue
+            m = _KB_RELEASE_RE.search(head)
+            if not m:
+                continue
+            for tok in m.group(1).split(","):
+                rel = _normalize_release(tok)
+                if rel:
+                    covered.add(rel)
+        if covered and target not in covered:
+            print(
+                f"WARN: knowledge base predates CATIA {catia_version} — "
+                f"{scanned} knowledge files cover release(s) "
+                f"{', '.join('R' + c for c in sorted(covered, key=int))} only; "
+                f"post-R{target} APIs may be flagged as fabricated. "
+                f"Update release: frontmatter in knowledge/**/*.md.",
+                file=sys.stderr,
+            )
+    except Exception:
+        pass  # never let a consistency check break the build
 
 
 # ─── CLI ───────────────────────────────────────────────────────────

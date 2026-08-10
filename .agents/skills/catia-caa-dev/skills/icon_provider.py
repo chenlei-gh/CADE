@@ -1,7 +1,7 @@
 """
 CADE Icon Provider v3.6
 =======================
-127 geometric patterns, 4x supersampling, true multi-color RGBA rendering.
+119 geometric patterns, 4x supersampling, true multi-color RGBA rendering.
 
 Design: draw at 4x on RGBA with explicit colors, LANCZOS scale down,
 quantize to 8-bit BMP. Each pattern can use BODY, EDGE, DIM, ACCENT colors.
@@ -23,7 +23,9 @@ from typing import Dict, List, Optional, Tuple
 from PIL import Image, ImageDraw
 
 CACHE_DIR = Path.home() / ".cade" / "cache" / "icons"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# NOTE: CACHE_DIR is NOT created at import time — mkdir is deferred to the
+# first actual icon write in get_icon(), so importing this module is safe in
+# read-only environments (CI runners, test sandboxes).
 
 # ─── Official CATIA icon style (sampled from B28 win_b64 resources) ───
 CATIA_BG = (192, 192, 192)        # dominant official background gray
@@ -209,7 +211,9 @@ def get_icon(icon_name: str, style: str = "geo") -> Optional[Path]:
     cached = CACHE_DIR / f"{key}.bmp"
     if cached.exists(): return cached
     path = _render_icon(base, badge)
-    if path: shutil.copy(path, cached)
+    if path:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.copy(path, cached)
     return path
 
 def copy_icons_to_runtime(workspace_path: Path):
@@ -322,7 +326,7 @@ def _render_icon(icon_name: str, badge: str = None) -> Path:
 
 
 def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
-    """107 patterns at 4x on RGBA. BODY/EDGE/DIM/ACCENT = RGBA tuples."""
+    """119 patterns at 4x on RGBA. BODY/EDGE/DIM/ACCENT = RGBA tuples."""
     W,H=22*S,22*S; c=W//2; B,E,D,AC=BODY,EDGE,DIM,ACCENT
     BG=(*CATIA_BG,255)  # cutout color: shows the gray background through
 
