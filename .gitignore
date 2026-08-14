@@ -74,6 +74,9 @@ new_file.txt
 .env
 config.local.yaml
 
+# Local maintainer tooling (machine-specific paths)
+/sync_agents.sh
+
 # Build artifacts (if any)
 *.dll
 *.so
