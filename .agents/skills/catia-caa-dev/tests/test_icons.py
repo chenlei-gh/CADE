@@ -81,21 +81,20 @@ for name in all_patterns:
     w = abs(int.from_bytes(data[18:22], "little", signed=True))
     h = abs(int.from_bytes(data[22:26], "little", signed=True))
     bpp = int.from_bytes(data[28:30], "little")
-    if w != 22 or h != 22 or bpp != 8:
+    if w != 22 or h != 22 or bpp != 24:
         render_fail += 1
         print(f"  [FAIL] {name}: bad format {w}x{h} {bpp}bpp")
         continue
 
     # Must have visible pixels (pixels differing from CATIA gray background)
-    px = data[1078:]  # skip 54B header + 1024B palette
-    pal = data[54:54+1024]
-    bg_idx = None
-    for i in range(256):
-        r, g, b = pal[i*4+2], pal[i*4+1], pal[i*4]
-        if abs(r-192) < 24 and abs(g-192) < 24 and abs(b-192) < 24:
-            bg_idx = i
-            break
-    non_zero = sum(1 for b in px if b != bg_idx)
+    # 24-bit BMP: 54-byte header, no palette, 3 bytes/pixel BGR
+    px = data[54:]  # 24-bit: no palette to skip
+    bg_rgb = (192, 192, 192)
+    non_zero = 0
+    for i in range(0, len(px) - 2, 3):
+        b, g, r = px[i], px[i+1], px[i+2]
+        if abs(r-bg_rgb[0]) >= 24 or abs(g-bg_rgb[1]) >= 24 or abs(b-bg_rgb[2]) >= 24:
+            non_zero += 1
     if non_zero == 0:
         render_fail += 1
         print(f"  [FAIL] {name}: 0 visible pixels")
@@ -107,10 +106,10 @@ for name in all_patterns:
         dup_count += 1
     seen_hashes.add(px_hash)
 
-    # Palette check: must have non-trivial colors (not just grayscale 0-255)
-    unique_colors = len({(pal[i*4], pal[i*4+1], pal[i*4+2])
-                         for i in range(256)
-                         if sum(pal[i*4:i*4+3]) > 5})
+    # Color check: must have non-trivial unique colors (24-bit BGR)
+    unique_colors = len({(px[i+2], px[i+1], px[i])
+                         for i in range(0, len(px) - 2, 3)
+                         if (px[i+2], px[i+1], px[i]) != bg_rgb})
 
     render_ok += 1
 
@@ -330,14 +329,14 @@ sem = analyze_command("FooCmd", hint="hole")
 check("hint confidence EXACT", sem.confidence == "EXACT"
       and sem.obj == "hole", f"{sem.obj}/{sem.confidence}")
 
-# composite render: badge must change pixels, format stays 22x22 8bpp
+# composite render: badge must change pixels, format stays 22x22 24bpp
 # NOTE: _render_icon reuses one tmp path per pattern — read bytes immediately
 da = _render_icon("drill").read_bytes()
 db = _render_icon("drill", "plus").read_bytes()
 check("badge changes pixels", da != db)
-check("composite format 22x22 8bpp",
+check("composite format 22x22 24bpp",
       abs(int.from_bytes(db[18:22], "little", signed=True)) == 22
-      and int.from_bytes(db[28:30], "little") == 8)
+      and int.from_bytes(db[28:30], "little") == 24)
 
 # halftone checker: large body fill gains a lighter shade
 im22 = Image.new("RGB", (22, 22), (192, 192, 192))
@@ -398,11 +397,11 @@ try:
         new_bytes = stale.read_bytes()
         check("stale icon overwritten", new_bytes != b"STALE-GARBAGE-ICON"
               and len(new_bytes) > 100, f"{len(new_bytes)} bytes")
-        # Must be a valid 22x22 8-bit BMP
-        check("fresh icon is 22x22 8bpp BMP",
+        # Must be a valid 22x22 24-bit BMP
+        check("fresh icon is 22x22 24bpp BMP",
               new_bytes[:2] == b"BM"
               and abs(int.from_bytes(new_bytes[18:22], "little", signed=True)) == 22
-              and int.from_bytes(new_bytes[28:30], "little") == 8)
+              and int.from_bytes(new_bytes[28:30], "little") == 24)
 
         # Runtime sync must also overwrite a stale runtime icon
         rv_icon = tmp / "win_b64" / "resources" / "graphic" / "icons" / "normal" / "I_freshcmd.bmp"
@@ -469,10 +468,11 @@ import io as _io
 ncolors = len(set(_Img.open(_io.BytesIO(d48)).convert("RGB").getdata()))
 check("HD 24-bit smooth gradients", ncolors > 256, f"{ncolors} unique colors")
 
-# default stays 22x22 8-bit (CATIA runtime compatibility)
+# default stays 22x22 but is now 24-bit: the S=8 supersample's AA
+# gradations survive (8-bit palette quantization visibly stepped edges)
 d22 = _render_icon("fillet").read_bytes()
 w, h, bpp = _bmp_info(d22)
-check("default stays 22x22 8-bit", (w, h, bpp) == (22, 22, 8), f"{w}x{h} {bpp}bpp")
+check("default is 22x22 24-bit", (w, h, bpp) == (22, 22, 24), f"{w}x{h} {bpp}bpp")
 
 # get_icon caches per size (first call renders, second hits cache;
 # both return the cached path)

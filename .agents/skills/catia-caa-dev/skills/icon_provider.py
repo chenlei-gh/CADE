@@ -75,6 +75,16 @@ DOMAIN_MAP = {
     "body":"cube","model":"cube","instance":"cube",
     "rename":"pencil","update":"refresh","refresh":"refresh",
     "batch":"pattern","process":"settings","wizard":"star",
+    # Phase A: real CADE command object coverage (audit 2026-08)
+    "boss":"cube","groove":"contour","slot":"contour",
+    "rib":"cube","stiffener":"cube","spiral":"helix","tap":"helix",
+    "geometry":"cube","feature":"cube","curves":"curve",
+    "profile":"contour","sections":"loft","boundary":"contour",
+    "mass":"chart","thickness":"chart","curvature":"chart",
+    "step":"import","iges":"export",
+    "view":"eye","constraint":"link","element":"cube",
+    "properties":"settings","tool":"settings","mode":"eye",
+    "numeric":"chart",
 }
 
 # ─── Domain → Color ───────────────────────────────────────────────
@@ -167,17 +177,36 @@ VERB_MAP: Dict[str, str] = {
     "test":"play","play":"play",
     "lock":"lock","info":"info","help":"question",
     "setting":"settings","config":"settings",
+    # Phase A: real CADE command verb coverage (audit 2026-08)
+    "apply":"check","extract":"contour","insert":"plus",
+    "move":"move","replace":"refresh","unlock":"lock",
+    "paste":"copy",
 }
 
 _CAMEL = re.compile(r'[A-Z]+(?![a-z])|[A-Z][a-z0-9]*|[a-z0-9]+')
 
 # ─── Name normalization (prefix/suffix only, never global replace) ───
 NAME_SUFFIXES = ("command", "cmd", "dialog", "dlg", "addin", "action", "handler")
+NAME_PREFIXES = sorted(
+    ("caabom", "caa", "deg", "mmr", "afr", "gvi", "at"),
+    key=len, reverse=True)  # longest first: 'caabom' before 'caa'
 
 def normalize_command_name(name: str) -> str:
     """Strip framework suffixes iteratively ('CreateHoleDlgCmd' -> 'CreateHole').
+    Strip known CAA/AT project prefixes ('CAADegCreatePointCmd' -> 'CreatePoint').
     Prefixes like CAT are kept — 'CATPart' carries real semantics."""
     out = name
+    # Strip known CAA/AT project prefixes (iterative: CAADeg -> Deg -> strip deg)
+    for _ in range(3):  # at most 3 levels of nesting
+        nl = out.lower()
+        stripped = False
+        for pre in NAME_PREFIXES:
+            if nl.startswith(pre) and len(out) > len(pre) and out[len(pre)].isupper():
+                out = out[len(pre):]
+                stripped = True
+                break
+        if not stripped:
+            break
     for suf in NAME_SUFFIXES:
         if out.lower().endswith(suf) and len(out) > len(suf):
             out = out[:-len(suf)]
@@ -199,8 +228,15 @@ OP_GROUPS = {
     "ANALYZE": {"analyze","analysis"},
     "VIEW":    {"view","show","preview"},
     "RUN":     {"run","execute","launch","start","test","play"},
-    "LOCK":    {"lock"}, "INFO": {"info"}, "HELP": {"help"},
+    "LOCK":    {"lock","unlock"}, "INFO": {"info"}, "HELP": {"help"},
     "SETTING": {"setting","config"},
+    # Phase A: additional real CADE verb groups
+    "APPLY":   {"apply"},
+    "EXTRACT": {"extract"},
+    "MOVE":    {"move"},
+    "REPLACE": {"replace"},
+    "INSERT":  {"insert"},
+    "PASTE":   {"paste"},
 }
 _VERB2OP = {v: op for op, vs in OP_GROUPS.items() for v in vs}
 
@@ -364,8 +400,7 @@ def _render_badge_plate(badge: str, S: int) -> Image.Image:
     gd = ImageDraw.Draw(glyph)
     _draw_icon_4x_rgba(gd, badge, S, (10, 0, 255, 255), (*CATIA_INK, 255),
                        (0, 0, 150, 255), None)
-    glyph = glyph.resize((plate_sz - 2*S, plate_sz - 2*S),
-                         Image.LANCZOS if S > 4 else Image.BOX)
+    glyph = glyph.resize((plate_sz - 2*S, plate_sz - 2*S), Image.LANCZOS)
     plate.alpha_composite(glyph, (S, S))
     pd = ImageDraw.Draw(plate)
     pd.rectangle([0, 0, plate_sz-1, plate_sz-1], outline=(*CATIA_INK, 255),
@@ -395,12 +430,14 @@ def _apply_checker(img: Image.Image, body_rgb: Tuple[int,int,int]) -> Image.Imag
 
 def _rasterize_catia(img_big: Image.Image, body_rgb: Tuple[int,int,int],
                      tmp: Path) -> Path:
-    """CATIA runtime renderer: 22x22, BOX downscale, halftone checker,
-    8-bit palette — deliberately pixel-crisp, matches official B28 icons."""
+    """CATIA runtime renderer: 22x22 24-bit BMP, BOX downscale, halftone.
+
+    24-bit (not 8-bit palette): the S=8 supersample's anti-aliasing
+    gradations survive — palette quantization was visibly stepping the
+    edge blends. Official B28 ships 8-bit, but CNEXT accepts 24-bit BMP;
+    the pixel-crisp style is kept (BOX, no dithering, flat fills)."""
     img = img_big.resize((22, 22), Image.BOX).convert("RGB")
     img = _apply_checker(img, body_rgb)
-    img = img.quantize(256, method=Image.Quantize.FASTOCTREE,
-                       dither=Image.Dither.NONE)
     img.save(tmp, format="BMP")
     return tmp
 
@@ -430,7 +467,7 @@ def _render_icon(icon_name: str, badge: str = None, size: int = 22,
     color = _get_color_for_icon(icon_name)
     r,g,b = color
     hd = size > 22 or format == "png"
-    S = 4 if not hd else max(4, round(4 * size / 22))
+    S = 8 if not hd else max(8, round(8 * size / 22))
     big_w,big_h = 22*S,22*S
 
     # Build color palette for this icon
@@ -579,17 +616,17 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT, BG=None):
 
     _ = {
 "box":       lambda:[_iso_block(2*S,7*S,12*S,12*S,5*S),R([6*S,11*S,11*S,16*S],fill=DSHADE),R([6*S,11*S,11*S,16*S],outline=E,width=S)],
-"circle":    lambda:O([1*S,1*S,20*S,20*S],fill=B),
-"point":     lambda:[O([c-6*S,c-6*S,c+6*S,c+6*S],fill=B),O([c-6*S,c-6*S,c+6*S,c+6*S],outline=E,width=S),O([c-2*S,c-2*S,c+2*S,c+2*S],fill=E)],
-"line":      lambda:L([2*S,c,19*S,c],fill=E,width=4*S),
+"circle":    lambda:[O([1*S,1*S,20*S,20*S],fill=B),O([1*S,1*S,20*S,20*S],outline=E),O([c-6*S,c-6*S,c+6*S,c+6*S],outline=D,width=S),O([c-1*S,c-1*S,c+1*S,c+1*S],fill=E)],
+"point":     lambda:[O([c-4*S,c-4*S,c+4*S,c+4*S],fill=B,outline=E,width=S),O([c-2*S,c-2*S,c+2*S,c+2*S],fill=E),L([c,1*S,c,5*S],fill=E,width=S),L([c,17*S,c,21*S],fill=E,width=S),L([1*S,c,5*S,c],fill=E,width=S),L([17*S,c,21*S,c],fill=E,width=S)],
+"line":      lambda:[L([3*S,17*S,18*S,4*S],fill=B,width=3*S),L([3*S,17*S,18*S,4*S],fill=E,width=S),O([2*S,16*S,5*S,19*S],fill=E),O([17*S,3*S,20*S,6*S],fill=E)],
 "arc":       lambda:_fillet_block(),
 "fillet":    lambda:_fillet_solid(),
 "chamfer":   lambda:_chamfer_solid(),
 "split":     lambda:_split_solid(),
 "wave":      lambda:[L([(1*S+i*18*S//16,c+int(5*S*sin(i*pi/8))) for i in range(17)],fill=B,width=3*S),L([(1*S+i*18*S//16,c+6*S+int(3*S*sin(i*pi/8))) for i in range(17)],fill=D,width=2*S)],
-"grid":      lambda:[L([3*S,8*S,18*S,8*S],fill=D,width=S),L([3*S,14*S,18*S,14*S],fill=D,width=S),L([8*S,3*S,8*S,18*S],fill=D,width=S),L([14*S,3*S,14*S,18*S],fill=D,width=S)],
+"grid":      lambda:[R([2*S,2*S,19*S,19*S],outline=D,width=S),L([8*S,2*S,8*S,19*S],fill=B,width=2*S),L([13*S,2*S,13*S,19*S],fill=B,width=2*S),L([2*S,8*S,19*S,8*S],fill=B,width=2*S),L([2*S,13*S,19*S,13*S],fill=B,width=2*S),O([7*S,7*S,9*S,9*S],fill=E),O([12*S,12*S,14*S,14*S],fill=E)],
 "play":      lambda:[P([4*S,2*S,4*S,19*S,19*S,c],fill=B),P([4*S,2*S,4*S,19*S,19*S,c],outline=E)],
-"drill":     lambda:[R([c-3*S,2*S,c+3*S,13*S],fill=B),L([c-1*S,3*S,c-1*S,12*S],fill=WHITE,width=2*S),R([c-3*S,2*S,c+3*S,13*S],outline=E),P([c-3*S,13*S,c+3*S,13*S,c,20*S],fill=SHADE),P([c-3*S,13*S,c+3*S,13*S,c,20*S],outline=E),L([c-3*S,5*S,c+3*S,8*S],fill=D,width=S),L([c-3*S,9*S,c+3*S,12*S],fill=D,width=S)],
+"drill":     lambda:[P([c-3*S,2*S,c+3*S,2*S,c+2*S,13*S,c-2*S,13*S],fill=B),L([c-1*S,3*S,c-1*S,11*S],fill=WHITE,width=2*S),P([c-3*S,2*S,c+3*S,2*S,c+2*S,13*S,c-2*S,13*S],outline=E),P([c-2*S,13*S,c+2*S,13*S,c,20*S],fill=SHADE),P([c-2*S,13*S,c+2*S,13*S,c,20*S],outline=E),L([c-2*S,5*S,c+2*S,8*S],fill=D,width=S),L([c-2*S,9*S,c+2*S,12*S],fill=D,width=S)],
 "cut":       lambda:[_extrude_profile([(2*S,19*S),(2*S,9*S),(9*S,9*S),(15*S,15*S),(15*S,19*S)],4*S)],
 "cursor":    lambda:P([1*S,1*S,1*S,17*S,8*S,12*S,13*S,19*S,16*S,15*S,10*S,10*S,16*S,6*S],fill=B),
 "move":      lambda:[L([c,3*S,c,19*S],fill=E,width=2*S),L([3*S,c,19*S,c],fill=E,width=2*S),P([c,1*S,c-3*S,6*S,c+3*S,6*S],fill=B),P([c,21*S,c-3*S,16*S,c+3*S,16*S],fill=B),P([1*S,c,6*S,c-3*S,6*S,c+3*S],fill=B),P([21*S,c,16*S,c-3*S,16*S,c+3*S],fill=B)],
@@ -600,7 +637,7 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT, BG=None):
 "ruler":     lambda:[R([1*S,2*S,20*S,19*S],outline=E,width=S),L([1*S,6*S,12*S,6*S],fill=D,width=2*S),L([1*S,11*S,16*S,11*S],fill=B,width=2*S),L([1*S,16*S,9*S,16*S],fill=D,width=2*S)],
 "magnify":   lambda:[O([0,0,15*S,15*S],outline=E,width=2*S),L([13*S,13*S,21*S,21*S],fill=E,width=4*S)],
 "funnel":    lambda:[P([1*S,2*S,20*S,2*S,15*S,c,6*S,c],fill=B),P([1*S,2*S,20*S,2*S,15*S,c,6*S,c],outline=E)],
-"window":    lambda:[R([1*S,1*S,20*S,20*S],outline=E,width=2*S),R([1*S,1*S,20*S,7*S],fill=E)],
+"window":    lambda:[R([1*S,2*S,20*S,20*S],fill=WHITE,outline=E,width=2*S),R([1*S,2*S,20*S,7*S],fill=B),R([1*S,2*S,20*S,7*S],outline=E,width=S),O([3*S,4*S,5*S,6*S],fill=E),O([6*S,4*S,8*S,6*S],fill=E),L([3*S,11*S,12*S,11*S],fill=D,width=S),L([3*S,14*S,15*S,14*S],fill=D,width=S),L([3*S,17*S,10*S,17*S],fill=D,width=S)],
 "eye":       lambda:[O([0,7*S,21*S,14*S],outline=E,width=2*S),O([c-3*S,8*S,c+3*S,13*S],fill=E)],
 "hand":      lambda:[draw.rounded_rectangle([4*S,8*S,18*S,19*S],radius=3*S,fill=B,outline=E,width=S),draw.rounded_rectangle([6*S,3*S,9*S,10*S],radius=S,fill=B,outline=E,width=S),draw.rounded_rectangle([10*S,2*S,13*S,10*S],radius=S,fill=B,outline=E,width=S),draw.rounded_rectangle([14*S,4*S,17*S,10*S],radius=S,fill=B,outline=E,width=S)],
 "chevron":   lambda:[L([4*S,6*S,c,13*S,18*S,6*S],fill=E,width=3*S),L([4*S,11*S,c,18*S,18*S,11*S],fill=B,width=3*S)],
@@ -689,7 +726,7 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT, BG=None):
 "question":  lambda:[O([2*S,2*S,19*S,19*S],outline=E,width=2*S),AR([6*S,5*S,14*S,11*S],180,0,fill=B,width=2*S),O([c-1*S,13*S,c+1*S,15*S],fill=B)],
 "globe":     lambda:[O([2*S,2*S,19*S,19*S],outline=E,width=2*S),O([c-1*S,2*S,c+1*S,19*S],fill=D),L([2*S,c,19*S,c],fill=D,width=S)],
 "mirror":    lambda:[P([3*S,4*S,9*S,c,3*S,18*S],fill=B),P([3*S,4*S,9*S,c,3*S,18*S],outline=E),P([19*S,4*S,13*S,c,19*S,18*S],outline=E),L([c,2*S,c,20*S],fill=D,width=S)],
-"plane":     lambda:[P([2*S,16*S,8*S,8*S,20*S,8*S,14*S,16*S],fill=B),P([2*S,16*S,8*S,8*S,20*S,8*S,14*S,16*S],outline=E),L([c,8*S,c,2*S],fill=E,width=2*S),P([c,1*S,c-2*S,5*S,c+2*S,5*S],fill=E)],
+"plane":     lambda:[P([2*S,15*S,9*S,7*S,20*S,7*S,13*S,15*S],fill=B),P([2*S,15*S,9*S,7*S,20*S,7*S,13*S,15*S],outline=E),L([2*S,15*S,13*S,15*S],fill=D,width=S),L([9*S,7*S,9*S,2*S],fill=E,width=S),P([9*S,1*S,7*S,4*S,11*S,4*S],fill=E),L([2*S,19*S,14*S,19*S],fill=D,width=S)],
 "layer":     lambda:[P([2*S,6*S,c,2*S,20*S,6*S,c,10*S],fill=B),P([2*S,6*S,c,2*S,20*S,6*S,c,10*S],outline=E),P([2*S,11*S,c,7*S,20*S,11*S,c,15*S],fill=D),P([2*S,11*S,c,7*S,20*S,11*S,c,15*S],outline=E),P([2*S,16*S,c,12*S,20*S,16*S,c,20*S],fill=B),P([2*S,16*S,c,12*S,20*S,16*S,c,20*S],outline=E)],
 "print":     lambda:[R([6*S,2*S,16*S,8*S],fill=BG,outline=E,width=S),R([3*S,8*S,19*S,15*S],fill=B),R([3*S,8*S,19*S,15*S],outline=E),R([6*S,13*S,16*S,20*S],fill=BG,outline=E,width=S),L([8*S,16*S,14*S,16*S],fill=D,width=S),L([8*S,18*S,14*S,18*S],fill=D,width=S)],
 "pattern":   lambda:[R([x*S,y*S,x*S+5*S,y*S+5*S],fill=B,outline=E) for y in (2,9,16) for x in (2,9,16)],
@@ -699,7 +736,7 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT, BG=None):
 "draft":     lambda:[P([5*S,3*S,17*S,3*S,20*S,19*S,2*S,19*S],fill=B),P([5*S,3*S,17*S,3*S,20*S,19*S,2*S,19*S],outline=E),L([c,3*S,c,19*S],fill=D,width=S)],
 "helix":     lambda:[AR([5*S,2*S,17*S,8*S],0,360,fill=E,width=2*S),AR([5*S,8*S,17*S,14*S],0,360,fill=B,width=2*S),AR([5*S,14*S,17*S,20*S],0,360,fill=E,width=2*S)],
 "boolean":   lambda:[O([3*S,5*S,13*S,16*S],fill=B),O([3*S,5*S,13*S,16*S],outline=E),O([9*S,5*S,19*S,16*S],fill=D),O([9*S,5*S,19*S,16*S],outline=E)],
-"axis":      lambda:[L([c,2*S,c,20*S],fill=E,width=S),L([2*S,c,20*S,c],fill=E,width=S),O([c-4*S,c-4*S,c+4*S,c+4*S],outline=B,width=2*S)],
+"axis":      lambda:[L([c,2*S,c,20*S],fill=E,width=2*S),L([2*S,c,20*S,c],fill=E,width=2*S),P([c,1*S,c-2*S,5*S,c+2*S,5*S],fill=B),P([20*S,c,16*S,c-2*S,16*S,c+2*S],fill=B),O([c-3*S,c-3*S,c+3*S,c+3*S],fill=B,outline=E,width=S)],
 "hole":      lambda:_hole_block(),
 "rotate":    lambda:[AR([3*S,3*S,19*S,19*S],30,330,fill=B,width=3*S),P([15*S,2*S,20*S,6*S,13*S,8*S],fill=AC if AC else (75,230,255,255)),P([15*S,2*S,20*S,6*S,13*S,8*S],outline=E)],
 "explode":   lambda:[R([8*S,8*S,14*S,14*S],fill=B),R([8*S,8*S,14*S,14*S],outline=E),L([c,1*S,c,6*S],fill=E,width=2*S),L([c,16*S,c,21*S],fill=E,width=2*S),L([1*S,c,6*S,c],fill=E,width=2*S),L([16*S,c,21*S,c],fill=E,width=2*S),P([c,1*S,c-2*S,4*S,c+2*S,4*S],fill=E),P([c,21*S,c-2*S,18*S,c+2*S,18*S],fill=E),P([1*S,c,4*S,c-2*S,4*S,c+2*S],fill=E),P([21*S,c,18*S,c-2*S,18*S,c+2*S],fill=E)],
