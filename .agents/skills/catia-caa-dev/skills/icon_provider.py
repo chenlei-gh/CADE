@@ -1,17 +1,31 @@
 """
-CADE Icon Provider v3.6
+CADE Icon Provider v3.7
 =======================
-119 geometric patterns, 4x supersampling, true multi-color RGBA rendering.
+127 geometric patterns, semantic name resolver, dual rasterizers.
 
-Design: draw at 4x on RGBA with explicit colors, LANCZOS scale down,
-quantize to 8-bit BMP. Each pattern can use BODY, EDGE, DIM, ACCENT colors.
-Style aligned with official CATIA icons (sampled from B28 resources):
-BODY=domain color, EDGE=dark navy ink (24,16,82), DIM=dark shade,
-background=CATIA gray (192,192,192), no dithering (clean flat pixels).
+Pipeline:
+  command name -> normalize_command_name() -> IconSemantic
+    (operation / object / modifier, confidence EXACT|COMPOUND|LONGEST|FALLBACK)
+  -> (base pattern, corner badge) -> geometry (119 lambdas, S-scaled)
+  -> rasterizer:
+       CATIA renderer : 22x22, 4x SSAA, BOX, halftone, 8-bit palette BMP
+       HD renderer    : proportional canvas, LANCZOS, 24-bit BMP / RGBA PNG
 
-Composition: verb-object parsing maps commands to (base pattern, corner
-badge) — 'CreateHoleCmd' -> drill + plus badge, official style. Large
-fills get a halftone checker like official teal-checker fills.
+Official CATIA icon style spec (sampled from B28 win_b64 resources):
+  1. Background : CATIA gray (192,192,192); transparent in alpha PNG mode
+  2. Body fill  : cream (255,255,150) for modeling/assembly tools
+  3. Ink outline: dark navy (24,16,82)
+  4. Stroke     : 1-2 px main outline @22px, 1 px inner structure
+  5. Badge      : fixed bottom-right gray plate, ink border, 10/22 of canvas
+  6. Large fills: 1px halftone checker at 22px (official teal-checker style)
+  7. 22px path  : deliberately pixel-crisp (BOX+palette), NOT Fluent-smooth
+
+Cache keys derive from ICON_HASH (geometry+mapping+colors+renderer source),
+so any render-affecting change invalidates automatically.
+
+CLI:
+  python icon_provider.py Name1 Name2 ...        semantic audit
+  python icon_provider.py --render DIR Name ...  audit + 22px BMP / 64px PNG
 
 100% offline, instant.
 """
@@ -19,7 +33,7 @@ fills get a halftone checker like official teal-checker fills.
 import os, shutil, re
 from math import cos, pi, sin
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple
 from PIL import Image, ImageDraw
 
 CACHE_DIR = Path.home() / ".cade" / "cache" / "icons"
@@ -30,7 +44,7 @@ CACHE_DIR = Path.home() / ".cade" / "cache" / "icons"
 # ─── Official CATIA icon style (sampled from B28 win_b64 resources) ───
 CATIA_BG = (192, 192, 192)        # dominant official background gray
 CATIA_INK = (24, 16, 82)          # dominant official dark-navy outline
-CACHE_VER = "v8"                  # bump when render style changes (v8: BOX降采样+粗轮廓)
+CACHE_VER = "v10"                 # salt for ICON_HASH (v10: semantic resolver + hash-keyed cache)
 
 # ─── Domain → Icon ───────────────────────────────────────────────
 DOMAIN_MAP = {
@@ -55,6 +69,12 @@ DOMAIN_MAP = {
     "spring":"helix","thread":"helix","boolean":"boolean","axis":"axis",
     "rotate":"rotate","explode":"explode","material":"material",
     "dimension":"dimension",
+    # 对象补全：值已存在但缺键（CreateCircleCmd 曾因此掉兜底菱形）
+    "circle":"circle","arc":"arc",
+    # 常用业务对象 → 已有图案
+    "body":"cube","model":"cube","instance":"cube",
+    "rename":"pencil","update":"refresh","refresh":"refresh",
+    "batch":"pattern","process":"settings","wizard":"star",
 }
 
 # ─── Domain → Color ───────────────────────────────────────────────
@@ -135,6 +155,7 @@ VERB_MAP: Dict[str, str] = {
     "create":"plus","new":"star","add":"plus",
     "delete":"multiply","del":"multiply","remove":"minus","clear":"multiply",
     "edit":"pencil","modify":"pencil",
+    "rename":"pencil","update":"refresh",
     "measure":"ruler",
     "check":"check","verify":"check","validate":"check",
     "copy":"copy","duplicate":"copy",
@@ -150,46 +171,133 @@ VERB_MAP: Dict[str, str] = {
 
 _CAMEL = re.compile(r'[A-Z]+(?![a-z])|[A-Z][a-z0-9]*|[a-z0-9]+')
 
+# ─── Name normalization (prefix/suffix only, never global replace) ───
+NAME_SUFFIXES = ("command", "cmd", "dialog", "dlg", "addin", "action", "handler")
+
+def normalize_command_name(name: str) -> str:
+    """Strip framework suffixes iteratively ('CreateHoleDlgCmd' -> 'CreateHole').
+    Prefixes like CAT are kept — 'CATPart' carries real semantics."""
+    out = name
+    for suf in NAME_SUFFIXES:
+        if out.lower().endswith(suf) and len(out) > len(suf):
+            out = out[:-len(suf)]
+    return out
+
+# ─── Icon Semantic Model ──────────────────────────────────────────
+# Canonical operations for audit; badge glyph still comes from VERB_MAP.
+OP_GROUPS = {
+    "CREATE":  {"create","new","add"},
+    "DELETE":  {"delete","del","remove","clear"},
+    "EDIT":    {"edit","modify","rename"},
+    "UPDATE":  {"update","refresh"},
+    "MEASURE": {"measure"},
+    "CHECK":   {"check","verify","validate"},
+    "COPY":    {"copy","duplicate"},
+    "IMPORT":  {"import"}, "EXPORT": {"export"},
+    "SAVE":    {"save"},   "OPEN":   {"open"},
+    "SEARCH":  {"search","find"},
+    "ANALYZE": {"analyze","analysis"},
+    "VIEW":    {"view","show","preview"},
+    "RUN":     {"run","execute","launch","start","test","play"},
+    "LOCK":    {"lock"}, "INFO": {"info"}, "HELP": {"help"},
+    "SETTING": {"setting","config"},
+}
+_VERB2OP = {v: op for op, vs in OP_GROUPS.items() for v in vs}
+
+# Exact multi-token compounds, checked before single-token fallback
+COMPOUND_MAP = {
+    "circularpattern": "pattern",
+}
+
+# Style spec constants (22px reference canvas)
+BADGE_PLATE_RATIO = 10 / 22   # badge plate edge / canvas edge, flush bottom-right
+
+# Accent colors (multi-color highlights), hoisted for ICON_HASH + audit
+ACCENT_MAP: Dict[str, Tuple[int,int,int,int]] = {
+    "flame": (255, 200, 0, 255),
+    "lightning": (255, 255, 0, 255),
+    "sun": (255, 200, 0, 255),
+    "trophy": (255, 200, 0, 255),
+    "warning": (255, 200, 0, 255),
+    "star": (255, 200, 0, 255),
+    "heart": (255, 100, 100, 255),
+    "target": (255, 0, 0, 255),
+    "fillet": (155, 0, 0, 255),
+    "chamfer": (155, 0, 0, 255),
+    "split": (155, 0, 0, 255),
+    "rotate": (75, 230, 255, 255),
+}
+
+class IconSemantic(NamedTuple):
+    operation: Optional[str]   # canonical op from OP_GROUPS, None if absent
+    obj: Optional[str]         # DOMAIN_MAP key, None if unresolved
+    modifier: Tuple[str, ...]  # leftover tokens (e.g. 'auto', 'batch')
+    base: str                  # final base pattern ('diamond' on fallback)
+    badge: Optional[str]       # final badge glyph
+    confidence: str            # EXACT | COMPOUND | LONGEST | FALLBACK
+    tokens: Tuple[str, ...]
+
 def _tokenize(name: str) -> List[str]:
-    name = re.sub(r'(command|cmd)$', '', name, flags=re.I)
+    name = normalize_command_name(name)
     toks = []
     for part in re.split(r'[_\-\s]+', name):
         toks += _CAMEL.findall(part)
     return [t.lower() for t in toks if t]
 
-def resolve_icon_ex(command_name: str, hint: str = None) -> Tuple[str, Optional[str]]:
-    """Verb-object parse: object -> base pattern, verb -> corner badge.
-
-    'CreateHoleCmd' -> ('drill','plus'); 'HoleAnalysisCmd' -> ('drill','chart');
-    plain pattern names pass through with badge=None.
-    """
-    base = DOMAIN_MAP[hint.lower()] if hint and hint.lower() in DOMAIN_MAP else None
+def analyze_command(command_name: str, hint: str = None) -> IconSemantic:
+    """Name -> IconSemantic. Four-level resolution:
+    EXACT (token hit) -> COMPOUND (fused/multi-token) -> LONGEST (substring,
+    longest key first) -> FALLBACK (neutral diamond)."""
     toks = _tokenize(command_name)
     verb = next((t for t in toks if t in VERB_MAP), None)
+    operation = _VERB2OP.get(verb) if verb else None
 
-    if base is None:
+    base_key, base, confidence = None, None, None
+    if hint and hint.lower() in DOMAIN_MAP:
+        base_key = hint.lower(); base = DOMAIN_MAP[base_key]; confidence = "EXACT"
+    if base is None:  # Level 1: exact token
         for t in toks:
             if t != verb and t in DOMAIN_MAP:
-                base = DOMAIN_MAP[t]; break
-    if base is None:
-        # fused token like 'createhole' (actions.py passes lowercased names)
+                base_key, base, confidence = t, DOMAIN_MAP[t], "EXACT"; break
+    if base is None:  # Level 2a: multi-token compound
+        joined = "".join(toks)
+        for comp, pat in COMPOUND_MAP.items():
+            if comp in joined:
+                base, confidence = pat, "COMPOUND"; break
+    if base is None:  # Level 2b: fused verb+object in one token ('createhole')
         for t in toks:
             for v in VERB_MAP:
                 if t.startswith(v) and len(t) > len(v) and t[len(v):] in DOMAIN_MAP:
                     verb = verb or v
-                    base = DOMAIN_MAP[t[len(v):]]; break
+                    operation = operation or _VERB2OP.get(v)
+                    base_key = t[len(v):]
+                    base, confidence = DOMAIN_MAP[base_key], "COMPOUND"
+                    break
             if base: break
-    if base is None:
-        nl = command_name.lower().replace("cmd","").replace("command","")
-        for k, v in DOMAIN_MAP.items():
-            if k in nl: base = v; break
-    if base is None:
-        base = command_name.lower().split("_")[0] if "_" in command_name else command_name.lower()
+    if base is None:  # Level 3: longest-key substring (not dict order)
+        nl = normalize_command_name(command_name).lower()
+        for k in sorted(DOMAIN_MAP, key=len, reverse=True):
+            if k in nl:
+                base_key, base, confidence = k, DOMAIN_MAP[k], "LONGEST"; break
+    if base is None:  # Level 3.5: name IS a pattern ('cube', 'window', ...)
+        nl = normalize_command_name(command_name).lower()
+        if nl in PATTERN_NAMES:
+            base, confidence = nl, "EXACT"
+    if base is None:  # Level 4: neutral fallback
+        base, confidence = "diamond", "FALLBACK"
 
     badge = VERB_MAP.get(verb) if verb else None
     if badge == base:  # 'MeasureDistance' -> ruler+ruler is redundant
         badge = None
-    return base, badge
+    modifier = tuple(t for t in toks if t != verb and t != base_key)
+    return IconSemantic(operation, base_key, modifier, base, badge,
+                        confidence, tuple(toks))
+
+def resolve_icon_ex(command_name: str, hint: str = None) -> Tuple[str, Optional[str]]:
+    """Back-compat: returns (base pattern, corner badge).
+    'CreateHoleCmd' -> ('drill','plus'); semantic detail via analyze_command()."""
+    sem = analyze_command(command_name, hint)
+    return sem.base, sem.badge
 
 def resolve_icon(command_name: str, hint: str = None) -> str:
     """Back-compat: returns base pattern name (badge dropped)."""
@@ -198,22 +306,29 @@ def resolve_icon(command_name: str, hint: str = None) -> str:
 def _get_color_for_icon(icon_name: str) -> Tuple[int,int,int]:
     nl = icon_name.lower().replace("-","_").replace(" ","_")
     if nl in COLOR_MAP: return COLOR_MAP[nl]
-    for k,c in COLOR_MAP.items():
-        if k in nl: return c
+    for k in sorted(COLOR_MAP, key=len, reverse=True):  # longest first
+        if k in nl: return COLOR_MAP[k]
     for dk,di in DOMAIN_MAP.items():
         if di==nl and dk in COLOR_MAP: return COLOR_MAP[dk]
     return (10, 0, 255)  # CATIA accent blue for unmapped icons (never ~bg gray)
 
-def get_icon(icon_name: str, style: str = "geo") -> Optional[Path]:
+def get_icon(icon_name: str, style: str = "geo", size: int = 22,
+             format: str = "bmp", alpha: bool = False) -> Optional[Path]:
+    """Resolve + render + cache. Always returns the cached path.
+    format='bmp' (CATIA runtime) or 'png' (docs/previews; alpha=True for
+    transparent background). Cache key includes ICON_HASH."""
     base, badge = resolve_icon_ex(icon_name)
     cache_name = f"{icon_name}+{badge}" if badge else icon_name
-    key = f"{cache_name}_{CACHE_VER}_{style}".replace("/","_").replace(" ","_").replace(":","_")
-    cached = CACHE_DIR / f"{key}.bmp"
+    key = (f"{cache_name}_{ICON_HASH}_{style}_{size}{'a' if alpha else ''}"
+           .replace("/","_").replace(" ","_").replace(":","_"))
+    ext = "png" if format == "png" else "bmp"
+    cached = CACHE_DIR / f"{key}.{ext}"
     if cached.exists(): return cached
-    path = _render_icon(base, badge)
+    path = _render_icon(base, badge, size=size, format=format, alpha=alpha)
     if path:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         shutil.copy(path, cached)
+        return cached
     return path
 
 def copy_icons_to_runtime(workspace_path: Path):
@@ -240,13 +355,14 @@ def copy_icons_to_runtime(workspace_path: Path):
 
 def _render_badge_plate(badge: str, S: int) -> Image.Image:
     """Official-style corner badge: glyph on gray plate with ink border."""
-    plate_sz = 10*S
+    plate_sz = round(22 * S * BADGE_PLATE_RATIO)
     plate = Image.new("RGBA", (plate_sz, plate_sz), (*CATIA_BG, 255))
     glyph = Image.new("RGBA", (22*S, 22*S), (0, 0, 0, 0))
     gd = ImageDraw.Draw(glyph)
     _draw_icon_4x_rgba(gd, badge, S, (10, 0, 255, 255), (*CATIA_INK, 255),
                        (0, 0, 150, 255), None)
-    glyph = glyph.resize((plate_sz - 2*S, plate_sz - 2*S), Image.BOX)
+    glyph = glyph.resize((plate_sz - 2*S, plate_sz - 2*S),
+                         Image.LANCZOS if S > 4 else Image.BOX)
     plate.alpha_composite(glyph, (S, S))
     pd = ImageDraw.Draw(plate)
     pd.rectangle([0, 0, plate_sz-1, plate_sz-1], outline=(*CATIA_INK, 255),
@@ -274,61 +390,77 @@ def _apply_checker(img: Image.Image, body_rgb: Tuple[int,int,int]) -> Image.Imag
     return img
 
 
-def _render_icon(icon_name: str, badge: str = None) -> Path:
-    """Render to 22x22 8-bit BMP, official CATIA style: gray bg, navy ink, no dither."""
+def _rasterize_catia(img_big: Image.Image, body_rgb: Tuple[int,int,int],
+                     tmp: Path) -> Path:
+    """CATIA runtime renderer: 22x22, BOX downscale, halftone checker,
+    8-bit palette — deliberately pixel-crisp, matches official B28 icons."""
+    img = img_big.resize((22, 22), Image.BOX).convert("RGB")
+    img = _apply_checker(img, body_rgb)
+    img = img.quantize(256, method=Image.Quantize.FASTOCTREE,
+                       dither=Image.Dither.NONE)
+    img.save(tmp, format="BMP")
+    return tmp
+
+
+def _rasterize_hd(img_big: Image.Image, size: int, fmt: str, alpha: bool,
+                  tmp: Path) -> Path:
+    """HD renderer: proportional canvas + LANCZOS; 24-bit BMP or RGBA PNG.
+    Shares the semantic geometry with the CATIA renderer, NOT its
+    rasterization — HD is not a scaled-up 22px icon."""
+    img = img_big.resize((size, size), Image.LANCZOS)
+    if fmt == "png":
+        if not alpha:
+            img = img.convert("RGB")
+        img.save(tmp, format="PNG")
+    else:
+        img.convert("RGB").save(tmp, format="BMP")
+    return tmp
+
+
+def _render_icon(icon_name: str, badge: str = None, size: int = 22,
+                 format: str = "bmp", alpha: bool = False) -> Path:
+    """Render to BMP/PNG, official CATIA style: gray bg, navy ink.
+
+    size=22 bmp (default): CATIA runtime standard via _rasterize_catia.
+    size>22 or format='png': HD via _rasterize_hd (LANCZOS, smooth edges,
+    no halftone/quantize; alpha=True punches the gray bg transparent)."""
     color = _get_color_for_icon(icon_name)
     r,g,b = color
-    S = 4
+    hd = size > 22 or format == "png"
+    S = 4 if not hd else max(4, round(4 * size / 22))
     big_w,big_h = 22*S,22*S
 
     # Build color palette for this icon
     body = (r, g, b, 255)
     edge = (*CATIA_INK, 255)
     dim  = (r//2, g//2, b//2, 255)
+    accent = ACCENT_MAP.get(icon_name)
 
-    # Some patterns get accent colors (for multi-color effect)
-    accent = None
-    acmap = {
-        "flame": (255, 200, 0, 255),
-        "lightning": (255, 255, 0, 255),
-        "sun": (255, 200, 0, 255),
-        "trophy": (255, 200, 0, 255),
-        "warning": (255, 200, 0, 255),
-        "star": (255, 200, 0, 255),
-        "heart": (255, 100, 100, 255),
-        "target": (255, 0, 0, 255),
-        "fillet": (155, 0, 0, 255),
-        "chamfer": (155, 0, 0, 255),
-        "split": (155, 0, 0, 255),
-        "rotate": (75, 230, 255, 255),
-    }
-    if icon_name in acmap:
-        accent = acmap[icon_name]
-
-    # Draw on official CATIA gray background
-    img_big = Image.new("RGBA", (big_w, big_h), (*CATIA_BG, 255))
+    # Transparent canvas in alpha-PNG mode; pattern cutouts (BG) punch through
+    transparent = alpha and format == "png"
+    bg = (0, 0, 0, 0) if transparent else (*CATIA_BG, 255)
+    img_big = Image.new("RGBA", (big_w, big_h), bg)
     draw_big = ImageDraw.Draw(img_big)
-    _draw_icon_4x_rgba(draw_big, icon_name, S, body, edge, dim, accent)
+    _draw_icon_4x_rgba(draw_big, icon_name, S, body, edge, dim, accent, bg)
 
     # Corner badge composition (official verb-badge style)
     if badge:
         plate = _render_badge_plate(badge, S)
         img_big.alpha_composite(plate, (big_w - plate.width, big_h - plate.height))
 
-    # Scale down, flatten to RGB, halftone large fills, quantize w/o dither
-    img = img_big.resize((22, 22), Image.BOX).convert("RGB")
-    img = _apply_checker(img, (r, g, b))
-    img_p = img.quantize(256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE)
-
-    tmp = Path(os.environ.get("TEMP", "/tmp")) / f"cade_icon_{icon_name}.bmp"
-    img_p.save(tmp, format="BMP")
-    return tmp
+    ext = "png" if format == "png" else "bmp"
+    tmp = Path(os.environ.get("TEMP", "/tmp")) / \
+        f"cade_icon_{icon_name}_{badge or 'base'}_{size}_{os.getpid()}.{ext}"
+    if not hd:
+        return _rasterize_catia(img_big, (r, g, b), tmp)
+    return _rasterize_hd(img_big, size, format, alpha, tmp)
 
 
-def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
-    """119 patterns at 4x on RGBA. BODY/EDGE/DIM/ACCENT = RGBA tuples."""
+def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT, BG=None):
+    """119 patterns at 4x on RGBA. BODY/EDGE/DIM/ACCENT = RGBA tuples.
+    BG = cutout color: default CATIA gray; transparent in alpha-PNG mode."""
     W,H=22*S,22*S; c=W//2; B,E,D,AC=BODY,EDGE,DIM,ACCENT
-    BG=(*CATIA_BG,255)  # cutout color: shows the gray background through
+    if BG is None: BG=(*CATIA_BG,255)  # cutout color: shows the gray background through
 
     def R(xy,**kw):
         if kw.get('outline') and 'width' not in kw: kw['width']=S
@@ -591,3 +723,89 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT):
             O([c-2*S,8*S,c+2*S,12*S],fill=AC)
         elif name == "warning":
             O([c-1*S,12*S,c+1*S,14*S],fill=AC)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Cache invalidation: ICON_HASH
+# ═══════════════════════════════════════════════════════════════════
+
+def _pattern_names() -> frozenset:
+    """Pattern names = geometry-dispatch entries, extracted from source.
+    Uses the same regex the test suite uses, so table refactors that
+    change literal style are caught by the PATTERN_NAMES consistency
+    check in test_icons.py instead of silently skewing pass-through."""
+    import inspect
+    src = inspect.getsource(_draw_icon_4x_rgba)
+    return frozenset(re.findall(r'"([a-z][a-z0-9_-]*)"\s*:\s*lambda', src))
+
+PATTERN_NAMES = _pattern_names()
+
+
+def _compute_icon_hash() -> str:
+    """Hash ONLY what affects pixels: geometry table, mapping dicts, colors,
+    accents, badge plate, rasterizers. Unrelated edits elsewhere in this
+    file do NOT invalidate the cache."""
+    import hashlib, inspect
+    parts = [
+        CACHE_VER,
+        repr(sorted(DOMAIN_MAP.items())),
+        repr(sorted(VERB_MAP.items())),
+        repr(sorted(COLOR_MAP.items())),
+        repr(sorted(ACCENT_MAP.items())),
+        repr(sorted(COMPOUND_MAP.items())),
+        inspect.getsource(_draw_icon_4x_rgba),
+        inspect.getsource(_render_badge_plate),
+        inspect.getsource(_apply_checker),
+        inspect.getsource(_render_icon),
+        inspect.getsource(_rasterize_catia),
+        inspect.getsource(_rasterize_hd),
+    ]
+    return hashlib.sha1("\x00".join(parts).encode("utf-8")).hexdigest()[:8]
+
+ICON_HASH = _compute_icon_hash()
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  CLI: semantic audit + preview render
+# ═══════════════════════════════════════════════════════════════════
+
+def audit(names: List[str], render_dir: Path = None) -> int:
+    """Print semantic resolution per name; exit 1 if any FALLBACK."""
+    counts = {"EXACT": 0, "COMPOUND": 0, "LONGEST": 0, "FALLBACK": 0}
+    for n in names:
+        sem = analyze_command(n)
+        counts[sem.confidence] += 1
+        print(f"{n}")
+        print(f"  tokens:     {' / '.join(sem.tokens) or '-'}")
+        print(f"  operation:  {sem.operation or '-'}")
+        print(f"  object:     {sem.obj or '-'}")
+        print(f"  modifier:   {' / '.join(sem.modifier) or '-'}")
+        print(f"  base:       {sem.base}")
+        print(f"  badge:      {sem.badge or '-'}")
+        print(f"  color:      {_get_color_for_icon(sem.base)}")
+        print(f"  fallback:   {'YES' if sem.confidence == 'FALLBACK' else 'no'}")
+        print(f"  confidence: {sem.confidence}")
+        if render_dir:
+            render_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy(_render_icon(sem.base, sem.badge),
+                        render_dir / f"{n}_22.bmp")
+            shutil.copy(_render_icon(sem.base, sem.badge, size=64,
+                                     format="png", alpha=True),
+                        render_dir / f"{n}_64.png")
+    print(f"\n{len(names)} names: "
+          + ", ".join(f"{k}={v}" for k, v in counts.items()))
+    return 1 if counts["FALLBACK"] else 0
+
+
+if __name__ == "__main__":
+    import sys
+    args = sys.argv[1:]
+    render_dir = None
+    if "--render" in args:
+        i = args.index("--render")
+        render_dir = Path(args[i + 1])
+        del args[i:i + 2]
+    if not args:
+        print(__doc__)
+        sys.exit(2)
+    sys.exit(audit(args, render_dir))

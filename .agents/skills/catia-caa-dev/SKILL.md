@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（29K+14P+13Capability+15Playbook+148Framework+6Philosophy+3Failure+3DecisionTree），107几何图标+RGBA多色、75模板(16类型)、42测试套件、cade dev一键闭环。"
+description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（29K+14P+13Capability+15Playbook+148Framework+6Philosophy+3Failure+3DecisionTree），127几何图标+语义解析+HD PNG、75模板(16类型)、44测试套件、cade dev一键闭环。"
 triggers:
   - CAA component
   - CATIA component
@@ -1336,7 +1336,7 @@ python tests/test_master.py --quick
 │   ├── ui_lint.py                    # UI 失效模式静态检查器（failure_patterns）
 │   ├── requirements.py               # Requirements Clarifier + UI 4-axis clarifier (v3.0)
 │   ├── verifier.py                   # Code Verifier — static + mkmk (v3.0)
-│   ├── icon_provider.py              # 107 geometric icons, 4x SSAA, RGBA multi-color (v3.2)
+│   ├── icon_provider.py              # 127 geometric icons, semantic resolver, 22px CATIA + HD PNG (v3.7)
 │   ├── repair.py                     # Repair Loop (v3.0)
 │   ├── token_optimizer.py            # AI Token 优化器
 │   ├── docgen.py                     # 文档生成器

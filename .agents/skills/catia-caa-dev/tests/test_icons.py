@@ -45,6 +45,11 @@ all_patterns = sorted(set(re.findall(r'"([a-z][a-z0-9_-]*)"\s*:\s*lambda', src))
 check("Pattern count >= 100", len(all_patterns) >= 100,
       f"{len(all_patterns)} patterns found")
 
+# Runtime extraction must match the test-side regex (guards table refactors)
+from icon_provider import PATTERN_NAMES
+check("PATTERN_NAMES == source regex", set(all_patterns) == set(PATTERN_NAMES),
+      f"{len(PATTERN_NAMES)} runtime vs {len(all_patterns)} source")
+
 # Ensure DOMAIN_MAP values are all valid patterns
 domain_icons = set(DOMAIN_MAP.values())
 missing = domain_icons - set(all_patterns)
@@ -173,6 +178,8 @@ check("resolve_icon(fallback)", isinstance(r, str) and len(r) > 0, r)
 from icon_provider import CACHE_DIR
 for f in CACHE_DIR.glob("*.bmp"):
     f.unlink()
+for f in CACHE_DIR.glob("*.png"):
+    f.unlink()
 
 p1 = get_icon("cube")
 p2 = get_icon("cube")
@@ -256,6 +263,61 @@ check("compose fused 'createhole'", b == "hole" and g == "plus", f"{b}+{g}")
 
 b, g = resolve_icon_ex("cube")
 check("plain pattern pass-through", b == "cube" and g is None, f"{b}+{g}")
+
+# name→icon coverage: 常用业务命令名不再掉兜底菱形
+b, g = resolve_icon_ex("CreateCircleCmd")
+check("compose CreateCircleCmd -> circle+plus", b == "circle" and g == "plus", f"{b}+{g}")
+
+b, g = resolve_icon_ex("RenameInstanceCmd")
+check("compose RenameInstanceCmd -> cube+pencil", b == "cube" and g == "pencil", f"{b}+{g}")
+
+b, g = resolve_icon_ex("UpdatePartCmd")
+check("compose UpdatePartCmd -> cube+refresh", b == "cube" and g == "refresh", f"{b}+{g}")
+
+b, g = resolve_icon_ex("AutoRenameCmd")
+check("compose AutoRenameCmd -> pencil (dedupe)", b == "pencil" and g is None, f"{b}+{g}")
+
+b, g = resolve_icon_ex("BatchProcessCmd")
+check("compose BatchProcessCmd -> pattern", b == "pattern" and g is None, f"{b}+{g}")
+
+b, g = resolve_icon_ex("CheckModelCmd")
+check("compose CheckModelCmd -> cube+check", b == "cube" and g == "check", f"{b}+{g}")
+
+# ─── Semantic layer (IconSemantic + 4-level resolver) ───
+from icon_provider import (analyze_command, normalize_command_name,
+                           ICON_HASH)
+
+sem = analyze_command("CreateCircleCmd")
+check("semantic CreateCircleCmd EXACT", sem.operation == "CREATE"
+      and sem.obj == "circle" and sem.confidence == "EXACT",
+      f"{sem.operation}/{sem.obj}/{sem.confidence}")
+
+sem = analyze_command("AutoRenameCmd")
+check("semantic AutoRenameCmd EDIT/rename", sem.operation == "EDIT"
+      and sem.base == "pencil" and "auto" in sem.modifier,
+      f"{sem.operation}/{sem.base}/{sem.modifier}")
+
+sem = analyze_command("createhole")  # fused lowercase from actions.py
+check("semantic fused COMPOUND", sem.base == "hole" and sem.badge == "plus"
+      and sem.confidence == "COMPOUND", f"{sem.base}/{sem.confidence}")
+
+sem = analyze_command("TotallyUnknownCmd")
+check("semantic FALLBACK diamond", sem.base == "diamond"
+      and sem.confidence == "FALLBACK", f"{sem.base}/{sem.confidence}")
+
+check("normalize suffix chain", normalize_command_name("CreateHoleDlgCmd")
+      == "CreateHole", normalize_command_name("CreateHoleDlgCmd"))
+
+check("normalize keeps CAT-prefix semantics",
+      normalize_command_name("CATPartCmd") == "CATPart",
+      normalize_command_name("CATPartCmd"))
+
+# Level 3 longest-first: 'pattern'(7) must beat 'part'(4) regardless of dict order
+b, g = resolve_icon_ex("PartpatternX")
+check("longest-first substring", b == "pattern", b)
+
+check("ICON_HASH format", isinstance(ICON_HASH, str) and len(ICON_HASH) == 8,
+      ICON_HASH)
 
 # composite render: badge must change pixels, format stays 22x22 8bpp
 # NOTE: _render_icon reuses one tmp path per pattern — read bytes immediately
@@ -353,6 +415,84 @@ except ImportError as e:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  PART I: HD multi-size rendering
+# ═══════════════════════════════════════════════════════════════
+print("\n" + "=" * 60)
+print("  I. HD Multi-Size Rendering")
+print("=" * 60)
+
+def _bmp_info(data):
+    w = abs(int.from_bytes(data[18:22], "little", signed=True))
+    h = abs(int.from_bytes(data[22:26], "little", signed=True))
+    bpp = int.from_bytes(data[28:30], "little")
+    return w, h, bpp
+
+# 48x48 HD: true 48x48, 24-bit (no 8-bit palette quantize)
+d48 = _render_icon("fillet", size=48).read_bytes()
+w, h, bpp = _bmp_info(d48)
+check("HD 48x48 format", (w, h, bpp) == (48, 48, 24), f"{w}x{h} {bpp}bpp")
+
+# 64x64 HD with badge
+d64 = _render_icon("drill", "plus", size=64).read_bytes()
+w, h, bpp = _bmp_info(d64)
+check("HD 64x64+badge format", (w, h, bpp) == (64, 64, 24), f"{w}x{h} {bpp}bpp")
+
+# HD smoothness: LANCZOS produces far more than 256 unique colors
+from PIL import Image as _Img
+import io as _io
+ncolors = len(set(_Img.open(_io.BytesIO(d48)).convert("RGB").getdata()))
+check("HD 24-bit smooth gradients", ncolors > 256, f"{ncolors} unique colors")
+
+# default stays 22x22 8-bit (CATIA runtime compatibility)
+d22 = _render_icon("fillet").read_bytes()
+w, h, bpp = _bmp_info(d22)
+check("default stays 22x22 8-bit", (w, h, bpp) == (22, 22, 8), f"{w}x{h} {bpp}bpp")
+
+# get_icon caches per size (first call renders, second hits cache;
+# both return the cached path)
+pa = get_icon("cube", size=48)
+pb = get_icon("cube", size=48)
+check("get_icon HD cache", pa is not None and pb is not None
+      and pa == pb and pa.exists(),
+      pb.name if pb else "?")
+
+# PNG alpha channel (docs/preview output)
+pp = get_icon("circle", size=64, format="png", alpha=True)
+check("PNG output", pp is not None and pp.suffix == ".png"
+      and pp.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n",
+      pp.name if pp else "?")
+im = _Img.open(pp)
+has_alpha = im.mode == "RGBA" and any(a < 255 for *_, a in im.getdata())
+check("PNG transparent background", has_alpha)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PART J: Visual Regression (golden samples)
+# ═══════════════════════════════════════════════════════════════
+print("\n" + "=" * 60)
+print("  J. Visual Regression (golden 22x22 samples)")
+print("=" * 60)
+
+# Golden files are the single source of truth: tests/golden/icons/*.bmp,
+# named '<base>.bmp' or '<base>+<badge>.bmp'. Regenerate ONLY after an
+# intentional renderer change: python tests/update_golden_icons.py
+GOLDEN_DIR = SKILL_ROOT / "tests" / "golden" / "icons"
+goldens = sorted(GOLDEN_DIR.glob("*.bmp"))
+check("golden samples present", len(goldens) >= 20, f"{len(goldens)} found")
+
+golden_bad = 0
+for fn in goldens:
+    base, _, badge = fn.stem.partition("+")
+    cur = _render_icon(base, badge or None).read_bytes()
+    if cur != fn.read_bytes():
+        golden_bad += 1
+        diff = sum(1 for a, b in zip(cur, fn.read_bytes()) if a != b)
+        print(f"  [FAIL] golden {fn.name}: {diff} bytes differ")
+check("visual regression pixel-identical", golden_bad == 0,
+      f"{len(goldens)-golden_bad}/{len(goldens)} identical")
+
+
+# ═══════════════════════════════════════════════════════════════
 print("\n" + "=" * 60)
 print(f"  RESULT: {passed}/{total} PASSED"
       + (f" ({total-passed} FAILED)" if total-passed > 0 else ""))
@@ -360,6 +500,8 @@ print("=" * 60)
 
 # Cleanup
 for f in CACHE_DIR.glob("*.bmp"):
+    f.unlink()
+for f in CACHE_DIR.glob("*.png"):
     f.unlink()
 
 sys.exit(0 if passed == total else 1)

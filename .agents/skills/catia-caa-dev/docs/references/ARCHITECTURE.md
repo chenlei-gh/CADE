@@ -24,7 +24,7 @@
 │          │ refactor │  refactor.py           │
 │          │ rollback │  diagnostics.py        │
 ├──────────┴──────────┼───────────────────────┤
-│   Generator (16类型) │  Icon Provider (107图案)│
+│   Generator (16类型) │  Icon Provider (127图案)│
 │   Changeset (预览)   │  Backup (回滚)         │
 ├─────────────────────┴───────────────────────┤
 │           Meta Model (10实体)                │
@@ -43,7 +43,7 @@
 | `build.py` | mkmk 编译管线 + 环境初始化 | ~530 |
 | `run.py` | CNEXT 启动/停止/热重启 | ~590 |
 | `generator.py` | 模板引擎 (16 种类型) | ~580 |
-| `icon_provider.py` | 107 种几何图标，RGBA 多色 | ~340 |
+| `icon_provider.py` | 127 种几何图标，语义解析 + 22px CATIA/HD PNG 双渲染 | ~810 |
 | `changeset.py` | 变更预览 + 应用/回滚 | ~380 |
 | `meta_model.py` | 工作区元模型 (10 实体) | ~1150 |
 | `refactor.py` | 重命名/移动/提取接口 | ~500 |
@@ -100,9 +100,10 @@
 ## 图标系统
 
 ```
-Domain keyword → resolve_icon() → 107 patterns
+Domain keyword → analyze_command() → IconSemantic → 127 patterns
+    │  (EXACT → COMPOUND → LONGEST → FALLBACK 四级解析)
     │
-    ├── _get_color_for_icon() → 7-category color
+    ├── _get_color_for_icon() → longest-first color
     └── _draw_icon_4x_rgba()  → RGBA body/edge/dim/accent
             │
             ▼
@@ -347,28 +348,29 @@ cade clean                      # 清理构建产物
 | 回归 | 全量回归 | test_full_regression.py (1287 行) | 1 |
 | 专项 | 特定功能 | test_phase*.py, test_skill_*.py 等 | 23 |
 
-总计 39 个测试文件，~11,000 行测试代码。
+总计 44 个测试文件（另含 update_golden_icons.py 黄金样本生成器）。
 
 ## 图标分类统计
 
 | 类别 | 数量 | 示例 |
 |------|------|------|
 | 形状 | 11 | box, circle, triangle, hexagon, diamond, ring |
-| 操作 | 6 | play, drill, cut, cursor, move, merge |
+| CATIA 建模 | 15 | fillet, chamfer, split, rotate, shell, draft, helix |
+| 操作 | 7 | play, drill, cut, cursor, move, merge, print |
 | 箭头 | 8 | arrow-up/down/left/right, refresh, chevron |
-| 工具 | 8 | settings, search, pencil, ruler, funnel, delete |
+| 工具 | 7 | settings, search, magnify, pencil, ruler, funnel |
 | 媒体 | 4 | pause, stop, forward, backward |
-| 编辑 | 5 | copy, paste, undo, redo, zoom-in/out |
-| 数据 | 9 | doc, folder, disk, export, import, book, db |
-| 符号 | 7 | check, angle, chart, code, link, star, heart |
+| 编辑 | 6 | copy, paste, undo, redo, zoom-in/out |
+| 数据 | 7 | doc, folder, disk, export, import, book, db |
+| 符号 | 8 | check, angle, chart, code, link, star, heart, target |
 | 数学 | 6 | plus, minus, multiply, divide, equal, percent |
 | 对象 | 8 | key, bell, tag, pin, flag, trophy, shield, clock |
 | 通信 | 6 | mail, chat, phone, share, wifi, globe |
 | 自然 | 5 | sun, moon, cloud, lightning, flame |
-| 日常 | 8 | home, user, calendar, camera, map, battery, power |
-| 3D | 4 | cube, contour, package, download/upload |
-| 锁/UI | 6 | lock, unlock, window, eye, hand, info, warning, question |
-| **合计** | **107** | |
+| 日常 | 7 | home, user, calendar, camera, map, battery, power |
+| 3D | 5 | cube, contour, package, download/upload |
+| 锁/UI/参考 | 17 | lock, window, eye, hand, info, warning, plane, axis |
+| **合计** | **127** | |
 
 ## 配置系统
 
