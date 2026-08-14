@@ -11,6 +11,7 @@ Design principle:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -186,6 +187,15 @@ class RequirementsClarifier:
                 unresolved=[],
             )
 
+        # UI Generator 4-axis clarification (behavior target / commit timing /
+        # value dependency / selection cardinality). Domain-agnostic: triggers
+        # only on selection/edit/constraint signals, so non-UI requests pass
+        # through unchanged. No domain_context is passed — upstream Domain
+        # Resolution is a future prerequisite, not a current dependency.
+        ui_result = UIGeneratorClarifier().analyze(request)
+        resolved.update(ui_result.resolved)
+        unresolved.extend(ui_result.unresolved)
+
         # Limit unresolved questions
         unresolved = unresolved[:self.MAX_QUESTIONS]
 
@@ -353,7 +363,274 @@ class RequirementsClarifier:
         return False
 
 
-# ─── Requirements Decomposer (v3.0) ──────────────────────────────
+# ─── UI Generator Clarifier (4-axis policy) ──────────────────────
+
+
+class UIGeneratorClarifier:
+    """
+    UI Generator clarification engine — the 4-axis "unsafe-to-infer"
+    boundary check.
+
+    Detects decision axes that a CAA UI Generator cannot safely resolve
+    from the CATDlg API, CATIA domain API, or CAA conventions. Each
+    triggered-and-unresolved axis becomes a clarifying question.
+
+    This is NOT a UI semantic model / ontology. It is a gap detector:
+    it asks only when intent genuinely under-specifies behavior AND
+    domain/API/convention cannot disambiguate.
+
+    Axes:
+      1. selection_cardinality — single vs multiple selection
+      2. behavior_target       — write to CATIA vs UI-only draft
+      3. commit_timing         — immediate vs on-Apply/confirm
+      4. value_dependency      — one value constrains another
+
+    Domain/Intent resolution (e.g. what "颜色" refers to) is explicitly
+    OUT OF SCOPE and belongs to an upstream resolver. Its output is
+    consumed here via ``analyze(domain_context=...)``:
+      - field_targets: {field_word: "catia"|"ui_draft"|"read_only"}
+      - value_dependencies: [{"source": w, "targets": [w, ...]}]
+    No knowledge retrieval happens inside this class.
+    """
+
+    # ── Selection axis signals ──────────────────────────────
+    SELECTION_VERBS = ["选择", "选取", "选中", "勾选", "select", "choose", "pick"]
+    ENTITY_OBJECTS = ["body", "part", "component", "feature", "零件", "部件",
+                      "组件", "对象", "项", "条目", "元素", "成员", "行", "实体"]
+    PROPERTY_WORDS = ["类型", "编号", "号", "名称", "属性", "格式", "名字",
+                      "颜色", "材料", "数量", "等级"]
+    MULTI_SIGNALS = ["多个", "多选", "multiple", "multi"]
+    SINGLE_SIGNALS = ["单个", "单选", "single", "one", "一个"]
+    CARDINALITY_WINDOW = 10
+
+    # ── Edit / commit axis signals ──────────────────────────
+    EDIT_VERBS = ["编辑", "修改", "改", "设置", "设为", "调整", "填写", "输入",
+                  "更新", "重命名", "改名", "rename", "modify", "edit",
+                  "update", "change", "set"]
+    IMMEDIATE_SIGNALS = ["立即", "即时", "马上", "实时", "立刻", "immediately",
+                         "directly"]
+    DEFERRED_SIGNALS = ["apply", "应用后", "点击应用", "确认后", "确定后",
+                        "完成后", "点击完成", "提交后", "保存后", "on apply",
+                        "after apply", "after confirm"]
+    NEGATION_SIGNALS = ["不允许", "不可编辑", "不能编辑", "禁止编辑", "只读",
+                        "不能改", "不可改", "read-only", "readonly",
+                        "not editable", "cannot edit"]
+
+    # ── Behavior target axis signals ────────────────────────
+    FIELD_WORDS = ["名称", "名字", "实例名", "编号", "颜色", "等级", "类型",
+                   "属性", "材料", "数量"]
+    DOMAIN_TARGET_SIGNALS = ["写回", "更新模型", "保存到模型", "写入",
+                             "写到产品", "save to model", "write back"]
+    UI_TARGET_SIGNALS = ["仅ui", "仅更新ui", "草稿", "临时", "只改显示",
+                         "仅当前显示", "仅内存", "不写", "ui_draft_only",
+                         "draft", "preview"]
+
+    # Valid behavior-target values supplied via domain_context
+    VALID_FIELD_TARGETS = {"catia", "ui_draft", "read_only"}
+
+    # ── Public API ──────────────────────────────────────────
+
+    def analyze(self, intent: str,
+                domain_context: Optional[Dict[str, Any]] = None) -> ClarificationResult:
+        """
+        Analyze a user intent and return unresolved UI-generation decisions.
+
+        Args:
+            intent: Natural-language user intent for a CAA UI.
+            domain_context: Upstream Domain/Intent resolution output. Two
+                optional keys are consumed (see class docstring):
+                  - ``field_targets``: {field_word: "catia"|"ui_draft"|"read_only"}
+                    pre-resolves a field's behavior target.
+                  - ``value_dependencies``: [{"source": w, "targets": [w, ...]}]
+                    pre-resolves an intrinsic value dependency.
+                No knowledge retrieval happens here — the resolver is upstream.
+
+        Returns:
+            ClarificationResult whose ``unresolved`` holds the triggered
+            axis Decisions (reusing the existing ``Decision`` model).
+        """
+        if not intent or not intent.strip():
+            return ClarificationResult(status="ok", goal="", unresolved=[])
+
+        text = intent.lower()
+        ctx = domain_context or {}
+        resolved = {}
+        unresolved = []
+
+        # Read-only displays: suppress edit-related axes.
+        negated = self._has_negation(text)
+
+        cardinality = self._check_selection_cardinality(text)
+        if cardinality is not None:
+            unresolved.append(cardinality)
+
+        if not negated:
+            behavior_target = self._check_behavior_target(text, ctx)
+            if behavior_target is not None:
+                unresolved.append(behavior_target)
+
+            commit_timing = self._check_commit_timing(text)
+            if commit_timing is not None:
+                unresolved.append(commit_timing)
+
+        # value_dependency is never asked on its own; domain_context may
+        # resolve an intrinsic dependency instead.
+        resolved.update(self._resolve_value_dependency(text, ctx))
+
+        if unresolved:
+            return ClarificationResult(
+                status="needs_clarification",
+                goal=intent,
+                resolved=resolved,
+                unresolved=unresolved,
+            )
+        return ClarificationResult(
+            status="ok",
+            goal=intent,
+            resolved=resolved,
+            unresolved=[],
+        )
+
+    # ── Axis checks ─────────────────────────────────────────
+
+    def _has_negation(self, text: str) -> bool:
+        return any(s in text for s in self.NEGATION_SIGNALS)
+
+    def _has_entity_object(self, text: str) -> bool:
+        """True if text mentions a selectable entity object.
+
+        English entity words are matched at word boundaries so ``part``
+        does not match ``partname``; Chinese words use substring matching
+        (they have no word boundaries).
+        """
+        for o in self.ENTITY_OBJECTS:
+            if o.isascii():
+                if re.search(rf"\b{re.escape(o)}\b", text):
+                    return True
+            elif o in text:
+                return True
+        return False
+
+    def _check_selection_cardinality(self, text: str) -> Optional[Decision]:
+        """Selection cardinality: single vs multiple."""
+        if not any(v in text for v in self.SELECTION_VERBS):
+            return None
+        if not self._has_entity_object(text):
+            return None
+        if self._explicit_cardinality(text) is not None:
+            return None
+        if self._is_property_selection(text):
+            return None
+        return Decision(
+            id="selection_cardinality",
+            question="选择是单选还是多选？",
+            options=["single", "multiple"],
+            default="",
+        )
+
+    def _explicit_cardinality(self, text: str) -> Optional[str]:
+        """Return 'single'/'multiple' if a selection verb is followed by an
+        explicit cardinality marker within a short window."""
+        for verb in self.SELECTION_VERBS:
+            start = text.find(verb)
+            while start != -1:
+                tail = text[start + len(verb): start + len(verb) + self.CARDINALITY_WINDOW]
+                if any(s in tail for s in self.MULTI_SIGNALS):
+                    return "multiple"
+                if any(s in tail for s in self.SINGLE_SIGNALS):
+                    return "single"
+                start = text.find(verb, start + 1)
+        return None
+
+    def _is_property_selection(self, text: str) -> bool:
+        """True if selection targets an attribute, e.g. '选择零件类型'."""
+        for entity in self.ENTITY_OBJECTS:
+            for prop in self.PROPERTY_WORDS:
+                if entity + prop in text:
+                    return True
+        return False
+
+    def _check_behavior_target(self, text: str,
+                               domain_context: Dict[str, Any]) -> Optional[Decision]:
+        """Behavior target: write to CATIA vs UI-only draft.
+
+        ``domain_context["field_targets"]`` may pre-resolve a field's
+        target, in which case this axis does not ask.
+        """
+        compact = text.replace(" ", "")
+        if any(s in compact for s in self.DOMAIN_TARGET_SIGNALS):
+            return None
+        if any(s in compact for s in self.UI_TARGET_SIGNALS):
+            return None
+
+        has_edit = any(v in text for v in self.EDIT_VERBS)
+        matched_fields = [f for f in self.FIELD_WORDS if f in text]
+        if has_edit and matched_fields:
+            if self._all_fields_resolved(matched_fields, domain_context):
+                return None
+            return Decision(
+                id="behavior_target",
+                question="修改后写回 CATIA 领域，还是仅保留为 UI/内存草稿？",
+                options=["write_to_catia", "ui_draft_only"],
+                default="",
+            )
+
+        # A bare "save" with no target also needs a behavior target.
+        if "保存" in text and not any(
+                s in text for s in ("保存到", "保存至", "保存为", "保存后", "写回", "写入")):
+            return Decision(
+                id="behavior_target",
+                question="修改后写回 CATIA 领域，还是仅保留为 UI/内存草稿？",
+                options=["write_to_catia", "ui_draft_only"],
+                default="",
+            )
+
+        return None
+
+    def _all_fields_resolved(self, matched_fields: List[str],
+                             domain_context: Dict[str, Any]) -> bool:
+        """True if every matched field has a valid target in domain_context."""
+        field_targets = domain_context.get("field_targets", {})
+        if not field_targets:
+            return False
+        return all(
+            f in field_targets and field_targets[f] in self.VALID_FIELD_TARGETS
+            for f in matched_fields
+        )
+
+    def _check_commit_timing(self, text: str) -> Optional[Decision]:
+        """Commit timing: immediate vs on-Apply/confirm."""
+        if not any(v in text for v in self.EDIT_VERBS):
+            return None
+        if any(s in text for s in self.IMMEDIATE_SIGNALS):
+            return None
+        if any(s in text for s in self.DEFERRED_SIGNALS):
+            return None
+        return Decision(
+            id="commit_timing",
+            question="修改是立即生效，还是点击 Apply/确认后生效？",
+            options=["immediate", "on_apply"],
+            default="",
+        )
+
+    def _resolve_value_dependency(self, text: str,
+                                  domain_context: Dict[str, Any]) -> Dict[str, str]:
+        """Resolve an intrinsic value dependency from domain_context.
+
+        The value_dependency axis never asks on its own: a dependency
+        signal (筛选/取决于/根据/联动) already expresses the constraint;
+        its absence is not grounds to ask — two values existing does NOT
+        imply a dependency. When domain_context supplies an intrinsic
+        dependency that the intent mentions, resolve it instead of asking.
+        """
+        resolved = {}
+        for dep in domain_context.get("value_dependencies", []):
+            source = dep.get("source", "")
+            targets = dep.get("targets", [])
+            if source and source in text and any(t in text for t in targets):
+                resolved["value_dependency"] = "dependent"
+                break
+        return resolved
 
 
 class RequirementsDecomposer:

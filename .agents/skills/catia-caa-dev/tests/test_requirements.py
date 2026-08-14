@@ -125,6 +125,24 @@ if isinstance(result, ClarificationResult):
 else:
     ck("result is valid type", True, "non-ClarificationResult is acceptable")
 
+# ═══════════════════════════════════════════════════════════════════
+# [8] UI Generator 4-axis integration (UIGeneratorClarifier wired in)
+# ═══════════════════════════════════════════════════════════════════
+print("\n[8] UI Generator 4-axis integration")
+FOUR_AXES = {"selection_cardinality", "behavior_target", "commit_timing", "value_dependency"}
+
+ui_result = clarifier.analyze("做一个 BOM 面板，可以选择零件、改名字和颜色。")
+ui_ids = {d.id for d in ui_result.unresolved}
+ck("UI intent surfaces 4-axis questions",
+   {"selection_cardinality", "behavior_target", "commit_timing"} <= ui_ids,
+   f"got {sorted(ui_ids)}")
+
+plain_result = clarifier.analyze("Export BOM from assembly")
+plain_ids = {d.id for d in plain_result.unresolved}
+ck("non-UI intent does not surface 4-axis questions",
+   FOUR_AXES.isdisjoint(plain_ids),
+   f"got {sorted(plain_ids)}")
+
 print(f"\n{'='*60}")
 print(f"  Total: {passed}/{total} passed")
 print(f"{'='*60}")
