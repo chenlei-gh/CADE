@@ -42,7 +42,7 @@ print("=" * 60)
 src = (SKILL_ROOT / "skills" / "icon_provider.py").read_text(encoding="utf-8")
 all_patterns = sorted(set(re.findall(r'"([a-z][a-z0-9_-]*)"\s*:\s*lambda', src)))
 
-check("Pattern count >= 100", len(all_patterns) >= 100,
+check("Pattern count == 71", len(all_patterns) == 71,
       f"{len(all_patterns)} patterns found")
 
 # Runtime extraction must match the test-side regex (guards table refactors)
@@ -197,7 +197,7 @@ print("\n" + "=" * 60)
 print("  E. Multi-Color / Accent")
 print("=" * 60)
 
-accent_icons = ["heart", "flame", "lightning", "star", "trophy", "warning", "sun", "target"]
+accent_icons = ["heart", "star", "fillet", "chamfer"]
 accent_colors = 0
 for name in accent_icons:
     try:
@@ -211,7 +211,7 @@ for name in accent_icons:
     except Exception:
         pass
 
-check("Accent icons multi-color", accent_colors >= 6,
+check("Accent icons multi-color", accent_colors >= 3,
       f"{accent_colors}/{len(accent_icons)} icons have 10+ colors")
 
 
@@ -516,6 +516,89 @@ for fn in goldens:
         print(f"  [FAIL] golden {fn.name}: {diff} bytes differ")
 check("visual regression pixel-identical", golden_bad == 0,
       f"{len(goldens)-golden_bad}/{len(goldens)} identical")
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PART K: Official Base resolver (no 9832 scan; CATIA optional)
+# ═══════════════════════════════════════════════════════════════
+print("\n" + "=" * 60)
+print("  K. Official Base Resolver")
+print("=" * 60)
+
+from icon_provider import (
+    official_candidate_stem, resolve_official_icon, _official_icons_dir,
+    _render_icon as _prim_render,
+)
+
+check("hole -> I_Hole", official_candidate_stem("hole") == "I_Hole",
+      official_candidate_stem("hole"))
+check("sketch alias -> I_Sketcher",
+      official_candidate_stem("sketch") == "I_Sketcher",
+      official_candidate_stem("sketch"))
+check("remove alias -> I_RemoveBody",
+      official_candidate_stem("remove") == "I_RemoveBody",
+      official_candidate_stem("remove"))
+check("circular pattern",
+      official_candidate_stem("pattern", ("circular",)) == "I_CircularPattern",
+      official_candidate_stem("pattern", ("circular",)))
+check("bare pattern denied", official_candidate_stem("pattern") is None)
+check("rename denied", official_candidate_stem("rename") is None)
+check("bom denied", official_candidate_stem("bom") is None)
+check("color denied", official_candidate_stem("color") is None)
+check("part+asm weak-blocked",
+      official_candidate_stem("part", ("to", "asm")) is None)
+check("bare part allowed", official_candidate_stem("part") == "I_Part",
+      official_candidate_stem("part"))
+check("loft denied (variants only)", official_candidate_stem("loft") is None)
+
+# CATIA-absent: resolve_official_icon must be None, get_icon still works
+off_dir = _official_icons_dir()
+check("icons dir probe is Path or None",
+      off_dir is None or (hasattr(off_dir, "is_dir") and off_dir.is_dir()),
+      str(off_dir))
+
+# Production CADE commands must never pick a near-miss official file
+for prod in ("CAAAutoRename", "CAAAutoColor", "CAABOMTool", "CAAPartToAsm"):
+    off = resolve_official_icon(prod)
+    check(f"{prod} stays Primitive", off is None, off)
+
+# Unknown / fallback never claims official
+check("unknown command no official",
+      resolve_official_icon("TotallyUnknownCmd") is None)
+
+# get_icon still returns a 22x22 24bpp BMP when official is absent OR present
+p_h = get_icon("CreateHoleCmd")
+check("CreateHoleCmd get_icon returns file", p_h is not None and p_h.exists())
+if p_h is not None:
+    hb = p_h.read_bytes()
+    check("CreateHoleCmd 22x22 24bpp",
+          hb[:2] == b"BM"
+          and abs(int.from_bytes(hb[18:22], "little", signed=True)) == 22
+          and int.from_bytes(hb[28:30], "little") == 24)
+
+if off_dir is not None:
+    hole_off = resolve_official_icon("CreateHoleCmd")
+    check("B28 CreateHoleCmd -> I_Hole.bmp",
+          hole_off is not None and hole_off.name == "I_Hole.bmp",
+          hole_off.name if hole_off else None)
+    circ = resolve_official_icon("CreateCircleCmd")
+    check("B28 CreateCircleCmd -> I_Circle.bmp",
+          circ is not None and circ.name == "I_Circle.bmp",
+          circ.name if circ else None)
+    sk = resolve_official_icon("CreateSketchCmd")
+    check("B28 CreateSketchCmd -> I_Sketcher.bmp",
+          sk is not None and sk.name == "I_Sketcher.bmp",
+          sk.name if sk else None)
+    # Overlay must differ from both raw official and primitive-only
+    if hole_off is not None and p_h is not None:
+        prim = _prim_render("hole", "plus").read_bytes()
+        composed = p_h.read_bytes()
+        raw = hole_off.read_bytes()
+        check("overlay != primitive hole+plus", composed != prim)
+        check("overlay != raw official I_Hole", composed != raw)
+else:
+    check("B28 not installed: official lookup is None",
+          resolve_official_icon("CreateHoleCmd") is None)
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -24,7 +24,7 @@ CADE 的架构级约束，定义"什么是权威来源、什么入口必须走�
 - **[retrieval.md](architecture/retrieval.md)** - 检索架构契约 v1（四索引模型、权威来源、Decision Rules、禁止事项）
 - **[ADR-CADE-UI-Semantic-Layer.md](architecture/ADR-CADE-UI-Semantic-Layer.md)** - CADE UI Semantic Layer 架构决策（所有权边界、create/regen 变更语义、roadmap）
 - **[UI_GENERATOR_CLARIFICATION_POLICY.md](architecture/UI_GENERATOR_CLARIFICATION_POLICY.md)** - UI Generator 澄清策略（四轴不可安全推断边界、触发条件、Non-Goals）
-- **[ADR-Icon-Provider-Freeze.md](architecture/ADR-Icon-Provider-Freeze.md)** - Icon Provider 架构冻结（127 Primitive 默认 + 16 项 Official Base 白名单设计冻结；不扫 B28、不 Overlay、不改生产代码）
+- **[ADR-Icon-Provider-Freeze.md](architecture/ADR-Icon-Provider-Freeze.md)** - Icon Provider：71 Primitive 默认 + 运行时 Official Base 检索（本机 B28 `I_*.bmp` 只读、不入库）+ 现有 Badge Overlay
 
 ---
 

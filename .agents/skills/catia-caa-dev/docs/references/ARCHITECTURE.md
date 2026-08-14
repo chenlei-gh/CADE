@@ -24,7 +24,7 @@
 │          │ refactor │  refactor.py           │
 │          │ rollback │  diagnostics.py        │
 ├──────────┴──────────┼───────────────────────┤
-│   Generator (16类型) │  Icon Provider (127图案)│
+│   Generator (16类型) │  Icon Provider (71图案) │
 │   Changeset (预览)   │  Backup (回滚)         │
 ├─────────────────────┴───────────────────────┤
 │           Meta Model (10实体)                │
@@ -43,7 +43,7 @@
 | `build.py` | mkmk 编译管线 + 环境初始化 | ~530 |
 | `run.py` | CNEXT 启动/停止/热重启 | ~590 |
 | `generator.py` | 模板引擎 (16 种类型) | ~580 |
-| `icon_provider.py` | 127 种几何图标，语义解析 + 22px CATIA/HD PNG 双渲染 | ~810 |
+| `icon_provider.py` | 71 种几何图标，语义解析 + 22px CATIA/HD PNG 双渲染 | ~810 |
 | `changeset.py` | 变更预览 + 应用/回滚 | ~380 |
 | `meta_model.py` | 工作区元模型 (10 实体) | ~1150 |
 | `refactor.py` | 重命名/移动/提取接口 | ~500 |
@@ -100,17 +100,15 @@
 ## 图标系统
 
 ```
-Domain keyword → analyze_command() → IconSemantic → 127 patterns
-    │  (EXACT → COMPOUND → LONGEST → FALLBACK 四级解析)
-    │
-    ├── _get_color_for_icon() → longest-first color
-    └── _draw_icon_4x_rgba()  → RGBA body/edge/dim/accent
+Domain keyword → analyze_command() → IconSemantic
+    │  (EXACT → COMPOUND → LONGEST → FALLBACK)
+    ▼
+Official Resolver（有限精确候选 exists()，不扫 9832、不模糊）
+    ├─ HIGH + 语义可接受 → 本机 B28 I_*.bmp + 现有 Badge
+    └─ 未命中 / DENY / 歧义     → 71 Primitive + 现有 Badge
             │
             ▼
-    88x88 4x supersample → LANCZOS → 22x22
-            │
-            ▼
-    FASTOCTREE quantize → 8-bit indexed BMP
+    22×22 24-bit BMP（CATRsc 仍是 I_<命令名>）
             │
             ▼
     CNext/resources/graphic/icons/normal/
@@ -370,7 +368,7 @@ cade clean                      # 清理构建产物
 | 日常 | 7 | home, user, calendar, camera, map, battery, power |
 | 3D | 5 | cube, contour, package, download/upload |
 | 锁/UI/参考 | 17 | lock, window, eye, hand, info, warning, plane, axis |
-| **合计** | **127** | |
+| **历史合计** | **127** | 已裁到 71；权威清单见 `icon_provider.py` `PATTERN_NAMES` |
 
 ## 配置系统
 

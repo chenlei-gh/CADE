@@ -1,14 +1,17 @@
 """
-CADE Icon Provider v3.7
+CADE Icon Provider v3.8
 =======================
-127 geometric patterns, semantic name resolver, dual rasterizers.
+71 geometric patterns, semantic name resolver, dual rasterizers,
+runtime Official Base (B28 I_*.bmp, never copied into the repo).
 
 Pipeline:
   command name -> normalize_command_name() -> IconSemantic
     (operation / object / modifier, confidence EXACT|COMPOUND|LONGEST|FALLBACK)
-  -> (base pattern, corner badge) -> geometry (119 lambdas, S-scaled)
+  -> Official Base?  finite candidate exists() on local B28 normal/
+       yes: official BMP (read-only) + existing Badge plate
+       no:  71 Primitive + existing Badge plate
   -> rasterizer:
-       CATIA renderer : 22x22, 4x SSAA, BOX, halftone, 8-bit palette BMP
+       CATIA renderer : 22x22, 4x SSAA, BOX, 24-bit BMP
        HD renderer    : proportional canvas, LANCZOS, 24-bit BMP / RGBA PNG
 
 Official CATIA icon style spec (sampled from B28 win_b64 resources):
@@ -44,7 +47,7 @@ CACHE_DIR = Path.home() / ".cade" / "cache" / "icons"
 # ─── Official CATIA icon style (sampled from B28 win_b64 resources) ───
 CATIA_BG = (192, 192, 192)        # dominant official background gray
 CATIA_INK = (24, 16, 82)          # dominant official dark-navy outline
-CACHE_VER = "v10"                 # salt for ICON_HASH (v10: semantic resolver + hash-keyed cache)
+CACHE_VER = "v12"                 # salt for ICON_HASH (v12: drop 56 unused decorative primitives)
 
 # ─── Domain → Icon ───────────────────────────────────────────────
 DOMAIN_MAP = {
@@ -106,7 +109,6 @@ _GN    = (0, 150, 0)      # 绿 —— measure/check 语义保留（官方 Analy
 _YL    = (255, 238, 135)  # 浅黄 —— 文件/保存类
 _PU    = (128, 0, 128)    # 紫 —— 交互/设置类（低频，保留）
 _MG    = (210, 0, 210)    # 品红 —— test/dev 语义
-_OR    = (255, 100, 0)    # 橙 —— flame 等特殊语义
 
 COLOR_MAP: Dict[str, Tuple[int,int,int]] = {
     # 建模类：主体奶油黄（与 I_Pad/I_Pocket/I_Hole/I_Split/I_Rotate 一致）
@@ -136,7 +138,7 @@ COLOR_MAP: Dict[str, Tuple[int,int,int]] = {
     "config":_PU,"configure":_PU,"option":_PU,"view":_PU,
     "zoom":_PU,"pan":_PU,"cursor":_PU,"window":_PU,
     "eye":_PU,"magnify":_PU,"hand":_PU,"layer":_PU,
-    "chevron":_PU,"chat":_PU,
+    "chevron":_PU,
     # 文件/保存/导入导出类：浅黄
     "save":_YL,"open":_YL,"export":_YL,"import":_YL,"file":_YL,
     "catalog":_YL,"database":_YL,"search":_YL,"filter":_YL,
@@ -145,16 +147,14 @@ COLOR_MAP: Dict[str, Tuple[int,int,int]] = {
     # 测试/开发类：品红（语义色）
     "test":_MG,"test_tool":_MG,"dev":_MG,"play":_MG,"code":_MG,
     # 特殊语义图标
-    "heart":(155,0,0),"lock":_YL,"plus":_GN,"lightning":_YL,
-    "flame":_OR,"trophy":_YL,"pin":(155,0,0),"forward":_GN,
-    "target":(255,0,0),"shield":_SKY,"star":_YL,"merge":_CREAM,
+    "heart":(155,0,0),"lock":_YL,"plus":_GN,"star":_YL,"merge":_CREAM,
     "move":_CREAM,"ruler":_GN,"arc":_CREAM,"circle":_CREAM,
     "pencil":_CREAM,"grid":_CREAM,"wave":_CREAM,"arrow_up":_CREAM,
     "settings":_PU,
     # 命名/编辑/更新类（常用工具动词）
     "rename":_CREAM,"edit":_CREAM,"update":_CREAM,"modify":_CREAM,
-    "replace":_CREAM,"delete":_CREAM,"remove":_CREAM,"copy":_CREAM,
-    "paste":_CREAM,"undo":_CREAM,"redo":_CREAM,"refresh":_CREAM,
+    "replace":_CREAM,"remove":_CREAM,"copy":_CREAM,
+    "refresh":_CREAM,
     "apply":_CREAM,"ok":_CREAM,"cancel":_CREAM,"reset":_CREAM,
     "batch":_CREAM,"auto":_CREAM,"wizard":_CREAM,"preview":_CREAM,
 }
@@ -254,14 +254,8 @@ BADGE_PLATE_RATIO = 10 / 22   # badge plate edge / canvas edge, flush bottom-rig
 
 # Accent colors (multi-color highlights), hoisted for ICON_HASH + audit
 ACCENT_MAP: Dict[str, Tuple[int,int,int,int]] = {
-    "flame": (255, 200, 0, 255),
-    "lightning": (255, 255, 0, 255),
-    "sun": (255, 200, 0, 255),
-    "trophy": (255, 200, 0, 255),
-    "warning": (255, 200, 0, 255),
     "star": (255, 200, 0, 255),
     "heart": (255, 100, 100, 255),
-    "target": (255, 0, 0, 255),
     "fillet": (155, 0, 0, 255),
     "chamfer": (155, 0, 0, 255),
     "split": (155, 0, 0, 255),
@@ -343,6 +337,98 @@ def resolve_icon(command_name: str, hint: str = None) -> str:
     """Back-compat: returns base pattern name (badge dropped)."""
     return resolve_icon_ex(command_name, hint)[0]
 
+
+# ─── Official Base (runtime lookup, never copied into the repo) ───
+# Alias table covers NAMING TRAPS only, not coverage. Ambiguous objects
+# (only variants exist, or CADE-specific semantics) stay Primitive.
+_OFFICIAL_ALIAS: Dict[str, str] = {
+    "sketch": "I_Sketcher",
+    "remove": "I_RemoveBody",   # boolean remove; generic I_Remove is a trap
+}
+_OFFICIAL_DENY = frozenset({
+    # CADE-specific / semantically unequal to any official I_*.bmp
+    "rename", "bom", "color", "tool", "feature", "element",
+    "properties", "mode", "numeric", "assemble", "loft", "axis",
+    "boss", "reference",
+})
+_OFFICIAL_WEAK = frozenset({
+    # Generic CATIA objects: official I_Part / I_Product exist but only
+    # apply when the command is that object itself, not a compound.
+    "part", "product", "body", "model", "instance", "geometry",
+    "component", "link",
+})
+_OFFICIAL_NOISE = frozenset({
+    "auto", "batch", "all", "new", "my", "the", "and", "or",
+    "to", "of", "for", "with", "from",
+})
+
+
+def _official_icons_dir() -> Optional[Path]:
+    """Local B28 normal/ from CATIA_INSTALL. None if missing. Never writes."""
+    cached = getattr(_official_icons_dir, "_cached", None)
+    if cached is not None:
+        return cached if cached is not False else None
+    result: Optional[Path] = None
+    try:
+        cfg = Path(__file__).resolve().parent.parent / "config" / "caa_env_config.txt"
+        if cfg.is_file():
+            install = ""
+            for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = line.strip()
+                if line.startswith("CATIA_INSTALL="):
+                    install = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    break
+            if install:
+                for arch in ("win_b64", "intel_a"):
+                    d = Path(install) / arch / "resources" / "graphic" / "icons" / "normal"
+                    if d.is_dir():
+                        result = d
+                        break
+    except Exception:
+        result = None
+    _official_icons_dir._cached = result if result is not None else False
+    return result
+
+
+def official_candidate_stem(obj: Optional[str],
+                            modifiers: Tuple[str, ...] = ()) -> Optional[str]:
+    """Finite official I_* stem for a semantic object, or None.
+
+    Exact Pascal name only. No glob, no fuzzy search, no 9832-file scan.
+    Alias table is for naming traps (Sketch/Sketcher, Remove/RemoveBody).
+    """
+    if not obj or obj in _OFFICIAL_DENY:
+        return None
+    mods = tuple(m for m in modifiers if m and m not in _OFFICIAL_NOISE)
+    if obj == "pattern":
+        if "circular" in modifiers or "circ" in modifiers:
+            return "I_CircularPattern"
+        if "rectangular" in modifiers or "rect" in modifiers:
+            return "I_RectangularPattern"
+        return None  # no generic I_Pattern.bmp
+    if obj in _OFFICIAL_ALIAS:
+        return _OFFICIAL_ALIAS[obj]
+    if obj in _OFFICIAL_WEAK and mods:
+        return None
+    return "I_" + obj[:1].upper() + obj[1:]
+
+
+def resolve_official_icon(command_name: str, hint: str = None) -> Optional[Path]:
+    """Read-only path to a B28 official BMP, or None (Primitive fallback).
+    Does not copy, does not change analyze_command() results."""
+    sem = analyze_command(command_name, hint)
+    if sem.confidence == "FALLBACK" or not sem.obj:
+        return None
+    stem = official_candidate_stem(sem.obj, sem.modifier)
+    if not stem:
+        return None
+    d = _official_icons_dir()
+    if d is None:
+        return None
+    path = d / f"{stem}.bmp"
+    return path if path.is_file() else None
+
+
 def _get_color_for_icon(icon_name: str) -> Tuple[int,int,int]:
     nl = icon_name.lower().replace("-","_").replace(" ","_")
     if nl in COLOR_MAP: return COLOR_MAP[nl]
@@ -359,15 +445,27 @@ def get_icon(icon_name: str, style: str = "geo", size: int = 22,
     format='bmp' (CATIA runtime) or 'png' (docs/previews; alpha=True for
     transparent background). hint = entity-level domain hint (e.g. the
     Command's category), takes priority over name parsing.
-    Cache key includes ICON_HASH."""
+    Official Base: if a local B28 I_*.bmp matches the semantic object,
+    that BMP is the canvas and the existing badge plate is composited.
+    Cache key includes ICON_HASH and the official stem (if any)."""
     base, badge = resolve_icon_ex(icon_name, hint)
+    official = resolve_official_icon(icon_name, hint)
+    tag = official.stem if official is not None else "prim"
     cache_name = f"{icon_name}+{badge}" if badge else icon_name
-    key = (f"{cache_name}_{ICON_HASH}_{style}_{size}{'a' if alpha else ''}"
+    key = (f"{cache_name}_{tag}_{ICON_HASH}_{style}_{size}{'a' if alpha else ''}"
            .replace("/","_").replace(" ","_").replace(":","_"))
     ext = "png" if format == "png" else "bmp"
     cached = CACHE_DIR / f"{key}.{ext}"
     if cached.exists(): return cached
-    path = _render_icon(base, badge, size=size, format=format, alpha=alpha)
+    path = None
+    if official is not None:
+        try:
+            path = _compose_official(official, badge, size=size,
+                                     format=format, alpha=alpha)
+        except Exception:
+            path = None  # corrupt / unreadable official BMP → Primitive
+    if path is None:
+        path = _render_icon(base, badge, size=size, format=format, alpha=alpha)
     if path:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         shutil.copy(path, cached)
@@ -461,6 +559,53 @@ def _rasterize_hd(img_big: Image.Image, size: int, fmt: str, alpha: bool,
     return tmp
 
 
+def _compose_official(official: Path, badge: str = None, size: int = 22,
+                      format: str = "bmp", alpha: bool = False) -> Path:
+    """Official BMP as canvas + existing badge plate. Never writes the source.
+
+    22px BMP keeps official pixels; only the badge corner is replaced.
+    HD / PNG nearest-scales the 22px composite. Gray punch for alpha PNG."""
+    src = Image.open(official).convert("RGB")
+    if src.size != (22, 22):
+        src = src.resize((22, 22), Image.NEAREST)
+    hd = size > 22 or format == "png"
+    ext = "png" if format == "png" else "bmp"
+    tmp = Path(os.environ.get("TEMP", "/tmp")) / \
+        f"cade_icon_off_{official.stem}_{badge or 'base'}_{size}_{os.getpid()}.{ext}"
+    if not hd:
+        # Keep official 22px pixels; only the badge corner is replaced.
+        canvas = src.convert("RGBA")
+        if badge:
+            plate = _render_badge_plate(badge, 8)
+            plate_sz = round(22 * BADGE_PLATE_RATIO)
+            plate = plate.resize((plate_sz, plate_sz), Image.BOX)
+            canvas.alpha_composite(plate, (22 - plate_sz, 22 - plate_sz))
+        canvas.convert("RGB").save(tmp, format="BMP")
+        return tmp
+    S = max(8, round(8 * size / 22))
+    big = src.resize((22 * S, 22 * S), Image.NEAREST).convert("RGBA")
+    if badge:
+        plate = _render_badge_plate(badge, S)
+        big.alpha_composite(plate, (big.width - plate.width,
+                                    big.height - plate.height))
+    img = big.resize((size, size), Image.NEAREST)
+    if format == "png":
+        if alpha:
+            px = img.load()
+            for y in range(img.height):
+                for x in range(img.width):
+                    r, g, b, a = px[x, y]
+                    if abs(r - CATIA_BG[0]) < 8 and abs(g - CATIA_BG[1]) < 8 \
+                            and abs(b - CATIA_BG[2]) < 8:
+                        px[x, y] = (r, g, b, 0)
+        else:
+            img = img.convert("RGB")
+        img.save(tmp, format="PNG")
+        return tmp
+    img.convert("RGB").save(tmp, format="BMP")
+    return tmp
+
+
 def _render_icon(icon_name: str, badge: str = None, size: int = 22,
                  format: str = "bmp", alpha: bool = False) -> Path:
     """Render to BMP/PNG, official CATIA style: gray bg, navy ink.
@@ -501,7 +646,7 @@ def _render_icon(icon_name: str, badge: str = None, size: int = 22,
 
 
 def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT, BG=None):
-    """119 patterns at 4x on RGBA. BODY/EDGE/DIM/ACCENT = RGBA tuples.
+    """71 patterns at 4x on RGBA. BODY/EDGE/DIM/ACCENT = RGBA tuples.
     BG = cutout color: default CATIA gray; transparent in alpha-PNG mode."""
     W,H=22*S,22*S; c=W//2; B,E,D,AC=BODY,EDGE,DIM,ACCENT
     if BG is None: BG=(*CATIA_BG,255)  # cutout color: shows the gray background through
@@ -610,13 +755,7 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT, BG=None):
             j=(i+1)%len(pts); P([pts[i],pts[j],off[j],off[i]], fill=SHADE, outline=E)
         P(off, fill=WHITE, outline=E); P(pts, fill=front, outline=E)
 
-    def _ngon(cx,cy,r,n):
-        pts=[(cx+r*cos(-pi/2+2*pi*i/n),cy+r*sin(-pi/2+2*pi*i/n)) for i in range(n)]
-        P(pts,fill=B); P(pts,outline=E)
 
-    def _sun_rays():
-        for a in [i*pi/4 for i in range(8)]:
-            L([c+7*S*cos(a),c+7*S*sin(a),c+10*S*cos(a),c+10*S*sin(a)],fill=E,width=2*S)
 
     _ = {
 "box":       lambda:[_iso_block(2*S,7*S,12*S,12*S,5*S),R([6*S,11*S,11*S,16*S],fill=DSHADE),R([6*S,11*S,11*S,16*S],outline=E,width=S)],
@@ -666,69 +805,13 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT, BG=None):
 "heart":     lambda:[O([3*S,2*S,10*S,9*S],fill=B),O([11*S,2*S,18*S,9*S],fill=B),P([3*S,6*S,18*S,6*S,c,19*S],fill=B),O([3*S,2*S,10*S,9*S],outline=E),O([11*S,2*S,18*S,9*S],outline=E),P([3*S,6*S,18*S,6*S,c,19*S],outline=E)],
 "lock":      lambda:[AR([4*S,4*S,17*S,12*S],180,0,fill=E,width=3*S),R([5*S,10*S,16*S,20*S],fill=B),R([5*S,10*S,16*S,20*S],outline=E),O([8*S,13*S,13*S,18*S],fill=BG),R([8*S,14*S,13*S,18*S],fill=E)],
 "plus":      lambda:[R([c-2*S,4*S,c+2*S,17*S],fill=B),R([4*S,c-2*S,17*S,c+2*S],fill=B),R([c-2*S,4*S,c+2*S,17*S],outline=E),R([4*S,c-2*S,17*S,c+2*S],outline=E)],
-"triangle":  lambda:P([c,1*S,1*S,20*S,20*S,20*S],fill=B),
 "diamond":   lambda:P([(c,1*S),(20*S,c),(c,20*S),(1*S,c)],fill=B),
-"hexagon":   lambda:_ngon(c,c,9*S,6),
-"pentagon":  lambda:_ngon(c,c,9*S,5),
-"octagon":   lambda:_ngon(c,c,9*S,8),
-"cross":     lambda:[L([c,2*S,c,19*S],fill=B,width=4*S),L([2*S,c,19*S,c],fill=B,width=4*S)],
-"slash":     lambda:L([3*S,2*S,18*S,19*S],fill=E,width=3*S),
-"dots":      lambda:[O([c-2*S,c-2*S,c+2*S,c+2*S],fill=E),O([c-2*S,3*S,c+2*S,7*S],fill=B),O([c-2*S,14*S,c+2*S,18*S],fill=B)],
-"ring":      lambda:O([2*S,2*S,19*S,19*S],outline=E,width=3*S),
-"target":    lambda:[O([2*S,2*S,19*S,19*S],outline=E,width=S),O([6*S,6*S,15*S,15*S],outline=B,width=S),O([c-2*S,c-2*S,c+2*S,c+2*S],fill=E)],
-"arrow-down":lambda:[P([c,20*S,2*S,9*S,7*S,9*S,7*S,1*S,14*S,1*S,14*S,9*S,19*S,9*S],fill=B),P([c,20*S,2*S,9*S,7*S,9*S,7*S,1*S,14*S,1*S,14*S,9*S,19*S,9*S],outline=E)],
-"arrow-left":lambda:[P([1*S,c,12*S,2*S,12*S,7*S,20*S,7*S,20*S,14*S,12*S,14*S,12*S,19*S],fill=B),P([1*S,c,12*S,2*S,12*S,7*S,20*S,7*S,20*S,14*S,12*S,14*S,12*S,19*S],outline=E)],
-"arrow-right":lambda:[P([20*S,c,9*S,2*S,9*S,7*S,1*S,7*S,1*S,14*S,9*S,14*S,9*S,19*S],fill=B),P([20*S,c,9*S,2*S,9*S,7*S,1*S,7*S,1*S,14*S,9*S,14*S,9*S,19*S],outline=E)],
 "refresh":   lambda:[AR([2*S,2*S,14*S,14*S],180,450,fill=E,width=3*S),P([13*S,1*S,13*S,6*S,18*S,1*S],fill=E)],
-"chevron-down":lambda:P([2*S,7*S,c,15*S,19*S,7*S],fill=B),
-"chevron-up":lambda:P([2*S,14*S,c,6*S,19*S,14*S],fill=B),
-"pause":     lambda:[R([5*S,2*S,9*S,19*S],fill=B),R([12*S,2*S,16*S,19*S],fill=B)],
-"stop":      lambda:R([3*S,3*S,18*S,18*S],fill=B),
-"forward":   lambda:[P([4*S,2*S,4*S,19*S,14*S,c],fill=B),P([14*S,2*S,14*S,19*S,20*S,c],fill=B)],
-"backward":  lambda:[P([17*S,2*S,17*S,19*S,7*S,c],fill=B),P([7*S,2*S,7*S,19*S,1*S,c],fill=B)],
-"key":       lambda:[O([c-2*S,c-2*S,c+2*S,c+2*S],fill=E),L([c,c,18*S,5*S],fill=B,width=3*S),L([13*S,7*S,19*S,4*S],fill=B,width=2*S)],
-"bell":      lambda:[P([c,1*S,2*S,8*S,2*S,14*S,19*S,14*S,19*S,8*S],fill=B),R([8*S,14*S,13*S,17*S],fill=B),O([9*S,17*S,12*S,20*S],fill=D)],
-"tag":       lambda:[P([2*S,2*S,18*S,2*S,18*S,12*S,c,19*S,2*S,12*S],fill=B),O([c-3*S,c-3*S,c+3*S,c+3*S],fill=BG)],
-"pin":       lambda:[O([5*S,1*S,16*S,12*S],fill=B),P([8*S,10*S,13*S,10*S,c,20*S],fill=B)],
-"flag":      lambda:[L([3*S,1*S,3*S,20*S],fill=E,width=2*S),P([3*S,1*S,18*S,4*S,3*S,8*S],fill=B)],
-"trophy":    lambda:[AR([2*S,2*S,9*S,9*S],180,0,fill=B,width=3*S),AR([12*S,2*S,19*S,9*S],180,0,fill=B,width=3*S),R([5*S,7*S,16*S,15*S],fill=B),R([7*S,15*S,14*S,20*S],fill=B)],
-"shield":    lambda:[P([c,1*S,19*S,5*S,19*S,14*S,c,20*S,2*S,14*S,2*S,5*S],fill=B),P([c,1*S,19*S,5*S,19*S,14*S,c,20*S,2*S,14*S,2*S,5*S],outline=E)],
-"clock":     lambda:[O([2*S,2*S,19*S,19*S],outline=E,width=2*S),L([c,c,c,6*S],fill=E,width=2*S),L([c,c,14*S,c],fill=B,width=2*S)],
-"delete":    lambda:[R([4*S,5*S,17*S,18*S],fill=B),R([2*S,1*S,19*S,5*S],fill=E),R([7*S,0,14*S,1*S],fill=E)],
 "copy":      lambda:[R([6*S,1*S,17*S,12*S],outline=E,width=S),R([1*S,6*S,12*S,17*S],fill=B),R([1*S,6*S,12*S,17*S],outline=E)],
-"paste":     lambda:[R([5*S,2*S,12*S,9*S],fill=B),R([3*S,6*S,18*S,19*S],outline=E,width=2*S)],
-"undo":      lambda:[AR([2*S,4*S,14*S,17*S],90,270,fill=E,width=3*S),P([3*S,19*S,8*S,17*S,3*S,14*S],fill=E)],
-"redo":      lambda:[AR([7*S,4*S,19*S,17*S],270,90,fill=E,width=3*S),P([18*S,19*S,13*S,17*S,18*S,14*S],fill=E)],
-"zoom-in":   lambda:[O([1*S,1*S,14*S,14*S],outline=E,width=2*S),L([12*S,12*S,20*S,20*S],fill=E,width=3*S),L([4*S,c,10*S,c],fill=D,width=S),L([c,4*S,c,10*S],fill=D,width=S)],
-"zoom-out":  lambda:[O([1*S,1*S,14*S,14*S],outline=E,width=2*S),L([12*S,12*S,20*S,20*S],fill=E,width=3*S),L([4*S,c,10*S,c],fill=D,width=S)],
-"mail":      lambda:[R([2*S,4*S,19*S,17*S],outline=E,width=S),P([2*S,4*S,c,10*S,19*S,4*S],fill=B)],
-"chat":      lambda:[O([4*S,2*S,17*S,12*S],fill=B),P([6*S,10*S,10*S,19*S,14*S,13*S],fill=B)],
-"phone":     lambda:[R([6*S,3*S,15*S,18*S],outline=E,width=2*S),O([8*S,5*S,13*S,10*S],outline=D,width=S)],
-"share":     lambda:[O([7*S,1*S,14*S,8*S],fill=B),O([1*S,9*S,8*S,16*S],fill=B),O([13*S,9*S,20*S,16*S],fill=B),L([c,6*S,4*S,11*S],fill=E,width=S),L([c,6*S,17*S,11*S],fill=E,width=S)],
-"wifi":      lambda:[AR([c-8*S,10*S,c+8*S,c],180,0,fill=E,width=2*S),AR([c-5*S,6*S,c+5*S,c-4*S],180,0,fill=B,width=2*S),AR([c-2*S,2*S,c+2*S,c-8*S],180,0,fill=D,width=2*S),O([c-1*S,c+4*S,c+1*S,c+6*S],fill=E)],
 "minus":     lambda:L([4*S,c,17*S,c],fill=B,width=4*S),
 "multiply":  lambda:[L([3*S,3*S,18*S,18*S],fill=B,width=3*S),L([18*S,3*S,3*S,18*S],fill=B,width=3*S)],
-"divide":    lambda:[O([c-3*S,2*S,c+3*S,7*S],fill=B),L([4*S,c,17*S,c],fill=E,width=2*S),O([c-3*S,13*S,c+3*S,18*S],fill=B)],
-"equal":     lambda:[L([4*S,7*S,17*S,7*S],fill=E,width=3*S),L([4*S,13*S,17*S,13*S],fill=E,width=3*S)],
-"percent":   lambda:[O([2*S,2*S,8*S,8*S],fill=B),L([15*S,3*S,8*S,18*S],fill=E,width=2*S),O([11*S,13*S,17*S,19*S],fill=B)],
-"sun":       lambda:[O([5*S,5*S,16*S,16*S],fill=B),_sun_rays()],
-"moon":      lambda:[O([5*S,2*S,16*S,19*S],fill=B),O([9*S,3*S,20*S,18*S],fill=BG)],
-"cloud":     lambda:[O([2*S,8*S,12*S,15*S],fill=B),O([8*S,4*S,18*S,11*S],fill=B),O([2*S,13*S,19*S,20*S],fill=B)],
-"lightning": lambda:P([c,1*S,7*S,11*S,8*S,11*S,3*S,18*S,14*S,9*S,12*S,9*S,18*S,1*S],fill=E),
-"flame":     lambda:[O([4*S,10*S,17*S,20*S],fill=B),P([c,2*S,4*S,12*S,7*S,10*S],fill=B),P([c,2*S,14*S,10*S,17*S,12*S],fill=B)],
-"home":      lambda:[P([c,1*S,1*S,9*S,20*S,9*S],fill=B),R([3*S,9*S,18*S,20*S],outline=E,width=S),R([7*S,12*S,14*S,20*S],outline=D,width=S)],
-"user":      lambda:[O([c-4*S,1*S,c+4*S,9*S],fill=E),AR([2*S,8*S,19*S,20*S],180,360,fill=B,width=5*S)],
-"calendar":  lambda:[R([2*S,3*S,19*S,19*S],outline=E,width=S),R([2*S,3*S,19*S,7*S],fill=B),L([5*S,1*S,5*S,5*S],fill=E,width=2*S),L([16*S,1*S,16*S,5*S],fill=E,width=2*S),L([5*S,10*S,12*S,10*S],fill=D,width=S),L([5*S,13*S,8*S,13*S],fill=D,width=S)],
-"camera":    lambda:[R([2*S,5*S,19*S,17*S],outline=E,width=2*S),R([7*S,1*S,14*S,5*S],fill=B),O([6*S,8*S,15*S,14*S],outline=D)],
-"map":       lambda:[P([2*S,2*S,14*S,2*S,14*S,14*S,2*S,14*S],fill=B),P([14*S,14*S,7*S,14*S,7*S,19*S,14*S,19*S],fill=B),P([2*S,2*S,14*S,2*S,14*S,14*S,2*S,14*S],outline=E)],
-"battery":   lambda:[R([2*S,5*S,16*S,15*S],outline=E,width=S),R([17*S,7*S,19*S,13*S],fill=E),R([4*S,7*S,9*S,13*S],fill=B),R([10*S,7*S,14*S,13*S],fill=D)],
-"download":  lambda:[P([c,19*S,4*S,11*S,10*S,11*S],fill=B),R([7*S,2*S,14*S,11*S],fill=B),P([c,19*S,4*S,11*S,10*S,11*S],outline=E),R([7*S,2*S,14*S,11*S],outline=E)],
-"upload":    lambda:[P([c,2*S,4*S,10*S,10*S,10*S],fill=B),R([7*S,10*S,14*S,19*S],fill=B),P([c,2*S,4*S,10*S,10*S,10*S],outline=E),R([7*S,10*S,14*S,19*S],outline=E)],
-"power":     lambda:[AR([2*S,2*S,19*S,19*S],225,315,fill=E,width=3*S),L([c,2*S,c,10*S],fill=E,width=2*S)],
 "info":      lambda:[O([2*S,2*S,19*S,19*S],outline=E,width=2*S),R([c-1*S,9*S,c+1*S,12*S],fill=B),O([c-1*S,14*S,c+1*S,16*S],fill=B)],
-"warning":   lambda:[P([c,1*S,1*S,17*S,20*S,17*S],fill=B),P([c,1*S,1*S,17*S,20*S,17*S],outline=E),R([c-1*S,7*S,c+1*S,11*S],fill=E),O([c-1*S,12*S,c+1*S,14*S],fill=E)],
 "question":  lambda:[O([2*S,2*S,19*S,19*S],outline=E,width=2*S),AR([6*S,5*S,14*S,11*S],180,0,fill=B,width=2*S),O([c-1*S,13*S,c+1*S,15*S],fill=B)],
-"globe":     lambda:[O([2*S,2*S,19*S,19*S],outline=E,width=2*S),O([c-1*S,2*S,c+1*S,19*S],fill=D),L([2*S,c,19*S,c],fill=D,width=S)],
 "mirror":    lambda:[P([3*S,4*S,9*S,c,3*S,18*S],fill=B),P([3*S,4*S,9*S,c,3*S,18*S],outline=E),P([19*S,4*S,13*S,c,19*S,18*S],outline=E),L([c,2*S,c,20*S],fill=D,width=S)],
 "plane":     lambda:[P([2*S,15*S,9*S,7*S,20*S,7*S,13*S,15*S],fill=B),P([2*S,15*S,9*S,7*S,20*S,7*S,13*S,15*S],outline=E),L([2*S,15*S,13*S,15*S],fill=D,width=S),L([9*S,7*S,9*S,2*S],fill=E,width=S),P([9*S,1*S,7*S,4*S,11*S,4*S],fill=E),L([2*S,19*S,14*S,19*S],fill=D,width=S)],
 "layer":     lambda:[P([2*S,6*S,c,2*S,20*S,6*S,c,10*S],fill=B),P([2*S,6*S,c,2*S,20*S,6*S,c,10*S],outline=E),P([2*S,11*S,c,7*S,20*S,11*S,c,15*S],fill=D),P([2*S,11*S,c,7*S,20*S,11*S,c,15*S],outline=E),P([2*S,16*S,c,12*S,20*S,16*S,c,20*S],fill=B),P([2*S,16*S,c,12*S,20*S,16*S,c,20*S],outline=E)],
@@ -754,19 +837,8 @@ def _draw_icon_4x_rgba(draw, name, S, BODY, EDGE, DIM, ACCENT, BG=None):
     if AC:
         if name == "heart":
             O([5*S,3*S,8*S,6*S],fill=AC)
-        elif name == "flame":
-            P([c,6*S,7*S,10*S,14*S,10*S],fill=AC)
-        elif name == "lightning":
-            P([c,2*S,8*S,10*S,9*S,10*S,4*S,16*S,13*S,9*S,11*S,9*S,17*S,2*S],fill=AC)  # glow
-        elif name == "sun":
-            for a in [i*pi/4 for i in range(8)]:
-                L([c+6*S*cos(a),c+6*S*sin(a),c+9*S*cos(a),c+9*S*sin(a)],fill=AC,width=2*S)
         elif name == "star":
             _star(c,c,5*S,10*S,5)  # larger star overlay
-        elif name == "trophy":
-            O([c-2*S,8*S,c+2*S,12*S],fill=AC)
-        elif name == "warning":
-            O([c-1*S,12*S,c+1*S,14*S],fill=AC)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -797,10 +869,15 @@ def _compute_icon_hash() -> str:
         repr(sorted(COLOR_MAP.items())),
         repr(sorted(ACCENT_MAP.items())),
         repr(sorted(COMPOUND_MAP.items())),
+        repr(sorted(_OFFICIAL_ALIAS.items())),
+        repr(sorted(_OFFICIAL_DENY)),
+        repr(sorted(_OFFICIAL_WEAK)),
         inspect.getsource(_draw_icon_4x_rgba),
         inspect.getsource(_render_badge_plate),
         inspect.getsource(_apply_checker),
         inspect.getsource(_render_icon),
+        inspect.getsource(_compose_official),
+        inspect.getsource(official_candidate_stem),
         inspect.getsource(_rasterize_catia),
         inspect.getsource(_rasterize_hd),
     ]
@@ -829,13 +906,17 @@ def audit(names: List[str], render_dir: Path = None) -> int:
         print(f"  color:      {_get_color_for_icon(sem.base)}")
         print(f"  fallback:   {'YES' if sem.confidence == 'FALLBACK' else 'no'}")
         print(f"  confidence: {sem.confidence}")
+        stem = official_candidate_stem(sem.obj, sem.modifier)
+        official = resolve_official_icon(n)
+        print(f"  official:   {official.name if official else (stem + ' (missing)' if stem else '-')}")
         if render_dir:
             render_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy(_render_icon(sem.base, sem.badge),
-                        render_dir / f"{n}_22.bmp")
-            shutil.copy(_render_icon(sem.base, sem.badge, size=64,
-                                     format="png", alpha=True),
-                        render_dir / f"{n}_64.png")
+            rendered = get_icon(n, size=22, format="bmp")
+            if rendered:
+                shutil.copy(rendered, render_dir / f"{n}_22.bmp")
+            rendered64 = get_icon(n, size=64, format="png", alpha=True)
+            if rendered64:
+                shutil.copy(rendered64, render_dir / f"{n}_64.png")
     print(f"\n{len(names)} names: "
           + ", ".join(f"{k}={v}" for k, v in counts.items()))
     return 1 if counts["FALLBACK"] else 0

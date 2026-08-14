@@ -10,9 +10,17 @@
 
 ## [未发布]
 
+### 🎨 图标 (2026-08-15)
+
+- **裁掉 56 个无引用装饰图案**：`PATTERN_NAMES` 127 → 71。只删 dispatch 表里不被 `DOMAIN_MAP` / `VERB_MAP` / golden / fallback `diamond` 引用的装饰图案（`flame`/`sun`/`warning` 等）；`heart`/`star` 因 golden 保留。`CACHE_VER` v11 → v12。语义层未改。
+
+### 🎨 图标 (2026-08-14)
+
+- **Official Base + Overlay 上线**：`get_icon()` 在本机 B28 `normal/` 做有限精确候选 `exists()`（不扫 9832、不模糊、不入库）。命中且语义可接受则用官方 BMP 当底再叠现有 Badge（含 CREATE 的 `+`）；未命中 / DENY / 弱对象+修饰词 / 未安装 → Primitive。别名只覆盖命名陷阱（`sketch→I_Sketcher`、`remove→I_RemoveBody`、circular/rectangular pattern）。`analyze_command()` 语义不变。`CACHE_VER` v10 → v11。四个生产命令仍走 Primitive。
+
 ### 📖 文档 (2026-08-14)
 
-- **冻结 Icon Provider 架构基线**：新增 `docs/architecture/ADR-Icon-Provider-Freeze.md`。S1–S4 只读审计后确认：默认仍是 127 Primitive + 现有 Badge；Official Base 仅为未来按真实需求启用的 16 项显式白名单（不含 Fillet），不建库、不扫 B28、不模糊匹配、不做 Overlay。架构/复杂度控制/官方接入路径达到；最终图标视觉产品目标尚未验证，不能宣布完成。本轮不修改 `icon_provider.py`。
+- **冻结 Icon Provider 架构基线**：新增 `docs/architecture/ADR-Icon-Provider-Freeze.md`。S1–S4 只读审计后确认：默认仍是 Primitive + 现有 Badge；Official Base 为运行时检索 + Overlay（不建库、不扫全库、不模糊匹配）。当前 Primitive 计数为 71。
 
 ### 🛠 工具 (2026-07-31)
 
