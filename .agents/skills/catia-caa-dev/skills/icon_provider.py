@@ -85,6 +85,10 @@ DOMAIN_MAP = {
     "view":"eye","constraint":"link","element":"cube",
     "properties":"settings","tool":"settings","mode":"eye",
     "numeric":"chart",
+    # Phase A final: drawing/FTA/assembly vocabulary gaps (regression 2026-08)
+    "drawing":"doc","annotation":"pencil","table":"doc",
+    "tolerance":"dimension","workbench":"settings","section":"eye",
+    "link":"link","bom":"doc",
 }
 
 # ─── Domain → Color ───────────────────────────────────────────────
@@ -186,7 +190,7 @@ VERB_MAP: Dict[str, str] = {
 _CAMEL = re.compile(r'[A-Z]+(?![a-z])|[A-Z][a-z0-9]*|[a-z0-9]+')
 
 # ─── Name normalization (prefix/suffix only, never global replace) ───
-NAME_SUFFIXES = ("command", "cmd", "dialog", "dlg", "addin", "action", "handler")
+NAME_SUFFIXES = ("command", "cmd", "dlg", "addin", "action", "handler")
 NAME_PREFIXES = sorted(
     ("caabom", "caa", "deg", "mmr", "afr", "gvi", "at"),
     key=len, reverse=True)  # longest first: 'caabom' before 'caa'
