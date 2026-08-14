@@ -1,16 +1,30 @@
 # CATIA Dialog Development - Complete Example
 
-> **⚠️ QUARANTINED (2026-08-14)**: This example has **not passed the fictional-API audit**
-> (`docs/examples/` was outside the 2026-07-23 audit scope). Tool check found 15 suspect types,
-> including fabricated names such as `CATDlgGridLayout`, `CATDlgEdtString`, `CATDlgWndModal`,
-> `CATDlgCmbDropDown` (the same fabrication family removed from `knowledge/ui/*` during audit).
-> **Do NOT use as a source of CAA API facts.** Use audited `knowledge/ui/dialog*.md` and
-> `patterns/ui/*` instead, and verify any API with `tools/build_caadoc_index.py --query`.
+> **⚠️ 重要修正（2026-08-14）**：本示例经虚构 API 审计后已整体重写。以下虚构/错误名字已全部替换为经 `knowledge/ui/*`、`patterns/ui/*`（2026-07-23 审计通过）与 SDK 头文件交叉验证的真实 API：
+>
+> | 虚构 / 错误 | 真实 API | 依据 |
+> |---|---|---|
+> | `CATDlgEdtString` / `CATDlgEdtInteger` / `CATDlgEdtReal` / `CATDlgEdtPassword` | 不存在。`CATDlgEditor(parent, name)` 不加类型风格位；取数值用 `GetIntegerValue()` / `GetFloatValue()`，密码掩码用编辑器自身风格位（见 `CATDlgEditor.h`） | SDK 枚举零匹配 + dialog.md |
+> | `CATDlgCmbDropDown` / `CATDlgCmbEntry` | 不存在。`CATDlgCombo(parent, name)` 默认即下拉；追加项 `SetLine(text, -1)`，可见行数 `SetVisibleTextHeight(n)` | SDK 枚举零匹配 + dialog_layout.md §Combo |
+> | `CATDlgCtrHorizontal` / `CATDlgCtrVertical` | 不存在。`CATDlgSeparator(parent, name)` 构造无方向参数 | SDK 枚举零匹配 + dialog_layout.md §Separator |
+> | `CATDlgNfyError` + `DisplayBlocked(msg)` | 不存在。真实是 `CATDlgNotify(this, "Warning")` + `SetText(...)` + `SetVisibility(CATDlgShow)` | dialog_layout.md §验证输入 |
+> | `CATDlgFillLayout` / `CATDlgBorderLayout` | 不存在。Frame 布局风格只有 `CATDlgGridLayout`；外观风格只有 `CATDlgFraNoTitle` / `CATDlgFraNoFrame` / `CATDlgFraNoMargin` | dialog_layout.md §重要修正 |
+> | `CATNull`（`CATImplementClass` 第4参） | 虚构宏族，用 `NULL` | 本项目 mecmod 审计结论 |
+> | `GetCheckBModifyNotification()` | 虚构方法名，真实是 `GetChkBModifyNotification()` | SDK 头文件 |
+> | `GetEditorModifyNotification()` / `GetEditorFocusInNotification()` / `GetEditorFocusOutNotification()` | 虚构方法名，真实是 `GetEditModifyNotification()` / `GetEditFocusInNotification()` / `GetEditFocusOutNotification()` | SDK 头文件 |
+> | `GetRadioBModifyNotification()` | 虚构方法名，真实是 `GetRadBModifyNotification()` | SDK 头文件 |
+> | `pContainer->SetGridConstraints(child, gc)` 两参形式 | 不存在。真实是**子控件自己调** `child->SetGridConstraints(CATDlgGridConstraints(...))` 单参，或 `child->SetGridConstraints(row, col, rspan, cspan, anchor)` 5 参重载 | dialog_layout.md §GridConstraints（CATDialog.h L577/L606） |
+> | `CATDlgWndNoModal` | 不存在。**非模态 = 不传 `CATDlgWndModal` 位**，不是换一个常量 | SDK 枚举零匹配 |
+> | 中文 catalog 目录 `Chinese/` | 真实目录是 `Simplified_Chinese/`（GBK 编码，不能含 emoji） | dialog_dataflow.md §NLS |
+>
+> **误报已复核（工具 NOT-FOUND 但真实存在，予以保留）**：`CATDlgWndModal`、`CATDlgGridLayout`、`CATGRID_4SIDES`、`CATGRID_CENTER`、`CATGRID_LEFT`、`CATGRID_RIGHT`、`CATDlgShow`、`CATDlgHide`、`CATDlgCheck`、`CATDlgUncheck`、`CATMsgCatalog::BuildMessage`。这些是枚举成员/宏常量，不在工具索引内，但在已审计知识文件与 SDK 头文件中有实证。
+>
+> **示例自有方法（非 CAA API，误报）**：`MyDialog` / `OnOKClicked` / `ValidateInput` / `ShowErrorMessage`。
 
 > Complete working example of a CATIA CAA Dialog with all controls
 
-**Version**: 1.0  
-**Framework**: Dialog, ApplicationFrame  
+**Version**: 1.1
+**Framework**: Dialog, ApplicationFrame
 **Target**: CATIA V5R28 (B28)
 
 ---
@@ -22,8 +36,8 @@ This example demonstrates a complete Dialog implementation with:
 - ✅ Dropdown lists (CATDlgCombo)
 - ✅ Checkboxes (CATDlgCheckButton)
 - ✅ Buttons with callbacks
-- ✅ Grid layout management
-- ✅ Resource files (NLS/RSC)
+- ✅ Grid layout management (CATDlgGridLayout + CATDlgGridConstraints)
+- ✅ Resource files (NLS via CATMsgCatalog::BuildMessage)
 - ✅ Input validation
 
 ---
@@ -45,10 +59,9 @@ Framework.edu/
 └── CNext/
     └── resources/
         └── msgcatalog/
-            ├── MyFramework.CATNls         # English strings
-            ├── MyFramework.CATRsc         # Visual styles
-            └── Chinese/                   # Optional
-                └── MyFramework.CATNls     # Chinese strings
+            ├── MyFramework.CATNls         # English strings (UTF-8)
+            └── Simplified_Chinese/        # Optional
+                └── MyFramework.CATNls     # Chinese strings (GBK, no emoji)
 ```
 
 ---
@@ -80,7 +93,7 @@ Key points in the header:
 1. **Inherit from CATDlgDialog**
 2. **Use CATDeclareClass macro**
 3. **Store pointers to all controls as private members**
-4. **Declare callback methods**
+4. **Declare callback methods** (CATCommandMethod signature)
 
 ```cpp
 class MyDialog : public CATDlgDialog
@@ -97,7 +110,7 @@ private:
     CATDlgFrame*        _pMainFrame;
     CATDlgEditor*       _pInputEditor;
     CATDlgPushButton*   _pOKButton;
-    
+
     // Callbacks
     void OnOKClicked(CATCommand*, CATNotification*, CATCommandClientData);
 };
@@ -108,6 +121,7 @@ private:
 ### Step 3: Dialog Implementation (MyDialog.cpp)
 
 #### Constructor
+
 ```cpp
 MyDialog::MyDialog(CATDialog* iParent, const CATString& iName)
     : CATDlgDialog(iParent, iName, CATDlgWndModal | CATDlgGridLayout),
@@ -119,49 +133,67 @@ MyDialog::MyDialog(CATDialog* iParent, const CATString& iName)
 }
 ```
 
-**Constructor flags:**
-- `CATDlgWndModal` - Blocks until closed (use `CATDlgWndNoModal` for non-blocking)
-- `CATDlgGridLayout` - Use grid layout manager
+**Constructor style flags (all real, verified):**
+- `CATDlgWndModal` - Blocks until closed. **There is no `CATDlgWndNoModal`**: a non-modal dialog is built by simply *omitting* the `CATDlgWndModal` bit.
+- `CATDlgGridLayout` - Enables the grid layout manager on the dialog/frame.
+- Standard button row: OR in `CATDlgWndBtnOKCancel` (or `CATDlgWndOK | CATDlgWndCANCEL`) to get built-in OK/Cancel buttons.
+
+---
+
+#### NLS Helper
+
+All user-visible text goes through `CATMsgCatalog::BuildMessage` with an English
+fallback compiled into the binary (production-proven pattern):
+
+```cpp
+static CATUnicodeString NLS(const char* iKey, const char* iFallback)
+{
+    return CATMsgCatalog::BuildMessage("MyFramework", iKey, NULL, 0, iFallback);
+}
+```
 
 ---
 
 #### Build Method
+
 ```cpp
 void MyDialog::Build()
 {
-    // 1. Set title (reads from .CATNls)
-    SetTitle("MyDialog.Title");
-    
-    // 2. Create main container
-    _pMainFrame = new CATDlgFrame(this, "MainFrame", CATDlgGridLayout);
-    
-    // 3. Create input editor
-    _pInputEditor = new CATDlgEditor(_pMainFrame, "Input", CATDlgEdtString);
-    _pInputEditor->SetVisibleTextWidth(30);
-    
-    // 4. Position editor in grid (row 0, col 0)
-    CATDlgGridConstraints editorConstraints(0, 0, 1, 1, CATGRID_4SIDES);
-    _pMainFrame->SetGridConstraints(_pInputEditor, editorConstraints);
-    
-    // 5. Create OK button
+    // 1. Set title (NLS with fallback)
+    SetTitle(NLS("MyDialog.Title", "My Custom Dialog"));
+
+    // 2. Create main container (grid layout, no border)
+    _pMainFrame = new CATDlgFrame(this, "MainFrame",
+        CATDlgFraNoFrame | CATDlgGridLayout);
+
+    // 3. Create input editor (no "type" style constant exists)
+    _pInputEditor = new CATDlgEditor(_pMainFrame, "Input");
+    _pInputEditor->SetVisibleTextWidth(30);   // width in characters
+
+    // 4. Position editor in grid (row 0, col 0).
+    //    NOTE: SetGridConstraints is called ON THE CHILD, single-arg form.
+    _pInputEditor->SetGridConstraints(
+        CATDlgGridConstraints(0, 0, 1, 1, CATGRID_LEFT | CATGRID_RIGHT));
+
+    // 5. Create OK button (text comes from NLS, not a ctor arg)
     _pOKButton = new CATDlgPushButton(_pMainFrame, "OK");
-    _pOKButton->SetTitle("MyDialog.OKButton");
-    
-    // 6. Position button (row 1, col 0)
-    CATDlgGridConstraints buttonConstraints(1, 0, 1, 1, CATGRID_CENTER);
-    _pMainFrame->SetGridConstraints(_pOKButton, buttonConstraints);
-    
+    _pOKButton->SetTitle(NLS("MyDialog.OKButton", "OK"));
+
+    // 6. Position button (row 1, col 0), centered
+    _pOKButton->SetGridConstraints(
+        CATDlgGridConstraints(1, 0, 1, 1, CATGRID_CENTER));
+
     // 7. Register callback
     AddAnalyseNotificationCB(
         _pOKButton,
         _pOKButton->GetPushBActivateNotification(),
-        (CATCommand::CATCommandMethod)&MyDialog::OnOKClicked,
+        (CATCommandMethod)&MyDialog::OnOKClicked,
         NULL
     );
-    
-    // 8. Set main frame layout
-    CATDlgGridConstraints mainConstraints(0, 0, 1, 1, CATGRID_4SIDES);
-    SetGridConstraints(_pMainFrame, mainConstraints);
+
+    // 8. Set main frame layout in the dialog's own grid
+    //    (5-arg overload is equally valid; both are real)
+    _pMainFrame->SetGridConstraints(0, 0, 1, 1, CATGRID_4SIDES);
 }
 ```
 
@@ -169,22 +201,34 @@ void MyDialog::Build()
 
 #### Grid Layout Explained
 
-**CATDlgGridConstraints Parameters:**
+**CATDlgGridConstraints constructor (real signature):**
 ```cpp
-CATDlgGridConstraints(row, col, rowSpan, colSpan, sides)
+CATDlgGridConstraints(
+    short iTopRow,             // row (0-based)
+    short iLeftColumn,         // column (0-based)
+    short iRowSpan,            // number of rows to span
+    short iColumnSpan,         // number of columns to span
+    unsigned int iJustification // anchor/fill flags
+);
+// A no-arg ctor + public Row/Column members also exist.
 ```
 
-- `row` - Grid row (0-based)
-- `col` - Grid column (0-based)
-- `rowSpan` - Number of rows to occupy
-- `colSpan` - Number of columns to occupy
-- `sides` - Attachment sides:
-  - `CATGRID_4SIDES` - Fill entire cell
-  - `CATGRID_LEFT` - Align left
-  - `CATGRID_RIGHT` - Align right
-  - `CATGRID_TOP` - Align top
-  - `CATGRID_BOTTOM` - Align bottom
-  - `CATGRID_CENTER` - Center in cell
+**Anchor / justification constants (real, complete list):**
+
+| Constant | Meaning |
+|----------|---------|
+| `CATGRID_LEFT` | Anchor left |
+| `CATGRID_RIGHT` | Anchor right |
+| `CATGRID_TOP` | Anchor top |
+| `CATGRID_BOTTOM` | Anchor bottom |
+| `CATGRID_4SIDES` | Fill the whole cell (= LEFT\|RIGHT\|TOP\|BOTTOM) |
+| `CATGRID_CST_WIDTH` | Fixed width |
+| `CATGRID_CST_HEIGHT` | Fixed height |
+| `CATGRID_CST_SIZE` | Fixed width and height |
+| `CATGRID_CENTER` | Center in cell |
+
+Horizontal fill = `CATGRID_LEFT | CATGRID_RIGHT`; vertical fill = `CATGRID_TOP | CATGRID_BOTTOM`.
+There is **no** `CATGRID_HORIZONTAL` / `CATGRID_VERTICAL`.
 
 **Example Layout:**
 ```
@@ -198,23 +242,24 @@ CATDlgGridConstraints(row, col, rowSpan, colSpan, sides)
 ---
 
 #### Callback Implementation
+
 ```cpp
-void MyDialog::OnOKClicked(CATCommand* iFrom, 
-                           CATNotification* iNotification, 
+void MyDialog::OnOKClicked(CATCommand* iFrom,
+                           CATNotification* iNotification,
                            CATCommandClientData iData)
 {
     // 1. Get input value
     CATUnicodeString input = _pInputEditor->GetText();
-    
+
     // 2. Validate
     if (input.GetLengthInChar() == 0) {
         cout << "Error: Input is empty" << endl;
         return;
     }
-    
+
     // 3. Process data
     cout << "User input: " << input.ConvertToChar() << endl;
-    
+
     // 4. Close dialog
     SetVisibility(CATDlgHide);
     RequestDelayedDestruction();  // Safe deletion
@@ -225,7 +270,7 @@ void MyDialog::OnOKClicked(CATCommand* iFrom,
 
 ### Step 4: Resource Files
 
-#### English Strings (MyFramework.CATNls)
+#### English Strings (MyFramework.CATNls, UTF-8)
 ```
 MyDialog.Title = "My Custom Dialog";
 MyDialog.OKButton = "OK";
@@ -234,14 +279,18 @@ MyDialog.CancelButton = "Cancel";
 
 **Location:** `Framework.edu/CNext/resources/msgcatalog/MyFramework.CATNls`
 
-#### Chinese Strings (Optional)
+#### Chinese Strings (Optional, GBK encoding, no emoji)
 ```
 MyDialog.Title = "我的自定义对话框";
 MyDialog.OKButton = "确定";
 MyDialog.CancelButton = "取消";
 ```
 
-**Location:** `Framework.edu/CNext/resources/msgcatalog/Chinese/MyFramework.CATNls`
+**Location:** `Framework.edu/CNext/resources/msgcatalog/Simplified_Chinese/MyFramework.CATNls`
+
+> ⚠️ The Chinese catalog directory must be named `Simplified_Chinese` and the file
+> must be **GBK-encoded** (B28 official Chinese catalogs are GBK; UTF-8 renders as
+> mojibake). A flat `Xxx_Chinese.CATNls` next to the English one is **not** loaded.
 
 ---
 
@@ -260,70 +309,76 @@ LINK_WITH=$(LINK_WITH) ApplicationFrame Dialog Visualization
 
 ## 🎯 Common Controls Reference
 
+All controls share the same constructor shape: `(CATDialog* iParent, const CATString& iName, CATDlgStyle iStyle=NULL)`.
+**There is no title/text constructor argument** — visible text comes from NLS or `SetTitle()`.
+
 ### Input Controls
 
 #### CATDlgEditor (Text Input)
+
 ```cpp
-_pEditor = new CATDlgEditor(parent, "Name", CATDlgEdtString);
-_pEditor->SetVisibleTextWidth(30);  // Width in characters
-_pEditor->SetText("Initial value");
-CATUnicodeString value = _pEditor->GetText();
+// No CATDlgEdtString / CATDlgEdtInteger / ... constants exist.
+_pEditor = new CATDlgEditor(parent, "Name");
+_pEditor->SetVisibleTextWidth(30);            // Width in characters
+_pEditor->SetText(CATUnicodeString("Init"));  // Set text
+
+CATUnicodeString value = _pEditor->GetText(); // Get text
 ```
 
-**Editor Types:**
-- `CATDlgEdtString` - Text string
-- `CATDlgEdtInteger` - Integer only
-- `CATDlgEdtReal` - Floating point
-- `CATDlgEdtPassword` - Masked input
+**Reading typed values (real methods on CATDlgEditor):**
+- `GetText()` → `CATUnicodeString` (any text)
+- `GetIntegerValue()` / `SetIntegerValue(int)` — integer
+- `GetFloatValue()` / `SetFloatValue(double)` — floating point
+- Password masking is an editor *style bit* documented in `CATDlgEditor.h`, not a `CATDlgEdt*` constant.
 
 ---
 
 #### CATDlgCombo (Dropdown List)
-```cpp
-_pCombo = new CATDlgCombo(parent, "Name", CATDlgCmbDropDown);
-_pCombo->SetVisibleTextWidth(20);
 
-// Add items
-_pCombo->SetLine("Option 1", 0);
-_pCombo->SetLine("Option 2", 1);
-_pCombo->SetLine("Option 3", 2);
+```cpp
+// No CATDlgCmbDropDown / CATDlgCmbEntry constants exist; default ctor is a dropdown.
+_pCombo = new CATDlgCombo(parent, "Name");
+_pCombo->SetVisibleTextWidth(20);
+_pCombo->SetVisibleTextHeight(5);   // visible rows in the drop-down
+
+// Add items: -1 = append
+_pCombo->SetLine(CATUnicodeString("Option 1"), -1);
+_pCombo->SetLine(CATUnicodeString("Option 2"), -1);
+_pCombo->SetLine(CATUnicodeString("Option 3"), -1);
 
 // Set/Get selection
-_pCombo->SetSelect(0);  // Select first item
-int selected = _pCombo->GetSelect();
+_pCombo->SetSelect(0);              // Select first item
+int selected = _pCombo->GetSelect(); // -1 = nothing selected
 ```
-
-**Combo Styles:**
-- `CATDlgCmbDropDown` - Dropdown (select only)
-- `CATDlgCmbEntry` - Dropdown with text entry
 
 ---
 
 #### CATDlgCheckButton (Checkbox)
+
 ```cpp
 _pCheck = new CATDlgCheckButton(parent, "Name");
-_pCheck->SetTitle("Enable Option");
+_pCheck->SetTitle(NLS("MyDialog.EnableOption", "Enable Option"));
 
-// Set/Get state
+// Set/Get state (CATDlgCheck / CATDlgUncheck are real state constants)
 _pCheck->SetState(CATDlgCheck);    // Checked
 _pCheck->SetState(CATDlgUncheck);  // Unchecked
 
-CATDlgCheck state = _pCheck->GetState();
-bool checked = (state == CATDlgCheck);
+bool checked = (_pCheck->GetState() == CATDlgCheck);
 ```
 
 ---
 
 #### CATDlgRadioButton (Radio Button)
+
 ```cpp
 // Create group
 _pRadio1 = new CATDlgRadioButton(parent, "Radio1");
-_pRadio1->SetTitle("Option 1");
+_pRadio1->SetTitle(NLS("MyDialog.Option1", "Option 1"));
 
 _pRadio2 = new CATDlgRadioButton(parent, "Radio2");
-_pRadio2->SetTitle("Option 2");
+_pRadio2->SetTitle(NLS("MyDialog.Option2", "Option 2"));
 
-// Set selection (only one can be checked in a group)
+// Set selection (mutual exclusion is handled manually in the callback)
 _pRadio1->SetState(CATDlgCheck);
 
 // Check which is selected
@@ -337,60 +392,81 @@ if (_pRadio1->GetState() == CATDlgCheck) {
 ### Display Controls
 
 #### CATDlgLabel (Text Label)
+
 ```cpp
 _pLabel = new CATDlgLabel(parent, "Name");
-_pLabel->SetTitle("Label Text");
+_pLabel->SetTitle(NLS("MyDialog.LabelText", "Label Text"));
 ```
 
 ---
 
 #### CATDlgSeparator (Visual Separator)
-```cpp
-_pSeparator = new CATDlgSeparator(parent, "Name", CATDlgCtrHorizontal);
-```
 
-**Orientations:**
-- `CATDlgCtrHorizontal` - Horizontal line
-- `CATDlgCtrVertical` - Vertical line
+```cpp
+// Constructor has NO orientation argument (CATDlgCtrHorizontal / CATDlgCtrVertical
+// do not exist). Orientation/length is governed by the grid constraints.
+_pSeparator = new CATDlgSeparator(parent, "Name");
+_pSeparator->SetGridConstraints(
+    CATDlgGridConstraints(row, 0, 1, 2, CATGRID_LEFT | CATGRID_RIGHT));
+```
 
 ---
 
 ### Container Controls
 
 #### CATDlgFrame (Container)
+
 ```cpp
 _pFrame = new CATDlgFrame(parent, "Name", CATDlgGridLayout);
 ```
 
-**Layout Types:**
-- `CATDlgGridLayout` - Grid (recommended)
-- `CATDlgFillLayout` - Single control fills frame
-- `CATDlgBorderLayout` - North/South/East/West/Center
+**Frame style bits (real, complete list):**
+- `CATDlgGridLayout` - Enable grid layout on the frame
+- `CATDlgFraNoTitle` - Hide the title bar
+- `CATDlgFraNoFrame` - No border
+- `CATDlgFraNoMargin` - No inner margin
+
+A titled group box = default Frame (do **not** add `CATDlgFraNoTitle`) + `SetTitle(...)`.
+`CATDlgFillLayout` / `CATDlgBorderLayout` / `CATDlgFraGroupFrame` / `CATDlgFraSunkenFrame`
+do **not** exist.
 
 ---
 
 ## 🔔 Notification Types
 
+Each widget exposes `GetXxxNotification()` factory methods; hook them with `AddAnalyseNotificationCB`:
+
 ### Button Notifications
 ```cpp
-GetPushBActivateNotification()  // Button clicked
+GetPushBActivateNotification()    // Button clicked
 ```
 
 ### Combo Notifications
 ```cpp
-GetComboSelectNotification()    // Selection changed
+GetComboSelectNotification()      // Selection changed
 ```
 
-### Editor Notifications
+### Editor Notifications (real names — Edit, not Editor)
 ```cpp
-GetEditorModifyNotification()   // Text modified
-GetEditorFocusInNotification()  // Got focus
-GetEditorFocusOutNotification() // Lost focus
+GetEditModifyNotification()       // Text modified
+GetEditFocusInNotification()      // Got focus
+GetEditFocusOutNotification()     // Lost focus
 ```
 
-### CheckButton Notifications
+### CheckButton Notifications (real name — ChkB, not CheckB)
 ```cpp
-GetCheckBModifyNotification()   // State changed
+GetChkBModifyNotification()       // State changed
+```
+
+### RadioButton Notifications (real name — RadB, not RadioB)
+```cpp
+GetRadBModifyNotification()       // State changed
+```
+
+### CATDlgDialog itself
+```cpp
+GetDiaOKNotification()            // Standard OK button
+GetDiaCANCELNotification()        // Standard Cancel button
 ```
 
 ---
@@ -398,6 +474,7 @@ GetCheckBModifyNotification()   // State changed
 ## 🚀 How to Use the Dialog
 
 ### From a Command
+
 ```cpp
 #include "MyDialog.h"
 #include "CATApplicationFrame.h"
@@ -405,11 +482,11 @@ GetCheckBModifyNotification()   // State changed
 void MyCommand::Activate()
 {
     CATApplicationFrame* pAppFrame = CATApplicationFrame::GetFrame();
-    
+
     MyDialog* pDialog = new MyDialog(pAppFrame, "MyDialog");
     pDialog->Build();
     pDialog->SetVisibility(CATDlgShow);  // Show modal
-    
+
     // Dialog will delete itself when closed
 }
 ```
@@ -465,12 +542,12 @@ void OnOKClicked(CATCommand*, CATNotification*, CATCommandClientData);
 ### ❌ Mistake 4: Forgetting CATImplementClass
 ```cpp
 // MyDialog.cpp
-// Missing: CATImplementClass(MyDialog, Implementation, CATDlgDialog, CATNull);
+// Missing: CATImplementClass(MyDialog, Implementation, CATDlgDialog, NULL);
 ```
 
 **✅ Correct:**
 ```cpp
-CATImplementClass(MyDialog, Implementation, CATDlgDialog, CATNull);
+CATImplementClass(MyDialog, Implementation, CATDlgDialog, NULL);
 ```
 
 ---
@@ -484,10 +561,13 @@ CATImplementClass(MyDialog, Implementation, CATDlgDialog, CATNull);
 CATDlgDialog(parent, name, CATDlgWndModal | CATDlgGridLayout)
 ```
 
-**Non-Modal (doesn't block):**
+**Non-Modal (doesn't block):** there is no `CATDlgWndNoModal` constant —
+simply omit the `CATDlgWndModal` bit:
 ```cpp
-CATDlgDialog(parent, name, CATDlgWndNoModal | CATDlgGridLayout)
+CATDlgDialog(parent, name, CATDlgGridLayout)
 ```
+
+Add `CATDlgWndBtnOKCancel` to either form to get the built-in OK/Cancel button row.
 
 ---
 
@@ -497,13 +577,13 @@ CATDlgDialog(parent, name, CATDlgWndNoModal | CATDlgGridLayout)
 bool MyDialog::ValidateInput()
 {
     CATUnicodeString input = _pInputEditor->GetText();
-    
+
     // Check length
     if (input.GetLengthInChar() < 3) {
         ShowErrorMessage("Input must be at least 3 characters");
         return false;
     }
-    
+
     // Check numeric
     const char* cstr = input.ConvertToChar();
     for (int i = 0; cstr[i] != '\0'; i++) {
@@ -512,19 +592,16 @@ bool MyDialog::ValidateInput()
             return false;
         }
     }
-    
+
     return true;
 }
 
 void MyDialog::ShowErrorMessage(const char* message)
 {
-    // Create simple error dialog
-    CATDlgNotify* pNotify = new CATDlgNotify(
-        this, 
-        "ErrorDialog", 
-        CATDlgNfyError
-    );
-    pNotify->DisplayBlocked(message);
+    // Real notification dialog: CATDlgNotify + SetText, no CATDlgNfyError flag.
+    CATDlgNotify* pNotify = new CATDlgNotify(this, "ErrorDialog");
+    pNotify->SetText(CATUnicodeString(message));
+    pNotify->SetVisibility(CATDlgShow);
     pNotify->RequestDelayedDestruction();
 }
 ```
@@ -537,11 +614,11 @@ Before compiling your dialog:
 
 - [ ] IdentityCard.h includes `Dialog` and `ApplicationFrame`
 - [ ] Header declares `CATDeclareClass` macro
-- [ ] Implementation has `CATImplementClass` macro
+- [ ] Implementation has `CATImplementClass(..., NULL)` macro
 - [ ] Build() method creates all controls
-- [ ] Grid constraints set for each control
+- [ ] Grid constraints set on each child (`child->SetGridConstraints(...)`)
 - [ ] Callbacks registered with `AddAnalyseNotificationCB`
-- [ ] Resource files created (.CATNls, .CATRsc)
+- [ ] Resource files created (.CATNls; Chinese under `Simplified_Chinese/`, GBK)
 - [ ] Imakefile.mk links with `Dialog` framework
 - [ ] Callbacks use `RequestDelayedDestruction()` to close
 
@@ -549,9 +626,10 @@ Before compiling your dialog:
 
 ## 🔗 See Also
 
-- **AI_GUIDE.md** - AI generation rules
-- **FAQ.md** - Common questions
-- **TROUBLESHOOTING_FLOWCHART.md** - Fix compile errors
+- **knowledge/ui/dialog.md** — Audited widget/notification facts
+- **knowledge/ui/dialog_layout.md** — Audited grid-layout and advanced controls
+- **knowledge/ui/dialog_dataflow.md** — NLS / BuildMessage pattern
+- **patterns/ui/dynamic_form.md**, **patterns/ui/master_detail.md** — Form dialog patterns
 
 ---
 

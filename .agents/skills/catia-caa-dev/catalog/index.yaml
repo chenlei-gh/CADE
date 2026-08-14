@@ -205,7 +205,7 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 |----|------|------|------|
 | geo.fillet_checker | examples/geometry/fillet_checker/ | 中级 | part.fillet, ui.dialog, analyzer.geometry |
 
-> ⚠️ **隔离（2026-08-14）**：`geo.fillet_checker` 与 `tutorial.dialog`（docs/examples/EXAMPLE_DIALOG.md）**未通过虚构 API 审计**（`examples/`、`docs/examples/` 不在 2026-07-23 审计范围内），文件头部已加隔离横幅。检索仍可定位（用于思路参考），但**禁止作为 CAA API 事实来源**；API 事实以 HeaderMap/MethodIndex 及已核实 `knowledge/`、`patterns/` 文件为准。
+> ✅ **2026-08-14 补充审计**：`geo.fillet_checker` 与 `tutorial.dialog`（docs/examples/EXAMPLE_DIALOG.md）已通过虚构 API 审计重写（详见 `KNOWLEDGE_AUDIT_STATUS.md`），文件头部留有「⚠️ 重要修正」章节记录全部 虚构→真实 替换。
 
 ### 教程示例 (docs/examples/)
 

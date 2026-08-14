@@ -4,7 +4,7 @@ title: Fillet Checker
 category: example
 domain: geometry
 keywords: [fillet, check, analyzer, example, full project, dialog, listview]
-apis: [CATIFillet, CATISpecObject, CATIPrtPart, CATDlgDialog, CATDlgList, CATFrmEditor, CATPathElement]
+apis: [CATIEdgeFillet, CATISpecObject, CATIPrtPart, CATDlgDialog, CATDlgSelectorList, CATFrmEditor, CATPathElement, CATCSO]
 requires: [part.fillet, mecmod.feature, ui.dialog, infra.selection]
 patterns: [analyzer.geometry, analyzer.rule, ui.result_dialog, block.visitor, block.locator]
 examples: []
@@ -13,9 +13,19 @@ tags: [example, geometry, check, full-project]
 difficulty: intermediate
 ---
 
-> **⚠️ 隔离警示（2026-08-14）**：本示例**未通过虚构 API 审计**（`examples/` 不在 2026-07-23 审计范围内）。
-> 已确认含虚构/过时 API：`CATDlgList`（真实：`CATDlgSelectorList`/`CATDlgTableView`）、`SelectElement`（真实：`CATISO::AddElement`）、`ReframeOnObject`（真实：`CAT3DViewer::ReframeOn`）。
-> **禁止作为 CAA API 事实来源**。结构与思路可参考，API 一律以 `knowledge/`、`patterns/` 已核实文件或 `tools/build_caadoc_index.py --query` 复核为准。
+> **⚠️ 重要修正（2026-08-14）**：本示例已经过虚构 API 审计并重写，以下虚构/过时 API 已替换为已核实真实 API（依据 `knowledge/`、`patterns/` 已核实文件及 `tools/build_caadoc_index.py --query` 复核）：
+>
+> | 虚构 / 过时 | 真实 API | 出处 |
+> |---|---|---|
+> | `CATDlgList` | `CATDlgSelectorList`（简单列表；多列需求用 `CATDlgTableView`） | [ui.dialog](../../knowledge/ui/dialog.md) |
+> | `SetLine(i, cols, n)` 多列签名 | `SetLine(CATUnicodeString, -1)` 单行文本追加 | [ui.dialog](../../knowledge/ui/dialog.md) |
+> | `CATUnicodeString::FromDouble(x)` | `CATUnicodeString::BuildFromNum(x)` | `build_caadoc_index.py --query CATUnicodeString` |
+> | `CATFrmEditor::GetSelection()->SelectElement(path)` | `CATFrmEditor::GetCSO()` + `CATCSO::AddElement(new CATPathElement(...))` | [infra.selection](../../knowledge/infrastructure/selection.md) |
+> | `CATFrmEditor::GetSelection()->Clear()` | `CATCSO::Empty()` | [infra.selection](../../knowledge/infrastructure/selection.md) |
+> | `CATISO::ReframeOnObject(path)` | `CAT3DViewer::ReframeOn(CAT3DBoundingSphere&)` | [infra.selection](../../knowledge/infrastructure/selection.md)、[block.locator](../../patterns/blocks/locator.md) |
+> | `CATIFillet_var` + `GetRadius()->Value()` | `CATIEdgeFillet_var` + `GetRadius()`（直接返回 double） | [part.fillet](../../knowledge/part/fillet.md) |
+>
+> 结构与思路不变；API 细节以 `knowledge/`、`patterns/` 已核实文件为准。
 
 # Fillet Checker Example (圆角规范检查工具)
 
@@ -102,8 +112,7 @@ private:
 ```cpp
 #include "FilletAnalyzer.h"
 #include "CATIPrtPart.h"
-#include "CATIFillet.h"
-#include "CATICkeParm.h"
+#include "CATIEdgeFillet.h"
 
 FilletAnalyzer::FilletAnalyzer(double minR, double maxR)
     : m_minRadius(minR), m_maxRadius(maxR) {}
@@ -128,8 +137,12 @@ void FilletAnalyzer::Traverse(CATISpecObject_var pParent) {
 void FilletAnalyzer::CheckFillet(CATISpecObject_var pFeature) {
     if (!pFeature->IsATypeOf("EdgeFillet")) return;
 
-    CATIFillet_var pFillet = pFeature;
-    double radius = pFillet->GetRadius()->Value();
+    // CATIFillet 只是空标记接口；带 GetRadius() 的是 CATIEdgeFillet
+    CATIEdgeFillet_var pFillet = pFeature;
+    if (NULL_var == pFillet) return;
+
+    // GetRadius() 直接返回 double（仅 CONSTANT 类型有效），不是 ->Value()
+    double radius = pFillet->GetRadius();
 
     FilletResult result;
     result.feature = pFeature;
@@ -153,30 +166,52 @@ void FilletAnalyzer::CheckFillet(CATISpecObject_var pFeature) {
 
 ### FilletCheckerDlg.cpp (核心部分)
 
+结果列表用 `CATDlgSelectorList`（真实控件，单行文本；✓/✗、名称、半径、问题拼进一行）。真正的多列表格用 `CATDlgTableView`，见 [ui.dialog](../../knowledge/ui/dialog.md)。
+
 ```cpp
 void FilletCheckerDlg::ShowResults() {
-    m_pList->ClearLine();
+    m_pList->ClearLine();    // m_pList: CATDlgSelectorList*
 
     for (int i = 0; i < m_analyzer.GetResultCount(); i++) {
         FilletResult r = m_analyzer.GetResult(i);
-        char* cols[4] = {
-            (char*)(r.status == "PASS" ? "✓" : "✗"),
-            (char*)r.name.ConvertToChar(),
-            (char*)(CATUnicodeString::FromDouble(r.radius) + "mm").ConvertToChar(),
-            (char*)r.problem.ConvertToChar()
-        };
-        m_pList->SetLine(i + 1, cols, 4);
+
+        // 多列信息拼进单行文本（CATDlgSelectorList::SetLine 只收单行）
+        CATUnicodeString line;
+        line.Append(r.status == "PASS" ? "[OK]   " : "[FAIL] ");
+        line.Append(r.name);
+        line.Append("  ");
+        // CATUnicodeString::FromDouble 不存在；数字转字符串用 BuildFromNum
+        line.Append(CATUnicodeString::BuildFromNum(r.radius));
+        line.Append("mm");
+        if (r.problem.GetLengthInChar() > 0) {
+            line.Append("  — ");
+            line.Append(r.problem);
+        }
+        m_pList->SetLine(line, -1);      // -1 = 追加
     }
 }
 
+// 双击通知挂接（CATDlgSelectorList 的激活通知）：
+//   AddAnalyseNotificationCB(m_pList,
+//       m_pList->GetListActivateNotification(),
+//       (CATCommandMethod)&FilletCheckerDlg::OnDoubleClick, NULL);
+// 行号经 GetSelectCount()/GetSelect(int*,int) 取得，见 ui.dialog。
 void FilletCheckerDlg::OnDoubleClick(int line) {
     FilletResult r = m_analyzer.GetResult(line - 1);
-    CATPathElement path(r.feature);
 
     CATFrmEditor* pEditor = CATFrmEditor::GetCurrentEditor();
-    pEditor->GetSelection()->Clear();
-    pEditor->GetSelection()->SelectElement(path);
-    pEditor->GetISO()->ReframeOnObject(path);
+    if (!pEditor) return;
+
+    // 没有 GetSelection()/SelectElement；当前选择集是 CATCSO（GetCSO()）
+    CATCSO* pCSO = pEditor->GetCSO();
+    if (!pCSO) return;
+    pCSO->Empty();
+    pCSO->AddElement(new CATPathElement(r.feature));
+
+    // 没有 ReframeOnObject；相机定位对 viewer 的包围球操作
+    // CAT3DViewer* pViewer = ...;                  // 从 editor/窗口取得
+    // CAT3DBoundingSphere bs = GetBoundingSphereOf(r.feature);
+    // pViewer->ReframeOn(bs);
 }
 ```
 

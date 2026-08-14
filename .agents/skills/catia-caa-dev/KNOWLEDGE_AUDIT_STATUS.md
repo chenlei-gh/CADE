@@ -4,7 +4,7 @@
 > "虚构 API 排查"状态。目的：让下一次会话能立刻知道**哪些内容可以直接信任使用**，
 > **哪些内容用之前必须先用检索工具复核**，不用重新翻 git log。
 
-**最后更新**：2026-07-23
+**最后更新**：2026-08-14
 **更新方式**：`git log --oneline --all -- <path>` + `grep "重要修正|已核实"` 交叉核对所有 commit 历史得出。
 
 ---
@@ -87,6 +87,12 @@ parameter_editor · surface_analysis
 - `fta/auto_annotate.md`（本批：`CATIHole`→`CATINewHole`、`GetDiameter(double&)` 引用传参、删除不存在的 `GetDepth()`）
 - `ui/context_menu.md`（本批干净：`CATCreateWorkshop.h` 真实存在于 `ApplicationFrame/PublicInterfaces`，`NewAccess`/`SetAccessCommand` 宏链核实无误）
 
+### examples/ 与 docs/ 教程示例（2026-08-14 补充审计，原审计范围外）
+
+- `examples/geometry/fillet_checker.md`（完整重写：虚构 `CATDlgList`→真实 `CATDlgSelectorList`；`CATIFillet`（空标记接口）→`CATIEdgeFillet` 且 `GetRadius()` 直接返回 double；`CATUnicodeString::FromDouble`→`BuildFromNum`；`GetSelection()->SelectElement`→`GetCSO()`/`CATCSO::Empty()+AddElement`；`ReframeOnObject`→`CAT3DViewer::ReframeOn`）
+- `docs/examples/EXAMPLE_DIALOG.md`（完整重写：虚构 `CATDlgEdtString`/`CATDlgCmbDropDown`/`CATDlgCtrHorizontal`/`CATDlgNfyError`/`CATDlgFillLayout`/`CATDlgBorderLayout`/`CATDlgWndNoModal`/`CATNull` → 真实 `CATDlgEditor`/默认构造 `CATDlgCombo`/无方向参 `CATDlgSeparator`/`CATDlgNotify`+`SetText`/Frame 仅 `CATDlgGridLayout`/不传模态位即非模态/`NULL`；通知 getter 修正为 SDK 实证名 `GetChkBModifyNotification`/`GetEditModifyNotification`/`GetRadBModifyNotification` 等；两参 `SetGridConstraints`→子控件单参/5 参重载；NLS 走 `CATMsgCatalog::BuildMessage` + `Simplified_Chinese/`）
+- `docs/references/DIALOG_QUICK_REFERENCE.md`（完整重写：与 EXAMPLE_DIALOG 同族虚构全部修正；另修正 `.CATRsc` 设 dialog 宽高的误区——`.CATRsc` 只用于图标，尺寸用 `SetRectDimensions` 或 `CATDlgWndAutoResize`）
+
 ### frameworks/（148个自动生成索引文件，不适用本审计）
 
 这些是脚本从 CAADoc 自动抽取的 API 签名索引（`knowledge/frameworks/*.md`），不是手写教学文档，本身即是索引数据，不存在"虚构 API"问题，无需人工核实。
@@ -95,9 +101,10 @@ parameter_editor · surface_analysis
 
 ## 未核实清单
 
-> ✅ **手写文档校核已全部完成。** `capabilities/`（13）、`playbooks/`（14）、`knowledge/`、`patterns/` 下所有手写教学文档均已核实完毕，无剩余未核实项。
+> ✅ **手写文档校核已全部完成。** `capabilities/`（13）、`playbooks/`（14）、`knowledge/`、`patterns/` 下所有手写教学文档均已核实完毕；2026-08-14 补充完成 `examples/`（1个）与 `docs/examples/`、`docs/references/` 中 Dialog 族教程文件（2个）。
 >
 > 仅剩 `knowledge/frameworks/` 148 个文件为脚本自动生成的 API 索引（非手写教学代码），不适用本审计。
+> `docs/references/`、`docs/guides/` 下其余参考/指南文件未逐一纳入本审计（多为流程说明而非 API 教学），如含代码块可按本页方法论用 `--check-file` 抽查。
 
 ---
 
@@ -116,5 +123,5 @@ parameter_editor · surface_analysis
 
 ## 生产使用建议（给 AI/开发者的即时参考）
 
-- **可直接信任**：`capabilities/` 全部13个、`playbooks/` 全部14个、`knowledge/` 与 `patterns/` 全部手写教学文档（均已核实，含 drawing/surface/mecmod/infrastructure/philosophy/failure_patterns/ui 各子目录）。
+- **可直接信任**：`capabilities/` 全部13个、`playbooks/` 全部14个、`knowledge/` 与 `patterns/` 全部手写教学文档（均已核实，含 drawing/surface/mecmod/infrastructure/philosophy/failure_patterns/ui 各子目录），以及 2026-08-14 补充核实的 `examples/geometry/fillet_checker.md`、`docs/examples/EXAMPLE_DIALOG.md`、`docs/references/DIALOG_QUICK_REFERENCE.md`（三者头部均有「⚠️ 重要修正」章节记录全部替换）。
 - **frameworks/ 148个文件**：这是自动生成的 API 索引数据（非教学代码），可作为**查找线索**（定位属于哪个框架）放心使用，但具体方法签名仍以 `--query` 实时核对头文件为准（索引文件本身也会标注 SDK/refman mismatch）。

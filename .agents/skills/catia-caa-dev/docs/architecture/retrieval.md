@@ -172,7 +172,7 @@ Forbidden:
 | `grep` SDK headers for a method | MethodIndex already parsed them, with inheritance |
 | Read `knowledge/*.md` directly in a feature | Bypasses catalog ranking and alias expansion |
 | Add a new index without registering it here | Creates a second source of truth (Phantom) |
-| Use `examples/geometry/fillet_checker.md` or `docs/examples/EXAMPLE_DIALOG.md` as an API fact source | Both failed the fictional-API audit (quarantined 2026-08-14; banners in file headers). API facts come only from HeaderMap / MethodIndex and audited `knowledge/` / `patterns/` files |
+| Trust a knowledge/example file that lacks an audit trail | Handwritten docs are authoritative only after the fictional-API audit (see `KNOWLEDGE_AUDIT_STATUS.md`); even then, method-level facts defer to MethodIndex/HeaderMap on conflict |
 
 ---
 
