@@ -21,8 +21,9 @@ docs/
 
 CADE 的架构级约束，定义"什么是权威来源、什么入口必须走、什么禁止做"：
 
-- **[retrieval.md](architecture/retrieval.md)** - 检索架构契约 v1（四索引模型、Decision Rules、禁止事项）
+- **[retrieval.md](architecture/retrieval.md)** - 检索架构契约 v1（四索引模型、权威来源、Decision Rules、禁止事项）
 - **[ADR-CADE-UI-Semantic-Layer.md](architecture/ADR-CADE-UI-Semantic-Layer.md)** - CADE UI Semantic Layer 架构决策（所有权边界、create/regen 变更语义、roadmap）
+- **[UI_GENERATOR_CLARIFICATION_POLICY.md](architecture/UI_GENERATOR_CLARIFICATION_POLICY.md)** - UI Generator 澄清策略（四轴不可安全推断边界、触发条件、Non-Goals）
 
 ---
 
@@ -75,8 +76,11 @@ CADE 的架构级约束，定义"什么是权威来源、什么入口必须走�
 - **[TEST_DOCUMENTATION.md](TEST_DOCUMENTATION.md)** - 测试体系文档（L1-L7 分层 + 48 链路矩阵）
 - **[CATIA_DETECTION.md](CATIA_DETECTION.md)** - 动态 CATIA 检测系统
 - **[PREREQUISITES_MANAGER.md](PREREQUISITES_MANAGER.md)** - Framework 依赖管理系统
+- **[PREREQUISITES_SETUP.md](PREREQUISITES_SETUP.md)** - Workspace 环境自动配置（`cade setup`）
 - **[KNOWLEDGE_SYSTEM_ARCHITECTURE.md](KNOWLEDGE_SYSTEM_ARCHITECTURE.md)** - 五层知识系统架构
 - **[HARDCODE_CHECK_REPORT.md](HARDCODE_CHECK_REPORT.md)** - 硬编码检查报告
+- **[CAPABILITY_HISTORY.md](CAPABILITY_HISTORY.md)** - 能力治理与变更历史
+- **[WIKI_HOME.md](WIKI_HOME.md)** - Wiki 跳转页（GitHub Wiki 入口）
 
 ---
 
@@ -123,5 +127,5 @@ CADE 的架构级约束，定义"什么是权威来源、什么入口必须走�
 
 ---
 
-**最后更新**: 2026-07-08  
+**最后更新**: 2026-08-14  
 **维护者**: Kiro AI Agent
