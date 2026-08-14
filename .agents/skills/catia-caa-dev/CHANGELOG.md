@@ -10,6 +10,10 @@
 
 ## [未发布]
 
+### 📖 文档 (2026-08-14)
+
+- **冻结 Icon Provider 架构基线**：新增 `docs/architecture/ADR-Icon-Provider-Freeze.md`。S1–S4 只读审计后确认：默认仍是 127 Primitive + 现有 Badge；Official Base 仅为未来按真实需求启用的 16 项显式白名单（不含 Fillet），不建库、不扫 B28、不模糊匹配、不做 Overlay。架构/复杂度控制/官方接入路径达到；最终图标视觉产品目标尚未验证，不能宣布完成。本轮不修改 `icon_provider.py`。
+
 ### 🛠 工具 (2026-07-31)
 
 - **哈希桶只增不减的结构性修复**：`skills/utils.py` 的 `Logger`/`Cache` 按 workspace 路径 MD5 分桶（`logs/<hash>/`、`cache/<hash>/`），但只写不删——每个测试临时目录、每个已删除的旧 workspace 都留下永久桶（2026-07-31 手工清理出 662 个）。新增 `gc_stale_buckets()`：在 workspace-scoped `Logger`/`Cache` 初始化时对兄弟桶做保留期 GC，删除最新文件超过 30 天的桶（死 workspace 的桶永不再被触碰，自然老化；活跃桶每次构建都会刷新 mtime）。安全约束：仅匹配 8 位 hex 目录（`cache/` 根的索引/遥测文件不受影响）、每天最多扫描一次（`.gc_marker` 节流）、全程 try/except（GC 失败不会打断构建）。`tests/test_production_regressions.py` 新增 5 条断言覆盖：删旧桶/保留活桶/不碰非桶文件/24h 节流/异常不抛出。
