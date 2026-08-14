@@ -58,7 +58,9 @@ print("\n[A1] Create command via Kernel")
 ws = make_workspace()
 k = Kernel(workspace_root=str(ws))
 r = k.execute(KernelMode.DEVELOP, "create command MyCmd in TestModule.m TestFW.edu")
-ck("returns pending", r["status"] == "pending", r["status"])
+# DEVELOP auto-applies by design (ModePolicy auto_apply=True): a successful
+# run ends at "ok" with apply_result/rollback_id, never sits in "pending".
+ck("returns ok (auto-applied)", r["status"] == "ok", r["status"])
 ck("has preview", "preview" in r or "extras_applied" in r)
 shutil.rmtree(ws, ignore_errors=True)
 

@@ -1,5 +1,12 @@
 # CATIA Dialog Development - Complete Example
 
+> **⚠️ QUARANTINED (2026-08-14)**: This example has **not passed the fictional-API audit**
+> (`docs/examples/` was outside the 2026-07-23 audit scope). Tool check found 15 suspect types,
+> including fabricated names such as `CATDlgGridLayout`, `CATDlgEdtString`, `CATDlgWndModal`,
+> `CATDlgCmbDropDown` (the same fabrication family removed from `knowledge/ui/*` during audit).
+> **Do NOT use as a source of CAA API facts.** Use audited `knowledge/ui/dialog*.md` and
+> `patterns/ui/*` instead, and verify any API with `tools/build_caadoc_index.py --query`.
+
 > Complete working example of a CATIA CAA Dialog with all controls
 
 **Version**: 1.0  

@@ -8,6 +8,11 @@ Layers:
   P1: Impact Analyzer (future)
   P3: Interpreter (future)
   P4: Resolver (future)
+
+Naming note: `intent/` (singular, this package) is the Intent ENGINE
+(Intent -> DevelopmentPlan via models/planner/impact). The sibling
+`intents/` (plural) is the PUBLIC intent API (create_executable_command,
+create_feature, ...). They differ by one letter — do not confuse them.
 """
 
 from intent.models import ActionStep, DevelopmentPlan, ImpactReport, Intent, IntentType, Severity

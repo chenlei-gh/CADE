@@ -13,6 +13,10 @@ tags: [example, geometry, check, full-project]
 difficulty: intermediate
 ---
 
+> **⚠️ 隔离警示（2026-08-14）**：本示例**未通过虚构 API 审计**（`examples/` 不在 2026-07-23 审计范围内）。
+> 已确认含虚构/过时 API：`CATDlgList`（真实：`CATDlgSelectorList`/`CATDlgTableView`）、`SelectElement`（真实：`CATISO::AddElement`）、`ReframeOnObject`（真实：`CAT3DViewer::ReframeOn`）。
+> **禁止作为 CAA API 事实来源**。结构与思路可参考，API 一律以 `knowledge/`、`patterns/` 已核实文件或 `tools/build_caadoc_index.py --query` 复核为准。
+
 # Fillet Checker Example (圆角规范检查工具)
 
 完整的 CAA 插件示例 —— 扫描当前 Part 的所有圆角，根据规范检查半径，结果显示在 Dialog 中，支持双击定位。

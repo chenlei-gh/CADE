@@ -38,7 +38,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `41/41 suites (quick, 100%)` | **43 test files** | *2026-07-28*
+> 🟢 **CI Status**: `41/41 suites (quick, 100%)` | **44 test files** | *2026-08-14*
 
 > ✅ **Production readiness**: Conditional GO — see [SKILL.md § Production Readiness](.agents/skills/catia-caa-dev/SKILL.md#-生产就绪评估) before deploying
 
@@ -322,7 +322,7 @@ cade test                         # full: 41 suites (launches CATIA)
 ### ⚡ Test Results
 
 <details>
-<summary>42 suites (41 quick + 1 CATIA lifecycle) · 43 files · 700+ checks · 2026-07-28</summary>
+<summary>42 suites (41 quick + 1 CATIA lifecycle) · 44 files · 700+ checks · 2026-07-28</summary>
 
 | | | |
 |---|---|---|
@@ -402,7 +402,7 @@ graph TD
 | | |
 |---|---|
 | Suites | 42 (41 quick + 1 CATIA lifecycle) |
-| Files | 43 |
+| Files | 44 |
 | Checks | 700+ |
 | Pass Rate | 100% |
 | Templates | 82 (19 types) |
@@ -609,7 +609,7 @@ cade test                           # 42 套件全量测试 (启动 CATIA)
 ### ⚡ 测试结果
 
 <details>
-<summary>42 套件（快速模式 41 套 + 1 套 CATIA 生命周期）· 43 文件 · 700+ 检查 · 2026-07-28</summary>
+<summary>42 套件（快速模式 41 套 + 1 套 CATIA 生命周期）· 44 文件 · 700+ 检查 · 2026-07-28</summary>
 
 | | | |
 |---|---|---|
@@ -652,7 +652,7 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 | | |
 |---|---|
 | **测试套件** | 42（快速模式  41 套 + 1 套 CATIA 生命周期） |
-| **测试文件** | 43 |
+| **测试文件** | 44 |
 | **检查项** | 700+ |
 | **通过率** | 100% |
 | **模板** | 82（19 类型） |

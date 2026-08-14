@@ -2,6 +2,13 @@
 
 **Status**: Accepted (Phase 0 — documentation only, no code change)
 **Date**: 2026-08-13
+**Superseded-in-part (2026-08-14)**: the *clarification* layer is governed by
+`UI_GENERATOR_CLARIFICATION_POLICY.md` — an empirically validated four-axis
+boundary that is explicitly **not** a UI Semantic Model. This ADR's
+"Semantic Model → generator" direction for dialog *generation* remains an
+unvalidated hypothesis (Phase 0); do not treat it as the clarification
+contract, and do not start Phase 1 without reverse-tracking evidence from a
+real UI sample.
 **Audience**: CADE developers and AI agents
 **Scope**: the future direction of CADE's dialog/UI capability; does not yet
 modify `create_dialog` or `templates/dialog/`

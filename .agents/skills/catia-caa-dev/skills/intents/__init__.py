@@ -8,6 +8,11 @@ Sub-modules:
   services      - expose_service, create_component_with_interfaces
   objects       - create_feature, create_extension
   helpers       - shared validation and utility functions
+
+Naming note: `intents/` (plural, this package) is the PUBLIC intent API
+built on the actions layer. The sibling `intent/` (singular) is the Intent
+ENGINE (models/planner/impact, Intent -> DevelopmentPlan). They differ by
+one letter — do not confuse them.
 """
 
 from .commands import create_executable_command
