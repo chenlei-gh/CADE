@@ -313,11 +313,14 @@ def _get_color_for_icon(icon_name: str) -> Tuple[int,int,int]:
     return (10, 0, 255)  # CATIA accent blue for unmapped icons (never ~bg gray)
 
 def get_icon(icon_name: str, style: str = "geo", size: int = 22,
-             format: str = "bmp", alpha: bool = False) -> Optional[Path]:
+             format: str = "bmp", alpha: bool = False,
+             hint: str = None) -> Optional[Path]:
     """Resolve + render + cache. Always returns the cached path.
     format='bmp' (CATIA runtime) or 'png' (docs/previews; alpha=True for
-    transparent background). Cache key includes ICON_HASH."""
-    base, badge = resolve_icon_ex(icon_name)
+    transparent background). hint = entity-level domain hint (e.g. the
+    Command's category), takes priority over name parsing.
+    Cache key includes ICON_HASH."""
+    base, badge = resolve_icon_ex(icon_name, hint)
     cache_name = f"{icon_name}+{badge}" if badge else icon_name
     key = (f"{cache_name}_{ICON_HASH}_{style}_{size}{'a' if alpha else ''}"
            .replace("/","_").replace(" ","_").replace(":","_"))

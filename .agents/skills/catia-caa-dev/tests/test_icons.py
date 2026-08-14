@@ -319,6 +319,17 @@ check("longest-first substring", b == "pattern", b)
 check("ICON_HASH format", isinstance(ICON_HASH, str) and len(ICON_HASH) == 8,
       ICON_HASH)
 
+# Entity hint: domain info wins over name parsing (CADE entity-driven path)
+b, g = resolve_icon_ex("FooCmd", hint="hole")
+check("entity hint overrides name", b == "hole", f"{b} (hint='hole')")
+
+b, g = resolve_icon_ex("CreateFooCmd", hint="fillet")
+check("hint + verb badge compose", b == "fillet" and g == "plus", f"{b}+{g}")
+
+sem = analyze_command("FooCmd", hint="hole")
+check("hint confidence EXACT", sem.confidence == "EXACT"
+      and sem.obj == "hole", f"{sem.obj}/{sem.confidence}")
+
 # composite render: badge must change pixels, format stays 22x22 8bpp
 # NOTE: _render_icon reuses one tmp path per pattern — read bytes immediately
 da = _render_icon("drill").read_bytes()
@@ -399,6 +410,21 @@ try:
         rv_icon.write_bytes(b"OLD-RUNTIME-ICON")
         copy_icons_to_runtime(tmp)
         check("runtime icon refreshed", rv_icon.read_bytes() == new_bytes)
+
+        # Entity hint flows through create_command: an opaque name with a
+        # domain category must NOT produce the fallback diamond
+        ctx3 = ActionContext(str(tmp))
+        ctx3.refresh()
+        r3 = create_command(ctx3, "ZzzCmd", "TestMod.m", category="hole")
+        cs3 = ChangeSet.from_dict(r3["changeset"]) if isinstance(r3["changeset"], dict) else r3["changeset"]
+        cs3.apply()
+        hinted = icons_dir / "I_zzzcmd.bmp"
+        check("entity-hint icon written", hinted.exists(),
+              f"{hinted.name} {hinted.stat().st_size if hinted.exists() else 0}B")
+        if hinted.exists():
+            from icon_provider import resolve_icon_ex
+            hb, _ = resolve_icon_ex("ZzzCmd", hint="hole")
+            check("opaque name + hint -> non-fallback", hb == "hole", hb)
 
         # Identical icon is not rewritten (ChangeSet stays clean)
         ctx2 = ActionContext(str(tmp))

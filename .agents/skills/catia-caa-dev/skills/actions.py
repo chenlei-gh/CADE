@@ -793,7 +793,11 @@ def create_command(
         if fw:
             try:
                 from icon_provider import get_icon
-                ico_path = get_icon(icon_name)
+                # Entity-level hint: the Command's category carries domain
+                # semantics the name alone may not (e.g. a 'FooCmd' with
+                # category='hole' still gets the hole icon). Name parsing
+                # remains the primary source; hint is the entity fallback.
+                ico_path = get_icon(icon_name, hint=category)
                 if ico_path and ico_path.exists():
                     icons_dir = fw.path / "CNext" / "resources" / "graphic" / "icons" / "normal"
                     ico_name = f"I_{icon_name.replace(' ', '_')}.bmp"
