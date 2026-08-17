@@ -10,6 +10,14 @@
 
 ## [未发布]
 
+### 🎨 图标 (2026-08-17, S6 Official 语义索引 + Batch-2)
+
+- **Official Base 覆盖扩展：新增 22 条经验证别名（Batch-2）**。先用 `tmp/icon_official_index.py`（只读离线）扫 3077 个 CATRsc 建全量语义索引：3790 个被命令引用的 stem（区别于 9832 原始文件），3651 个有 CATNls 标题（96.3%）。**方法论修正：按 CATNls 标题词边界匹配，不按文件名子串**——文件名搜不到 `pan→I_Translate`（标题即 "Pan"）、`loft→I_ICMLoftLT`（标题 "Loft"），标题搜索一击命中。新增别名：通用 13 条（`material/pan/loft/search/revolve/boolean/arc/curvature/drill/transform/statistic/configure/table`）+ 域特定 9 条按最大包含纳入（`spring/boss/gear/axis/annotation/distance/setting/mill/symmetry`）。**DENY 重审**：`properties/loft/axis/boss` 翻出 DENY 进 ALIAS，`tool/mode/assemble/reference` 维持 DENY。`OBJECT_VOCAB` 122 词口径覆盖率 36% → 53%（27 ALIAS + 38 HIGH）。红线：动词 `analyze/check/verify`、语义错配 `cog→CoG`/`step→SnapSteps` 拒入。`test_icons.py` 96/96、`test_master.py --quick` 41/41。
+
+### 🎨 图标 (2026-08-17)
+
+- **Official-Only：删除全部 71 个 Primitive**。图标系统改为纯官方图标驱动：`analyze_command()` 输出官方 stem（不再是 Primitive 名称），`resolve_official_icon()` 未命中时用官方兜底图 `I_P3DefaultIcon`（不再 Primitive fallback）。新增 3 条经验证的语义等价别名：`rename→I_RenameFamily`、`bom→I_DNBBOMtoXML`、`color→I_AutomaticColorProperty`（通过 B28 msgcatalog CATRsc→CATNls 交叉验证）。`DOMAIN_MAP`/`COLOR_MAP`/`ACCENT_MAP`/`_render_icon`/`_apply_checker`/`_rasterize_catia` 全部删除，改为 `OBJECT_VOCAB` frozenset。保留 23 个 badge 字形 + `_compose_official` + `_render_placeholder`（CATIA 未安装时的灰色占位符）。`CACHE_VER` v12 → v13。`update_golden_icons.py` 废弃。测试 65/65 通过。
+
 ### 🎨 图标 (2026-08-15)
 
 - **裁掉 56 个无引用装饰图案**：`PATTERN_NAMES` 127 → 71。只删 dispatch 表里不被 `DOMAIN_MAP` / `VERB_MAP` / golden / fallback `diamond` 引用的装饰图案（`flame`/`sun`/`warning` 等）；`heart`/`star` 因 golden 保留。`CACHE_VER` v11 → v12。语义层未改。

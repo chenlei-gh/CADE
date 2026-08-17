@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（29K+14P+13Capability+15Playbook+148Framework+6Philosophy+3Failure+3DecisionTree），127几何图标+语义解析+HD PNG、75模板(16类型)、44测试套件、cade dev一键闭环。"
+description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（29K+14P+13Capability+15Playbook+148Framework+6Philosophy+3Failure+3DecisionTree），官方图标运行时引用+语义解析+HD PNG、75模板(16类型)、44测试套件、cade dev一键闭环。"
 triggers:
   - CAA component
   - CATIA component
@@ -281,7 +281,7 @@ AI 只知道 3 个 Mode:
 | 🔧 **修复用 repair()** | 修复诊断问题、重构（重命名/移动）、回滚用 `repair()`。Kernel 内部运行 diagnose → fix → verify 最多重试 3 次。 |
 | ⚡ **两层路由，都不靠猜** | **Tier 1 意图**（3 Mode）："创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`——动词分类。**Tier 2 能力**（25 个）：查 [`capabilities.yaml`](capabilities.yaml) 的触发词定能力、按 binding 调用——受约束查表，不自由发挥。 |
 | 🚫 **新工具禁止复制旧工具骨架** | 创建新命令/对话框/工作台时，必须调 `develop()` 走模板生成器，**不要**把工作区里现有工具的 .cpp/.h/.CATNls/.CATRsc 复制一份再改名。旧工具可能还带着已修复的历史 bug（如硬编码 `SetTitle`、错误的 `_Chinese.CATNls` 约定），复制 = 把 bug 克隆进新工具，还会错过模板/图标/双语 NLS 的持续更新。已有工具**只可参考业务逻辑**（API 组合、算法、项目命名习惯）；文件骨架、资源文件、注册代码永远以生成器输出为准。 |
-| 🎨 **图标是 develop() 的自动产物，不要手动补** | `develop()` 创建命令时图标已连同骨架一起生成（verb-object 解析自动选 123 个几何图案 + 角标，如 `PartToAsmCmd` → cube+arrow），无需再调 `icon_provider.py`。只有**换图标风格**时才单独调：`from icon_provider import get_icon; get_icon("CmdName")`（自动解析，不要先列图案库人工挑）。首次编译时图标会随 Runtime View 同步自动生效。 |
+| 🎨 **图标是 develop() 的自动产物，不要手动补** | `develop()` 创建命令时图标已连同骨架一起生成（verb-object 解析自动匹配 CATIA 官方图标 + 角标，如 `CreateHoleCmd` → I_Hole+plus），无需再调 `icon_provider.py`。只有**换图标风格**时才单独调：`from icon_provider import get_icon; get_icon("CmdName")`（自动解析，不要先列图案库人工挑）。首次编译时图标会随 Runtime View 同步自动生效。 |
 | 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架 → 再精准打开 `<CATIA_INSTALL>/CAADoc/` 对应页面。不要跳过 Framework 直接全文搜 CAADoc。 |
 | 📝 **CAADoc 洞察沉淀** | 用 CAADoc 学到**踩坑经验/跨 API 组合/非文档化的行为**时，创建 knowledge/ 文件沉淀。纯 API 签名查询不需要沉淀——下次用 Framework 索引秒查。 |
 | 📍 **查头文件位置用 header_map，禁止猜路径** | 需要读 CAA 头文件（查方法签名、确认类/枚举存在）时，先跑 `python skills/header_map.py <Name> [Name2 ...]`（毫秒级返回 框架/模块/**头文件绝对路径**，可一次查多个）→ 直接读返回的 path。**禁止**凭类名前缀猜 `<CATIA_INSTALL>/<Framework>/PublicInterfaces/` 路径硬查——类名前缀和框架名不对应（`CATDlgEditor.h` 在 Dialog 不在 DialogEngine，`CATPathElement.h` 在 VisualizationBase），猜错就是白跑一轮 PowerShell。未命中时输出的 did-you-mean 就是正确头文件名（如 `CATListValCATBaseUnknown` → `CATLISTV_CATBaseUnknown`）。 |
@@ -1336,7 +1336,7 @@ python tests/test_master.py --quick
 │   ├── ui_lint.py                    # UI 失效模式静态检查器（failure_patterns）
 │   ├── requirements.py               # Requirements Clarifier + UI 4-axis clarifier (v3.0)
 │   ├── verifier.py                   # Code Verifier — static + mkmk (v3.0)
-│   ├── icon_provider.py              # 127 geometric icons, semantic resolver, 22px CATIA + HD PNG (v3.7)
+│   ├── icon_provider.py              # Official-Only icons (CATIA BMP runtime ref), semantic resolver, 22px CATIA + HD PNG (v4.0)
 │   ├── repair.py                     # Repair Loop (v3.0)
 │   ├── token_optimizer.py            # AI Token 优化器
 │   ├── docgen.py                     # 文档生成器
