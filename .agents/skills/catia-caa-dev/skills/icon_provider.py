@@ -162,7 +162,8 @@ COMPOUND_MAP = {
 }
 
 # Style spec constants (22px reference canvas)
-BADGE_PLATE_RATIO = 10 / 22   # badge plate edge / canvas edge, flush bottom-right
+BADGE_PLATE_RATIO = 12 / 22   # badge plate edge / canvas edge, flush bottom-right
+                              # 12px: crop-filled glyph needs ~10px interior to stay legible
 
 class IconSemantic(NamedTuple):
     operation: Optional[str]   # canonical op from OP_GROUPS, None if absent
@@ -436,18 +437,33 @@ def copy_icons_to_runtime(workspace_path: Path):
 # ═══════════════════════════════════════════════════════════════════
 
 def _render_badge_plate(badge: str, S: int) -> Image.Image:
-    """Official-style corner badge: glyph on gray plate with ink border."""
+    """Official-style corner badge: crop-filled glyph on gray plate, ink border.
+
+    Glyph is alpha-bbox-cropped, then proportionally scaled to fill the plate
+    interior — the raw 22-unit glyph canvas carries ~40% padding, so pasting
+    it un-cropped shrank the visible glyph to ~4.7px on a 22px icon (the main
+    blurriness cause). Border width S = 1px at final scale; crisp after the
+    integer BOX downscale in the 22px path."""
     plate_sz = round(22 * S * BADGE_PLATE_RATIO)
+    interior = plate_sz - 2 * S
     plate = Image.new("RGBA", (plate_sz, plate_sz), (*CATIA_BG, 255))
     glyph = Image.new("RGBA", (22*S, 22*S), (0, 0, 0, 0))
     gd = ImageDraw.Draw(glyph)
     _draw_icon_4x_rgba(gd, badge, S, (10, 0, 255, 255), (*CATIA_INK, 255),
                        (0, 0, 150, 255), None)
-    glyph = glyph.resize((plate_sz - 2*S, plate_sz - 2*S), Image.LANCZOS)
-    plate.alpha_composite(glyph, (S, S))
+    bbox = glyph.getbbox()
+    if bbox:
+        glyph = glyph.crop(bbox)
+        s = min(interior / glyph.width, interior / glyph.height)
+        glyph = glyph.resize((max(1, round(glyph.width * s)),
+                              max(1, round(glyph.height * s))), Image.LANCZOS)
+    else:
+        glyph = glyph.resize((interior, interior), Image.LANCZOS)
+    plate.alpha_composite(glyph, ((plate_sz - glyph.width) // 2,
+                                  (plate_sz - glyph.height) // 2))
     pd = ImageDraw.Draw(plate)
     pd.rectangle([0, 0, plate_sz-1, plate_sz-1], outline=(*CATIA_INK, 255),
-                 width=max(1, S//2))
+                 width=S)
     return plate
 
 
