@@ -411,11 +411,14 @@ try:
         new_bytes = stale.read_bytes()
         check("stale icon overwritten", new_bytes != b"STALE-GARBAGE-ICON"
               and len(new_bytes) > 100, f"{len(new_bytes)} bytes")
-        # Must be a valid 22x22 24-bit BMP
-        check("fresh icon is 22x22 24bpp BMP",
+        # Must be a valid 22x22 BMP. Bit depth depends on the source:
+        # FreshCmd has no official match -> default I_P3DefaultIcon (4-bit
+        # palette, copied byte-for-byte so CNEXT background transparency
+        # works); a 24-bit BMP would show a flat background box in CATIA.
+        check("fresh icon is 22x22 BMP (palette or 24bpp)",
               new_bytes[:2] == b"BM"
               and abs(int.from_bytes(new_bytes[18:22], "little", signed=True)) == 22
-              and int.from_bytes(new_bytes[28:30], "little") == 24)
+              and int.from_bytes(new_bytes[28:30], "little") in (4, 8, 24))
 
         # Runtime sync
         rv_icon = tmp / "win_b64" / "resources" / "graphic" / "icons" / "normal" / "I_freshcmd.bmp"

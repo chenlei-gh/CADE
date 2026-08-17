@@ -485,23 +485,39 @@ def _compose_official(official: Path, badge: str = None, size: int = 22,
     """Official BMP as canvas + existing badge plate. Never writes the source.
 
     22px BMP keeps official pixels; only the badge corner is replaced.
+    No badge -> the official file is copied byte-for-byte (native palette,
+    4/8-bit, CATIA background transparency preserved).
+    Badge -> 8-bit palettized BMP with the background pinned to palette
+    index 0: CNEXT renders palette BMPs transparent but NOT 24-bit ones
+    (a 24-bit re-save shows a flat background box on the toolbar).
     HD / PNG nearest-scales the 22px composite. Gray punch for alpha PNG."""
-    src = Image.open(official).convert("RGB")
-    if src.size != (22, 22):
-        src = src.resize((22, 22), Image.NEAREST)
-    hd = size > 22 or format == "png"
     ext = "png" if format == "png" else "bmp"
     tmp = Path(os.environ.get("TEMP", "/tmp")) / \
         f"cade_icon_off_{official.stem}_{badge or 'base'}_{size}_{os.getpid()}.{ext}"
+    hd = size > 22 or format == "png"
+    if not hd and not badge:
+        with Image.open(official) as probe:
+            native_22 = probe.size == (22, 22)
+        if native_22:
+            # Pure official: byte-identical copy — native palette & bit depth.
+            tmp.write_bytes(official.read_bytes())
+            return tmp
+        # Official source is not 22x22 (e.g. I_P3DefaultIcon is 26x26):
+        # must resample, so fall through to the palettized path below.
+        src = Image.open(official).resize((22, 22), Image.NEAREST)
+        _save_palette_bmp(src.convert("RGB"), tmp)
+        return tmp
+    src = Image.open(official)
+    if src.size != (22, 22):
+        src = src.resize((22, 22), Image.NEAREST)
     if not hd:
         # Keep official 22px pixels; only the badge corner is replaced.
         canvas = src.convert("RGBA")
-        if badge:
-            plate = _render_badge_plate(badge, 8)
-            plate_sz = round(22 * BADGE_PLATE_RATIO)
-            plate = plate.resize((plate_sz, plate_sz), Image.BOX)
-            canvas.alpha_composite(plate, (22 - plate_sz, 22 - plate_sz))
-        canvas.convert("RGB").save(tmp, format="BMP")
+        plate = _render_badge_plate(badge, 8)
+        plate_sz = round(22 * BADGE_PLATE_RATIO)
+        plate = plate.resize((plate_sz, plate_sz), Image.BOX)
+        canvas.alpha_composite(plate, (22 - plate_sz, 22 - plate_sz))
+        _save_palette_bmp(canvas.convert("RGB"), tmp)
         return tmp
     S = max(8, round(8 * size / 22))
     big = src.resize((22 * S, 22 * S), Image.NEAREST).convert("RGBA")
@@ -525,6 +541,33 @@ def _compose_official(official: Path, badge: str = None, size: int = 22,
         return tmp
     img.convert("RGB").save(tmp, format="BMP")
     return tmp
+
+
+def _save_palette_bmp(rgb: Image.Image, out: Path) -> None:
+    """Save RGB as 8-bit palettized BMP, background pinned to palette index 0.
+
+    CNEXT transparency is palette-based; the background (top-left pixel,
+    CATIA's convention) must occupy palette index 0. Badge-plate colors are
+    seeded first so the tiny badge survives quantization, then the base
+    image's own colors fill the rest of the 256-entry palette."""
+    bg = rgb.getpixel((0, 0))
+    badge_colors = [CATIA_BG, CATIA_INK, (10, 0, 255), (0, 0, 150)]
+    palette = list(bg)
+    seen = {bg}
+    for col in badge_colors:
+        if col not in seen:
+            palette += list(col)
+            seen.add(col)
+    for count, col in sorted(rgb.getcolors(maxcolors=65536) or [],
+                             key=lambda t: -t[0]):
+        if col not in seen and len(palette) < 768:
+            palette += list(col)
+            seen.add(col)
+    palette += [0, 0, 0] * (256 - len(palette) // 3)
+    pal_img = Image.new("P", (1, 1))
+    pal_img.putpalette(palette)
+    rgb.quantize(palette=pal_img, dither=Image.Dither.NONE).save(
+        out, format="BMP")
 
 
 def _render_placeholder(badge: str = None, size: int = 22,
