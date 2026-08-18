@@ -10,6 +10,11 @@
 
 ## [未发布]
 
+### 🎨 图标 (2026-08-18, 官方语义学沉淀 + 储备语素)
+
+- **B28 官方图标语义学入库**：新增 `knowledge/ui/official_icon_semantics.md`（catalog `ui.official_icon_semantics`）。实测驱动：扫 3077 个 CATRsc 得引用频次（Top：I_Update 40 / I_Open 39 / I_Line 38 / I_Plane 37 / I_Point 35），40 个高频图标逐像素分析。核心结论：颜色即语义域（实体黄=材料、青=几何辅助、红=作用位置、蓝=参考副本、墨蓝=结构色非语义）；构图即操作（凸/凹=加/减材料——Pad/Pocket 为对偶反义词图标、虚线副本=偏移/阵列、双主体对称=镜像）；三视觉家族（建模命令 bg(192)/系统命令 bg(191)/文档 bg(180)）；fg 密度分层（实体 55~75% / 复合 35~50% / 线框 5~25%）。规范修正：「单主体」→「单一语义单元」（官方 Mirror/Copy 即双主体）。
+- **`icon_design_lib.py` 追加储备语素**（已定义不接线，未经 gate E）：`red_marker()`/`dashed_copy()`/`boss()`/`notch()`/`ctrl_point()`/`cycle_arrows()` + 语义色常量 `RED_MARK(155,0,0)`/`REF_BLUE(10,0,255)`/`DEPTH_GRAY(75,75,75)`（全部官方采样值）。既有 4 个 `I_CADE*` 设计源重建逐像素不变（git diff 为空）。规范 §2.1 同步引用。`test_icons.py` 96/96。
+
 ### 🎨 图标 (2026-08-17, S6 Official 语义索引 + Batch-2)
 
 - **Official Base 覆盖扩展：新增 22 条经验证别名（Batch-2）**。先用 `tmp/icon_official_index.py`（只读离线）扫 3077 个 CATRsc 建全量语义索引：3790 个被命令引用的 stem（区别于 9832 原始文件），3651 个有 CATNls 标题（96.3%）。**方法论修正：按 CATNls 标题词边界匹配，不按文件名子串**——文件名搜不到 `pan→I_Translate`（标题即 "Pan"）、`loft→I_ICMLoftLT`（标题 "Loft"），标题搜索一击命中。新增别名：通用 13 条（`material/pan/loft/search/revolve/boolean/arc/curvature/drill/transform/statistic/configure/table`）+ 域特定 9 条按最大包含纳入（`spring/boss/gear/axis/annotation/distance/setting/mill/symmetry`）。**DENY 重审**：`properties/loft/axis/boss` 翻出 DENY 进 ALIAS，`tool/mode/assemble/reference` 维持 DENY。`OBJECT_VOCAB` 122 词口径覆盖率 36% → 53%（27 ALIAS + 38 HIGH）。红线：动词 `analyze/check/verify`、语义错配 `cog→CoG`/`step→SnapSteps` 拒入。`test_icons.py` 96/96、`test_master.py --quick` 41/41。

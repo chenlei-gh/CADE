@@ -9,6 +9,8 @@ Palette provenance (sampled, not guessed):
   INK / FACE      <- I_Pad / I_Hole   (PartDesign solids)
   GEAR_* / CYAN*  <- I_Part / I_Product (gear = part, gear pair = assembly)
 """
+import math
+
 from PIL import Image, ImageDraw
 
 # ── Official sampled palette ─────────────────────────────────────────
@@ -105,3 +107,84 @@ def letter_a(d, x, y, color=INK):
         d.rectangle([x, yy, x + 1, yy], fill=color)          # left leg
         d.rectangle([x + 5, yy, x + 6, yy], fill=color)      # right leg
     d.rectangle([x, y + 4, x + 6, y + 5], fill=color)        # crossbar
+
+
+# ── Morpheme reserve (B28 semantic audit 2026-08-18) ─────────────────
+# Extracted from official recurrence across the 40 high-frequency icons —
+# see knowledge/ui/official_icon_semantics.md section 7.2. NOT yet gate-E
+# validated on a real command: defined for future demand only; wire one
+# into a production icon only through the full A-E gate.
+RED_MARK   = (155, 0, 0)     # cut / target-edge marker
+                             # (I_Groove red slot, I_Chamfer/I_Fillet dashes)
+REF_BLUE   = (10, 0, 255)    # reference / copy / array element
+                             # (I_Offset dashed copy, I_CircularPattern items)
+DEPTH_GRAY = (75, 75, 75)    # cavity interior shading (I_Pocket / I_Hole)
+
+
+def _dash_hline(d, x0, x1, y, color, dash, gap):
+    x = x0
+    while x <= x1:
+        d.line([(x, y), (min(x + dash - 1, x1), y)], fill=color)
+        x += dash + gap
+
+
+def _dash_vline(d, y0, y1, x, color, dash, gap):
+    y = y0
+    while y <= y1:
+        d.line([(x, y), (x, min(y + dash - 1, y1))], fill=color)
+        y += dash + gap
+
+
+def _dash_rect(d, box, color, dash, gap):
+    x0, y0, x1, y1 = box
+    _dash_hline(d, x0, x1, y0, color, dash, gap)
+    _dash_hline(d, x0, x1, y1, color, dash, gap)
+    _dash_vline(d, y0, y1, x0, color, dash, gap)
+    _dash_vline(d, y0, y1, x1, color, dash, gap)
+
+
+def red_marker(d, box, dash=2, gap=1, color=RED_MARK):
+    """Red dashed frame marking the edge/face a feature acts on
+    (I_Chamfer/I_Fillet vocabulary). Reserve morpheme — official also
+    uses dashed ellipses; rect is the simplest form. box=(x0,y0,x1,y1)."""
+    _dash_rect(d, box, color, dash, gap)
+
+
+def dashed_copy(d, box, color=REF_BLUE, dash=2, gap=1):
+    """Blue dashed square = offset copy / reference / array instance
+    (I_Offset/I_CircularPattern vocabulary). Reserve morpheme."""
+    _dash_rect(d, box, color, dash, gap)
+
+
+def boss(d, x0, y0, s, face=FACE, edge=INK):
+    """Protruding solid block = add-material (I_Pad vocabulary).
+    Yellow face + ink outline + white top-left highlight. Reserve."""
+    d.rectangle([x0, y0, x0 + s - 1, y0 + s - 1], fill=face, outline=edge)
+    d.line([(x0 + 1, y0 + 1), (x0 + s - 2, y0 + 1)], fill=WHITE)
+    d.line([(x0 + 1, y0 + 1), (x0 + 1, y0 + s - 2)], fill=WHITE)
+
+
+def notch(d, x0, y0, w, h, edge=INK, depth=DEPTH_GRAY):
+    """Recessed cavity = remove-material (I_Pocket/I_Hole vocabulary).
+    Ink outline + dark-gray interior depth. Reserve."""
+    d.rectangle([x0, y0, x0 + w - 1, y0 + h - 1], outline=edge)
+    d.rectangle([x0 + 1, y0 + 1, x0 + w - 2, y0 + h - 2], fill=depth)
+
+
+def ctrl_point(d, cx, cy, color=CYAN, edge=INK):
+    """Geometry control point, 3x3 cyan with ink border
+    (I_Point/I_Line/I_Circle vocabulary: cyan = geometry aid). Reserve."""
+    d.rectangle([cx - 1, cy - 1, cx + 1, cy + 1], fill=color, outline=edge)
+
+
+def cycle_arrows(d, cx, cy, r, color=INK, accent=CYAN_EDGE, width=2):
+    """Refresh/update double arc (I_Update vocabulary — the most-referenced
+    official icon, 40 CATRsc refs). Two opposing arcs + square heads.
+    Simplified reserve — redraw from I_Update if a real command needs it."""
+    d.arc([cx - r, cy - r, cx + r, cy + r], 210, 330, fill=color, width=width)
+    d.arc([cx - r, cy - r, cx + r, cy + r], 30, 150, fill=accent, width=width)
+    for ang, col in ((330, color), (150, accent)):
+        a = math.radians(ang)
+        x = round(cx + r * math.cos(a))
+        y = round(cy + r * math.sin(a))
+        d.rectangle([x - 1, y - 1, x + 1, y + 1], fill=col)

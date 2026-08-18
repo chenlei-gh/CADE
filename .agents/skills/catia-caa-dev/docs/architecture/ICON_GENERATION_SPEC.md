@@ -59,7 +59,13 @@
 4. 用同一编码组合新语义（左 1 齿轮 + 右齿轮对，间隙 = 转移，无需箭头）
 
 验证过的语素已沉淀为 **`tools/icon_design_lib.py`**：`gear()` / `cube3d()` /
-`frame()` + 官方调色板常量。新图标直接调用，不重画。
+`frame()` / `swatches()` / `letter_a()` + 官方调色板常量。新图标直接调用，不重画。
+
+B28 深度语义分析（3077 个 CATRsc 引用频次 + 40 个高频图标逐像素）见
+**`knowledge/ui/official_icon_semantics.md`**。从中提取的储备语素
+（`red_marker` / `dashed_copy` / `boss` / `notch` / `ctrl_point` /
+`cycle_arrows` + `RED_MARK` / `REF_BLUE` / `DEPTH_GRAY`）已在 lib 定义但
+**未经 gate E 验证**——仅在真实命令需要时接线，首次用于生产必须过完整 A–E 门禁。
 
 ## 3. Prompt 模板（仅路径 B 外部文生图使用）
 
