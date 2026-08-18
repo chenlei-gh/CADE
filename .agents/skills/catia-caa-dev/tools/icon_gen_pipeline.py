@@ -150,17 +150,17 @@ def process(src: Path, stem: str, out_dir: Path) -> dict:
 
 
 # ── Batch mode + comparison sheet (spec §3, §8) ─────────────────────
-ANCHOR_STEMS = ["I_Hole", "I_Pad", "I_Pocket"]  # official style anchors
+ANCHOR_STEMS = ["I_Hole", "I_Pad", "I_Pocket"]  # default style anchors
 
 
-def _load_anchor() -> list:
+def _load_anchor(stems=None) -> list:
     """Official B28 anchors at 22x22 RGB for the comparison sheet.
     Empty list when CATIA install not found (sheet still emitted)."""
     d = _official_icons_dir()
     out = []
     if d is None:
         return out
-    for stem in ANCHOR_STEMS:
+    for stem in (stems or ANCHOR_STEMS):
         p = d / f"{stem}.bmp"
         if p.is_file():
             out.append((stem, Image.open(p).convert("RGB")))
@@ -196,7 +196,8 @@ def _comparison_sheet(cands: list, anchors: list, out: Path) -> Path:
     return out
 
 
-def batch(in_dir: Path, stem: str, out_dir: Path) -> list:
+def batch(in_dir: Path, stem: str, out_dir: Path,
+          anchors: list = None) -> list:
     """Process every candidate PNG in in_dir (excluding pipeline outputs),
     stems suffixed _A/_B/... in sorted order, then emit one sheet."""
     srcs = sorted(p for p in in_dir.glob("*.png")
@@ -213,7 +214,7 @@ def batch(in_dir: Path, stem: str, out_dir: Path) -> list:
         print(f"[{'PASS' if g['pass'] else 'FAIL'}] {cstem}  "
               f"colors={g['colors']} fg={g['fg']:.1%} "
               f"corners={'pure' if g['corners_pure'] else 'DIRTY'}  ← {src.name}")
-    sheet = _comparison_sheet(cands, _load_anchor(),
+    sheet = _comparison_sheet(cands, _load_anchor(anchors),
                               out_dir / f"{stem}_sheet.png")
     print(f"sheet : {sheet}")
     if any(not r["gate"]["pass"] for r in reports):
@@ -233,12 +234,15 @@ def main():
     ap.add_argument("--batch", action="store_true",
                     help="process all PNGs in input dir, stems get _A/_B/... "
                          "suffixes, emit comparison sheet vs official anchors")
+    ap.add_argument("--anchors", type=lambda s: s.split(","), default=None,
+                    help="comma-separated official anchor stems for the sheet, "
+                         "e.g. I_Part,I_Product (default: I_Hole,I_Pad,I_Pocket)")
     args = ap.parse_args()
 
     if args.batch:
         if not args.input.is_dir():
             sys.exit(f"--batch needs a directory: {args.input}")
-        batch(args.input, args.stem, args.out)
+        batch(args.input, args.stem, args.out, anchors=args.anchors)
         return
 
     if not args.input.exists():
