@@ -346,29 +346,19 @@ cade clean                      # 清理构建产物
 | 回归 | 全量回归 | test_full_regression.py (1287 行) | 1 |
 | 专项 | 特定功能 | test_phase*.py, test_skill_*.py 等 | 23 |
 
-总计 44 个测试文件（另含 update_golden_icons.py 黄金样本生成器）。
+总计 43 个测试文件（update_golden_icons.py 与 tests/golden/ 已随 Primitive 体系删除）。
 
-## 图标分类统计
+## 图标体系（现行）
 
-| 类别 | 数量 | 示例 |
+Primitive 图标库（127 → 71）已于 v13 全部删除，本节旧分类统计一并移除。
+现行架构（详见 `docs/architecture/ADR-Icon-Provider-Freeze.md`）：
+
+| 层 | 内容 | 出处 |
 |------|------|------|
-| 形状 | 11 | box, circle, triangle, hexagon, diamond, ring |
-| CATIA 建模 | 15 | fillet, chamfer, split, rotate, shell, draft, helix |
-| 操作 | 7 | play, drill, cut, cursor, move, merge, print |
-| 箭头 | 8 | arrow-up/down/left/right, refresh, chevron |
-| 工具 | 7 | settings, search, magnify, pencil, ruler, funnel |
-| 媒体 | 4 | pause, stop, forward, backward |
-| 编辑 | 6 | copy, paste, undo, redo, zoom-in/out |
-| 数据 | 7 | doc, folder, disk, export, import, book, db |
-| 符号 | 8 | check, angle, chart, code, link, star, heart, target |
-| 数学 | 6 | plus, minus, multiply, divide, equal, percent |
-| 对象 | 8 | key, bell, tag, pin, flag, trophy, shield, clock |
-| 通信 | 6 | mail, chat, phone, share, wifi, globe |
-| 自然 | 5 | sun, moon, cloud, lightning, flame |
-| 日常 | 7 | home, user, calendar, camera, map, battery, power |
-| 3D | 5 | cube, contour, package, download/upload |
-| 锁/UI/参考 | 17 | lock, window, eye, hand, info, warning, plane, axis |
-| **历史合计** | **127** | 已裁到 71；权威清单见 `icon_provider.py` `PATTERN_NAMES` |
+| Official Base | 官方 `I_*.bmp` 运行时引用（语义等价，显式别名） | `icon_provider.py` `OBJECT_VOCAB`/`_OFFICIAL_ALIAS` |
+| Badge | 23 个程序化角标字形（官方底图原样引用时强制） | `icon_provider.py` `VERB_MAP`/`_draw_icon_4x_rgba` |
+| Generated Base | `I_CADE*` 生成资产（官方无等价语义时，LLM 像素设计） | `assets/icons/generated/` |
+| 兑底 | `I_P3DefaultIcon`（未命中）/ 灰色占位符（无 CATIA） | `DEFAULT_OFFICIAL_STEM`/`_render_placeholder` |
 
 ## 配置系统
 

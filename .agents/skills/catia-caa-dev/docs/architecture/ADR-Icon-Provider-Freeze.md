@@ -260,8 +260,9 @@ ACTIONABLE_FALLBACK = 0。
 - `CACHE_VER` = `v13`；缓存键含官方 stem，旧缓存自动失效。
 - `ICON_HASH` 输入更新：去掉 DOMAIN_MAP/COLOR_MAP/ACCENT_MAP，
   加 OBJECT_VOCAB / DEFAULT_OFFICIAL_STEM / `_render_placeholder`。
-- `update_golden_icons.py` 已废弃（Primitive 渲染器已删），
-  改为提示用 CLI `--render` 生成预览。
+- `update_golden_icons.py` 与 `tests/golden/`（29 张 Primitive 时代
+  黄金样本）已于 2026-08-18 删除；生成预览用 CLI `--render`，
+  生成资产的视觉验收走 ICON_GENERATION_SPEC §5 门禁。
 - `CAAPartToAsm` 的 `I_parttoasm.bmp` 已重新生成为官方兜底图
   `I_P3DefaultIcon` 的 8bpp NEAREST 缩放版（Primitive 遗产文件已替换）。
 - 生产 CATRsc `Icon.Normal` 指向（§3 规则 6/7）：

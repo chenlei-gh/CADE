@@ -10,6 +10,10 @@
 
 ## [未发布]
 
+### 🧹 清理 (2026-08-18, 旧方案残渣)
+
+- **删除 Primitive 体系最后残渣**：`tests/update_golden_icons.py`（v4.0 起为 exit(1) 占位 stub）+ `tests/golden/`（29 张 Primitive 黄金样本，无测试引用，git 历史可查）。同步修正 `ARCHITECTURE.md`（测试计数 44→43；删除 Primitive 时代「图标分类统计」整节，替换为现行四层架构表）与 ADR §8（废弃→删除）。**Badge 路径保留**——它是未来新命令的现役兑底（ADR 规则 6：官方底图原样引用强制角标），非旧方案。
+
 ### 🎨 图标 (2026-08-18, 官方语义学沉淀 + 储备语素)
 
 - **B28 官方图标语义学入库**：新增 `knowledge/ui/official_icon_semantics.md`（catalog `ui.official_icon_semantics`）。实测驱动：扫 3077 个 CATRsc 得引用频次（Top：I_Update 40 / I_Open 39 / I_Line 38 / I_Plane 37 / I_Point 35），40 个高频图标逐像素分析。核心结论：颜色即语义域（实体黄=材料、青=几何辅助、红=作用位置、蓝=参考副本、墨蓝=结构色非语义）；构图即操作（凸/凹=加/减材料——Pad/Pocket 为对偶反义词图标、虚线副本=偏移/阵列、双主体对称=镜像）；三视觉家族（建模命令 bg(192)/系统命令 bg(191)/文档 bg(180)）；fg 密度分层（实体 55~75% / 复合 35~50% / 线框 5~25%）。规范修正：「单主体」→「单一语义单元」（官方 Mirror/Copy 即双主体）。
