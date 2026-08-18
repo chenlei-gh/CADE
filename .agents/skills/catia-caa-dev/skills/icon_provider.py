@@ -21,8 +21,9 @@ Pipeline:
        HD renderer    : NEAREST upscale, 24-bit BMP / RGBA PNG
 
 Style (inherited via the official BMPs themselves):
-  CATIA gray (192,192,192) background; badge plate = gray plate + navy ink
-  border, 12/22 of canvas, flush bottom-right, glyph crop-filled.
+  CATIA gray (192,192,192) background; badge plate = borderless gray plate,
+  1/4 of the icon area (11x11 on 22x22), flush bottom-right, glyph
+  crop-filled with per-glyph colors (BADGE_GLYPH_COLORS).
 
 Cache keys derive via ICON_HASH (vocab+mapping+renderer source), so any
 render-affecting change invalidates automatically.
@@ -165,8 +166,17 @@ COMPOUND_MAP = {
 }
 
 # Style spec constants (22px reference canvas)
-BADGE_PLATE_RATIO = 12 / 22   # badge plate edge / canvas edge, flush bottom-right
-                              # 12px: crop-filled glyph needs ~10px interior to stay legible
+BADGE_PLATE_RATIO = 1 / 2     # badge plate edge / canvas edge, flush bottom-right
+                              # 11x11 = exactly 1/4 of the icon area (user spec)
+
+# Per-glyph colors (user spec 2026-08: saturated fill + official ink, no flat
+# monochrome). Glyphs not listed keep the default blue/navy. The check glyph
+# strokes with EDGE; pencil fills with BODY; move arrows fill with BODY.
+BADGE_GLYPH_COLORS: Dict[str, Dict[str, Tuple[int, int, int]]] = {
+    "check":  {"EDGE": (0, 170, 0)},                                   # green tick
+    "pencil": {"BODY": (255, 170, 0), "EDGE": (8, 8, 103), "DIM": (180, 100, 0)},
+    "move":   {"BODY": (0, 140, 255), "EDGE": (8, 8, 103), "DIM": (0, 90, 180)},
+}
 
 class IconSemantic(NamedTuple):
     operation: Optional[str]   # canonical op from OP_GROUPS, None if absent
@@ -440,20 +450,25 @@ def copy_icons_to_runtime(workspace_path: Path):
 # ═══════════════════════════════════════════════════════════════════
 
 def _render_badge_plate(badge: str, S: int) -> Image.Image:
-    """Official-style corner badge: crop-filled glyph on gray plate, ink border.
+    """Official-style corner badge: crop-filled glyph on a borderless gray plate.
 
     Glyph is alpha-bbox-cropped, then proportionally scaled to fill the plate
     interior — the raw 22-unit glyph canvas carries ~40% padding, so pasting
     it un-cropped shrank the visible glyph to ~4.7px on a 22px icon (the main
-    blurriness cause). Border width S = 1px at final scale; crisp after the
-    integer BOX downscale in the 22px path."""
+    blurriness cause). No border (user spec): the plate is plain CATIA gray,
+    so it disappears into matching icon backgrounds and only the glyph reads.
+    Glyph colors come from BADGE_GLYPH_COLORS (saturated fill + official ink),
+    falling back to the default blue/navy."""
     plate_sz = round(22 * S * BADGE_PLATE_RATIO)
-    interior = plate_sz - 2 * S
+    interior = plate_sz - 2 * S   # 1px breathing room each side at final scale
     plate = Image.new("RGBA", (plate_sz, plate_sz), (*CATIA_BG, 255))
     glyph = Image.new("RGBA", (22*S, 22*S), (0, 0, 0, 0))
     gd = ImageDraw.Draw(glyph)
-    _draw_icon_4x_rgba(gd, badge, S, (10, 0, 255, 255), (*CATIA_INK, 255),
-                       (0, 0, 150, 255), None)
+    colors = BADGE_GLYPH_COLORS.get(badge, {})
+    body = (*colors.get("BODY", (10, 0, 255)), 255)
+    edge = (*colors.get("EDGE", CATIA_INK), 255)
+    dim = (*colors.get("DIM", (0, 0, 150)), 255)
+    _draw_icon_4x_rgba(gd, badge, S, body, edge, dim, None)
     bbox = glyph.getbbox()
     if bbox:
         glyph = glyph.crop(bbox)
@@ -464,9 +479,6 @@ def _render_badge_plate(badge: str, S: int) -> Image.Image:
         glyph = glyph.resize((interior, interior), Image.LANCZOS)
     plate.alpha_composite(glyph, ((plate_sz - glyph.width) // 2,
                                   (plate_sz - glyph.height) // 2))
-    pd = ImageDraw.Draw(plate)
-    pd.rectangle([0, 0, plate_sz-1, plate_sz-1], outline=(*CATIA_INK, 255),
-                 width=S)
     return plate
 
 

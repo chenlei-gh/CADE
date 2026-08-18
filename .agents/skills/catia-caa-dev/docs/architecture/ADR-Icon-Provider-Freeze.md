@@ -107,6 +107,10 @@ S1–S4 的审计链证明了三个关键事实：
    stem。语义链产出 badge=None 的命令（如 AutoColor/BOM/PartToAsm），
    部署时按命令动作显式指定 badge glyph（`check`/`pencil`/`move` 等 23
    字形之一）。纯官方底图仍部署在工作区作未引用参照，不作生产图标。
+   **角标规格**（同日用户裁决）：右下角、面积 = 图标 1/4（11×11 @ 22²，
+   `BADGE_PLATE_RATIO = 1/2`）、**无边框**（纯 CATIA 灰板，融入同色系
+   底图只留字形）；字形用 `BADGE_GLYPH_COLORS` 饱和填充 + 官方墨线
+   （绿勾 / 橙铅笔 / 亮蓝箭头），未列字形保持默认蓝。
 
 检索路径来自 `config/caa_env_config.txt` 的 `CATIA_INSTALL` +
 `win_b64|intel_a/resources/graphic/icons/normal`。未安装则全部占位符。
