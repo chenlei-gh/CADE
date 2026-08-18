@@ -31,11 +31,12 @@
 | 主体 | **单主体**（禁止场景化构图），居中，占画布 ~50%，右下角留简（给 Badge 让位） |
 | 禁止 | 抗锯齿 / 渐变 / 投影 / 文字 / 写实 / 3D 渲染感 / 现代扁平 UI 风 |
 
-## 3. Prompt 模板（固定三段式，只换主题槽）
+## 3. Prompt 模板（三层结构，只换语义槽）
 
-**主题槽只给语义，不给构图。** 规定"cube + arrow + frame"这类具体视觉
-方案等于人工设计图标、AI 沦为绘图执行器——视觉隐喻由模型提出，我们
-生成 4~8 个候选后用同一管线压成 22×22 再人工选。
+**只给语义，隐喻由模型发明。** 任何视觉方向词（symbolic icon / moving
+part / arrow / container……）都是替模型做设计——哪怕只缩减到一个对象。
+本规范是受控实验：验证模型仅凭 CADE 语义 + CATIA 风格约束，能否自己
+产生合格的 22×22 CATIA 风格单主体隐喻。
 
 ```text
 [风格块，固定]
@@ -43,14 +44,19 @@
 #C0C0C0, hard 1-2px dark-navy (#080867) outlines, saturated flat fills,
 subtle white highlight on top-left edges, no anti-aliasing, no gradients,
 no shadows, no text, centered composition, single clear subject occupying
-about half of the canvas, keep bottom-right corner area simple
+about half of the canvas, keep bottom-right corner area simple.
 
-[主题槽，每图标一句：纯语义，禁构图名词]
-{semantic}
+[语义槽，每图标一段：纯语义，零视觉词]
+Semantic intent: {semantic}
+
+[隐喻自选块，固定]
+Invent the simplest single-subject visual metaphor that communicates this
+semantic intent. The choice of metaphor, geometry, objects, and colors is
+yours — keep it minimal and symbolic.
 
 [负向块，固定]
-text, letters, watermark, gradient, blur, photorealistic, 3D render,
-glossy, modern flat UI, anti-aliased edges
+Negative: text, letters, watermark, gradient, blur, photorealistic,
+3D render, glossy, modern flat UI, anti-aliased edges
 ```
 
 模型支持参考图输入时，喂 2~4 张官方图做风格锚（如 `I_Hole` / `I_Pad`）。
@@ -62,9 +68,14 @@ glossy, modern flat UI, anti-aliased edges
 #C0C0C0, hard 1-2px dark-navy (#080867) outlines, saturated flat fills,
 subtle white highlight on top-left edges, no anti-aliasing, no gradients,
 no shadows, no text, centered composition, single clear subject occupying
-about half of the canvas, keep bottom-right corner area simple:
-a single simple symbolic icon expressing the action of moving a mechanical
-part into an assembly
+about half of the canvas, keep bottom-right corner area simple.
+
+Semantic intent: PartToAsm — moving/converting a part into an assembly
+context.
+
+Invent the simplest single-subject visual metaphor that communicates this
+semantic intent. The choice of metaphor, geometry, objects, and colors is
+yours — keep it minimal and symbolic.
 
 Negative: text, letters, watermark, gradient, blur, photorealistic,
 3D render, glossy, modern flat UI, anti-aliased edges
@@ -72,6 +83,19 @@ Negative: text, letters, watermark, gradient, blur, photorealistic,
 
 **同一 Prompt 变 seed 出 4~8 个候选，不改 Prompt 本体。** 全部丢
 `tmp/gen_inbox/`，管线批量处理后出对比 sheet（候选 × 官方锚点并排）。
+
+### 隐喻记录（试点核心产出）
+
+4~8 个候选不是"挑一张最好看的"——评审时为每个候选记录**模型自己提出
+的视觉隐喻**（填 gate JSON 的 `provenance.metaphor`）：
+
+| 候选 | 模型隐喻 | A/B 机器门禁 | C 人工 | E 实机 |
+|---|---|---|---|---|
+| A | （评审时填） | | | |
+| B | | | | |
+
+这张表回答的是比单张 BMP 更有价值的问题：**对于 CADE 自有语义，文生图
+模型到底能不能产生符合 CATIA 视觉语言的单主体隐喻。**
 
 ## 4. 后处理管线（`tools/icon_gen_pipeline.py`，确定性代码）
 
@@ -103,8 +127,8 @@ Cube / Box / Move / Add 这类泛化读法。
 **E. CATIA 实机（最终裁决）**：
 
 - 像素指标漂亮 ≠ 工具栏里看起来正确（此前犯过这个方法论错误）
-- 流程：机器指标 → 人工视觉验收（8× 对比 sheet）→ CATIA 22×22
-  Toolbar 实机 → PASS / REJECT
+- 流程：机器指标 → 人工视觉验收（8× 对比 sheet + 隐喻记录）→
+  CATIA 22×22 Toolbar 实机 → PASS / REJECT
 - 单图标重生 ≤3 次；超过则降级（LLM 像素设计 / 兜底图）
 - 指标硬门禁只有人工验收时可豁免（须记录理由）
 
@@ -149,12 +173,17 @@ Cube / Box / Move / Add 这类泛化读法。
 ```text
 CADE Semantic (parttoasm)
   → Official Pool 证明无合适官方图（已完成，DENY）
-  → AI Generate ×4~8 候选
+  → AI Generate ×4~8 候选（模型自选隐喻）
   → 管线：22×22 / ≤16 色 / 背景吸附 / 调色板 BMP
-  → 对比 sheet 人工 Visual QA（A/B/C）
+  → 对比 sheet + 隐喻记录表，人工 Visual QA（A/B/C）
   → CATIA 22×22 Toolbar 实机（E，最终裁决）
-  → 入库 I_CADEPartToAsm.bmp + provenance
+  → 入库 I_CADEPartToAsm.bmp + provenance（含 metaphor）
 ```
 
-跑通即证明：删除 Primitive 后，Official Asset + Generated Asset
-能覆盖官方不存在的 CADE 语义。
+跑通即证明：Official Asset + Generated Asset 能覆盖官方不存在的
+CADE 语义。
+
+**Primitive 删除的依赖条件**：本试点成功（E 通过）之前，71 Primitive
+保持现状不删——不是因为已证明它们没用，而是 Custom Asset Generation
+路径尚未被实机证据验证。试点通过后才评估彻底删除，删除是结果，
+不是设计目标。

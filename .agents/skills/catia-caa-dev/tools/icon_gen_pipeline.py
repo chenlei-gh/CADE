@@ -128,13 +128,14 @@ def process(src: Path, stem: str, out_dir: Path) -> dict:
         "pipeline": "icon_gen_pipeline.py v1",
         "gate": gate,
         "outputs": {"bmp": str(bmp_path), "preview": str(png_path)},
-        # provenance draft — user fills model/prompt/seed after approval
+        # provenance draft — user fills model/prompt/seed/metaphor at review
         "provenance": {
             "stem": stem,
             "semantic": "",
             "model": "",
             "prompt": "",
             "seed": None,
+            "metaphor": "",   # model's visual metaphor, recorded at review
             "generated_at": str(date.today()),
             "pipeline": "icon_gen_pipeline.py v1",
             "gate": {"colors": colors, "fg": round(fg, 3)},
