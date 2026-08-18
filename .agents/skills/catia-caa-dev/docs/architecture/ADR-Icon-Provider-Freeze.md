@@ -115,6 +115,16 @@ S1–S4 的审计链证明了三个关键事实：
    `check`（AutoColor）/ `pencil`（AutoRename）/ `export`（BOM，扣官方
    标题 "Export MBOM to XML"）/ `move`（PartToAsm）。
 
+7. **Generated Base**（2026-08-18 PartToAsm 试点闭环）：官方确无等价的
+   CADE 自有语义，可按 `ICON_GENERATION_SPEC` 生成图标——LLM 像素设计
+   （主路径，`icon_design_lib` 官方语素）或外部文生图（可选），一律过
+   后处理管线门禁（22×22 / ≤16 色 / 四角纯 / fg∈[15,70]）+ 人工验收 +
+   CATIA 实机。资产入库 `assets/icons/generated/`：`I_CADE*` 前缀 BMP +
+   provenance JSON + 设计源 .py（资产可从代码确定性重建）。这是
+   “无自有图标库”原则的唯一例外；官方 BMP 原件仍永不入库。规则 6 的
+   Badge 强制**不适用**于主体已含语义的 Generated Base（spec §6 豁免，
+   如 PartToAsm 的齿轮对本身即装配语义）。
+
 检索路径来自 `config/caa_env_config.txt` 的 `CATIA_INSTALL` +
 `win_b64|intel_a/resources/graphic/icons/normal`。未安装则全部占位符。
 
@@ -212,7 +222,8 @@ ACTIONABLE_FALLBACK = 0。
 
 ## 6. Forbidden
 
-- 扫描或复制 B28 `normal/` 进仓库
+- 扫描或复制 B28 `normal/` 进仓库（唯一例外：经 spec 门禁 + 人工 +
+  实机验收的 `I_CADE*` Generated Base 资产可入库，必须含 provenance）
 - 建立 Official Icon Library / 把官方原件写入 ChangeSet
 - 模糊匹配 / 相似度搜索官方图标
 - `glob('I_Hole*')` 取第一张
@@ -239,6 +250,8 @@ ACTIONABLE_FALLBACK = 0。
    → 换用其他官方兜底图（需同样无 CATRsc 引用），或调整 resize 算法。
 4. **DENY 列表中某词条被重新核实有官方等价**
    → 按 msgcatalog 交叉验证法找到证据后，从 DENY 移到 ALIAS。
+5. **Generated Base 资产实机被否**
+   → 回退到对应 Badge 合成版，按 spec 重生；不绕过门禁手工改 BMP。
 
 ---
 
@@ -251,9 +264,11 @@ ACTIONABLE_FALLBACK = 0。
   改为提示用 CLI `--render` 生成预览。
 - `CAAPartToAsm` 的 `I_parttoasm.bmp` 已重新生成为官方兜底图
   `I_P3DefaultIcon` 的 8bpp NEAREST 缩放版（Primitive 遗产文件已替换）。
-- 生产 CATRsc `Icon.Normal` 全部指向 Badge 合成 stem（§3 规则 6）：
+- 生产 CATRsc `Icon.Normal` 指向（§3 规则 6/7）：
   - `CAAAutoColor`：`"I_AutomaticColorPropertyBadge"`（badge=`check`）
   - `CAAAutoRename`：`"I_RenameFamilyBadge"`（badge=`pencil`）
-  - `CAABOMTool`：`"I_DNBBOMtoXMLBadge"`（badge=`check`，命令头 CheckHdr）
-  - `CAAPartToAsm`：`"I_parttoasmBadge"`（badge=`move`，part→asm 转移）
+  - `CAABOMTool`：`"I_DNBBOMtoXMLBadge"`（badge=`export`）
+  - `CAAPartToAsm`：`"I_CADEPartToAsm"`（Generated Base，官方齿轮词汇
+    左单黄齿轮=part / 右青咬黄齿轮对=asm，无 Badge；gate E 用户验收通过；
+    `I_parttoasmBadge.bmp` 保留作回退）
 - 下次改 Icon Provider 必须先回答：「它解决了哪个真实命令？」
