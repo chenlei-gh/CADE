@@ -33,6 +33,10 @@
 
 ## 3. Prompt 模板（固定三段式，只换主题槽）
 
+**主题槽只给语义，不给构图。** 规定"cube + arrow + frame"这类具体视觉
+方案等于人工设计图标、AI 沦为绘图执行器——视觉隐喻由模型提出，我们
+生成 4~8 个候选后用同一管线压成 22×22 再人工选。
+
 ```text
 [风格块，固定]
 1990s CAD software toolbar icon, pixel art style, flat solid background
@@ -41,8 +45,8 @@ subtle white highlight on top-left edges, no anti-aliasing, no gradients,
 no shadows, no text, centered composition, single clear subject occupying
 about half of the canvas, keep bottom-right corner area simple
 
-[主题槽，每图标一句，几何名词]
-{subject}
+[主题槽，每图标一句：纯语义，禁构图名词]
+{semantic}
 
 [负向块，固定]
 text, letters, watermark, gradient, blur, photorealistic, 3D render,
@@ -59,13 +63,15 @@ glossy, modern flat UI, anti-aliased edges
 subtle white highlight on top-left edges, no anti-aliasing, no gradients,
 no shadows, no text, centered composition, single clear subject occupying
 about half of the canvas, keep bottom-right corner area simple:
-a small solid steel-blue cube representing a mechanical part, with a bold
-green arrow pointing from the cube into a larger hollow dark-navy square
-frame representing an assembly
+a single simple symbolic icon expressing the action of moving a mechanical
+part into an assembly
 
 Negative: text, letters, watermark, gradient, blur, photorealistic,
 3D render, glossy, modern flat UI, anti-aliased edges
 ```
+
+**同一 Prompt 变 seed 出 4~8 个候选，不改 Prompt 本体。** 全部丢
+`tmp/gen_inbox/`，管线批量处理后出对比 sheet（候选 × 官方锚点并排）。
 
 ## 4. 后处理管线（`tools/icon_gen_pipeline.py`，确定性代码）
 
@@ -77,16 +83,28 @@ Negative: text, letters, watermark, gradient, blur, photorealistic,
 4. `_save_palette_bmp`：背景钉调色板索引 0 → 8-bit BMP（CNEXT 透明机制）
 5. 出 8× 放大预览 PNG + 门禁报告 + provenance 草稿 JSON
 
-## 5. 验收门禁
+## 5. 验收门禁（A–E，E 是最终裁决）
 
-**自动硬门禁**（不过直接打回重生）：
+**A. 语义**：一眼表达目标语义（试点 = Part → Assembly），不是
+Cube / Box / Move / Add 这类泛化读法。
 
-- 22×22、≤16 色、四角纯背景（管线保证）
+**B. 构图**：单主体；无场景、无文字、无 UI、无多个独立对象堆叠、
+不模拟 3D 渲染。
+
+**C. 官方风格**：22×22 后仍清晰；1~2px 轮廓稳定；色块符合 B28 调色；
+视觉重量接近官方；缩小后仍有 CATIA 味道。
+
+**D. 工程**（管线自动硬门禁，不过直接打回）：
+
+- 22×22、8-bit indexed BMP、≤16 色、背景钉调色板索引 0、四角纯背景
 - 主体占比 fg% ∈ [15%, 70%]（官方实测区间）
+- CNEXT 能正常读取
 
-**人工门禁**：
+**E. CATIA 实机（最终裁决）**：
 
-- 8× 放大对比图过目，与官方图标并排看是否"一家人"
+- 像素指标漂亮 ≠ 工具栏里看起来正确（此前犯过这个方法论错误）
+- 流程：机器指标 → 人工视觉验收（8× 对比 sheet）→ CATIA 22×22
+  Toolbar 实机 → PASS / REJECT
 - 单图标重生 ≤3 次；超过则降级（LLM 像素设计 / 兜底图）
 - 指标硬门禁只有人工验收时可豁免（须记录理由）
 
@@ -94,7 +112,11 @@ Negative: text, letters, watermark, gradient, blur, photorealistic,
 
 - Badge **一律程序化叠加**（`_render_badge_plate` 现有路径），不让文生图画
   10px 小字形——它画不好，且角标统一是家族感来源
-- 若生成主体本身已含操作语义（如箭头），经人工验收可省略 Badge，避免双重语义
+- **箭头/Badge 边界**：转移/方向语义若属于主体语义本身（如 PartToAsm
+  的 "→"），允许由生成主体表达，此时经人工验收可省略 Badge 避免双重
+  语义；创建/删除/编辑等操作动词永远走程序化 Badge，不交给生成
+- 不在 Prompt 中指定箭头颜色——官方风格审计未证明"绿色箭头"是 B28
+  稳定语义元素
 
 ## 7. 命名与溯源
 
@@ -118,5 +140,21 @@ Negative: text, letters, watermark, gradient, blur, photorealistic,
 
 ## 8. 一致性措施
 
-同一模型、同一风格块、同一管线、同批出对比 sheet。四个图标必须是"一家人"，
-风格漂移的单独重生成，不接受"各自漂亮"。
+同一模型、同一风格块、同一管线、同批出对比 sheet（`--batch` 自动生成
+候选 × 官方锚点并排图）。四个图标必须是"一家人"，风格漂移的单独
+重生成，不接受"各自漂亮"。
+
+## 9. 试点闭环（PartToAsm 验证整条新路线）
+
+```text
+CADE Semantic (parttoasm)
+  → Official Pool 证明无合适官方图（已完成，DENY）
+  → AI Generate ×4~8 候选
+  → 管线：22×22 / ≤16 色 / 背景吸附 / 调色板 BMP
+  → 对比 sheet 人工 Visual QA（A/B/C）
+  → CATIA 22×22 Toolbar 实机（E，最终裁决）
+  → 入库 I_CADEPartToAsm.bmp + provenance
+```
+
+跑通即证明：删除 Primitive 后，Official Asset + Generated Asset
+能覆盖官方不存在的 CADE 语义。

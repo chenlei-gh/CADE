@@ -20,9 +20,11 @@ from pathlib import Path
 
 from PIL import Image
 
-# Reuse the CNEXT-safe BMP writer and style constants from icon_provider.
+# Reuse the CNEXT-safe BMP writer, style constants and B28 resolver.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills"))
-from icon_provider import _save_palette_bmp, CATIA_BG  # noqa: E402
+from icon_provider import (  # noqa: E402
+    _save_palette_bmp, _official_icons_dir, CATIA_BG,
+)
 
 # ── Spec constants (§2, §5) ──────────────────────────────────────────
 CANVAS = 22                     # final canvas edge
@@ -146,15 +148,97 @@ def process(src: Path, stem: str, out_dir: Path) -> dict:
     return report
 
 
+# ── Batch mode + comparison sheet (spec §3, §8) ─────────────────────
+ANCHOR_STEMS = ["I_Hole", "I_Pad", "I_Pocket"]  # official style anchors
+
+
+def _load_anchor() -> list:
+    """Official B28 anchors at 22x22 RGB for the comparison sheet.
+    Empty list when CATIA install not found (sheet still emitted)."""
+    d = _official_icons_dir()
+    out = []
+    if d is None:
+        return out
+    for stem in ANCHOR_STEMS:
+        p = d / f"{stem}.bmp"
+        if p.is_file():
+            out.append((stem, Image.open(p).convert("RGB")))
+    return out
+
+
+def _comparison_sheet(cands: list, anchors: list, out: Path) -> Path:
+    """Side-by-side 8x sheet: official anchors (top row) vs candidates
+    (bottom row). Direct Visual-QA artifact for spec §5-C/E."""
+    from PIL import ImageDraw
+    cell = CANVAS * PREVIEW_SCALE
+    label_h, gap = 18, 6
+    cols = max(len(cands), len(anchors), 1)
+    rows = 2 if anchors else 1
+    sheet = Image.new("RGB",
+                      (cols * (cell + gap) + gap,
+                       rows * (cell + label_h + gap) + gap),
+                      (230, 230, 230))
+    draw = ImageDraw.Draw(sheet)
+
+    def _paste(img, stem, row, col):
+        x = gap + col * (cell + gap)
+        y = gap + row * (cell + label_h + gap)
+        sheet.paste(img.resize((cell, cell), Image.NEAREST), (x, y))
+        draw.text((x + 2, y + cell + 2), stem, fill=(20, 20, 20))
+
+    for i, (stem, img) in enumerate(anchors):
+        _paste(img, stem, 0, i)
+    row = 1 if anchors else 0
+    for i, (stem, img) in enumerate(cands):
+        _paste(img, stem, row, i)
+    sheet.save(out)
+    return out
+
+
+def batch(in_dir: Path, stem: str, out_dir: Path) -> list:
+    """Process every candidate PNG in in_dir (excluding pipeline outputs),
+    stems suffixed _A/_B/... in sorted order, then emit one sheet."""
+    srcs = sorted(p for p in in_dir.glob("*.png")
+                  if not p.stem.endswith(("_8x", "_sheet")))
+    if not srcs:
+        sys.exit(f"no candidate PNGs in {in_dir}")
+    reports, cands = [], []
+    for i, src in enumerate(srcs):
+        cstem = f"{stem}_{chr(65 + i)}"
+        rep = process(src, cstem, out_dir)
+        reports.append(rep)
+        cands.append((cstem, Image.open(rep["outputs"]["bmp"]).convert("RGB")))
+        g = rep["gate"]
+        print(f"[{'PASS' if g['pass'] else 'FAIL'}] {cstem}  "
+              f"colors={g['colors']} fg={g['fg']:.1%} "
+              f"corners={'pure' if g['corners_pure'] else 'DIRTY'}  ← {src.name}")
+    sheet = _comparison_sheet(cands, _load_anchor(),
+                              out_dir / f"{stem}_sheet.png")
+    print(f"sheet : {sheet}")
+    if any(not r["gate"]["pass"] for r in reports):
+        sys.exit(1)
+    return reports
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser(description="Generated-base icon pipeline")
-    ap.add_argument("input", type=Path, help="source PNG from tmp/gen_inbox/")
+    ap.add_argument("input", type=Path,
+                    help="source PNG, or candidate directory with --batch")
     ap.add_argument("stem", help="asset stem, e.g. I_CADEPartToAsm")
     ap.add_argument("--out", type=Path,
                     default=Path("tmp/gen_inbox"),
                     help="output directory (default: tmp/gen_inbox/)")
+    ap.add_argument("--batch", action="store_true",
+                    help="process all PNGs in input dir, stems get _A/_B/... "
+                         "suffixes, emit comparison sheet vs official anchors")
     args = ap.parse_args()
+
+    if args.batch:
+        if not args.input.is_dir():
+            sys.exit(f"--batch needs a directory: {args.input}")
+        batch(args.input, args.stem, args.out)
+        return
 
     if not args.input.exists():
         sys.exit(f"input not found: {args.input}")
