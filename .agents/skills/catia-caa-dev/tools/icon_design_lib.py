@@ -76,3 +76,32 @@ def frame(d, x0, y0, s, w=2, color=INK):
     for i in range(w):
         d.rectangle([x0 + i, y0 + i, x0 + s - 1 - i, y0 + s - 1 - i],
                     outline=color)
+
+
+# Official color-swatch palette (I_AutomaticColorProperty grid order)
+SWATCHES = [(255, 0, 0), (0, 255, 0), (0, 0, 255),
+            (255, 0, 255), (160, 80, 40), (255, 255, 0)]
+
+
+def swatches(d, x0, y0, cols, rows, sw, sh, colors=SWATCHES, gap=1):
+    """Official color vocabulary: saturated swatch grid with INK borders
+    (I_AutomaticColorProperty encoding). Cells clip silently at canvas
+    edges; caller keeps them inside."""
+    for r in range(rows):
+        for c in range(cols):
+            col = colors[(r * cols + c) % len(colors)]
+            x, y = x0 + c * (sw + gap), y0 + r * (sh + gap)
+            d.rectangle([x, y, x + sw - 1, y + sh - 1],
+                        fill=col, outline=INK)
+
+
+def letter_a(d, x, y, color=INK):
+    """Hand-drawn 7x9 hard-edge pixel 'A' (2px legs + crossbar).
+    PIL's default font is a vector face in Pillow >= 10 and anti-aliases,
+    which violates the spec's hard-edge clause — letters must be drawn
+    as pixels."""
+    d.rectangle([x + 1, y, x + 5, y], fill=color)            # top bar
+    for yy in range(y + 1, y + 9):
+        d.rectangle([x, yy, x + 1, yy], fill=color)          # left leg
+        d.rectangle([x + 5, yy, x + 6, yy], fill=color)      # right leg
+    d.rectangle([x, y + 4, x + 6, y + 5], fill=color)        # crossbar

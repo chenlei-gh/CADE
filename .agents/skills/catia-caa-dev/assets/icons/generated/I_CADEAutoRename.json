@@ -1,0 +1,20 @@
+{
+  "stem": "I_CADEAutoRename",
+  "semantic": "autorename",
+  "model": "LLM pixel design (kimi-k3, direct 22x22 pixel rendering)",
+  "prompt": "semantic-only: AutoRename; metaphor = official rename vocabulary (I_RenameFamily = white name card with letter) + automation gear",
+  "seed": null,
+  "metaphor": "official name-card vocabulary: LEFT white card with 2px navy border carrying a hand-drawn 7x9 hard-edge pixel 'A' (I_RenameFamily encoding), RIGHT yellow gear r3 = automation. The 'A' is pixel-drawn via letter_a() because PIL's default font is a vector face in Pillow >= 10 and anti-aliases, violating the spec hard-edge clause. No badge - body carries the semantic (spec section 6 exemption)",
+  "generated_at": "2026-08-18",
+  "pipeline": "icon_gen_pipeline.py v1",
+  "gate": {
+    "colors": 4,
+    "fg": 0.541
+  },
+  "candidates": {
+    "a_card_gear": "SELECTED by rule verdict - name card + pixel A + gear; AA font defect fixed by hand-drawn letter_a(), gate PASS",
+    "b_alt": "rejected by rule verdict (weaker official vocabulary correspondence)"
+  },
+  "approved_by": "rule-verdict (no manual selection, per user directive 2026-08-18)",
+  "approved_at": "2026-08-18"
+}

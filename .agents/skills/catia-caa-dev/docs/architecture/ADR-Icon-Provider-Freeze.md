@@ -265,10 +265,20 @@ ACTIONABLE_FALLBACK = 0。
 - `CAAPartToAsm` 的 `I_parttoasm.bmp` 已重新生成为官方兜底图
   `I_P3DefaultIcon` 的 8bpp NEAREST 缩放版（Primitive 遗产文件已替换）。
 - 生产 CATRsc `Icon.Normal` 指向（§3 规则 6/7）：
-  - `CAAAutoColor`：`"I_AutomaticColorPropertyBadge"`（badge=`check`）
-  - `CAAAutoRename`：`"I_RenameFamilyBadge"`（badge=`pencil`）
-  - `CAABOMTool`：`"I_DNBBOMtoXMLBadge"`（badge=`export`）
+  - `CAAAutoColor`：`"I_CADEAutoColor"`（Generated Base，官方色板词汇
+    2×3 饱和色板网格 + 右下 r4 自动化齿轮压边，无 Badge；规则裁决无人工
+    选择；`I_AutomaticColorPropertyBadge.bmp` 保留作回退）
+  - `CAAAutoRename`：`"I_CADEAutoRename"`（Generated Base，官方命名片
+    词汇 白卡 + 手绘像素 `A`（`letter_a()`，Pillow≥10 默认字体抗锯齿违反
+    硬边条款）+ r3 齿轮，无 Badge；规则裁决；`I_RenameFamilyBadge.bmp`
+    保留作回退）
+  - `CAABOMTool`：`"I_CADEBOMTool"`（Generated Base，官方 BOM 词汇
+    装配树 父+双子黄节点连线 + 白表格卡 3 蓝行 (0,140,255)，无 Badge；
+    规则裁决；`I_DNBBOMtoXMLBadge.bmp` 保留作回退）
   - `CAAPartToAsm`：`"I_CADEPartToAsm"`（Generated Base，官方齿轮词汇
     左单黄齿轮=part / 右青咬黄齿轮对=asm，无 Badge；gate E 用户验收通过；
     `I_parttoasmBadge.bmp` 保留作回退）
+- **无 Badge 豁免已扩展至全部 4 个生产命令**（2026-08-18 用户裁决）：
+  主体自带语义的 Generated Base 不叠加 Badge，§3 规则 6 的强制角标条款
+  仅适用于「官方底图原样引用」场景；旧 `*Badge.bmp` 全部保留作回退。
 - 下次改 Icon Provider 必须先回答：「它解决了哪个真实命令？」

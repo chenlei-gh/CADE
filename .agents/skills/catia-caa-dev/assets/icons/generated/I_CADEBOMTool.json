@@ -1,0 +1,20 @@
+{
+  "stem": "I_CADEBOMTool",
+  "semantic": "bomtool",
+  "model": "LLM pixel design (kimi-k3, direct 22x22 pixel rendering)",
+  "prompt": "semantic-only: BOMTool; metaphor = official BOM vocabulary (I_DNBBOMtoXML = assembly tree + table)",
+  "seed": null,
+  "metaphor": "official BOM vocabulary: LEFT specification-tree - yellow parent node + two yellow child nodes with navy connectors, RIGHT white table card with 3 blue rows (0,140,255) (I_DNBBOMtoXML encoding). Yellow node faces tie to the PartToAsm gear family palette. No badge - body carries the semantic (spec section 6 exemption)",
+  "generated_at": "2026-08-18",
+  "pipeline": "icon_gen_pipeline.py v1",
+  "gate": {
+    "colors": 5,
+    "fg": 0.488
+  },
+  "candidates": {
+    "a_tree_table": "SELECTED by rule verdict - tree + table matches I_DNBBOMtoXML vocabulary, gate PASS",
+    "b_alt": "rejected by rule verdict (r=2 gear teeth blurred into a block; below minimum gear radius)"
+  },
+  "approved_by": "rule-verdict (no manual selection, per user directive 2026-08-18)",
+  "approved_at": "2026-08-18"
+}

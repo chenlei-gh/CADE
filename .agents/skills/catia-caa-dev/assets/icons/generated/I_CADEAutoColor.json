@@ -1,0 +1,20 @@
+{
+  "stem": "I_CADEAutoColor",
+  "semantic": "autocolor",
+  "model": "LLM pixel design (kimi-k3, direct 22x22 pixel rendering)",
+  "prompt": "semantic-only: AutoColor; metaphor = official color vocabulary (I_AutomaticColorProperty = saturated swatch grid) + automation gear (I_Part language)",
+  "seed": null,
+  "metaphor": "official color-swatch vocabulary: LEFT 2x3 saturated swatch grid with navy borders (I_AutomaticColorProperty encoding: red/green/blue/magenta/brown/yellow cells), RIGHT yellow 8-tooth gear r4 pressing the swatch right edge = automation applied to color. Dense composition per full-bleed rule (user: 要铺满). No badge - body carries the semantic (spec section 6 exemption, same family as PartToAsm)",
+  "generated_at": "2026-08-18",
+  "pipeline": "icon_gen_pipeline.py v1",
+  "gate": {
+    "colors": 9,
+    "fg": 0.595
+  },
+  "candidates": {
+    "a_sw_gear": "SELECTED by rule verdict - swatch grid + gear, strongest official vocabulary match, gate PASS",
+    "b_alt": "rejected by rule verdict (weaker official vocabulary correspondence)"
+  },
+  "approved_by": "rule-verdict (no manual selection, per user directive 2026-08-18)",
+  "approved_at": "2026-08-18"
+}
