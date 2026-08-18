@@ -21,9 +21,9 @@ Pipeline:
        HD renderer    : NEAREST upscale, 24-bit BMP / RGBA PNG
 
 Style (inherited via the official BMPs themselves):
-  CATIA gray (192,192,192) background; badge plate = borderless gray plate,
-  1/4 of the icon area (11x11 on 22x22), flush bottom-right, glyph
-  crop-filled with per-glyph colors (BADGE_GLYPH_COLORS).
+  CATIA gray (192,192,192) background; badge = transparent glyph layer (no
+  plate), 13/22 of canvas edge (~1/3 of the icon area), flush bottom-right,
+  glyph crop-filled with per-glyph colors (BADGE_GLYPH_COLORS).
 
 Cache keys derive via ICON_HASH (vocab+mapping+renderer source), so any
 render-affecting change invalidates automatically.
@@ -166,16 +166,37 @@ COMPOUND_MAP = {
 }
 
 # Style spec constants (22px reference canvas)
-BADGE_PLATE_RATIO = 1 / 2     # badge plate edge / canvas edge, flush bottom-right
-                              # 11x11 = exactly 1/4 of the icon area (user spec)
+BADGE_PLATE_RATIO = 13 / 22   # badge zone edge / canvas edge, flush bottom-right
+                              # 13x13 ≈ 1/3 of the icon area (user spec)
 
-# Per-glyph colors (user spec 2026-08: saturated fill + official ink, no flat
-# monochrome). Glyphs not listed keep the default blue/navy. The check glyph
-# strokes with EDGE; pencil fills with BODY; move arrows fill with BODY.
+# Per-glyph colors (user spec 2026-08: no plate background; saturated fill +
+# official ink (8,8,103), semantic colors). BODY = fill, EDGE = outline,
+# DIM = detail. Glyphs use B/E/D per their lambda design.
+_OFFICIAL_INK = (8, 8, 103)
 BADGE_GLYPH_COLORS: Dict[str, Dict[str, Tuple[int, int, int]]] = {
-    "check":  {"EDGE": (0, 170, 0)},                                   # green tick
-    "pencil": {"BODY": (255, 170, 0), "EDGE": (8, 8, 103), "DIM": (180, 100, 0)},
-    "move":   {"BODY": (0, 140, 255), "EDGE": (8, 8, 103), "DIM": (0, 90, 180)},
+    "plus":     {"BODY": (0, 170, 0), "EDGE": _OFFICIAL_INK},
+    "minus":    {"BODY": (220, 0, 0)},                       # stroke-only glyph
+    "multiply": {"BODY": (220, 0, 0)},                       # stroke-only glyph
+    "check":    {"EDGE": (0, 170, 0)},                       # stroke = EDGE
+    "pencil":   {"BODY": (255, 170, 0), "EDGE": _OFFICIAL_INK, "DIM": (180, 100, 0)},
+    "refresh":  {"EDGE": (0, 140, 255)},                     # arc+head use EDGE
+    "ruler":    {"BODY": (255, 210, 0), "EDGE": _OFFICIAL_INK, "DIM": (200, 0, 0)},
+    "copy":     {"BODY": (0, 140, 255), "EDGE": _OFFICIAL_INK},
+    "import":   {"BODY": (0, 170, 0), "EDGE": _OFFICIAL_INK},
+    "export":   {"BODY": (0, 140, 255), "EDGE": _OFFICIAL_INK},
+    "disk":     {"BODY": (80, 80, 220), "EDGE": _OFFICIAL_INK},
+    "folder":   {"BODY": (255, 200, 60), "EDGE": _OFFICIAL_INK},
+    "search":   {"EDGE": _OFFICIAL_INK},
+    "chart":    {"BODY": (0, 140, 255), "EDGE": (220, 0, 0), "DIM": _OFFICIAL_INK},
+    "eye":      {"BODY": (255, 255, 255), "EDGE": _OFFICIAL_INK},
+    "play":     {"BODY": (0, 170, 0), "EDGE": _OFFICIAL_INK},
+    "lock":     {"BODY": (255, 190, 0), "EDGE": _OFFICIAL_INK},
+    "info":     {"BODY": (0, 140, 255), "EDGE": _OFFICIAL_INK},
+    "question": {"BODY": (0, 140, 255), "EDGE": _OFFICIAL_INK},
+    "settings": {"BODY": (160, 160, 170), "EDGE": _OFFICIAL_INK},
+    "move":     {"BODY": (0, 140, 255), "EDGE": _OFFICIAL_INK, "DIM": (0, 90, 180)},
+    "contour":  {"BODY": (0, 170, 0), "EDGE": _OFFICIAL_INK},
+    "star":     {"BODY": (255, 200, 0), "EDGE": _OFFICIAL_INK},
 }
 
 class IconSemantic(NamedTuple):
@@ -450,18 +471,18 @@ def copy_icons_to_runtime(workspace_path: Path):
 # ═══════════════════════════════════════════════════════════════════
 
 def _render_badge_plate(badge: str, S: int) -> Image.Image:
-    """Official-style corner badge: crop-filled glyph on a borderless gray plate.
+    """Corner badge layer: crop-filled glyph, NO plate background (user spec).
 
-    Glyph is alpha-bbox-cropped, then proportionally scaled to fill the plate
-    interior — the raw 22-unit glyph canvas carries ~40% padding, so pasting
-    it un-cropped shrank the visible glyph to ~4.7px on a 22px icon (the main
-    blurriness cause). No border (user spec): the plate is plain CATIA gray,
-    so it disappears into matching icon backgrounds and only the glyph reads.
-    Glyph colors come from BADGE_GLYPH_COLORS (saturated fill + official ink),
-    falling back to the default blue/navy."""
+    Returns a transparent RGBA layer sized 13/22 of the canvas (~1/3 of the
+    icon area). The glyph is alpha-bbox-cropped, then proportionally scaled
+    to fill the whole badge zone — the raw 22-unit glyph canvas carries ~40%
+    padding, so pasting it un-cropped shrank the visible glyph to ~4.7px on
+    a 22px icon (the main blurriness cause). Glyph colors come from
+    BADGE_GLYPH_COLORS (saturated fill + official ink). Without a plate the
+    official base pixels show through around the glyph."""
     plate_sz = round(22 * S * BADGE_PLATE_RATIO)
-    interior = plate_sz - 2 * S   # 1px breathing room each side at final scale
-    plate = Image.new("RGBA", (plate_sz, plate_sz), (*CATIA_BG, 255))
+    interior = plate_sz           # no plate, no margin: glyph fills the zone
+    plate = Image.new("RGBA", (plate_sz, plate_sz), (0, 0, 0, 0))
     glyph = Image.new("RGBA", (22*S, 22*S), (0, 0, 0, 0))
     gd = ImageDraw.Draw(glyph)
     colors = BADGE_GLYPH_COLORS.get(badge, {})
@@ -562,11 +583,13 @@ def _save_palette_bmp(rgb: Image.Image, out: Path) -> None:
     """Save RGB as 8-bit palettized BMP, background pinned to palette index 0.
 
     CNEXT transparency is palette-based; the background (top-left pixel,
-    CATIA's convention) must occupy palette index 0. Badge-plate colors are
+    CATIA's convention) must occupy palette index 0. Badge-glyph colors are
     seeded first so the tiny badge survives quantization, then the base
     image's own colors fill the rest of the 256-entry palette."""
     bg = rgb.getpixel((0, 0))
-    badge_colors = [CATIA_BG, CATIA_INK, (10, 0, 255), (0, 0, 150)]
+    badge_colors = [CATIA_BG, CATIA_INK, _OFFICIAL_INK, (10, 0, 255), (0, 0, 150)]
+    for spec in BADGE_GLYPH_COLORS.values():
+        badge_colors += [spec[k] for k in ("BODY", "EDGE", "DIM") if k in spec]
     palette = list(bg)
     seen = {bg}
     for col in badge_colors:
