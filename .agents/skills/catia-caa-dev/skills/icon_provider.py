@@ -14,12 +14,15 @@ Pipeline:
      miss / no CATIA -> DEFAULT_OFFICIAL_STEM (I_P3DefaultIcon)
   -> compose: official BMP as canvas + badge plate (bottom-right)
   -> rasterizer:
-       CATIA renderer : 22x22, official pixels kept, 24-bit BMP
+       CATIA renderer : 22x22, official pixels kept; pure official copied
+                        byte-for-byte, badged/resampled saved as 8-bit
+                        palettized BMP (background = palette index 0, so
+                        CNEXT background transparency works)
        HD renderer    : NEAREST upscale, 24-bit BMP / RGBA PNG
 
 Style (inherited via the official BMPs themselves):
   CATIA gray (192,192,192) background; badge plate = gray plate + navy ink
-  border, 10/22 of canvas, flush bottom-right.
+  border, 12/22 of canvas, flush bottom-right, glyph crop-filled.
 
 Cache keys derive via ICON_HASH (vocab+mapping+renderer source), so any
 render-affecting change invalidates automatically.
