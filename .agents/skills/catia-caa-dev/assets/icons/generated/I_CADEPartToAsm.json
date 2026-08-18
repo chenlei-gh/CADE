@@ -2,19 +2,20 @@
   "stem": "I_CADEPartToAsm",
   "semantic": "parttoasm",
   "model": "LLM pixel design (kimi-k3, direct 22x22 pixel rendering)",
-  "prompt": "semantic-only: PartToAsm - moving/converting a part into an assembly context; metaphor invented by model, no prescribed composition",
+  "prompt": "semantic-only: PartToAsm; metaphor = official gear vocabulary (I_Part = 1 yellow gear, I_Product = cyan+yellow gear pair)",
   "seed": null,
-  "metaphor": "containment: official-palette solid part cube (lemon-yellow face + navy pseudo-3D extrusion, sampled from I_Pad/I_Hole) centered inside a hollow dark-navy assembly frame; result-state metaphor, no badge needed per spec §6 exemption",
+  "metaphor": "official gear vocabulary: LEFT single yellow gear (part, I_Part language) separated from RIGHT meshing cyan+yellow gear pair (assembly, I_Product language); the gap itself expresses the from-to transition, no arrow needed. Colors sampled from official I_Part/I_Product palette: yellow face (255,238,135), cyan face (75,230,255) edge (0,157,167), navy outline (24,16,82)",
   "generated_at": "2026-08-18",
   "pipeline": "icon_gen_pipeline.py v1",
   "gate": {
-    "colors": 4,
-    "fg": 0.403
+    "colors": 5,
+    "fg": 0.24
   },
   "candidates": {
-    "A_insert": "part cube sliding into hollow frame - rejected (crowded gap)",
-    "B_contain": "SELECTED - least whitespace, highest visual density vs official anchors",
-    "C_arrow": "green arrow cliché control - rejected (unverified element)"
+    "v1_v3_contain": "hollow frame containing cube - deployed then superseded (user pointed out official gear vocabulary)",
+    "a_gears_split": "gear pair too scattered - rejected",
+    "b_gears_mesh": "SELECTED - right pair meshes like official I_Product, left single matches I_Part",
+    "c_gears_stack": "pair too regular, reads as list - rejected"
   },
   "approved_by": "user",
   "approved_at": "2026-08-18"
