@@ -102,6 +102,12 @@ S1–S4 的审计链证明了三个关键事实：
 
 5. Overlay：有 badge 就叠，**包括 CREATE 的 `+`**。
 
+6. **生产部署强制带角标**（2026-08-18 用户裁决）：CATRsc `Icon.Normal`
+   必须引用 `I_<stem>Badge`（官方底图 + Badge 合成版），禁止引用纯官方
+   stem。语义链产出 badge=None 的命令（如 AutoColor/BOM/PartToAsm），
+   部署时按命令动作显式指定 badge glyph（`check`/`pencil`/`move` 等 23
+   字形之一）。纯官方底图仍部署在工作区作未引用参照，不作生产图标。
+
 检索路径来自 `config/caa_env_config.txt` 的 `CATIA_INSTALL` +
 `win_b64|intel_a/resources/graphic/icons/normal`。未安装则全部占位符。
 
@@ -236,10 +242,11 @@ ACTIONABLE_FALLBACK = 0。
   加 OBJECT_VOCAB / DEFAULT_OFFICIAL_STEM / `_render_placeholder`。
 - `update_golden_icons.py` 已废弃（Primitive 渲染器已删），
   改为提示用 CLI `--render` 生成预览。
-- `CAAPartToAsm` 的 `I_parttoasm.bmp` 是 Primitive 时代遗产文件，
-  已在工作区，不受代码删除影响。
-- 生产 CATRsc 需同步更新 3 个命令的 `Icon.Normal` 引用：
-  - `CAAAutoColor`：`"I_cube"` → `"I_AutomaticColorProperty"`
-  - `CAAAutoRename`：`"I_rename"` → `"I_RenameFamily"`
-  - `CAABOMTool`：`"I_caabomtoolcmd"` → `"I_DNBBOMtoXML"`
+- `CAAPartToAsm` 的 `I_parttoasm.bmp` 已重新生成为官方兜底图
+  `I_P3DefaultIcon` 的 8bpp NEAREST 缩放版（Primitive 遗产文件已替换）。
+- 生产 CATRsc `Icon.Normal` 全部指向 Badge 合成 stem（§3 规则 6）：
+  - `CAAAutoColor`：`"I_AutomaticColorPropertyBadge"`（badge=`check`）
+  - `CAAAutoRename`：`"I_RenameFamilyBadge"`（badge=`pencil`）
+  - `CAABOMTool`：`"I_DNBBOMtoXMLBadge"`（badge=`check`，命令头 CheckHdr）
+  - `CAAPartToAsm`：`"I_parttoasmBadge"`（badge=`move`，part→asm 转移）
 - 下次改 Icon Provider 必须先回答：「它解决了哪个真实命令？」
