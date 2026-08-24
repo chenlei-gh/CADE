@@ -219,13 +219,18 @@ print("=" * 70)
 
 intent_tests = [
     ("create command ExportBOM", "CreateCommand"),
-    ("create a dialog", "CreateCommandWithDialog"),
+    ("create a dialog", "CreateDialog"),
+    ("create dialog MyDlg in MyModule.m", "CreateDialog"),
+    ("create command MyCmd with dialog", "CreateCommandWithDialog"),
+    ("create command MyCmd with a dialog", "CreateCommandWithDialog"),
     ("create feature MyFeat", "CreateFeature"),
     ("make extension MyExt", "CreateExtension"),
     ("create interface IMyIntf", "CreateInterface"),
     ("generate workbench MyWb", "CreateWorkbench"),
     ("create module MyMod", "CreateModule"),
     ("create framework MyFw", "CreateFramework"),
+    ("创建对话框 MyDlg", "CreateDialog"),
+    ("创建命令 MyCmd 带对话框", "CreateCommandWithDialog"),
 ]
 
 for req, expected in intent_tests:
@@ -241,6 +246,7 @@ print("=" * 70)
 
 extract_tests = [
     ("create command MyCmd in MyModule.m", ("MyCmd", "MyModule.m", None)),
+    ("create dialog MyDlg in MyModule.m", ("MyDlg", "MyModule.m", None)),
     ("make feature TestFeat in TestMod.m framework TestFW.edu",
      ("TestFeat", "TestMod.m", "TestFW.edu")),
     ("generate workbench CalcWb", ("CalcWb", None, None)),
@@ -335,6 +341,42 @@ check("CreateModule: not Plan-would-execute", "Plan would execute" not in msg_mo
 check("CreateModule: status ok", r_mod.get("status") == "ok", r_mod.get("status", "?"))
 check("CreateModule: .m exists", mod_dir.is_dir(), str(mod_dir))
 check("CreateModule: Imakefile.mk", (mod_dir / "Imakefile.mk").is_file())
+
+r_dlg = k_fw.execute(
+    KernelMode.DEVELOP, "create dialog DispatchDlg in DispatchMod.m"
+)
+msg_dlg = r_dlg.get("message", "")
+check("CreateDialog: not Plan-would-execute", "Plan would execute" not in msg_dlg, msg_dlg)
+check("CreateDialog: status ok", r_dlg.get("status") == "ok", r_dlg.get("status", "?"))
+check("CreateDialog: header", (mod_dir / "LocalInterfaces" / "DispatchDlg.h").is_file())
+check("CreateDialog: cpp", (mod_dir / "src" / "DispatchDlg.cpp").is_file())
+check(
+    "CreateDialog: not a command",
+    not (mod_dir / "src" / "DispatchDlgCmd.cpp").exists()
+    and not (mod_dir / "src" / "DispatchDlg.cpp").read_text(
+        encoding="utf-8", errors="replace"
+    ).startswith("// Command"),
+)
+check(
+    "CreateDialog: dialog class",
+    "CATDlgDialog" in (mod_dir / "LocalInterfaces" / "DispatchDlg.h").read_text(
+        encoding="utf-8", errors="replace"
+    ),
+)
+
+r_cmd_dlg = k_fw.execute(
+    KernelMode.DEVELOP,
+    "create command DispatchCmd with dialog in DispatchMod.m",
+)
+check(
+    "CreateCommandWithDialog: status ok",
+    r_cmd_dlg.get("status") == "ok",
+    r_cmd_dlg.get("status", "?"),
+)
+check(
+    "CreateCommandWithDialog: command cpp",
+    (mod_dir / "src" / "DispatchCmd.cpp").is_file(),
+)
 
 shutil.rmtree(ws_fw, ignore_errors=True)
 

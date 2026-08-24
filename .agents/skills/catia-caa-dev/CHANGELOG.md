@@ -13,6 +13,7 @@
 ### 🔧 Kernel (2026-08-24)
 
 - **修复 `cade create framework/module/workbench/interface/dialog` CLI 空转**：`_execute_develop_plan()` 以前只真正执行 Command / Feature / Extension，其余 Intent 全部落 `else` 只打印 `Plan would execute`。现补五条精确 dispatch，走现有 Action + ChangeSet apply。`CreateCommandWithDialog` 仍走 Command 分支。
+- **修复 `cade create dialog` 误路由**：`_detect_intent_type()` 以前把裸 `dialog`/`对话框` 映射成 `CreateCommandWithDialog`，CLI `create dialog X` 会生成命令而不是单独对话框。现改为 `CreateDialog`；`with dialog` / `带对话框` 仍走 `CreateCommandWithDialog`。不用 `"Dialog" in intent_type` 做 CreateDialog 分支。
 - **模板路径大小写**：SKILL.md 文件树原先写成 `templates/Module/` 等 PascalCase，磁盘目录是全小写。Zed `list_directory` 按字面路径会看成空目录。已改文档、补 `templates/README.md`，`ChangeSet.add_create_file` 缺模板时抛出真实路径并提示小写目录。
 
 ### 🧹 清理 (2026-08-18, 旧方案残渣)

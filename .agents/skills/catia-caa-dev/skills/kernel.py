@@ -833,9 +833,13 @@ class Kernel:
         # Order matters: more specific matches first
         # Chinese keywords first (more specific in CN context)
         # English keywords with word-boundary check (avoid substring matches like testmodule→module)
+        # Bare dialog/对话框 is CreateDialog. Command+dialog is already
+        # handled above ("with dialog" / "带对话框"). Do not map the
+        # dialog keyword itself to CreateCommandWithDialog — that made
+        # `cade create dialog` generate a command instead of a dialog.
         mapping = [
             # Chinese keywords (most specific in CN context)
-            ("对话框", "CreateCommandWithDialog"),
+            ("对话框", "CreateDialog"),
             ("命令", "CreateCommand"),
             ("特征", "CreateFeature"),
             ("扩展", "CreateExtension"),
@@ -846,7 +850,7 @@ class Kernel:
             # English keywords (check with word boundaries to avoid substring matches)
         ]
         en_mapping = [
-            ("dialog", "CreateCommandWithDialog"),
+            ("dialog", "CreateDialog"),
             ("command", "CreateCommand"),
             ("feature", "CreateFeature"),
             ("extension", "CreateExtension"),
