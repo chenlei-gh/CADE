@@ -138,7 +138,18 @@ class ChangeSet:
         self, path: Path, template_path: Path, replacements: Dict[str, str] = None
     ):
         """Add a file to create by reading a template and applying replacements"""
-        content = template_path.read_text(encoding="utf-8", errors="replace")
+        tpl = Path(template_path)
+        if not tpl.is_file():
+            hint = ""
+            parent = tpl.parent
+            if parent.name[:1].isupper() and parent.parent.is_dir():
+                lower = parent.parent / parent.name.lower() / tpl.name
+                if lower.is_file():
+                    hint = f" Did you mean '{lower.as_posix()}'? Template dirs are lowercase."
+            raise FileNotFoundError(
+                f"Template not found: {tpl.as_posix()}.{hint}"
+            )
+        content = tpl.read_text(encoding="utf-8", errors="replace")
         if replacements:
             content = render_template(content, replacements)
         self.add_create(path, content)

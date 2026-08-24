@@ -130,7 +130,9 @@ skill_text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
 tree_files = re.findall(r'[├└]──\s+(\S+)', skill_text)
 known_dirs = {"intents/", "docs/", "guides/", "references/", "examples/",
               "knowledge/", "patterns/", "templates/", "tests/", "tools/", "config/",
-              "API/", "Design/", "Images/", "Framework/", "Module/", "Command/",
+              "API/", "Design/", "Images/",
+              "framework/", "module/", "command/", "dialog/", "workbench/",
+              "feature/", "Framework/", "Module/", "Command/",
               "StateCommand/", "Dialog/", "Component/", "Interface/", "intent/",
               "analyzer/", "ui/", "workflow/", "blocks/", "mecmod/", "part/",
               "product/", "infrastructure/", "geometry/", "resources/",

@@ -126,11 +126,29 @@ for tt in ["testcase", "resource", "framework", "module", "command", "dialog"]:
     has_files = tf.is_dir() and any(tf.glob("*"))
     check(f"Template dir: {tt}/", has_files, f"{len(list(tf.glob('*'))) if tf.is_dir() else 0} files")
 
-# Check specific template files
-for tf in ["templates/resource/FrameworkName.CATRsc",
+# Check specific template files (lowercase dirs — PascalCase paths do not exist)
+for tf in ["templates/README.md",
+           "templates/resource/FrameworkName.CATRsc",
            "templates/testcase/TestCase.cpp",
-           "templates/testcase/TestCase.h"]:
-    check(f"Template file: {tf}", (SKILL_ROOT / tf).exists())
+           "templates/testcase/TestCase.h",
+           "templates/module/Imakefile.mk",
+           "templates/module/AddinClass.h",
+           "templates/module/AddinClass.cpp",
+           "templates/framework/IdentityCard.h",
+           "templates/framework/Framework.edu.dico",
+           "templates/framework/FrameworkImakefile.mk"]:
+    check(f"Template file: {tf}", (SKILL_ROOT / tf).is_file())
+
+from changeset import ChangeSet
+cs = ChangeSet(action="test", description="missing template")
+missing = templates_dir / "NoSuchType" / "Imakefile.mk"
+try:
+    cs.add_create_file(Path("/tmp/out.h"), missing)
+    check("missing template raises", False, "no error")
+except FileNotFoundError as e:
+    msg = str(e)
+    check("missing template raises", "Template not found" in msg, msg)
+    check("error names the requested path", "NoSuchType" in msg, msg)
 
 
 # ═══════════════════════════════════════════════════════════════

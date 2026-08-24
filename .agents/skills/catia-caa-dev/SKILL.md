@@ -1347,15 +1347,15 @@ python tests/test_master.py --quick
 │   │   ├── impact.py                 # 影响分析 (P1)
 │   │   └── templates/                # Task Templates
 │
-├── templates/                        # 模板库（17+ 类型）
-│   ├── Framework/
-│   ├── Module/
-│   ├── Command/
-│   ├── StateCommand/
-│   ├── Dialog/
-│   ├── Component/
-│   ├── Interface/
-│   └── ...
+├── templates/                        # 模板库（目录名全小写；契约见 templates/README.md）
+│   ├── README.md                     # 类型→目录对照，禁止 PascalCase
+│   ├── framework/                    # IdentityCard / .dico / Imakefile
+│   ├── module/                       # Imakefile.mk + AddinClass（不是空目录）
+│   ├── command/
+│   ├── dialog/
+│   ├── workbench/
+│   ├── feature/
+│   └── ...                           # 另有根级 IInterface.* / Component.*
 │
 ├── catalog/                           # 全局索引
 │   └── index.yaml                    # 关键词→ID→文件映射
