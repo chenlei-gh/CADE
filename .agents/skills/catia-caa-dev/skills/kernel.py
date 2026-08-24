@@ -710,7 +710,14 @@ class Kernel:
         framework = intent_data.get("framework", "MyFramework")
 
         try:
-            from actions import ActionContext
+            from actions import (
+                ActionContext,
+                create_dialog,
+                create_framework,
+                create_interface,
+                create_module,
+                create_workbench,
+            )
             from intents import create_executable_command, create_feature, create_extension
 
             ctx = ActionContext(str(self.workspace_root))
@@ -727,6 +734,16 @@ class Kernel:
             elif "Extension" in intent_type:
                 result = create_extension(ctx, name=name, target_object="", module=module,
                                           framework=framework)
+            elif intent_type == "CreateFramework":
+                result = create_framework(ctx, name=name)
+            elif intent_type == "CreateModule":
+                result = create_module(ctx, framework_name=framework, module_name=name)
+            elif intent_type == "CreateWorkbench":
+                result = create_workbench(ctx, name=name, framework=framework)
+            elif intent_type == "CreateInterface":
+                result = create_interface(ctx, name=name, module=module, framework=framework)
+            elif intent_type == "CreateDialog":
+                result = create_dialog(ctx, name=name, module=module, framework=framework)
             else:
                 return {"status": "ok", "message": f"Plan would execute: {intent_type} {name}"}
 

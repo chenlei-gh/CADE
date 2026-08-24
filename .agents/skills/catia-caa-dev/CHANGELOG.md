@@ -10,6 +10,10 @@
 
 ## [未发布]
 
+### 🔧 Kernel (2026-08-24)
+
+- **修复 `cade create framework/module/workbench/interface/dialog` CLI 空转**：`_execute_develop_plan()` 以前只真正执行 Command / Feature / Extension，其余 Intent 全部落 `else` 只打印 `Plan would execute`。现补五条精确 dispatch，走现有 Action + ChangeSet apply。`CreateCommandWithDialog` 仍走 Command 分支。
+
 ### 🧹 清理 (2026-08-18, 旧方案残渣)
 
 - **删除 Primitive 体系最后残渣**：`tests/update_golden_icons.py`（v4.0 起为 exit(1) 占位 stub）+ `tests/golden/`（29 张 Primitive 黄金样本，无测试引用，git 历史可查）。同步修正 `ARCHITECTURE.md`（测试计数 44→43；删除 Primitive 时代「图标分类统计」整节，替换为现行四层架构表）与 ADR §8（废弃→删除）。**Badge 路径保留**——它是未来新命令的现役兑底（ADR 规则 6：官方底图原样引用强制角标），非旧方案。

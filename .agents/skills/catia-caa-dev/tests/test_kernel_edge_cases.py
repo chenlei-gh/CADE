@@ -310,6 +310,35 @@ for req in br_requests:
 shutil.rmtree(ws3, ignore_errors=True)
 
 # ═══════════════════════════════════════════════════════════════
+# 11b. CreateFramework / CreateModule dispatch (not Plan-would-execute)
+# ═══════════════════════════════════════════════════════════════
+print("\n" + "=" * 70)
+print("  11b. CreateFramework / CreateModule Dispatch")
+print("=" * 70)
+
+ws_fw = Path(tempfile.mkdtemp(prefix="cade_fw_"))
+k_fw = Kernel(workspace_root=str(ws_fw))
+r_fw = k_fw.execute(KernelMode.DEVELOP, "create framework DispatchFw")
+msg_fw = r_fw.get("message", "")
+edu = ws_fw / "DispatchFw.edu"
+check("CreateFramework: not Plan-would-execute", "Plan would execute" not in msg_fw, msg_fw)
+check("CreateFramework: status ok", r_fw.get("status") == "ok", r_fw.get("status", "?"))
+check("CreateFramework: .edu exists", edu.is_dir(), str(edu))
+check("CreateFramework: IdentityCard", (edu / "IdentityCard" / "IdentityCard.xml").is_file())
+check("CreateFramework: .dico", (edu / "CNext" / "code" / "dictionary" / "DispatchFw.dico").is_file())
+check("CreateFramework: Imakefile.mk", (edu / "Imakefile.mk").is_file())
+
+r_mod = k_fw.execute(KernelMode.DEVELOP, "create module DispatchMod framework DispatchFw.edu")
+msg_mod = r_mod.get("message", "")
+mod_dir = edu / "DispatchMod.m"
+check("CreateModule: not Plan-would-execute", "Plan would execute" not in msg_mod, msg_mod)
+check("CreateModule: status ok", r_mod.get("status") == "ok", r_mod.get("status", "?"))
+check("CreateModule: .m exists", mod_dir.is_dir(), str(mod_dir))
+check("CreateModule: Imakefile.mk", (mod_dir / "Imakefile.mk").is_file())
+
+shutil.rmtree(ws_fw, ignore_errors=True)
+
+# ═══════════════════════════════════════════════════════════════
 # 12. Alias Loading
 # ═══════════════════════════════════════════════════════════════
 print("\n" + "=" * 70)
