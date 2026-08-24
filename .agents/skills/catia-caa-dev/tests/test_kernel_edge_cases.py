@@ -334,6 +334,27 @@ check("CreateFramework: IdentityCard", (edu / "IdentityCard" / "IdentityCard.xml
 check("CreateFramework: .dico", (edu / "CNext" / "code" / "dictionary" / "DispatchFw.dico").is_file())
 check("CreateFramework: Imakefile.mk", (edu / "Imakefile.mk").is_file())
 
+r_fw2 = k_fw.execute(KernelMode.DEVELOP, "create framework DispatchFw2")
+msg_fw2 = r_fw2.get("message", "") + str(r_fw2.get("errors", ""))
+check(
+    "CreateFramework second: not already-exists",
+    "already exists" not in msg_fw2.lower(),
+    msg_fw2,
+)
+check(
+    "CreateFramework second: status ok",
+    r_fw2.get("status") == "ok",
+    r_fw2.get("status", "?"),
+)
+check(
+    "CreateFramework second: .edu exists",
+    (ws_fw / "DispatchFw2.edu" / "Imakefile.mk").is_file(),
+)
+check(
+    "CreateFramework second: first .edu kept",
+    (edu / "Imakefile.mk").is_file(),
+)
+
 r_mod = k_fw.execute(KernelMode.DEVELOP, "create module DispatchMod framework DispatchFw.edu")
 msg_mod = r_mod.get("message", "")
 mod_dir = edu / "DispatchMod.m"

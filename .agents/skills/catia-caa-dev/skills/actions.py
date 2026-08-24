@@ -282,11 +282,17 @@ def create_framework(
         ctx.tpl("framework", "FrameworkImakefile.mk"),
         {"FrameworkName": base},
     )
-    # Generate CATIAV5Level.lvl at workspace root (required for B28 builds)
+    # Generate CATIAV5Level.lvl at workspace root (required for B28 builds).
+    # The file is workspace-scoped, not framework-private. Skip when it already
+    # exists: queuing create is rejected by ChangeSet ("Created file already
+    # exists") and would block a second framework or any workspace that already
+    # ran mkGetPreq / official RADE. Never overwrite — on-disk content may be
+    # official or hand-tuned.
     lvl_tpl = ctx.tpl("framework", "CATIAV5Level.lvl")
-    if lvl_tpl.exists():
+    lvl_path = ctx.workspace_root / "CATIAV5Level.lvl"
+    if lvl_tpl.exists() and not lvl_path.exists():
         cs.add_create_file(
-            ctx.workspace_root / "CATIAV5Level.lvl", lvl_tpl,
+            lvl_path, lvl_tpl,
             {"YYYY": ctx.y()},
         )
 

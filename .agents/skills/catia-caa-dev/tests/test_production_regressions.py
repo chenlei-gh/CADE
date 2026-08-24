@@ -78,6 +78,44 @@ try:
     check("framework with modules applies", framework_apply["status"] == "applied", str(framework_apply.get("errors", [])))
     check("framework module exists", (workspace / "CombinedFramework.edu" / "CoreModule.m" / "Imakefile.mk").exists())
 
+    # CATIAV5Level.lvl is workspace-scoped. A second framework must not queue
+    # create against the existing file (ChangeSet create-or-fail).
+    existing_lvl = workspace / "CATIAV5Level.lvl"
+    check("first framework wrote CATIAV5Level.lvl", existing_lvl.is_file())
+    sentinel = (
+        existing_lvl.read_text(encoding="utf-8") if existing_lvl.is_file() else ""
+    ) + "\n// SENTINEL_DO_NOT_OVERWRITE\n"
+    existing_lvl.write_text(sentinel, encoding="utf-8")
+    ctx2 = ActionContext(workspace)
+    second = create_framework(ctx2, "SecondFramework")
+    check(
+        "second framework returns pending",
+        second.get("status") == "pending",
+        second.get("message", ""),
+    )
+    created_keys = list((second.get("changeset") or {}).get("created") or {})
+    check(
+        "second framework does not queue existing CATIAV5Level.lvl",
+        not any(Path(k).name == "CATIAV5Level.lvl" for k in created_keys),
+        str(created_keys),
+    )
+    second_apply = ChangeSet.from_dict(second.get("changeset", {})).apply(
+        workspace_root=workspace
+    )
+    check(
+        "second framework applies with existing .lvl",
+        second_apply["status"] == "applied",
+        str(second_apply.get("errors", [])),
+    )
+    check(
+        "existing CATIAV5Level.lvl content unchanged",
+        existing_lvl.is_file() and existing_lvl.read_text(encoding="utf-8") == sentinel,
+    )
+    check(
+        "second framework .edu exists",
+        (workspace / "SecondFramework.edu" / "Imakefile.mk").exists(),
+    )
+
     # Generated tests must use APIs available in B28, not an invented test framework.
     generated_tests = workspace / "generated_tests"
     testcase_result = TemplateGenerator().generate("testcase", "GeneratedTest", generated_tests)
