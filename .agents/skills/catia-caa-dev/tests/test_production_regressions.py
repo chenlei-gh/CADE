@@ -418,6 +418,64 @@ try:
 finally:
     shutil.rmtree(gc_root, ignore_errors=True)
 
+# ── module / .edu path resolution: Runtime View + validate ─────────
+path_ws = Path(tempfile.mkdtemp(prefix="cade_path_resolve_"))
+try:
+    fw = path_ws / "PathFw.edu"
+    mod = fw / "PathMod.m"
+    (fw / "IdentityCard").mkdir(parents=True)
+    (fw / "IdentityCard" / "IdentityCard.h").write_text("// ic", encoding="utf-8")
+    (fw / "Imakefile.mk").write_text("", encoding="utf-8")
+    mod.mkdir()
+    (mod / "Imakefile.mk").write_text("BUILT_OBJECT_TYPE=SHARED LIBRARY", encoding="utf-8")
+    msg = fw / "CNext" / "resources" / "msgcatalog"
+    (msg / "Simplified_Chinese").mkdir(parents=True)
+    (msg / "PathFw.CATNls").write_text("Title=\"PathFw\";\n", encoding="utf-8")
+    (msg / "Simplified_Chinese" / "PathFw.CATNls").write_bytes(
+        "Title=\"\xb2\xe2\xca\xd4\";\n".encode("latin-1")
+    )
+    dico_dir = fw / "CNext" / "code" / "dictionary"
+    dico_dir.mkdir(parents=True)
+    (dico_dir / "PathFw.dico").write_text("PathMod PathMod\n", encoding="utf-8")
+
+    sync_from_mod = build_module.sync_runtime_view(mod)
+    nls_en = path_ws / "win_b64" / "resources" / "msgcatalog" / "PathFw.CATNls"
+    nls_zh = (
+        path_ws / "win_b64" / "resources" / "msgcatalog"
+        / "Simplified_Chinese" / "PathFw.CATNls"
+    )
+    dico_rv = path_ws / "win_b64" / "code" / "dictionary" / "PathFw.dico"
+    leaked = mod / "win_b64"
+    check("module-scoped sync writes NLS to workspace root",
+          nls_en.is_file(), str(sync_from_mod.get("synced", [])))
+    check("module-scoped sync includes Simplified_Chinese",
+          nls_zh.is_file(), str(sync_from_mod.get("synced", [])))
+    check("module-scoped sync writes dico to workspace root", dico_rv.is_file())
+    check("module-scoped sync does not create Module.m/win_b64", not leaked.exists())
+
+    shutil.rmtree(path_ws / "win_b64", ignore_errors=True)
+    sync_from_edu = build_module.sync_runtime_view(fw)
+    check(".edu-scoped sync still lands on workspace root",
+          nls_zh.is_file() and not (fw / "win_b64").exists(),
+          str(sync_from_edu.get("synced", [])))
+
+    health_edu = build_module.validate_workspace(fw)
+    check("validate_workspace(.edu) can_build",
+          health_edu.get("can_build") is True, str(health_edu))
+    check("validate_workspace(.edu) does not report missing framework",
+          not any("No .edu framework found" in i for i in health_edu.get("issues", [])),
+          str(health_edu.get("issues", [])))
+    health_mod = build_module.validate_workspace(mod)
+    check("validate_workspace(.m) still module mode",
+          health_mod.get("mode") == "module" and health_mod.get("can_build") is True,
+          str(health_mod))
+    resolved = build_module._resolve_workspace_root
+    check("_resolve_workspace_root(.m) is workspace root", resolved(mod) == path_ws)
+    check("_resolve_workspace_root(.edu) is workspace root", resolved(fw) == path_ws)
+    check("_resolve_workspace_root(root) is unchanged", resolved(path_ws) == path_ws)
+finally:
+    shutil.rmtree(path_ws, ignore_errors=True)
+
 print(f"\nProduction regressions: {passed}/{total}")
 if failures:
     print("Failures:")

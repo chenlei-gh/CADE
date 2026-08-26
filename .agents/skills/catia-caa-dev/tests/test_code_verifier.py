@@ -306,9 +306,22 @@ for l in build_gate.LOG_FILE.read_text(encoding="utf-8").splitlines():
 ck("SKIP recorded in JSONL (bypass visible in monthly stats)",
    any(r.get("kind") == "run" and r.get("decision") == "SKIP" for r in log_recs3))
 
-# ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════
+# [15b] module-scoped run_gate still BLOCKs (does not rglob from .m and PASS)
+# ═══════════════════════════════════════════════════════════
+print("\n[15b] build_gate on .m path still BLOCKs")
+r_mod = build_gate.run_gate(mod2)
+ck("run_gate(.m) BLOCKs fabricated module (not empty PASS)",
+   r_mod["decision"] == "BLOCK" and r_mod["errors"] >= 1 and r_mod["modules"] == 1,
+   f"decision={r_mod['decision']} errors={r_mod['errors']} modules={r_mod['modules']}")
+r_fw = build_gate.run_gate(mod2.parent)
+ck("run_gate(.edu) still BLOCKs the module under it",
+   r_fw["decision"] == "BLOCK" and r_fw["modules"] == 1,
+   f"decision={r_fw['decision']} modules={r_fw['modules']}")
+
+# ═══════════════════════════════════════════════════════════
 # [16] build_gate CLI + build.py CLI compatibility
-# ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════
 print("\n[16] CLI contracts")
 out = subprocess.run(
     [sys.executable, str(SKILL / "skills" / "build_gate.py"), str(ws2), "--json"],

@@ -426,6 +426,10 @@ try:
         rv_icon.write_bytes(b"OLD-RUNTIME-ICON")
         copy_icons_to_runtime(tmp)
         check("runtime icon refreshed", rv_icon.read_bytes() == new_bytes)
+        rv_icon.write_bytes(b"OLD-RUNTIME-ICON")
+        copy_icons_to_runtime(mod)
+        check("copy_icons_to_runtime(.m) still writes workspace root",
+              rv_icon.read_bytes() == new_bytes and not (mod / "win_b64").exists())
 
         # Entity hint flows through create_command
         ctx3 = ActionContext(str(tmp))

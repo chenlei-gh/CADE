@@ -10,6 +10,10 @@
 
 ## [未发布]
 
+### 🔧 Build / Runtime View (2026-08-26)
+
+- **修复模块级 / `.edu` 路径被当成工作区根**：`_resolve_workspace_root` 现同时处理 `.m`（祖父）和 `.edu`（父）。`run_gate` 按入参范围验模块（`.m` 只验自己，不再从模块目录 `rglob` 空转 PASS）。`sync_runtime_view` / `create_runtime_view` / `_copy_dictionaries_to_runtime` / `copy_icons_to_runtime` / Logger+Cache / `validate_workspace` 入口对齐，中文 NLS 与门禁在模块级 build 下不再漏。
+
 ### 🔧 Kernel (2026-08-24)
 
 - **修复 `cade create framework` 撞已有 `CATIAV5Level.lvl`**：`.lvl` 是工作区级文件。`create_framework()` 以前只要模板存在就 `add_create_file`，同一 workspace 再建第二个 framework、或盘上已有 mkGetPreq / RADE 写过的 `.lvl`，ChangeSet 会以 `Created file already exists` 拒绝。现改为缺文件才创建，已有则跳过且不覆盖。不改 `_pre_validate_files` 的 create-or-fail 契约，也不在此处调 `mkGetPreq`。

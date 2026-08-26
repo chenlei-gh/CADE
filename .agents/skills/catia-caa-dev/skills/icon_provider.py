@@ -449,6 +449,13 @@ def get_icon(icon_name: str, style: str = "geo", size: int = 22,
     return path
 
 def copy_icons_to_runtime(workspace_path: Path):
+    # Inline the same walk-up as build._resolve_workspace_root. Do not import
+    # build here — icon_provider ↔ build must not cycle.
+    p = Path(workspace_path)
+    if p.name.endswith(".m") and p.parent.name.endswith(".edu"):
+        workspace_path = p.parent.parent
+    elif p.name.endswith(".edu"):
+        workspace_path = p.parent
     for fw in workspace_path.iterdir():
         if not fw.is_dir() or not fw.name.endswith(".edu"): continue
         rsc_dir = fw / "CNext" / "resources" / "msgcatalog"

@@ -38,8 +38,9 @@ from utils import Cache, Logger, format_duration, output_json
 def validate_workspace(workspace_path: Path) -> dict:
     """Validate a CAA workspace before building. Returns issues list.
 
-    Supports two modes:
+    Supports three modes:
     - Workspace mode: path contains .edu framework directories
+    - Framework mode: path IS a .edu directory (validate only that framework)
     - Module mode: path IS a .m module directory with Imakefile.mk
     """
     issues = []
@@ -49,7 +50,11 @@ def validate_workspace(workspace_path: Path) -> dict:
     if workspace_path.name.endswith(".m") and (workspace_path / "Imakefile.mk").exists():
         return {"can_build": True, "issues": issues, "warnings": warnings, "mode": "module"}
 
-    fws = [p for p in workspace_path.iterdir() if p.is_dir() and p.name.endswith(".edu")]
+    # Framework-level: path itself is the .edu (do not look for child .edu dirs)
+    if workspace_path.name.endswith(".edu") and workspace_path.is_dir():
+        fws = [workspace_path]
+    else:
+        fws = [p for p in workspace_path.iterdir() if p.is_dir() and p.name.endswith(".edu")]
 
     if not fws:
         issues.append("No .edu framework found — not a CAA workspace")
@@ -74,17 +79,20 @@ def validate_workspace(workspace_path: Path) -> dict:
 
 
 def _resolve_workspace_root(workspace_path: Path) -> Path:
-    """Resolve the workspace root from a module-scoped build path.
+    """Resolve the workspace root from a module- or framework-scoped path.
 
     Module-scoped builds pass a .m directory (e.g.
-    <root>/<FW>.edu/<Module>.m), but mkmk always emits DLLs to the
-    workspace-root <root>/<arch>/code/bin — never under the module dir.
-    Detect the .m case and walk up (<Module>.m → <FW>.edu → <root>).
+    <root>/<FW>.edu/<Module>.m); framework-scoped paths pass the .edu
+    itself. mkmk always emits DLLs / Runtime View to the workspace-root
+    <root>/<arch>/ — never under the module or framework dir.
+    Walk up: <Module>.m → <FW>.edu → <root>, or <FW>.edu → <root>.
     In full-workspace mode the path already IS the root; return as-is.
     """
-    p = workspace_path
+    p = Path(workspace_path)
     if p.name.endswith(".m") and p.parent.name.endswith(".edu"):
         return p.parent.parent
+    if p.name.endswith(".edu"):
+        return p.parent
     return p
 
 
@@ -97,8 +105,8 @@ def verify_build(
     """Post-build verification: check that fresh, plausible DLLs were produced.
 
     Args:
-        workspace_path: Workspace root, or a module (.m) dir for module-scoped
-                        builds — resolved to the root via _resolve_workspace_root.
+        workspace_path: Workspace root, a .edu framework, or a .m module —
+                        resolved to the root via _resolve_workspace_root.
         expected_modules: Optional list of module names (e.g. ['TTModule']) to verify.
                           If provided, each is checked individually.
         build_start_time: Start of the current build. Used as the staleness
@@ -191,8 +199,13 @@ def verify_build(
 
 
 def sync_runtime_view(workspace_path: Path, arch: str = "win_b64") -> dict:
-    """Sync CNext resources to Runtime View after build for CNEXT visibility."""
+    """Sync CNext resources to Runtime View after build for CNEXT visibility.
+
+    Accepts a workspace root, a .edu framework, or a .m module — resources
+    always land on <root>/<arch>/, never under the module/framework dir.
+    """
     import shutil
+    workspace_path = _resolve_workspace_root(workspace_path)
     rv = workspace_path / arch
     synced = []
     errors = []
@@ -287,8 +300,9 @@ def build_workspace(
     The Build Time environment must be initialized inside cmd.exe (via mkinit.bat),
     so we execute the entire build chain through cmd /c and capture output to a temp file.
     """
-    logger = Logger("build.log", workspace_root=workspace_path)
-    cache = Cache("build.json", workspace_root=workspace_path)
+    resolved_root = _resolve_workspace_root(workspace_path)
+    logger = Logger("build.log", workspace_root=resolved_root)
+    cache = Cache("build.json", workspace_root=resolved_root)
     logger.clear()
 
     start_time = datetime.now()
@@ -509,6 +523,10 @@ def build_workspace(
         expected_mods = []
         if workspace_path.name.endswith(".m"):
             expected_mods.append(workspace_path.name.replace(".m", ""))
+        elif workspace_path.name.endswith(".edu"):
+            for mod_dir in workspace_path.iterdir():
+                if mod_dir.is_dir() and mod_dir.name.endswith(".m"):
+                    expected_mods.append(mod_dir.name.replace(".m", ""))
         else:
             for fw_dir in verify_root.iterdir():
                 if fw_dir.is_dir() and fw_dir.name.endswith(".edu"):
@@ -546,7 +564,7 @@ def build_workspace(
             logger.write(f"Post-build: {verify['issues']}")
         # Sync framework resources to Runtime View for CNEXT visibility (P2-005 fix: all frameworks)
         try:
-            sync = sync_runtime_view(workspace_path)
+            sync = sync_runtime_view(verify_root)
             if sync["synced"]:
                 logger.write(f"Runtime View synced: {len(sync['synced'])} files")
         except Exception as e:
@@ -634,6 +652,7 @@ def dry_run_build(workspace_path: Path, timeout: int = 60) -> dict:
 
 def create_runtime_view(workspace_path: Path) -> dict:
     """Create/update Runtime View (mkCreateRuntimeView) + copy dictionaries"""
+    workspace_path = _resolve_workspace_root(workspace_path)
     result = _exec_build_cmd("mkCreateRuntimeView", workspace_path)
     # mkCreateRuntimeView may skip dictionary copy — ensure it manually
     _copy_dictionaries_to_runtime(workspace_path)
@@ -643,6 +662,7 @@ def create_runtime_view(workspace_path: Path) -> dict:
 def _copy_dictionaries_to_runtime(workspace_path: Path):
     """Copy all framework dictionaries to Runtime View's code/dictionary/"""
     import shutil
+    workspace_path = _resolve_workspace_root(workspace_path)
     rv_dict = workspace_path / "win_b64" / "code" / "dictionary"
     for dico in workspace_path.rglob("CNext/code/dictionary/*.dico"):
         if dico.is_file():

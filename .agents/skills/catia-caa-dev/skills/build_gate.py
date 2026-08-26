@@ -74,8 +74,16 @@ def run_gate(workspace, skip: bool = False) -> dict:
 
         from verifier import CodeVerifier
         verifier = CodeVerifier(SKILL_ROOT)
-        modules = [m for fw in sorted(ws.rglob("*.edu")) if fw.is_dir()
-                   for m in sorted(fw.glob("*.m")) if m.is_dir()]
+        # Scope by the path the caller handed us. rglob("*.edu") only walks
+        # descendants, so a module-scoped .m would otherwise find 0 modules
+        # and fail-open as PASS. Do not walk up and re-scan the whole repo.
+        if ws.name.endswith(".m") and ws.is_dir():
+            modules = [ws]
+        elif ws.name.endswith(".edu") and ws.is_dir():
+            modules = [m for m in sorted(ws.glob("*.m")) if m.is_dir()]
+        else:
+            modules = [m for fw in sorted(ws.rglob("*.edu")) if fw.is_dir()
+                       for m in sorted(fw.glob("*.m")) if m.is_dir()]
 
         findings, files_checked = [], 0
         for mod in modules:
