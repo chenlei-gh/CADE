@@ -398,11 +398,11 @@ quick 模式不跑真实 mkmk/CNEXT；生成代码后仍须在真实工作区 Bu
 ## 配置
 
 ```
+capabilities.yaml          ← 意图→能力→binding 路由契约（技能根）
+skills/lifecycle.yaml      ← 能不能用（防 Phantom）
 catalog/index.yaml
 config/editors/*.json     ← 用户侧 MCP 模板（不要把维护工具写进这里）
 cache/*.json / *.pickle   ← 加速器，不是事实库
-skills/capabilities.yaml
-skills/lifecycle.yaml
 ```
 
 ---

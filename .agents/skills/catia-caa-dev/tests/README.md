@@ -1,6 +1,6 @@
 # Test Index
 
-套件数以 `test_master.py` 的 `SUITES` 为准（当前 **42** 个注册套件；`--quick` 跳过 `SKIP_SLOW = {Int-1 Build & Run}`，执行 41 套）。
+套件数以 `test_master.py` 的 `SUITES` 为准（当前 **43** 个注册套件；`--quick` 跳过 `SKIP_SLOW = {Int-1 Build & Run}`，执行 42 套）。
 
 磁盘上另有 `test_*.py` 文件（当前 44 个，含本 runner）。**不要用文件个数覆盖套件数。** 未注册进 `SUITES` 的文件不算 master 套件。
 
@@ -88,17 +88,17 @@
 | `test_capability_contract.py` | Capability Contract |
 | `test_retrieval_benchmark.py` | Retrieval Benchmark |
 | `test_usecase_index.py` | UseCase Index |
+| `test_ui_generator_clarifier.py` | UI Clarifier |
 
 ---
 
 ## 未注册进 SUITES 的文件
 
-这些**不是** master 套件。不要把它们算进 42。
+这些**不是** master 套件。不要把它们算进 43。
 
 | 文件 | 说明 |
 |------|------|
 | `test_master.py` | runner 本身 |
-| `test_ui_generator_clarifier.py` | 磁盘上存在，当前未进 `SUITES` |
 
 `tools/production_readiness_check.py` 是工具，不是测试套件。
 
@@ -108,8 +108,8 @@
 
 ```bash
 # Master runner（推荐）
-python test_master.py             # 全量（42 套）
-python test_master.py --quick     # 快速（41 套，跳过 Int-1 Build & Run）
+python test_master.py             # 全量（43 套）
+python test_master.py --quick     # 快速（42 套，跳过 Int-1 Build & Run）
 
 # 按层级（以 test_master.py 实现为准）
 python test_master.py --layers

@@ -78,6 +78,7 @@ SUITES = {
     "Retrieval Benchmark": "test_retrieval_benchmark.py",
     # ── UseCase presence index (official example evidence) ──
     "UseCase Index": "test_usecase_index.py",
+    "UI Clarifier": "test_ui_generator_clarifier.py",
     }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
@@ -125,6 +126,7 @@ VERIFY_STRINGS = {
     "test_capability_contract.py": "CAPABILITY CONTRACT OK",
     "test_retrieval_benchmark.py": "passed",
     "test_usecase_index.py": "USECASE INDEX OK",
+    "test_ui_generator_clarifier.py": "passed",
     }
 
 
