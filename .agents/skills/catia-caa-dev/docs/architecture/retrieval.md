@@ -10,6 +10,39 @@ entry points are mandatory, and which shortcuts are forbidden. Future
 retrieval features (capability graphs, embeddings, new indexes) must
 extend this contract, not bypass it.
 
+This layer answers **CAA / CATIA SDK facts**. It does **not** index CADE's
+own Python source. For "where is `create_framework` in kernel.py", read
+the source; do not add a sixth index here.
+
+---
+
+## 0. Lookup Map (start here)
+
+One question → one index → one command. Do not grep `knowledge/` or scan
+`PublicInterfaces/` unless this table says the index cannot judge.
+
+| You need to know | Use | Command | Stop when |
+|---|---|---|---|
+| Does this class / header exist, and where is the `.h`? | **HeaderMap** | `python skills/header_map.py <Name> [Name2 ...]` | `path=` returned; `NOT-FOUND` + did-you-mean is also a verdict |
+| Does type `T` really have method `M` (incl. inheritance)? | **MethodIndex** | `python skills/method_index.py <Type> <Method> [Method2 ...]` | `OK` / `NOT-FOUND` with `exists-on:` / `did-you-mean-on-this-type:` |
+| Is this API / enum / factory name real? (broad audit) | **caadoc index** (feeds MethodIndex) | `python tools/build_caadoc_index.py --query <Name>` · `--search <pat>` · `--quiet` · `--repl` | `FOUND`; on `SDK/refman mismatch` trust the **header** |
+| Audit every `CAT*` / `->Method` in a knowledge file | same | `python tools/build_caadoc_index.py --check-file <path>` | only `SUSPECT` lines matter |
+| Which knowledge file matches this CAA intent? | **CatalogIndex** via Kernel | `analyze(request, detail=true)` | `knowledge_content` is the answer; do not grep `knowledge/` |
+| Has CAA officially used this interface / method in a sample? | **UseCaseIndex** | `r.find_usecases_for_interface("CATIVisProperties")` · `r.find_usecases_for_method("SetPropertiesAtt")` | hit = presence; **empty = no official sample, not "API missing"** |
+| Are the five indexes loaded and non-empty? | facade | `python skills/retrieval.py` | JSON `ok: true`; if false, fix that index before trusting lookups |
+| Which CADE *capability* handles a user verb? | **not this layer** | `capabilities.yaml` (routing) + `skills/lifecycle.yaml` (can it be used?) | file existence is not proof |
+
+Tie-breakers (do not skip):
+
+1. Existence of a type/header → HeaderMap, not knowledge docs.
+2. Existence of a method on a type → MethodIndex, not `--search` snippets.
+3. Conflict between refman and SDK header → header.
+4. Catalog miss → say "no catalog hit", then Framework → CAADoc. Do not invent APIs.
+5. UseCase miss → say "no official example found". Check HeaderMap/MethodIndex for existence.
+
+Feature code must go through `from retrieval import get_retrieval`.
+CLI tools above are the Agent-facing shortcuts; they load the same caches.
+
 ---
 
 ## 1. The Five-Index Model

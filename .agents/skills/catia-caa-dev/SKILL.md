@@ -1256,7 +1256,7 @@ python tests/test_full_integration.py
 python tests/test_full_regression.py --quick
 ```
 
-**Master quick**: 41 套中执行 40 套，跳过 1 套 CATIA 生命周期测试
+**Master quick**: 42 套中执行 41 套，跳过 1 套 CATIA 生命周期测试（套件数以 `tests/test_master.py` 的 `SUITES` 为准）
 ```bash
 python tests/test_master.py --quick
 ```
@@ -1298,6 +1298,7 @@ python tests/test_master.py --quick
 .agents/skills/catia-caa-dev/
 ├── SKILL.md                          # 主技能文档（本文件）
 ├── CHANGELOG.md                      # 更新日志
+├── capabilities.yaml                 # 意图→能力→binding 路由契约
 ├── .gitignore                        # Git 忽略文件
 │
 ├── skills/                           # Python 模块
@@ -1327,11 +1328,12 @@ python tests/test_master.py --quick
 │   ├── cade.py                       # CLI 入口 (21 命令)
 │   ├── mcp_server.py                 # MCP Server (3 Mode, v3.0)
 │   ├── kernel.py                     # Development Kernel (v3.0)
+│   ├── lifecycle.yaml               # 能力生命周期（能不能用；防 Phantom）
 │   ├── catalog.py                    # Knowledge Catalog Index (v3.0)
 │   ├── api_registry.py               # API 白名单注册表（知识库驱动）
 │   ├── header_map.py                # CAA header→module→framework 映射（缓存；CLI: python skills/header_map.py <Name> 返回头文件绝对路径）
 │   ├── method_index.py             # 类型→方法存在性检查（继承链；CLI: python skills/method_index.py <Type> <Method...>）
-│   ├── retrieval.py                 # 统一检索门面（catalog/registry/header_map/method_index 单例懒加载）
+│   ├── retrieval.py                 # 统一检索门面（五索引：catalog/registry/header_map/method_index/usecase）
 │   ├── build_gate.py              # 编译前静态门禁（虚构 API 拦截；PASS/WARN/BLOCK/SKIP + JSONL 遥测；build.py --skip-gate 可绕过）
 │   ├── ui_lint.py                    # UI 失效模式静态检查器（failure_patterns）
 │   ├── requirements.py               # Requirements Clarifier + UI 4-axis clarifier (v3.0)
@@ -1360,7 +1362,7 @@ python tests/test_master.py --quick
 ├── catalog/                           # 全局索引
 │   └── index.yaml                    # 关键词→ID→文件映射
 │
-├── capabilities/                     # 能力层: 10 个 CAA 核心能力
+├── capabilities/                     # CAA 能力文档（当前 13 个 md；路由契约在根目录 capabilities.yaml）
 │   ├── assembly-tree.md
 │   ├── geometry-query.md
 │   ├── feature-recognition.md
@@ -1370,7 +1372,10 @@ python tests/test_master.py --quick
 │   ├── document-export.md
 │   ├── surface-operations.md
 │   ├── annotation.md
-│   └── powercopy.md
+│   ├── powercopy.md
+│   ├── persistence.md
+│   ├── undo-redo.md
+│   └── update-mechanism.md
 │
 ├── playbooks/                          # 方案层: 业务目标驱动
 │   ├── pb_auto_color.md
@@ -1440,6 +1445,8 @@ python tests/test_master.py --quick
 │   │   ├── DICTIONARY_GUIDE.md
 │   │   ├── TROUBLESHOOTING_FLOWCHART.md
 │   │   └── FAQ.md
+│   ├── architecture/                 # 架构契约（检索/ADR；不是方向图）
+│   │   └── retrieval.md
 │   ├── references/                   # 技术参考
 │   │   ├── ARCHITECTURE.md
 │   │   ├── CAA_REFERENCE.md
@@ -1458,45 +1465,19 @@ python tests/test_master.py --quick
 │   │   └── AI_WORKFLOW_EXAMPLES.md
 │   └── README.md                     # 文档索引
 │
-├── tests/                            # 测试文件（35 个，35 套件，~600 测试项）
-│   ├── test_master.py                # 主运行器
-│   ├── test_full_regression.py       # 全系统验证
-│   ├── test_cross_reference.py       # 交叉引用审计
-│   ├── test_token_optimizer.py       # Token 优化器测试（含 audit）
-│   ├── test_system_health.py         # 系统健康检查
-│   ├── test_caa_structure.py         # CAA 结构合规
-│   ├── test_intent_planner.py        # Intent 引擎测试
-│   ├── test_ai_integration.py        # AI 集成测试
-│   ├── test_build_and_run.py         # Build/Run 合并测试
-│   ├── test_skill_ai_coordination.py # Skill-AI 协同 + 运行时链
-│   ├── test_full_integration.py      # 单元测试
-│   ├── test_e2e_integration.py       # 端到端集成
-│   ├── test_phase1_enhancements.py   # Phase 1: 依赖图
-│   ├── test_phase2_intents.py        # Phase 2: Intent
-│   ├── test_phase3_rollback.py       # Phase 3: 回滚
-│   ├── test_phase4_enhanced.py       # Phase 4: 增强意图
-│   ├── test_specification.py         # Spec 层
-│   ├── test_diagnostics.py           # 诊断
-│   ├── test_fixplan_executor.py      # FixPlan 执行器
-│   ├── test_refactor.py              # 重构
-│   ├── test_l4_architecture.py       # 架构不变量
-│   ├── test_l5_semantic.py           # 语义完整性
-│   ├── test_l6_fault_injection.py    # 故障注入
-│   ├── test_knowledge_system.py      # 知识系统
-│   ├── test_catia_detection.py       # CATIA 检测
-│   ├── test_system_health.py         # 健康检查
-│   └── test_retrieval_benchmark.py   # 检索基准（缓存/健康防线）
+├── tests/                            # 套件数以 test_master.py 的 SUITES 为准（当前 42；磁盘 test_*.py 另有未全注册者）
+│   ├── test_master.py                # 主运行器 / SUITES 权威清单
+│   └── README.md                     # 测试索引（勿把文件个数当套件数）
 │
 ├── tools/                            # 辅助工具(与 skills/ 无关,不属于 Kernel 模块)
-│   ├── build_caadoc_index.py         (CAADoc API 签名/实现关系索引与核实工具: --query/--search/--repl; 同步扫描 SDK PublicInterfaces/*.h 与 refman 交叉比对)
+│   ├── build_caadoc_index.py         # CAADoc API 索引与核实
+│   ├── build_usecase_index.py        # 官方样例存在性索引 builder
+│   ├── check_capabilities.py         # capabilities.yaml 与实现双向对账
 │   ├── check_code_reuse.py
-│   ├── check_nls_conventions.py     (扫描存量工作区的 NLS 约定问题: _Chinese.CATNls 平铺文件/硬编码 SetTitle/缺中文 catalog; --fix 自动迁移)
-│   ├── validate_component_ai.bat
-│   ├── scan_frameworks.py
-│   ├── production_readiness_check.py
-│   ├── catia_detector.py             (动态检测本机 CATIA 安装,零硬编码)
-│   ├── prerequisites_manager.py      (Prerequisites 依赖管理)
-│   └── setup_wizard.bat / setup_environment.* / setup_mcp.* / setup_prerequisites.*
+│   ├── check_nls_conventions.py
+│   ├── catia_detector.py
+│   ├── prerequisites_manager.py
+│   └── ...
 │
 └── config/                           # 配置文件
     ├── caa_env_config.txt
@@ -1749,7 +1730,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 ### 部署前检查清单
 
 - [ ] 已阅读并接受上方「非阻塞残余风险」的使用规程（尤其：生成代码后必须在真实工作区跑一次 Build）
-- [ ] 已跑通 `python tests/test_master.py --quick`，确认本机环境下 39/39 通过
+- [ ] 已跑通 `python tests/test_master.py --quick`，确认本机 quick 模式通过（当前 42 套中执行 41 套，跳过 Int-1；套件数以 `SUITES` 为准）
 - [ ] 已确认目标 CATIA 版本 ≥ R19（工具在 B28 上做过实机验证；跨版本首次使用建议先在测试工作区跑一次 `develop()`/`repair()` 全流程）
 - [ ] 团队已知晓 `KNOWLEDGE_AUDIT_STATUS.md` 中「未核实清单」范围，涉及这些 API 时纳入代码审查重点
 - [ ] 首次在新工作区使用时，先用小范围改动验证 ChangeSet 应用 + Build 闭环，再扩大到完整开发任务
@@ -1764,7 +1745,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 2. **多个命令挂同一个工具栏时，只有最后一个按钮可点击**：`CreateToolbars()` 生成代码对每个命令都调用 `SetAccessChild(pToolbar, X)`——这个 API 是“设置唯一子节点”，每次调用都会**覆盖**前一个，不是追加。结果是同一工具栏里先注册的命令按钮全部失效（不可见/不可点）。已修复：第一个 Starter 用 `SetAccessChild`，之后每个新增的 Starter 改用 `SetAccessNext(prev, new)` 链接成单链表（与官方 `CAAAfrGeometryWks.cpp` 的写法一致）。
 3. **对话框打开后点击“关闭”没有任何反应**：生成的 `AddTransition(pDlgState, NULL, IsOutputSetCondition(_pDlgAgent))` 这种“回到 NULL 结束态”写法，在对话框被关闭时框架实际调用的是 **`Cancel()`**，不是 `Desactivate()`（通过在 `Activate`/`Desactivate`/`Cancel` 里加日志实机追踪确认）。之前生成的代码只在 `Desactivate()` 里隐藏/销毁对话框，`Cancel()` 是空的，所以点击关闭没有效果。已修复为与官方样例一致的模式：`Desactivate()` 和 `Cancel()` 都只调用 `_pDialog->SetVisibility(CATDlgHide)`（隐藏，不销毁），真正的 `_pDialog->RequestDelayedDestruction()` 只放在析构函数里。**切勿在 `Cancel()`/`Desactivate()` 里直接 `delete _pDialog` 或调用非 delayed 的销毁——对话框可能仍在处理待发的通知，直接销毁会导致崩溃或悬空指针。**
 
-这 3 处修复目前只覆盖生成器对 `--dialog` 分支的代码模板；已存在的旧生成代码（在本次修复之前创建的项目）需要手工按上述模式回填，生成器不会自动迁移历史文件。回归：`test_master.py --quick` 39/39 通过（含修复前后各一次基线对比）。诊断脚本已归档到 `skills/debug_tools/`（`cade_enumwin.ps1`/`cade_findbtn.ps1` 等，用于从进程外部检查 CATIA 窗口/工具栏；详见该目录的 README）。
+这 3 处修复目前只覆盖生成器对 `--dialog` 分支的代码模板；已存在的旧生成代码（在本次修复之前创建的项目）需要手工按上述模式回填，生成器不会自动迁移历史文件。回归：`test_master.py --quick` 当时 39/39 通过（含修复前后各一次基线对比；当前套件数以 `SUITES` 为准，不要把 39 当活数字）。诊断脚本已归档到 `skills/debug_tools/`（`cade_enumwin.ps1`/`cade_findbtn.ps1` 等，用于从进程外部检查 CATIA 窗口/工具栏；详见该目录的 README）。
 
 ### 📚 知识库可信度（与上述 Kernel 开发流程无关的另一个维度）
 
@@ -1816,7 +1797,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 ---
 
-**最后更新**: 2026-07-17  
+**最后更新**: 2026-08-28  
 **维护者**: Kiro AI Agent  
 **状态**: ✅ 活跃开发（已通过 P0-P2 安全审计）  
 **测试**: 42 套件可用

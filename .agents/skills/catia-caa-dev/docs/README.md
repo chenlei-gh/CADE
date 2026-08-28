@@ -21,7 +21,7 @@ docs/
 
 CADE 的架构级约束，定义"什么是权威来源、什么入口必须走、什么禁止做"：
 
-- **[retrieval.md](architecture/retrieval.md)** - 检索架构契约 v1（四索引模型、权威来源、Decision Rules、禁止事项）
+- **[retrieval.md](architecture/retrieval.md)** - 检索架构契约（**§0 Lookup Map**：问题→索引→命令；五索引、权威来源、Decision Rules、禁止事项）
 - **[ADR-CADE-UI-Semantic-Layer.md](architecture/ADR-CADE-UI-Semantic-Layer.md)** - CADE UI Semantic Layer 架构决策（所有权边界、create/regen 变更语义、roadmap）
 - **[UI_GENERATOR_CLARIFICATION_POLICY.md](architecture/UI_GENERATOR_CLARIFICATION_POLICY.md)** - UI Generator 澄清策略（四轴不可安全推断边界、触发条件、Non-Goals）
 - **[ADR-Icon-Provider-Freeze.md](architecture/ADR-Icon-Provider-Freeze.md)** - Icon Provider v4.0：Official-Only（71 Primitive 已删除），CATIA 官方 BMP 运行时引用（本机 B28 `I_*.bmp` 只读、不入库）+ Badge Overlay + 官方兜底图
@@ -46,7 +46,7 @@ CADE 的架构级约束，定义"什么是权威来源、什么入口必须走�
 
 技术文档和 API 参考：
 
-- **[ARCHITECTURE.md](references/ARCHITECTURE.md)** - 架构设计文档
+- **[ARCHITECTURE.md](references/ARCHITECTURE.md)** - 系统方向图（快照，非契约；行数/模块表会过期，结案以源码为准）
 - **[CAA_REFERENCE.md](references/CAA_REFERENCE.md)** - CAA V5 API 参考
 - **[CGM_REFERENCE.md](references/CGM_REFERENCE.md)** - CGM 几何建模参考
 - **[COMMAND_QUICK_REFERENCE.md](references/COMMAND_QUICK_REFERENCE.md)** - 命令开发快速参考
@@ -86,6 +86,12 @@ CADE 的架构级约束，定义"什么是权威来源、什么入口必须走�
 ---
 
 ## 🚀 快速导航
+
+### 我在维护 CADE 自身（不是做 CAA 项目）
+1. 方向图：[ARCHITECTURE.md](references/ARCHITECTURE.md)（快照；含「问题 → 先看哪」）
+2. 检索契约：[retrieval.md](architecture/retrieval.md)
+3. 能力路由 / 生命周期：`capabilities.yaml`、`skills/lifecycle.yaml`
+4. 测试活清单：`tests/test_master.py` 的 `SUITES`，索引见 [tests/README.md](../tests/README.md)
 
 ### 我要配置环境
 1. 阅读 [CATIA_DETECTION.md](CATIA_DETECTION.md)
@@ -128,5 +134,5 @@ CADE 的架构级约束，定义"什么是权威来源、什么入口必须走�
 
 ---
 
-**最后更新**: 2026-08-14  
+**最后更新**: 2026-08-28  
 **维护者**: Kiro AI Agent

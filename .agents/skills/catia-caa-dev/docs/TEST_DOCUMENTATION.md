@@ -1,6 +1,8 @@
 # CADE Test Documentation
 
-CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单元到系统的所有层次。
+CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件。
+
+套件数以 `tests/test_master.py` 的 `SUITES` 为准（当前快照 42；`--quick` 跳过 Int-1）。本文清单会漂移，结案不要引用本节数字。
 
 ---
 
@@ -18,7 +20,7 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
          ├─────────────┤
          │   L3 E2E     │  ← 完整工作流
          ├─────────────┤
-         │   L2 集成     │  ← 功能模块（8 套件）
+         │   L2 集成     │  ← 功能模块（套件数以 SUITES 为准）
          ├─────────────┤
          │   L1 单元     │  ← 最底层：独立函数
          └─────────────┘
@@ -49,9 +51,11 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
 | 标签 | 文件 | 测试数 | 覆盖 |
 |------|------|--------|------|
 | L1-1 Unit (49) | `test_full_integration.py` | 49 | 元模型、变更集、模板、分析器、原子操作 |
+| L1-2 Icons (14) | `test_icons.py` | 以套件标签为准 | 图标提供 |
 | L1-2 Decomposer | `test_decomposer.py` | 21 | 需求分解：决策→Playbook/Capability/依赖 |
+| L1-3 Token Audit | `test_token_audit.py` | 以套件标签为准 | Token 消耗审计 |
 
-### L2 — 功能模块集成（8 套件）
+### L2 — 功能模块集成
 
 | 标签 | 文件 | 覆盖 |
 |------|------|------|
@@ -63,6 +67,7 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
 | L2-6 Diagnostics | `test_diagnostics.py` | 诊断引擎、FixPlan 生成 |
 | L2-7 FixPlan Executor | `test_fixplan_executor.py` | 自动修复执行 |
 | L2-8 Refactor | `test_refactor.py` | 重命名、移动、引用更新 |
+| L2-9 Production Regressions | `test_production_regressions.py` | 生产回归 |
 
 ### L3 — 端到端
 
@@ -74,7 +79,7 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
 
 | 标签 | 文件 | 检查数 | 覆盖 |
 |------|------|--------|------|
-| L4-1 Architecture (29) | `test_l4_architecture.py` | 29 | 模块依赖方向、循环依赖、接口隔离 |
+| L4-1 Architecture (39) | `test_l4_architecture.py` | 以套件标签为准 | 模块依赖方向、循环依赖、接口隔离 |
 
 ### L5 — 语义完整性
 
@@ -103,11 +108,18 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
 | Full Regression | `test_full_regression.py` | 全系统 15 个类别验证 |
 | Cross-Ref Audit | `test_cross_reference.py` | 文件引用、知识计数、README 对齐 |
 | Token Optimizer | `test_token_optimizer.py` | Token 压缩率、关键信息保留 |
-| Token Audit | `test_token_audit.py` | Token 消耗审计 |
 | CAA Structure | `test_caa_structure.py` | CAA 目录结构合规 |
 | Intent Planner | `test_intent_planner.py` | Intent Engine 规划验证 |
 | AI Integration | `test_ai_integration.py` | AI 调用全 API 能力 |
 | Deep Audit | `test_deep_audit.py` | 链接、导入、版本、Badge、模板对齐 |
+| Sys-1 CATIA Detection | `test_catia_detection.py` | CATIA 安装检测 |
+| System Health | `test_system_health.py` | 系统健康 |
+| Multi-Intent | `test_multi_intent.py` | 多意图 |
+| Kernel Edges | `test_kernel_edge_cases.py` | Kernel 边界 |
+| UI Scenario | `test_ui_scenario.py` | UI 实机场景 |
+| Capability Contract | `test_capability_contract.py` | 能力契约 / phantom 对账 |
+| Retrieval Benchmark | `test_retrieval_benchmark.py` | 检索缓存/健康防线 |
+| UseCase Index | `test_usecase_index.py` | 官方样例存在性索引 |
 
 ---
 
@@ -116,13 +128,13 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件，覆盖从单
 ### 快速检查（跳过 Build/Run）
 ```bash
 python tests/test_master.py --quick
-# ~8s, 31 套件（跳过 Int-1 Build & Run）
+# 跳过 Int-1 Build & Run；套件数以 tests/test_master.py 的 SUITES 为准（当前 42 注册 / quick 41）
 ```
 
 ### 全量检查
 ```bash
 python tests/test_master.py
-# ~60s, 32 套件（含 CATIA 启停）
+# 含 CATIA 启停；套件数以 SUITES 为准（当前 42）
 ```
 
 ### 单套件
@@ -147,15 +159,10 @@ python tests/test_master.py --audit
 
 | 指标 | 值 |
 |------|-----|
-| 套件总数 | **32** |
-| L1-L7+L0 核心 | 23 |
-| 集成套件 | 2 |
-| 审计套件 | 7 |
-| 测试函数 | **56** |
-| 断言/检查 | **~600** |
-| 快速模式耗时 | ~8s |
-| 全量模式耗时 | ~60s |
-| 通过率 | **100%** |
+| 套件总数 | 以 `tests/test_master.py` 的 `SUITES` 为准（快照 **42**；会漂移） |
+| 快速模式 | `SKIP_SLOW` 跳过 Int-1，当前执行 41 套 |
+| 磁盘 `test_*.py` | 不等于套件数（含 runner / 未全注册文件） |
+| 完整清单 | [tests/README.md](../tests/README.md) |
 
 ---
 
@@ -200,7 +207,7 @@ def test_feature_a():
 
 ## 核心链路验证
 
-CADE 共有 **48 条功能链路**，分属 **9 大类**。24 个测试套件覆盖全部链路。每次 CI 全量运行即验证全部。
+CADE 共有 **48 条功能链路**，分属 **9 大类**。覆盖用哪些套件以 `SUITES` 为准，不要用过期的套件总数结案。
 
 ### 链路矩阵
 
