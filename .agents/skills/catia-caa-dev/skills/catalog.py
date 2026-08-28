@@ -132,23 +132,37 @@ class CatalogIndex:
 
     @classmethod
     def _compute_sig(cls, skill_root: Path, catalog_file: Path):
-        """Cache-invalidation signature: (index.yaml mtime, frameworks dir mtime).
+        """Cache-invalidation signature.
 
-        The frameworks directory mtime is included because its 148 files are
-        auto-discovered by _scan_frameworks() rather than hand-listed in
-        index.yaml — adding/removing a framework file must invalidate the
-        cache even though index.yaml itself did not change.
+        Components:
+          - index.yaml mtime
+          - frameworks dir mtime (add/remove/rename of the 148 auto-discovered
+            framework files, which are not hand-listed in index.yaml)
+          - newest content mtime across framework md files — the directory
+            mtime does NOT change when an existing file is edited, so without
+            this third component a keywords edit would keep serving the
+            stale pickle until some other file appeared or vanished.
+            (~148 stat calls, ~1ms, once per process load.)
         """
         try:
             catalog_mtime = catalog_file.stat().st_mtime
         except OSError:
             return None
         fw_dir = skill_root / "knowledge" / "frameworks"
+        fw_mtime = 0.0
+        fw_content_mtime = 0.0
         try:
             fw_mtime = fw_dir.stat().st_mtime
+            for f in fw_dir.glob("*.md"):
+                try:
+                    m = f.stat().st_mtime
+                    if m > fw_content_mtime:
+                        fw_content_mtime = m
+                except OSError:
+                    pass
         except OSError:
-            fw_mtime = 0.0
-        return (catalog_mtime, fw_mtime)
+            pass
+        return (catalog_mtime, fw_mtime, fw_content_mtime)
 
     @classmethod
     def reset_stats(cls) -> None:

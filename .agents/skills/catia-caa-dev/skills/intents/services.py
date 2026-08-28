@@ -37,6 +37,8 @@ def expose_service(
     # an agent must read this as a deliberate design state and must NOT try to
     # repair it.  Failing loudly here beats silently producing the wrong
     # artifact (a command masquerading as a service).
+    # (The unreachable implementation that followed this return was removed;
+    # see git history if it's ever needed.)
     return {
         "status": "blocked",
         "reason": "experimental",
@@ -50,57 +52,6 @@ def expose_service(
             "failure — do not attempt to repair. See git history for the full "
             "implementation."
         ),
-    }
-
-    ctx.refresh()
-
-    if not interface_name:
-        interface_name = f"I{component_name}"
-    if not methods:
-        methods = [{"name": "Execute", "params": [], "return": "HRESULT"}]
-
-    master_cs = ChangeSet(
-        action="expose_service",
-        description=f"Expose service '{component_name}' via interface '{interface_name}'",
-    )
-
-    iface_result = create_interface(
-        ctx, name=interface_name, module=module, framework=framework, use_idl=use_idl
-    )
-    if iface_result["status"] == "error":
-        return iface_result
-    merge_changeset(master_cs, changeset_from_dict(iface_result["changeset"]))
-
-    method_names = [m["name"] for m in methods]
-    master_cs.metadata.update(
-        {
-            "intent": "expose_service",
-            "component": component_name,
-            "interface": interface_name,
-            "methods": method_names,
-            "use_idl": use_idl,
-            "generate_tie": generate_tie,
-        }
-    )
-
-    return {
-        "status": "pending",
-        "intent": "expose_service",
-        "message": f"Ready to expose service '{component_name}' via '{interface_name}'",
-        "service": {
-            "interface": interface_name,
-            "component": component_name,
-            "methods": method_names,
-            "idl_file": f"{interface_name}.idl" if use_idl else None,
-            "tie_file": f"TIE_{interface_name}.h" if generate_tie else None,
-        },
-        "changeset": master_cs.to_dict(),
-        "preview": master_cs.preview(),
-        "next_steps": [
-            f"Implement {interface_name} methods in {component_name}",
-            f"Register {component_name} in Dictionary",
-            "Build and test the interface",
-        ],
     }
 
 

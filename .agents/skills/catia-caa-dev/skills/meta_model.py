@@ -18,26 +18,29 @@ Entity relationships:
                      Command  ──registered_in──→ Catalog
 
 ============================
-Table of Contents (1165 lines):
+Table of Contents:
 ============================
   ENUMS:
-  [Lines 30-50]    Enum: Visibility
-  [Lines 53-80]    Enum: FeatureStartupType
+  Enum: Visibility
+  Enum: FeatureStartupType
 
-  CORE ENTITIES (10 classes):
-  [Lines 83-250]   class Framework         - Framework root (.edu)
-  [Lines 253-380]  class Module            - Module container (.m)
-  [Lines 383-550]  class Command           - Interactive command
-  [Lines 553-650]  class Dialog            - UI dialog
-  [Lines 653-750]  class Interface         - Interface definition
-  [Lines 753-850]  class Component         - Component implementation
-  [Lines 853-950]  class Workbench         - Workbench with toolbar
-  [Lines 953-1050] class Feature           - Feature object
-  [Lines 1053-1120] class Factory          - Feature factory
-  [Lines 1123-1150] class Extension        - Data extension
+  CORE ENTITIES (8 classes):
+  class Framework         - Framework root (.edu)
+  class Module            - Module container (.m)
+  class Command           - Interactive command
+  class Dialog            - UI dialog
+  class Interface         - Interface definition
+  class Component         - Component implementation
+  class Workbench         - Workbench with toolbar
+  class Resource          - Resource file (Catalog/NLS/Icon/Rsc)
+
+  (Removed: FeatureModel / FactoryModel / ExtensionModel — dead code,
+   never instantiated anywhere in skills/ or tests/; create_feature and
+   create_extension are implemented via create_component/create_interface
+   composition instead.)
 
   WORKSPACE:
-  [Lines 1153-1165] class WorkspaceSnapshot - Complete workspace state
+  class WorkspaceSnapshot - Complete workspace state
 
 Note: This is a Rich Domain Model - entities are intentionally co-located
       for cohesion. Splitting would create circular dependencies.
@@ -545,154 +548,6 @@ class Workbench(Entity):
             {
                 "framework": self.framework.name if self.framework else None,
                 "commands": [c.name for c in self.commands],
-            }
-        )
-        return d
-
-
-# ─── Feature Model ───────────────────────────────────────────────
-
-
-@dataclass
-class FeatureModel(Entity):
-    """CATIA Feature — knows its structure, attributes, and factory"""
-
-    module: Optional[Module] = None
-    framework: Optional[Framework] = None
-    attributes: List[Dict] = field(default_factory=list)
-    parent_feature: Optional[str] = None
-    factory: Optional["FactoryModel"] = None
-    interfaces: List[str] = field(default_factory=list)
-    _default_interfaces: List[str] = field(
-        default_factory=lambda: ["CATIBuild", "CATIContextualSubMenu"]
-    )
-
-    def header_path(self) -> Optional[Path]:
-        if self.module:
-            return self.module.local_interfaces_dir() / f"{self.name}.h"
-
-    def source_path(self) -> Optional[Path]:
-        if self.module:
-            return self.module.src_dir_path() / f"{self.name}.cpp"
-
-    def all_interfaces(self) -> List[str]:
-        return self._default_interfaces + self.interfaces
-
-    def dictionary_entry(self) -> str:
-        lib = self.module.bare_name if self.module else ""
-        return f"{self.name}  CATBaseUnknown  lib{lib}"
-
-    @property
-    def all_files(self) -> List[Path]:
-        files = [f for f in [self.header_path(), self.source_path()] if f]
-        if self.factory:
-            files.extend(self.factory.all_files)
-        return files
-
-    def to_dict(self) -> Dict:
-        d = super().to_dict()
-        d.update(
-            {
-                "module": self.module.name if self.module else None,
-                "attributes": self.attributes,
-                "factory": self.factory.name if self.factory else None,
-                "interfaces": self.all_interfaces(),
-            }
-        )
-        return d
-
-
-@dataclass
-class FactoryModel(Entity):
-    """Feature Factory — creates instances of a Feature"""
-
-    module: Optional[Module] = None
-    feature: Optional[FeatureModel] = None
-    catalog_file: Optional[Path] = None
-
-    def header_path(self) -> Optional[Path]:
-        if self.module:
-            return self.module.local_interfaces_dir() / f"{self.name}.h"
-
-    def source_path(self) -> Optional[Path]:
-        if self.module:
-            return self.module.src_dir_path() / f"{self.name}.cpp"
-
-    def catalog_path(self) -> Optional[Path]:
-        if self.catalog_file:
-            return self.catalog_file
-        if self.feature and self.feature.framework:
-            return (
-                self.feature.framework.cnext_dir()
-                / "resources"
-                / "graphic"
-                / f"{self.feature.name}Catalog.CATfct"
-            )
-
-    @property
-    def all_files(self) -> List[Path]:
-        return [
-            f
-            for f in [self.header_path(), self.source_path(), self.catalog_path()]
-            if f
-        ]
-
-    def to_dict(self) -> Dict:
-        d = super().to_dict()
-        d.update(
-            {
-                "module": self.module.name if self.module else None,
-                "feature": self.feature.name if self.feature else None,
-            }
-        )
-        return d
-
-
-# ─── Extension Model ─────────────────────────────────────────────
-
-
-@dataclass
-class ExtensionModel(Entity):
-    """Data Extension — extends existing CATIA object with data members"""
-
-    module: Optional[Module] = None
-    target_object: str = ""
-    data_members: List[Dict] = field(default_factory=list)
-    implements: List[str] = field(default_factory=list)
-
-    def header_path(self) -> Optional[Path]:
-        if self.module:
-            return self.module.local_interfaces_dir() / f"{self.name}.h"
-
-    def source_path(self) -> Optional[Path]:
-        if self.module:
-            return self.module.src_dir_path() / f"{self.name}.cpp"
-
-    def tie_header_path(self) -> Optional[Path]:
-        if self.module and self.implements:
-            return self.module.local_interfaces_dir() / f"TIE_{self.implements[0]}.h"
-
-    def dictionary_entry(self) -> str:
-        lib = self.module.bare_name if self.module else ""
-        target = self.target_object or "CATBaseUnknown"
-        return f"{self.name}  {target}  lib{lib}"
-
-    @property
-    def all_files(self) -> List[Path]:
-        return [
-            f
-            for f in [self.header_path(), self.source_path(), self.tie_header_path()]
-            if f
-        ]
-
-    def to_dict(self) -> Dict:
-        d = super().to_dict()
-        d.update(
-            {
-                "module": self.module.name if self.module else None,
-                "target_object": self.target_object,
-                "data_members": self.data_members,
-                "implements": self.implements,
             }
         )
         return d

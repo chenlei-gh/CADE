@@ -39,6 +39,10 @@ from typing import Any, Dict, List, Optional
 # Kernel execution telemetry — append-only JSONL, same shape as build_gate's
 # log so monthly stats can answer "where does the agent fail/rework most?"
 _KERNEL_LOG = Path(__file__).resolve().parent.parent / "cache" / "kernel_log.jsonl"
+# Rotate the log once it exceeds this size: keep one prior generation
+# (kernel_log.jsonl.1) so the file cannot grow unbounded (it reached 2MB+
+# with no consumer-based pruning in sight).
+_KERNEL_LOG_MAX_BYTES = 5 * 1024 * 1024
 
 
 def _log_kernel(record: dict) -> None:
@@ -46,6 +50,14 @@ def _log_kernel(record: dict) -> None:
     try:
         _KERNEL_LOG.parent.mkdir(parents=True, exist_ok=True)
         record.setdefault("time", datetime.now().isoformat(timespec="seconds"))
+        if _KERNEL_LOG.exists() and _KERNEL_LOG.stat().st_size > _KERNEL_LOG_MAX_BYTES:
+            rotated = Path(str(_KERNEL_LOG) + ".1")
+            try:
+                if rotated.exists():
+                    rotated.unlink()
+                _KERNEL_LOG.rename(rotated)
+            except OSError:
+                pass  # rotation is best-effort; keep appending either way
         with open(_KERNEL_LOG, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception:
@@ -1310,8 +1322,12 @@ class Kernel:
                 self._state = KernelState.COMPLETED
                 return KernelResult(status="ok", mode="develop", state=self._state.value,
                     message="CATIA started.", data=r if isinstance(r, dict) else {}).to_dict()
-            # Dev: build + run in one step
-            if "dev" in request or ("build" in request and "run" in request):
+            # Dev: build + run in one step. Word-boundary match: a bare
+            # substring test ("dev" in request) hijacked any request merely
+            # containing "dev" ("develop a dialog", "DeviceCmd") into a
+            # mkmk build + CATIA launch before intent detection could run.
+            import re
+            if re.search(r"\bdev\b", request) or ("build" in request and "run" in request):
                 r_build = incremental_build(ws)
                 r_run = start_catia_runtime(workspace_path=str(self.workspace_root)) if r_build.get("status") == "success" else None
                 self._state = KernelState.COMPLETED

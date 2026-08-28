@@ -101,19 +101,50 @@ class ActionContext:
         return self._snapshot
 
     def refresh(self, force: bool = False, label: str = "") -> WorkspaceSnapshot:
-        """Refresh snapshot. Records to history. Use force=True to bypass cache."""
+        """Refresh snapshot. Records to history. Use force=True to bypass cache.
+
+        Cache-aware: when the current snapshot is still fresh (no file newer
+        than its baseline mtime, within the TTL throttle), it is reused
+        instead of re-scanning the whole workspace. This is what makes the
+        existing mtime cache actually effective — previously every action
+        function unconditionally nulled the snapshot, so one develop request
+        re-analyzed the workspace 3-5 times even though nothing changed on
+        disk between the sub-steps (ChangeSets only hit disk at apply time).
+        """
+        if not force and self._snapshot is not None and not self._is_stale():
+            # Cache hit: still record to history so audit/telemetry keeps
+            # seeing every refresh call (the recorded snapshot is the same
+            # object — diff_last_two will report has_changes=False).
+            self.history.record(self._snapshot, label or "refresh")
+            return self._snapshot
         self._snapshot = None
         snap = self.snapshot
         self.history.record(snap, label or "refresh")
         return snap
 
-    def _max_file_mtime(self) -> float:
-        """Get the most recent modification time in the workspace"""
+    # Build outputs and VCS/backup internals change on every build but are
+    # invisible to the analyzer (it only reads src/LocalInterfaces/CNext),
+    # so they are pruned from the staleness walk — win_b64 alone can hold
+    # tens of thousands of files.
+    _PRUNE_DIRS = frozenset(
+        {"win_b64", ".caa_backups", ".git", "__pycache__", ".pytest_cache"}
+    )
+
+    def _max_file_mtime(self, early_exit_above: float = None) -> float:
+        """Get the most recent modification time in the workspace.
+        early_exit_above: staleness probe — stop walking once a file newer
+        than this value is found. None (the snapshot-baseline mode) computes
+        the TRUE max: the old unconditional early-exit compared against the
+        still-zero baseline on first build and returned the first file's
+        mtime, so nearly every subsequent staleness probe saw "newer" files
+        and rebuilt the snapshot for nothing.
+        """
         import os
 
         try:
             max_mtime = 0
-            for root, _, files in os.walk(str(self.workspace_root)):
+            for root, dirs, files in os.walk(str(self.workspace_root)):
+                dirs[:] = [d for d in dirs if d not in self._PRUNE_DIRS]
                 for f in files:
                     try:
                         mtime = Path(root, f).stat().st_mtime
@@ -121,8 +152,11 @@ class ActionContext:
                             max_mtime = mtime
                     except OSError:
                         pass
-                if max_mtime > self._snapshot_mtime:
-                    break  # Stop early if we found a newer file
+                if (
+                    early_exit_above is not None
+                    and max_mtime > early_exit_above
+                ):
+                    break
             return max_mtime
         except Exception:
             return float("inf")  # Force refresh on error
@@ -134,7 +168,9 @@ class ActionContext:
         if time.time() - getattr(self, "_last_check", 0) < self._cache_ttl:
             return False
         self._last_check = time.time()
-        current_mtime = self._max_file_mtime()
+        current_mtime = self._max_file_mtime(
+            early_exit_above=self._snapshot_mtime
+        )
         return current_mtime > self._snapshot_mtime
 
     def tpl(self, *parts) -> Path:
@@ -1050,12 +1086,16 @@ def add_command_to_workbench(
         old = wb.addin_source.read_text(encoding="utf-8", errors="replace")
         new_cmd = f'    new {command_name}Header("{command_name}", "{cmd.module.name if cmd.module else "Unknown"}");'
         if new_cmd not in old:
-            marker = "void AddinName::CreateCommands()"
-            if marker in old:
-                new = old.replace(
-                    marker + "\n",
-                    marker + f"\n    // Register {command_name}\n{new_cmd}\n",
-                )
+            # The addin class name is substituted at template-render time
+            # ("AddinName" → the real class), so a literal
+            # "void AddinName::CreateCommands()" marker never matches a
+            # rendered file and this whole branch was a no-op. Match the real
+            # signature instead: "void <AnyClass>::CreateCommands() {".
+            m = re.search(r"void\s+\w+::CreateCommands\s*\(\s*\)\s*\{", old)
+            if m:
+                anchor = m.group(0)
+                insertion = anchor + f"\n    // Register {command_name}\n{new_cmd}"
+                new = old.replace(anchor, insertion, 1)
                 cs.add_modify(wb.addin_source, new)
 
     cs.metadata = {"command": command_name, "workbench": workbench_name}

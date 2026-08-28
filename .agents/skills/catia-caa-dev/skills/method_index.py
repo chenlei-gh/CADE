@@ -74,6 +74,7 @@ class MethodIndex:
         self._hm = None                           # injected HeaderMap (optional)
         self._loaded = False
         self._pending_meta: Dict = {}             # meta from last JSON parse
+        self._pickle_meta: Dict = {}              # meta from the pickle cache
 
     # ─── Loading ─────────────────────────────────────────────────
 
@@ -123,10 +124,13 @@ class MethodIndex:
         except Exception:
             cur_ver = ""
 
-        # 3. Schema-2 guard rails (only evaluated when the JSON was actually
-        #    parsed this run -- a fresh pickle inherits the same checks from
-        #    the run that built it).
-        meta = mi._pending_meta
+        # 3. Schema-2 guard rails. Evaluated for BOTH load paths: the meta
+        #    comes from the fresh JSON parse (_pending_meta) or from the
+        #    pickle's embedded copy (_pickle_meta). Previously a pickle hit
+        #    skipped these checks entirely, so a CATIA upgrade that did not
+        #    rebuild the JSON silently kept serving the old release's
+        #    method tables as ground truth.
+        meta = mi._pending_meta or mi._pickle_meta
         if meta:
             # An index built with --no-headers has empty header_classes,
             # which would silently blind the method verifier (every method
@@ -169,6 +173,9 @@ class MethodIndex:
             if payload.get("version") != _CACHE_VERSION:
                 return False
             self._methods = payload["methods"]
+            # Carry the build-time meta so version-skew / --no-headers guard
+            # rails still run on the pickle path (see load() step 3).
+            self._pickle_meta = payload.get("meta") or {}
             return True
         except FileNotFoundError:
             return False
@@ -183,6 +190,7 @@ class MethodIndex:
                 "version": _CACHE_VERSION,
                 "json_mtime": json_mtime,
                 "methods": self._methods,
+                "meta": self._pending_meta,
             }
             with p.open("wb") as f:
                 pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)

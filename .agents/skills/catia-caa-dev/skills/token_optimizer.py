@@ -58,6 +58,65 @@ def _has_errors_in_diagnostics(d: dict) -> bool:
     return any(di.get("severity") == "ERROR" for di in diags if isinstance(di, dict))
 
 
+# Fields the caller MUST see to act on the result. These are small by
+# construction (question lists, recovery options, id handles) and stripping
+# them breaks the workflow: e.g. a 'needs_clarification' response without
+# its 'questions' forces the agent to guess or re-invoke blind, and a
+# module-not-found error without 'available_modules' cannot self-correct.
+_PASSTHROUGH_KEYS = (
+    "questions",           # needs_clarification: the actual questions
+    "available_modules",   # module-not-found recovery options
+    "available_frameworks",#
+    "suggestion",          # one-line fix hint
+    "suggestions",         # next-step suggestions
+    "existing_command",    # name-collision details
+    "components",          # multi-artifact composition summary
+    "verification_failed", # top-level flag set by kernel Phase 3
+    "rollback_id",         # undo handle for an applied ChangeSet
+)
+
+
+def _compact_knowledge_refs(refs):
+    """Reduce knowledge_refs to id + title (drop raw catalog lines etc.)."""
+    if not isinstance(refs, list):
+        return refs
+    compact = []
+    for r in refs[:5]:
+        if isinstance(r, dict):
+            compact.append({k: r[k] for k in ("id", "file", "title") if k in r})
+        else:
+            compact.append(r)
+    return compact
+
+
+def _compact_changeset(cs):
+    """Reduce a serialized ChangeSet to file lists + counts.
+
+    The full 'changeset' dict carries the complete file CONTENTS of every
+    created/modified file — tens of thousands of tokens for a command with
+    a dialog. The caller (preview workflow) needs the file manifest, not
+    the bodies; re-running without --preview applies the real thing.
+    """
+    if not isinstance(cs, dict):
+        return cs
+    compact = {
+        "action": cs.get("action", ""),
+        "created": sorted(cs.get("created", {}).keys()),
+        "modified": sorted(cs.get("modified", {}).keys()),
+        "deleted": list(cs.get("deleted", [])),
+        "total_changes": cs.get("total_changes", 0),
+        "warnings": list(cs.get("warnings", [])),
+        "metadata": cs.get("metadata", {}),
+    }
+    patches = cs.get("patches", [])
+    if patches:
+        compact["patches"] = [
+            {k: p.get(k) for k in ("file", "operation", "target", "line_start", "line_end")}
+            for p in patches if isinstance(p, dict)
+        ]
+    return compact
+
+
 def _extract_level1(d: dict) -> dict:
     """Extract the 'what happened in one glance' fields."""
     summary = {
@@ -108,6 +167,27 @@ def _extract_level1(d: dict) -> dict:
     if msg and len(msg) < 200:
         summary["message"] = msg
 
+    # AI-actionable fields — never stripped (see _PASSTHROUGH_KEYS)
+    for k in _PASSTHROUGH_KEYS:
+        v = d.get(k)
+        if v:
+            summary[k] = v
+
+    # Knowledge grounding: keep ids/titles (compact), keep content — the
+    # kernel injects it specifically so agents generate against verified
+    # API patterns; stripping it turned that quality lever into dead IO.
+    if d.get("knowledge_refs"):
+        summary["knowledge_refs"] = _compact_knowledge_refs(d["knowledge_refs"])
+    if d.get("knowledge_content"):
+        summary["knowledge_content"] = d["knowledge_content"]
+
+    # Preview workflow: the caller explicitly asked for the plan — surface
+    # the manifest (file lists), not the full file bodies.
+    if d.get("preview"):
+        summary["preview"] = d["preview"]
+    if d.get("changeset"):
+        summary["changeset"] = _compact_changeset(d["changeset"])
+
     return summary
 
 
@@ -116,6 +196,11 @@ def _extract_level1(d: dict) -> dict:
 def _extract_level2(d: dict) -> dict:
     """Extract actionable error details. NEVER trims error content."""
     detail = {}
+
+    # Static-verification violations (kernel Phase 3): the fix list the
+    # agent must work through — never strip these.
+    if d.get("verification_errors"):
+        detail["verification_errors"] = d["verification_errors"]
 
     # Errors (keep full message, file, line)
     if "errors" in d:

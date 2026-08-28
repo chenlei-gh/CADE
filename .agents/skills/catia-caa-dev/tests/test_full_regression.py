@@ -150,9 +150,6 @@ MODULES = {
         "Command",
         "Dialog",
         "Workbench",
-        "FeatureModel",
-        "FactoryModel",
-        "ExtensionModel",
         "Resource",
         "WorkspaceSnapshot",
         "SnapshotHistory",
@@ -352,22 +349,9 @@ if mm:
     wb.add_command(cmd)
     check("2.13 Workbench.commands after add", len(wb.commands) == 1)
 
-    # FeatureModel
-    fm = mm.FeatureModel(name="MyFeature", path=Path("."))
-    check("2.14 FeatureModel.header_path", fm.header_path is not None)
-    check("2.15 FeatureModel.all_files", isinstance(fm.all_files, list))
-
-    # FactoryModel
-    fac = mm.FactoryModel(name="MyFeatureFactory", path=Path("."))
-    check("2.16 FactoryModel.catalog_path", fac.catalog_path is not None)
-
-    # ExtensionModel
-    ext = mm.ExtensionModel(name="MyExt", path=Path("."))
-    check("2.17 ExtensionModel.all_files", isinstance(ext.all_files, list))
-
     # Resource
     res = mm.Resource(name="test", path=Path("."), resource_type="catalog")
-    check("2.18 Resource.to_dict", "name" in res.to_dict())
+    check("2.14 Resource.to_dict", "name" in res.to_dict())
 
     # WorkspaceSnapshot
     snap = mm.WorkspaceSnapshot(root=Path("."), frameworks=[fw])

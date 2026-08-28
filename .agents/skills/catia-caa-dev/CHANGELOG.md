@@ -10,6 +10,22 @@
 
 ## [未发布]
 
+### 🔧 Kernel / 响应链路 (2026-08-28, 架构审查深度修复)
+
+- **修复 `add_command_to_workbench` 静默空转**：旧锚点 `"void AddinName::CreateCommands()"` 是模板占位符字面量，渲染后的 addin 文件里是真实类名（`void MyWbAddin::CreateCommands()`），锚点永不匹配 → ChangeSet 无任何修改 → `create_executable_command(add_to_workbench=...)` 的工作台注册静默失效（按钮不出现但 metadata 谎报已注册）。现改用正则匹配任意类名的真实签名，命令头注册代码正确插入 `CreateCommands()` 内。已在临时工作区端到端验证。
+- **修复 `"dev"` 子串误路由**：`_handle_build_run` 的 `"dev" in request` 会劫持任何含 dev 子串的请求（`develop a dialog`、`DeviceCmd`）进 mkmk 构建 + CATIA 启动，意图检测根本不执行。改 `\bdev\b` 词边界匹配，`dev`/`run dev`/`build and run` 仍正常路由。
+- **修复 token_optimizer 丢弃 AI 必需字段**：`needs_clarification` 的 `questions`、模块不存在的 `available_modules`、apply 后的 `rollback_id`、验证失败的 `verification_errors`、知识注入 `knowledge_content`（kernel 设计的「质量均衡主杠杆」，之前读盘后直接进垃圾桶）全部被白名单剥离。新增 `_PASSTHROUGH_KEYS` 透传；`knowledge_refs` 裁剪为 id+file；`changeset` 压缩为文件清单（去全文，保留 preview 工作流）；澄清/模块纠错/preview 工作流在 MCP 上从不可用变可用，消除 1-2 次额外往返。
+- **修复 ActionContext 缓存被 `refresh()` 架空 + `_max_file_mtime` 首建语义 bug**：每个 action 入口的 `ctx.refresh()` 无条件置空快照，一次 develop 请求重复全扫 3-5 次（子步骤间 ChangeSet 只在 apply 时落盘，中间无任何磁盘变化）。`refresh()` 改为缓存感知（未失效则复用快照并仍记 history）；`_max_file_mtime` 拆双语义（基线模式取真 max / staleness 探测可提前退出——旧提前退出在首次构建时以 0 为参照，返回首文件 mtime，快照基线恒偏旧）；walk 剪枝 `win_b64/.caa_backups/.git/__pycache__/.pytest_cache`（analyzer 不可见目录）。同请求扫描 3-5 次 → 1 次。
+- **修复 catalog 缓存 sig 感知不到 framework md 内容编辑**：目录 mtime 只反映增删/重命名，编辑已有文件的 keywords 后 pickle 继续用旧关键词。sig 加入全部 framework md 的最新 mtime（~148 次 stat，~1ms/进程）。
+- **修复 method_index pickle 命中路径跳过版本偏斜检查**：CATIA 升级但未重建 caadoc_index.json 时，pickle 命中 → B28 方法表继续服务 B30 安装且无告警。pickle 现内嵌构建时 meta，`--no-headers` 降级告警与版本偏斜告警在两条加载路径都执行。
+- **kernel_log.jsonl 大小轮转**：超 5MB 重命名为 `.jsonl.1`（保留一代），防无界增长（已达 2MB+ 且无消费方清理）。
+
+### 🧹 死代码清理 (2026-08-28)
+
+- **删除 meta_model 三个死实体**：`FeatureModel`/`FactoryModel`/`ExtensionModel`（~146 行）全仓零引用（`create_feature` 已降级、`create_extension` 走组合实现）；修正腐化的文件头 TOC（行号全错，10 实体→8 实体+Resource）。
+- **删除 analyzer 丢弃式 `Resource` 实例化**（构造后立即丢弃，纯浪费）；移除随之未使用的 `Resource` import。
+- **删除 `intents/services.expose_service` 不可达实现**（blocked return 后 ~50 行，git 历史可查）；签名保留，`intents/__init__` 导出与 kernel 调用不变。
+
 ### 🔧 Build / Runtime View (2026-08-26)
 
 - **修复模块级 / `.edu` 路径被当成工作区根**：`_resolve_workspace_root` 现同时处理 `.m`（祖父）和 `.edu`（父）。`run_gate` 按入参范围验模块（`.m` 只验自己，不再从模块目录 `rglob` 空转 PASS）。`sync_runtime_view` / `create_runtime_view` / `_copy_dictionaries_to_runtime` / `copy_icons_to_runtime` / Logger+Cache / `validate_workspace` 入口对齐，中文 NLS 与门禁在模块级 build 下不再漏。

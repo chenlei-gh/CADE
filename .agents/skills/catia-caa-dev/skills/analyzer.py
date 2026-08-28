@@ -27,7 +27,6 @@ from meta_model import (
     Framework,
     Interface,
     Module,
-    Resource,
     Visibility,
     Workbench,
     WorkspaceSnapshot,
@@ -421,9 +420,6 @@ class WorkspaceAnalyzer:
         # Catalog
         for pat in ["*.CATCatalog", "*.catalog"]:
             for f in fw.path.glob(pat):
-                res = Resource(
-                    name=f.stem, path=f, resource_type="catalog", framework=fw
-                )
                 fw.catalog = f
                 self.logger.write(f"    Catalog: {f.name}")
                 break
@@ -439,9 +435,6 @@ class WorkspaceAnalyzer:
                 or "chinese" in f.stem.lower()
                 or f.stem.endswith("_Chinese")
                 else "en"
-            )
-            res = Resource(
-                name=f.stem, path=f, resource_type="nls", framework=fw, language=lang
             )
             fw.nls_files.append(f)
 
