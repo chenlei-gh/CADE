@@ -22,6 +22,11 @@ class CompilationError:
     code: str = ""
     message: str = ""
     severity: str = "error"  # "error" or "warning"
+    # True when this entry is a downstream consequence of an earlier root
+    # cause (e.g. the missing .obj/.dll reported after a compile error already
+    # aborted the step). Cascaded entries stay in `errors` and still fail the
+    # build -- they are only excluded from the root-cause `error_count`.
+    cascade: bool = False
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization"""
@@ -33,7 +38,22 @@ class CompilationError:
             "code": self.code,
             "message": self.message,
             "severity": self.severity,
+            "cascade": self.cascade,
         }
+
+
+# Wrapper-layer error codes emitted by mkmk itself rather than by the
+# compiler/linker. They are the "did the build fail at all" signal (see
+# SKILL.md > Build 结果判定), not necessarily independent root causes.
+WRAPPER_ERROR_CODES = frozenset({"mkmk-ERROR", "make-ERROR", "syst-ERROR"})
+
+# Text that marks a wrapper error as a consequence of an earlier failure: the
+# artifact was never produced because the compile/link step already died.
+_CASCADE_MESSAGE_RE = re.compile(
+    r"no such file or directory|cannot find|cannot open",
+    re.IGNORECASE,
+)
+_CASCADE_ARTIFACT_RE = re.compile(r"\.(obj|lib|dll|exp|ilk|pdb)$", re.IGNORECASE)
 
 
 class MkmkParser:
@@ -172,25 +192,78 @@ class MkmkParser:
                 else:
                     self.warnings.append(error)
 
+        self._mark_cascade_errors()
+
+        root_causes = [e for e in self.errors if not e.cascade]
+        cascaded = [e for e in self.errors if e.cascade]
+        wrappers = [e for e in self.errors if e.code in WRAPPER_ERROR_CODES]
+
         return {
-            "error_count": len(self.errors),
+            # Root causes only: one C2440 is one error, not seven.
+            "error_count": len(root_causes),
+            "cascade_count": len(cascaded),
+            # All wrapper-layer errors, cascaded or not. build.py fails the
+            # build on this too, so cascade marking can never turn a real
+            # failure into a false "success".
+            "wrapper_error_count": len(wrappers),
             "warning_count": len(self.warnings),
             "errors": [e.to_dict() for e in self.errors],
             "warnings": [w.to_dict() for w in self.warnings],
         }
+
+    def _mark_cascade_errors(self) -> None:
+        """Flag wrapper errors that are consequences of an earlier root cause.
+
+        A single compile error aborts the step, after which mkmk reports the
+        failed step and every artifact that was never produced as separate
+        wrapper errors. Those are reclassified as cascade -- but only when a
+        compiler/linker root cause actually precedes them. With no root cause
+        in the output, every wrapper error stays countable: mkmk can return 0
+        while the build genuinely failed, and that verdict must survive.
+        """
+        seen_root_cause = False
+        for error in self.errors:
+            if error.severity != "error":
+                continue
+            if error.code not in WRAPPER_ERROR_CODES:
+                seen_root_cause = True
+                continue
+            if seen_root_cause and _is_cascade_consequence(error):
+                error.cascade = True
 
     def get_summary(self) -> str:
         """Get human-readable summary"""
         if not self.errors and not self.warnings:
             return "✓ Build successful (0 errors, 0 warnings)"
 
+        root_causes = [e for e in self.errors if not e.cascade]
+        cascaded = [e for e in self.errors if e.cascade]
+
         parts = []
-        if self.errors:
-            parts.append(f"{len(self.errors)} error(s)")
+        if root_causes:
+            parts.append(f"{len(root_causes)} error(s)")
+        if cascaded:
+            parts.append(f"{len(cascaded)} cascaded")
         if self.warnings:
             parts.append(f"{len(self.warnings)} warning(s)")
 
         return "✗ Build failed: " + ", ".join(parts)
+
+
+def _is_cascade_consequence(error: CompilationError) -> bool:
+    """Does this wrapper error look like fallout from an earlier failure?"""
+    text = f"{error.file} {error.message}".strip()
+    if _CASCADE_MESSAGE_RE.search(text):
+        return True
+    if _CASCADE_ARTIFACT_RE.search(error.file):
+        return True
+    # mkmk/make-ERROR naming a module or framework target reports the build
+    # step that failed, never an independent cause of its own.
+    if error.code in ("mkmk-ERROR", "make-ERROR") and error.file.lower().endswith(
+        (".m", ".edu")
+    ):
+        return True
+    return False
 
 
 def parse_mkmk_output(output: str) -> Dict:
@@ -223,10 +296,17 @@ _ERROR_ADVICE = {
 
 
 def diagnose_errors(parse_result: dict) -> list:
-    """Generate actionable fix suggestions for compilation errors."""
+    """Generate actionable fix suggestions for compilation errors.
+
+    Cascaded wrapper errors are skipped: advising on a missing .obj that never
+    existed because of a syntax error sends the fixer to the wrong file. They
+    are still used when nothing else is available (wrapper-only failures).
+    """
     suggestions = []
     seen = set()
-    for err in parse_result.get("errors", []):
+    errors = parse_result.get("errors", [])
+    root_causes = [e for e in errors if not e.get("cascade")]
+    for err in root_causes or errors:
         code = err.get("code", "")
         if code in _ERROR_ADVICE and code not in seen:
             seen.add(code)

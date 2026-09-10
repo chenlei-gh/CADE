@@ -33,6 +33,33 @@ from parser import parse_mkmk_output
 from utils import Cache, Logger, format_duration, output_json
 
 
+def _decode_mkmk_output(raw: bytes) -> str:
+    """Decode mkmk/MSVC output captured as bytes.
+
+    MSVC on a Chinese Windows writes ANSI (GBK), not UTF-8; decoding those
+    bytes as UTF-8 with errors='replace' reduced every Chinese diagnostic to
+    '' garbage (e.g. '无法从 const char * 转换为 char *' became unreadable).
+    Try strict UTF-8 first (pure-ASCII logs decode identically either way, so
+    the common case is unaffected), then GBK via gb18030 (a full mapping that
+    also covers cp936), then UTF-8 with replacement as a last resort.
+
+    Accepts bytes; a str is returned unchanged so mocked/test doubles and
+    defensive callers don't have to care.
+    """
+    if not raw:
+        return ""
+    if isinstance(raw, str):
+        return raw
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    try:
+        return raw.decode("gb18030")
+    except UnicodeDecodeError:
+        return raw.decode("utf-8", errors="replace")
+
+
 # ─── Health & Verification ──────────────────────────────────────
 
 def validate_workspace(workspace_path: Path) -> dict:
@@ -422,15 +449,16 @@ def build_workspace(
         result = subprocess.run(
             cmd,  # ["cmd", "/c", "path/to/generated.bat"] from build_time_command
             capture_output=True,
-            text=True,
             timeout=timeout,
-            encoding="utf-8",
-            errors="replace",
             creationflags=0x08000000 if sys.platform == "win32" else 0,
         )
 
-        # Combine stdout + stderr for parsing
-        output = result.stdout + "\n" + result.stderr
+        # Combine stdout + stderr for parsing. Captured as bytes and decoded
+        # per-stream (a multibyte char cannot span streams) — see
+        # _decode_mkmk_output for the GBK/UTF-8 rationale.
+        output = _decode_mkmk_output(result.stdout) + "\n" + _decode_mkmk_output(
+            result.stderr
+        )
 
         # Log full output
         logger.write("=" * 60)
@@ -480,9 +508,23 @@ def build_workspace(
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
 
-        if exit_code != 0 or parsed["error_count"] > 0:
+        # Build verdict contract (SKILL.md > Build 结果判定): fail on non-zero
+        # exit, on parsed root-cause errors, OR on any mkmk/make/syst wrapper
+        # error line. Wrapper-only failures where mkmk returns 0 must not
+        # pass; wrapper lines flagged cascade are excluded from error_count
+        # but wrapper_error_count keeps the failure verdict intact.
+        if (
+            exit_code != 0
+            or parsed["error_count"] > 0
+            or parsed.get("wrapper_error_count", 0) > 0
+        ):
             status = "failed"
-            message = f"Build failed with {parsed['error_count']} error(s)"
+            cascade_note = (
+                f" (+{parsed['cascade_count']} cascaded)"
+                if parsed.get("cascade_count")
+                else ""
+            )
+            message = f"Build failed with {parsed['error_count']} error(s){cascade_note}"
         else:
             status = "success"
             message = "Build successful"
@@ -491,6 +533,7 @@ def build_workspace(
             "status": status,
             "message": message,
             "error_count": parsed["error_count"],
+            "cascade_count": parsed.get("cascade_count", 0),
             "warning_count": parsed["warning_count"],
             "errors": parsed["errors"],
             "warnings": parsed["warnings"],
@@ -868,17 +911,16 @@ def _exec_build_cmd(command: str, workspace_path: Path, timeout: int = 300) -> d
         result = subprocess.run(
             ["cmd", "/c", str(batfile)],
             capture_output=True,
-            text=True,
             timeout=timeout,
-            encoding="utf-8",
-            errors="replace",
             creationflags=0x08000000 if sys.platform == "win32" else 0,
         )
 
         try:
-            output = tmpfile.read_text(encoding="utf-8", errors="replace")
+            output = _decode_mkmk_output(tmpfile.read_bytes())
         except Exception:
-            output = result.stdout + "\n" + result.stderr
+            output = _decode_mkmk_output(result.stdout) + "\n" + _decode_mkmk_output(
+                result.stderr
+            )
 
         logger.write(output[:2000])
 

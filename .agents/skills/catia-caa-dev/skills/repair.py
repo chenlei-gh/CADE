@@ -326,9 +326,13 @@ class RepairLoop:
             output = result.get("output", "")
             parsed = parse_mkmk_output(output)
 
-            # Convert to diagnostic format
+            # Convert to diagnostic format. Skip cascade entries: they are
+            # downstream artifacts of a root-cause error (missing .obj/.dll)
+            # and pointing the fixer at them would chase the wrong file.
             diagnostics = []
             for err in parsed.get("errors", []):
+                if err.get("cascade"):
+                    continue
                 d = {
                     "severity": err.get("severity", "error"),
                     "category": "compilation",

@@ -189,6 +189,53 @@ try:
     single_wrapper = parse_mkmk_output("# mkmk-ERROR: C:\\Build Output\\OnlyOnce.m")
     check("one wrapper line is counted once", single_wrapper["error_count"] == 1, str(single_wrapper))
 
+    # P0: 1 root-cause compile error followed by artifact-missing wrappers
+    # collapses to error_count == 1; wrappers stay visible but flagged.
+    # Build paths from a tempfile root to satisfy the no-hardcoded-paths gate.
+    mock_root = str(workspace).replace("/", "\\")
+    cascade_output = (
+        f"{mock_root}\\MyModule.m\\src\\MyFile.cpp(42): error C2440: cannot convert\n"
+        f"# make-ERROR: {mock_root}\\win_b64\\code\\bin\\MyModule.dll: No such file or directory\n"
+        f"  # syst-ERROR: {mock_root}\\win_b64\\code\\lib\\MyModule.lib: No such file or directory\n"
+    )
+    parsed_cascade = parse_mkmk_output(cascade_output)
+    check("root cause counted once despite artifact fallout",
+          parsed_cascade["error_count"] == 1, str(parsed_cascade))
+    check("artifact wrappers flagged cascade",
+          parsed_cascade["cascade_count"] == 2, str(parsed_cascade))
+    check("cascade wrappers stay visible in errors list",
+          len(parsed_cascade["errors"]) == 3, str(parsed_cascade["errors"]))
+    check("cascade flag survives to_dict",
+          sum(1 for e in parsed_cascade["errors"] if e.get("cascade")) == 2,
+          str(parsed_cascade["errors"]))
+    check("wrapper count kept for build verdict",
+          parsed_cascade["wrapper_error_count"] == 2, str(parsed_cascade))
+
+    # A wrapper that is NOT artifact fallout stays counted even when a root
+    # cause exists (distinct config/license failure, not a missing artifact).
+    mixed_output = (
+        "file.cpp(10): error C2143: syntax error\n"
+        "# mkmk-ERROR: license checkout failed\n"
+    )
+    parsed_mixed = parse_mkmk_output(mixed_output)
+    check("non-artifact wrapper stays counted alongside root cause",
+          parsed_mixed["error_count"] == 2 and parsed_mixed["cascade_count"] == 0,
+          str(parsed_mixed))
+
+    # P0: GBK mkmk/MSVC output decodes to readable Chinese, not U+FFFD.
+    gbk_line = (b"MyFile.cpp(42): error C2440: \xce\xde\xb7\xa8\xb4\xd3"
+                b" 'const char *' \xd7\xaa\xbb\xbb\xce\xaa 'char *'")
+    decoded_gbk = build_module._decode_mkmk_output(gbk_line)
+    check("gbk mkmk output decodes to readable Chinese",
+          "\u65e0\u6cd5\u4ece" in decoded_gbk
+          and "\u8f6c\u6362\u4e3a" in decoded_gbk
+          and "\ufffd" not in decoded_gbk, decoded_gbk)
+    utf8_text = "note: \u65e0\u6cd5\u4ece (utf-8)"
+    check("utf-8 output still decodes as utf-8",
+          build_module._decode_mkmk_output(utf8_text.encode("utf-8")) == utf8_text)
+    check("empty output decodes to empty string",
+          build_module._decode_mkmk_output(b"") == "")
+
     # Build verification must reject stale or implausible target DLLs.
     bin_dir = workspace / "win_b64" / "code" / "bin"
     bin_dir.mkdir(parents=True)
@@ -278,7 +325,9 @@ try:
         def build_time_command(self, _workspace, _options):
             return ["fake-build"], "fake-build"
 
-    fake_process = SimpleNamespace(returncode=0, stdout="build completed", stderr="")
+    # Real subprocess.run without text=True yields bytes — the mock must too,
+    # otherwise build output decoding is exercised against the wrong type.
+    fake_process = SimpleNamespace(returncode=0, stdout=b"build completed", stderr=b"")
     failed_verification = {"ok": False, "issues": ["MockModule.dll: stale DLL"]}
     with patch.object(build_module, "Logger", MemoryLogger), \
             patch.object(build_module, "Cache", MemoryCache), \
