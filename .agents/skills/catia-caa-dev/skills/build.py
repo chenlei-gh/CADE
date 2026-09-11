@@ -60,6 +60,37 @@ def _decode_mkmk_output(raw: bytes) -> str:
         return raw.decode("utf-8", errors="replace")
 
 
+# ─── CLI output slimming ──────────────────────────────────────────
+# build_workspace() returns the full raw mkmk log in result["output"]
+# because repair.py re-parses it (RepairLoop._diagnose_build). At the CLI
+# boundary (build.py main / cade.py _print_result) that whole log is dead
+# weight for an AI caller: errors/warnings/suggestions are already parsed
+# into structured fields, and the full log is on disk in build.log. Keep
+# only the tail so the JSON stays scannable; --full-output opts out.
+_CLI_OUTPUT_TAIL_CHARS = 2000
+
+
+def slim_result_for_cli(result: dict) -> dict:
+    """Return a copy of a build result with the raw mkmk log removed.
+
+    The structured fields (status/error_count/errors/warnings/suggestions)
+    are untouched. `output` is replaced by:
+      - output_tail: last ~2000 chars (enough to see the final failure)
+      - output_log: absolute path of the full build.log on disk
+    Both build.py main() and cade.py route through this so every CLI/AI
+    caller gets the same lean payload. Python-API callers (repair.py) keep
+    the full `output` because they re-parse it.
+    """
+    slim = dict(result)
+    output = slim.pop("output", None)
+    if output:
+        slim["output_tail"] = output[-_CLI_OUTPUT_TAIL_CHARS:]
+    log_path = slim.get("output_log")
+    if log_path:
+        slim["output_log"] = log_path
+    return slim
+
+
 # ─── Health & Verification ──────────────────────────────────────
 
 def validate_workspace(workspace_path: Path) -> dict:
@@ -535,6 +566,11 @@ def build_workspace(
             "error_count": parsed["error_count"],
             "cascade_count": parsed.get("cascade_count", 0),
             "warning_count": parsed["warning_count"],
+            # C4819 codepage noise is quarantined out of `warnings`; surface
+            # just the count + files so callers know it happened (and which
+            # files to save as UTF-8-with-BOM if they want it gone).
+            "codepage_warning_count": parsed.get("codepage_warning_count", 0),
+            "codepage_warning_files": parsed.get("codepage_warning_files", []),
             "errors": parsed["errors"],
             "warnings": parsed["warnings"],
             "suggestions": suggestions if status == "failed" else [],
@@ -546,6 +582,12 @@ def build_workspace(
             "return_code": exit_code,
             "output": output,  # Raw mkmk output for repair loop to parse
         }
+        # Full log lives here; CLI output drops `output` and points at
+        # this file instead (see slim_result_for_cli). getattr because test
+        # doubles (MemoryLogger) don't model log_path.
+        log_path = getattr(logger, "log_path", None)
+        if log_path is not None:
+            build_result["output_log"] = str(log_path)
         if tck_guidance:
             build_result["tck_guidance"] = tck_guidance
 
@@ -973,6 +1015,12 @@ def main():
         action="store_true",
         help="Skip the pre-build static verification gate (fabricated API check)",
     )
+    parser.add_argument(
+        "--full-output",
+        action="store_true",
+        help="Include the full raw mkmk log in the JSON (default: tail only; "
+        "full log is always in the build.log pointed to by output_log)",
+    )
     # mkmk options are positional values that begin with '-'. parse_known_args
     # keeps the documented `build.py <workspace> -a` form usable without
     # requiring callers to know argparse's `--` escape convention.
@@ -986,6 +1034,8 @@ def main():
         Path(args.workspace).resolve(), args.options, args.timeout,
         skip_gate=args.skip_gate,
     )
+    if not args.full_output:
+        result = slim_result_for_cli(result)
     output_json(result, exit_code=0 if result["status"] == "success" else 1)
 
 

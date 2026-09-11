@@ -114,7 +114,13 @@ class CAAEnvironment:
 
         # Write config
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
-        workspace = str(self.skill_root.parent.parent)  # workspace root
+        # skill_root is <ws_root>/.agents/skills/<skill>; the workspace root is
+        # one level above .agents, not .agents itself.
+        agents_dir = self.skill_root.parent.parent
+        if agents_dir.name == ".agents":
+            workspace = str(agents_dir.parent)
+        else:
+            workspace = str(agents_dir)  # legacy non-.agents layout fallback
 
         lines = [
             "# CADE Auto-Detected Configuration",

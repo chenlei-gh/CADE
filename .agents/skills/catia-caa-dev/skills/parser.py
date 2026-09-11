@@ -55,6 +55,12 @@ _CASCADE_MESSAGE_RE = re.compile(
 )
 _CASCADE_ARTIFACT_RE = re.compile(r"\.(obj|lib|dll|exp|ilk|pdb)$", re.IGNORECASE)
 
+# MSVC warning C4819 ("the file contains a character that cannot be represented
+# in the current code page") fires once per source file with non-ASCII comments
+# on every single build. It is environment noise, not an actionable defect, so
+# it is quarantined out of `warnings` into its own count/file list.
+CODEPAGE_WARNING_CODE = "C4819"
+
 
 class MkmkParser:
     """Parser for mkmk compilation output"""
@@ -100,6 +106,7 @@ class MkmkParser:
     def __init__(self):
         self.errors: List[CompilationError] = []
         self.warnings: List[CompilationError] = []
+        self.codepage_warnings: List[CompilationError] = []
         self.current_framework = ""
         self.current_module = ""
 
@@ -180,6 +187,7 @@ class MkmkParser:
         """
         self.errors = []
         self.warnings = []
+        self.codepage_warnings = []
         self.current_framework = ""
         self.current_module = ""
 
@@ -189,6 +197,8 @@ class MkmkParser:
             if error:
                 if error.severity == "error":
                     self.errors.append(error)
+                elif error.code == CODEPAGE_WARNING_CODE:
+                    self.codepage_warnings.append(error)
                 else:
                     self.warnings.append(error)
 
@@ -207,6 +217,13 @@ class MkmkParser:
             # failure into a false "success".
             "wrapper_error_count": len(wrappers),
             "warning_count": len(self.warnings),
+            # Codepage (C4819) noise, kept apart so `warnings` only holds
+            # entries a developer can act on. Files are deduped: one warning
+            # per file per build is typical.
+            "codepage_warning_count": len(self.codepage_warnings),
+            "codepage_warning_files": sorted(
+                {w.file for w in self.codepage_warnings if w.file}
+            ),
             "errors": [e.to_dict() for e in self.errors],
             "warnings": [w.to_dict() for w in self.warnings],
         }
@@ -234,7 +251,12 @@ class MkmkParser:
     def get_summary(self) -> str:
         """Get human-readable summary"""
         if not self.errors and not self.warnings:
-            return "✓ Build successful (0 errors, 0 warnings)"
+            codepage_note = (
+                f"; {len(self.codepage_warnings)} codepage C4819"
+                if self.codepage_warnings
+                else ""
+            )
+            return f"✓ Build successful (0 errors, 0 warnings{codepage_note})"
 
         root_causes = [e for e in self.errors if not e.cascade]
         cascaded = [e for e in self.errors if e.cascade]
@@ -246,6 +268,8 @@ class MkmkParser:
             parts.append(f"{len(cascaded)} cascaded")
         if self.warnings:
             parts.append(f"{len(self.warnings)} warning(s)")
+        if self.codepage_warnings:
+            parts.append(f"{len(self.codepage_warnings)} codepage C4819")
 
         return "✗ Build failed: " + ", ".join(parts)
 

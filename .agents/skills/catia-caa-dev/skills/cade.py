@@ -767,6 +767,14 @@ def _print_result(result) -> int:
     """Pretty-print result and return exit code (P2-003 fix)."""
     if isinstance(result, dict):
         import json
+        # Build results carry the full raw mkmk log in "output" (needed by
+        # the repair loop's Python API). On the CLI that log is noise — the
+        # structured errors/warnings are already parsed — so swap it for a
+        # tail + the on-disk build.log path. Only dicts that actually look
+        # like build results (have "output") are touched.
+        if "output" in result:
+            from build import slim_result_for_cli
+            result = slim_result_for_cli(result)
         print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
         # Derive exit code from status
         status = result.get("status", "")

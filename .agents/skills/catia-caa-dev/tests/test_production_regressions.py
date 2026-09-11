@@ -146,6 +146,66 @@ try:
         build_module.main()
     check("build CLI accepts direct -a", bool(cli_calls) and cli_calls[0][1] == "-a", str(cli_calls))
 
+    # CLI JSON must not carry the full raw mkmk log (repair.py keeps it via
+    # the Python API; the CLI shows only a tail + the on-disk log path).
+    big_output = "x\n" * 5000
+    fake_log = str(workspace / "logs" / "build.log")
+    fat_result = {
+        "status": "failed",
+        "error_count": 1,
+        "errors": [{"file": "a.cpp", "line": 1, "code": "C2440", "message": "boom"}],
+        "output": big_output,
+        "output_log": fake_log,
+    }
+    slim = build_module.slim_result_for_cli(fat_result)
+    check(
+        "CLI slim drops raw output",
+        "output" not in slim,
+        str(sorted(slim.keys())),
+    )
+    check(
+        "CLI slim keeps structured errors",
+        slim.get("errors") == fat_result["errors"] and slim.get("error_count") == 1,
+        str(slim.get("errors")),
+    )
+    check(
+        "CLI slim keeps bounded tail",
+        0 < len(slim.get("output_tail", "")) <= 2000,
+        str(len(slim.get("output_tail", ""))),
+    )
+    check(
+        "CLI slim points at on-disk log",
+        slim.get("output_log") == fake_log,
+        str(slim.get("output_log")),
+    )
+    no_output = {"status": "success"}
+    check(
+        "CLI slim tolerates missing output",
+        "output_tail" not in build_module.slim_result_for_cli(no_output),
+        str(build_module.slim_result_for_cli(no_output)),
+    )
+    # main() applies slimming by default and --full-output opts out.
+    captured = []
+    with patch.object(sys, "argv", ["build.py", str(workspace)]), \
+            patch.object(build_module, "build_workspace", return_value=dict(fat_result)), \
+            patch.object(build_module, "output_json", side_effect=lambda r, exit_code=0: captured.append(r)):
+        build_module.main()
+    check(
+        "main slims output by default",
+        bool(captured) and "output" not in captured[0] and "output_tail" in captured[0],
+        str(sorted(captured[0].keys())) if captured else "no capture",
+    )
+    captured.clear()
+    with patch.object(sys, "argv", ["build.py", str(workspace), "--full-output"]), \
+            patch.object(build_module, "build_workspace", return_value=dict(fat_result)), \
+            patch.object(build_module, "output_json", side_effect=lambda r, exit_code=0: captured.append(r)):
+        build_module.main()
+    check(
+        "main keeps full output with --full-output",
+        bool(captured) and captured[0].get("output") == big_output,
+        str(sorted(captured[0].keys())) if captured else "no capture",
+    )
+
     kernel_calls = []
     with patch.object(cade_module, "_kernel", side_effect=lambda mode, text, workspace=None: kernel_calls.append((mode, text, workspace)) or {"status": "ok", "message": "mock"}), \
             patch.object(cade_module, "_print_kernel", return_value=None):
@@ -235,6 +295,43 @@ try:
           build_module._decode_mkmk_output(utf8_text.encode("utf-8")) == utf8_text)
     check("empty output decodes to empty string",
           build_module._decode_mkmk_output(b"") == "")
+
+    # P2: C4819 codepage warnings are quarantined out of actionable warnings —
+    # they fire once per non-ASCII source file on every build and drown real
+    # warnings, but they are environment noise, not defects to fix in code.
+    c4819_output = (
+        f"{mock_root}\\MyModule.m\\src\\Alpha.cpp(1): warning C4819: codepage 936 cannot represent a character\n"
+        f"{mock_root}\\MyModule.m\\src\\Beta.cpp(1): warning C4819: codepage 936 cannot represent a character\n"
+        f"{mock_root}\\MyModule.m\\src\\Alpha.cpp(9): warning C4819: codepage 936 cannot represent a character\n"
+        f"{mock_root}\\MyModule.m\\src\\Alpha.cpp(42): warning C4101: 'unused' : unreferenced local variable\n"
+    )
+    parsed_cp = parse_mkmk_output(c4819_output)
+    check("C4819 quarantined out of actionable warnings",
+          parsed_cp["warning_count"] == 1
+          and all(w["code"] != "C4819" for w in parsed_cp["warnings"]), str(parsed_cp))
+    check("codepage warnings counted separately",
+          parsed_cp["codepage_warning_count"] == 3, str(parsed_cp))
+    check("codepage warning files deduped and sorted",
+          parsed_cp["codepage_warning_files"] == ["src/Alpha.cpp", "src/Beta.cpp"],
+          str(parsed_cp["codepage_warning_files"]))
+    check("actionable warning still surfaces",
+          parsed_cp["warnings"][0]["code"] == "C4101", str(parsed_cp["warnings"]))
+
+    from parser import MkmkParser
+    summary_parser = MkmkParser()
+    summary_parser.parse(c4819_output)
+    summary_text = summary_parser.get_summary()
+    # Trailer must stay GBK-encodable: the ✓/✗ glyphs in get_summary crash
+    # print() on a zh-CN console, so sanitize before handing it to check().
+    check("summary counts codepage apart from warnings",
+          "1 warning(s)" in summary_text and "3 codepage C4819" in summary_text,
+          summary_text.replace("✓", "ok:").replace("✗", "fail:"))
+    clean_summary = MkmkParser()
+    clean_summary.parse(f"{mock_root}\\MyModule.m\\src\\Alpha.cpp(1): warning C4819: codepage 936\n")
+    clean_text = clean_summary.get_summary()
+    check("codepage-only output still summarizes as successful",
+          clean_text.startswith("✓ Build successful"),
+          clean_text.replace("✓", "ok:").replace("✗", "fail:"))
 
     # Build verification must reject stale or implausible target DLLs.
     bin_dir = workspace / "win_b64" / "code" / "bin"
@@ -327,7 +424,16 @@ try:
 
     # Real subprocess.run without text=True yields bytes — the mock must too,
     # otherwise build output decoding is exercised against the wrong type.
-    fake_process = SimpleNamespace(returncode=0, stdout=b"build completed", stderr=b"")
+    # C4819 lines ride along to prove build_result quarantines them (P2).
+    fake_process = SimpleNamespace(
+        returncode=0,
+        stdout=(
+            f"{mock_root}\\MockModule.m\\src\\Noise.cpp(1): warning C4819: codepage 936\n"
+            f"{mock_root}\\MockModule.m\\src\\Noise.cpp(5): warning C4819: codepage 936\n"
+            "build completed"
+        ).encode("utf-8"),
+        stderr=b"",
+    )
     failed_verification = {"ok": False, "issues": ["MockModule.dll: stale DLL"]}
     with patch.object(build_module, "Logger", MemoryLogger), \
             patch.object(build_module, "Cache", MemoryCache), \
@@ -361,6 +467,10 @@ try:
         successful_build = build_module.build_workspace(build_ws, skip_gate=True)
     check("successful build returns verification evidence", successful_build.get("verification") == successful_verification, str(successful_build))
     check("successful cache stores verification evidence", MemoryCache.instances[-1].data.get("verification") == successful_verification, str(MemoryCache.instances[-1].data))
+    check("build result quarantines C4819 noise",
+          successful_build.get("codepage_warning_count") == 2
+          and successful_build.get("codepage_warning_files") == ["src/Noise.cpp"]
+          and successful_build.get("warning_count") == 0, str(successful_build))
 
     # Repair must diagnose the output returned by this build, not stale cache data.
     repair_ws = workspace / "repair"
