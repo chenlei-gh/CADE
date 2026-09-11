@@ -38,7 +38,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `41/41 suites (quick, 100%)` | **44 test files** | *2026-08-14*
+> 🟢 **CI Status**: `42/42 suites (quick, 100%)` | **44 test files** | *2026-09-11*
 
 > ✅ **Production readiness**: Conditional GO — see [SKILL.md § Production Readiness](.agents/skills/catia-caa-dev/SKILL.md#-生产就绪评估) before deploying
 
@@ -213,14 +213,14 @@ Retrieval path: **Capability → Playbook → Knowledge → Framework → CAADoc
 
 ### 🔍 Deep Audit
 
-41-suite test suite catches drift early:
+43-suite test suite catches drift early:
 
 ```bash
-cade test --quick   # 41 suites (~60s), quick mode skips CATIA lifecycle
-cade test           # 41 suites, full including CATIA lifecycle
+cade test --quick   # 42 suites (~60s), quick mode skips CATIA lifecycle
+cade test           # 43 suites, full including CATIA lifecycle
 ```
 
-> 🟢 **Verified**: 41/41 suites quick (100%) — last run 2026-07-28
+> 🟢 **Verified**: 42/42 suites quick (100%) — last run 2026-09-11
 
 - **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
@@ -313,8 +313,8 @@ cade suggest                      # AI recommends next action
 cade docs                         # auto-generate documentation
 cade prereq MyModule              # view prerequisites
 cade rv                           # create Runtime View
-cade test --quick                 # run 41 suites (~16s)
-cade test                         # full: 41 suites (launches CATIA)
+cade test --quick                 # run 42 suites (~16s)
+cade test                         # full: 43 suites (launches CATIA)
 ```
 
 > 🔌 Also available as **MCP Server** (3 modes) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
@@ -322,7 +322,7 @@ cade test                         # full: 41 suites (launches CATIA)
 ### ⚡ Test Results
 
 <details>
-<summary>42 suites (41 quick + 1 CATIA lifecycle) · 44 files · 700+ checks · 2026-07-28</summary>
+<summary>43 suites (42 quick + 1 CATIA lifecycle) · 44 files · 700+ checks · 2026-09-11</summary>
 
 | | | |
 |---|---|---|
@@ -344,8 +344,8 @@ cade test                         # full: 41 suites (launches CATIA)
 </details>
 
 ```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 41 suites (~60s)
-python .agents/skills/catia-caa-dev/tests/test_master.py           # 41 suites (starts CATIA)
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 42 suites (~60s)
+python .agents/skills/catia-caa-dev/tests/test_master.py           # 43 suites (starts CATIA)
 ```
 
 ---
@@ -401,7 +401,7 @@ graph TD
 
 | | |
 |---|---|
-| Suites | 42 (41 quick + 1 CATIA lifecycle) |
+| Suites | 43 (42 quick + 1 CATIA lifecycle) |
 | Files | 44 |
 | Checks | 700+ |
 | Pass Rate | 100% |
@@ -454,7 +454,7 @@ your_project/
 │   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
 │   ├── patterns/                   ← Architecture patterns
 │   ├── examples/                   ← Real CAA project examples
-│   ├── tests/                      ← 41 suites, ~12,000 lines
+│   ├── tests/                      ← 43 suites, ~12,000 lines
 │   ├── docs/                       ← Full documentation
 │   ├── tools/                      ← Setup, validation, utilities
 │   └── config/                     ← Editor MCP templates
@@ -602,14 +602,14 @@ cade rollback --id latest           # 撤销任意操作
 ```bash
 cade suggest                        # AI 推荐下一步
 cade docs                           # 自动生成文档
-cade test --quick                   # 41 套件快速测试 (~60s)
+cade test --quick                   # 42 套件快速测试 (~60s)
 cade test                           # 42 套件全量测试 (启动 CATIA)
 ```
 
 ### ⚡ 测试结果
 
 <details>
-<summary>42 套件（快速模式 41 套 + 1 套 CATIA 生命周期）· 44 文件 · 700+ 检查 · 2026-07-28</summary>
+<summary>43 套件（快速模式 42 套 + 1 套 CATIA 生命周期）· 44 文件 · 700+ 检查 · 2026-09-11</summary>
 
 | | | |
 |---|---|---|
@@ -651,7 +651,7 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 
 | | |
 |---|---|
-| **测试套件** | 42（快速模式  41 套 + 1 套 CATIA 生命周期） |
+| **测试套件** | 43（快速模式 42 套 + 1 套 CATIA 生命周期） |
 | **测试文件** | 44 |
 | **检查项** | 700+ |
 | **通过率** | 100% |
