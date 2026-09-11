@@ -803,10 +803,15 @@ if env_mod:
             env.get_architecture(),
         )
 
-    # Auto-detect
+    # Auto-detect. Must run against a throwaway config path: _auto_detect
+    # always rewrites its config_file, and the shared `env` above points at
+    # the real config/caa_env_config.txt — writing it from a test would
+    # clobber the machine's WORKSPACE setting on every regression run.
     try:
-        env._auto_detect()
-        check("12.6 _auto_detect no error", True)
+        _tmp_cfg = Path(tempfile.mkdtemp()) / "caa_env_config_test.txt"
+        env_autodetect = env_mod.CAAEnvironment(config_file=_tmp_cfg)
+        env_autodetect._auto_detect()
+        check("12.6 _auto_detect no error", _tmp_cfg.exists())
     except Exception as e:
         check("12.6 _auto_detect", False, str(e)[:60])
 

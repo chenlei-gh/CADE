@@ -115,12 +115,16 @@ class CAAEnvironment:
         # Write config
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
         # skill_root is <ws_root>/.agents/skills/<skill>; the workspace root is
-        # one level above .agents, not .agents itself.
+        # one level above .agents, not .agents itself. Only accept the guess
+        # when it actually holds .edu frameworks — in the dev-repo layout the
+        # parent of .agents is the repo root, which is not a CAA workspace,
+        # and writing it as WORKSPACE silently repoints the default target.
         agents_dir = self.skill_root.parent.parent
         if agents_dir.name == ".agents":
-            workspace = str(agents_dir.parent)
+            candidate = agents_dir.parent
         else:
-            workspace = str(agents_dir)  # legacy non-.agents layout fallback
+            candidate = agents_dir  # legacy non-.agents layout fallback
+        has_edu = any(candidate.glob("*.edu"))
 
         lines = [
             "# CADE Auto-Detected Configuration",
@@ -129,7 +133,14 @@ class CAAEnvironment:
             f"CATIA_INSTALL={catia_install}",
             f"CATIA_VERSION={catia_version}",
             f"CAA_INSTALL={catia_install}",
-            f"WORKSPACE={workspace}",
+        ]
+        # WORKSPACE is omitted entirely when no plausible workspace root was
+        # found: consumers fall back to CADE_WORKSPACE env / cwd, which beats
+        # a confidently wrong path. An empty `WORKSPACE=` line would defeat
+        # dict.get(key, default) by returning "".
+        if has_edu:
+            lines.append(f"WORKSPACE={candidate}")
+        lines += [
             "",
             "# Build Tools",
             f"TCK_INIT={catia_install}\\{arch}\\code\\command\\tck_init.bat",
