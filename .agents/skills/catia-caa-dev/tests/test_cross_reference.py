@@ -17,6 +17,7 @@ SKILL_ROOT = Path(__file__).parent.parent
 CADE_ROOT = SKILL_ROOT.parent.parent.parent  # D:\DevTools\CADE
 TESTS_DIR = SKILL_ROOT / "tests"
 SKILLS_DIR = SKILL_ROOT / "skills"
+TOOLS_DIR = SKILL_ROOT / "tools"
 
 total = passed = 0
 
@@ -146,16 +147,33 @@ if readme_path.exists():
 else:
     check("README.md found at project root", False, str(readme_path))
 
-# 2c. Skills modules listed in SKILL.md tree must exist
-# Look for lines like: │   ├── module_name.py  (but NOT test_*.py from tests section)
-tree_modules = re.findall(r"^│   ├── (\w+)\.py\s+#", skill_md, re.MULTILINE)
-tree_modules = [m for m in tree_modules if not m.startswith("test_")]
-for mod in tree_modules:
-    # Skip modules under intents/ sub-tree (indented deeper)
-    if mod in ["commands", "services", "objects", "helpers"]:
+# 2c. Modules listed in the SKILL.md tree must exist in the directory the
+# tree places them in. Entries share the same indentation across sections
+# (`│   ├── x.py` appears under both skills/ and tools/), so resolve each
+# entry against the section it belongs to instead of assuming skills/.
+module_sections = {"skills": SKILLS_DIR, "tools": TOOLS_DIR}
+current_section = None
+tree_modules = []  # modules claimed under skills/, reused by 2d
+for line in skill_md.splitlines():
+    section_match = re.match(r"^├── (\w+)/\s", line)
+    if section_match:
+        current_section = section_match.group(1)
         continue
-    exists = (SKILLS_DIR / f"{mod}.py").exists()
-    check(f"Tree module -> skills/{mod}.py", exists)
+    entry_match = re.match(r"^│   ├── (\w+)\.py\s+#", line)
+    if not entry_match:
+        continue
+    mod = entry_match.group(1)
+    if mod.startswith("test_"):
+        continue
+    if current_section not in module_sections:
+        continue
+    if current_section == "skills":
+        # Skip modules under intents/ sub-tree (indented deeper)
+        if mod in ["commands", "services", "objects", "helpers"]:
+            continue
+        tree_modules.append(mod)
+    exists = (module_sections[current_section] / f"{mod}.py").exists()
+    check(f"Tree module -> {current_section}/{mod}.py", exists)
 
 # 2d. All .py files in skills/ should be in the tree (or intentional omissions)
 SKIP_TREE = {
@@ -345,8 +363,14 @@ if readme_path.exists():
     check("README mentions test_master.py", "test_master.py" in readme_md)
     # Version check skipped — README.md intentionally omits version numbers
 
-# 7a. SKILL.md should NOT claim a local README.md
-check("SKILL.md does not claim local README.md", "├── README.md" not in skill_md)
+# 7a. SKILL.md should NOT claim a README.md at the skill root (the project
+# README lives at the repository root). Root-level tree entries have no `│`
+# prefix; `│   ├── README.md` entries under templates/docs/tests are
+# legitimate and must not trip this check.
+check(
+    "SKILL.md does not claim local README.md",
+    not re.search(r"^├── README\.md", skill_md, re.MULTILINE),
+)
 
 # ═══════════════════════════════════════════════════════════
 # 8. Catalog index file
