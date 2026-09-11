@@ -95,6 +95,42 @@ if disk_count:
 else:
     print("  [SKIP] Case4 disk-count check: CATIA_INSTALL not configured")
 
+# ── Case 5: schema 3 resources section ──────────────────────────
+# Builder extended beyond .cpp presence: Imakefile libs, LocalInterfaces
+# headers, CATNls keys, CATRsc identifiers. resources/by_kind must exist
+# with non-trivial counts and the per-kind lookup fields populated.
+res = uc.get("resources", {})
+by_kind = uc.get("by_kind", {})
+ck("Case5: resources section present", len(res) > 0, f"{len(res)} resources")
+
+EXPECTED_KINDS = ("imakefile", "local_header", "nls", "rsc")
+for k in EXPECTED_KINDS:
+    ck(f"Case5: by_kind['{k}'] non-empty",
+       len(by_kind.get(k, {})) > 0, f"{len(by_kind.get(k, {}))}")
+
+# Per-kind lookup field: imakefile -> libs, local_header -> interfaces,
+# nls/rsc -> keys. by_kind maps kind -> [resource keys]; the fields live
+# on the entry under resources[key]. Spot-check one entry of each kind.
+def _sample(kind):
+    keys = by_kind.get(kind, [])
+    return (keys[0], res.get(keys[0], {})) if keys else (None, {})
+
+im_name, im = _sample("imakefile")
+ck("Case5: imakefile entry has libs", len(im.get("libs", [])) > 0,
+   f"{im_name}: {im.get('libs', [])[:3]}")
+# local_header 'interfaces' = CATI* includes. Implementation headers
+# (CATDeclareClass, deriving from CATE* bases) legitimately include zero
+# CATI* headers, so per-entry emptiness is valid — assert the kind
+# carries SOME interface signal across the set, not that a sample does.
+lh_with = [k for k in by_kind.get("local_header", [])
+           if res.get(k, {}).get("interfaces")]
+ck("Case5: local_header kind carries interface includes",
+   len(lh_with) > 0, f"{len(lh_with)}/{len(by_kind.get('local_header', []))} non-empty")
+nls_name, nls = _sample("nls")
+ck("Case5: nls entry has keys", len(nls.get("keys", [])) > 0, f"{nls_name}")
+rsc_name, rsc = _sample("rsc")
+ck("Case5: rsc entry has keys", len(rsc.get("keys", [])) > 0, f"{rsc_name}")
+
 print("-" * 60)
 print(f"  RESULT: {passed}/{total} passed")
 print("=" * 60)

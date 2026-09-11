@@ -10,6 +10,15 @@
 
 ## [未发布]
 
+### 🔧 Build / 检索 (2026-09-11)
+
+- **修复 mkmk 中文错误 GBK 乱码 + 连锁错误归并**：`build.py` 原以 UTF-8 读 `cmd` 重定向日志，MSVC 中文错误变 ``；现按 GBK/系统代码页解码。连锁错误（首个编译错误后的 `make-ERROR`/`syst-ERROR`）不再计入 `error_count`，只报根因。
+- **Slim CLI build 输出 + C4819 噪音隔离**：JSON `output` 默认截断（信 `status`/`errors[file,line,code,message]`）；C4819 源码页警告隔离为 quarantine，不再混入每次编译结果。
+- **修复 workspace 自动检测 + 回归测试误写真实配置**：`_auto_detect()` 不再被全量回归直跑（改临时 config 隔离）；`env.py` workspace 猜测增加验证。
+- **Usecase 索引 schema 3——官方构建/资源证据**：`build_usecase_index.py` 从只扫 `.cpp` 扩展到 Imakefile（566, `libs`）/ LocalInterfaces（774, `interfaces`）/ CATNls（273, `keys`）/ CATRsc（61, `keys`），新增 `resources`/`by_kind` 区。`.cpp` 四区与改前字节级一致。
+- **Catalog 教学示例召回 + frontmatter keywords 回退**：新增 `example`/`tutorial` 类目解析（此前零覆盖）；`index.yaml` 无 keywords 的条目回退读 `.md` frontmatter（缺失回退，不 merge）；无关键词条目 69 → 22（余 22 为 framework 自动发现条目，设计如此）。教程表加关键词列，别名表加「教程/示例/命令/开发」。`_CACHE_VERSION` 3→4。
+- **SKILL.md 语义阅读地图**：frontmatter 后加章节级阅读地图，Agent 按需定位不再顺序读 1800 行。
+
 ### 🔧 Kernel / 响应链路 (2026-08-28, 架构审查深度修复)
 
 - **修复 `add_command_to_workbench` 静默空转**：旧锚点 `"void AddinName::CreateCommands()"` 是模板占位符字面量，渲染后的 addin 文件里是真实类名（`void MyWbAddin::CreateCommands()`），锚点永不匹配 → ChangeSet 无任何修改 → `create_executable_command(add_to_workbench=...)` 的工作台注册静默失效（按钮不出现但 metadata 谎报已注册）。现改用正则匹配任意类名的真实签名，命令头注册代码正确插入 `CreateCommands()` 内。已在临时工作区端到端验证。
