@@ -63,6 +63,9 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 | 工程图/出图 | drawing, sheet, view, drafting, DWG, PDF |
 | 查找/搜索 | search, find, locate, lookup, query, retrieve |
 | 重构/改名 | refactor, rename, move, reorganize, restructure |
+| 教程/示例/例子 | tutorial, example, walkthrough, guide |
+| 命令 | command, CATStateCommand, state machine, toolbar |
+| 开发/开发教程 | tutorial, example, develop, guide |
 
 ## 索引
 
@@ -210,11 +213,11 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 
 ### 教程示例 (docs/examples/)
 
-| ID | 文件 | 类型 |
-|----|------|------|
-| tutorial.command | docs/examples/EXAMPLE_COMMAND.md | 命令开发教程 |
-| tutorial.dialog | docs/examples/EXAMPLE_DIALOG.md | 对话框开发教程 |
-| tutorial.extension | docs/examples/EXAMPLE_EXTENSION.md | 数据扩展教程 |
-| tutorial.multi_interface | docs/examples/EXAMPLE_MULTI_INTERFACE.md | 多接口教程 |
-| tutorial.calculator | docs/examples/EXAMPLE_CALCULATOR.md | 计算器完整示例 |
-| tutorial.ai_workflow | docs/examples/AI_WORKFLOW_EXAMPLES.md | AI 工作流示例
+| ID | 文件 | 类型 | 关键词 |
+|----|------|------|--------|
+| tutorial.command | docs/examples/EXAMPLE_COMMAND.md | 命令开发教程 | command, state machine, CATStateCommand, 命令, 状态机, toolbar |
+| tutorial.dialog | docs/examples/EXAMPLE_DIALOG.md | 对话框开发教程 | dialog, CATDlgDialog, 对话框, button, listview, layout |
+| tutorial.extension | docs/examples/EXAMPLE_EXTENSION.md | 数据扩展教程 | extension, CATBaseUnknown, 扩展, data extension, implement |
+| tutorial.multi_interface | docs/examples/EXAMPLE_MULTI_INTERFACE.md | 多接口教程 | multi interface, QueryInterface, 多接口, implement, 接口 |
+| tutorial.calculator | docs/examples/EXAMPLE_CALCULATOR.md | 计算器完整示例 | calculator, ICalculator, component, 计算器, 完整示例, addin |
+| tutorial.ai_workflow | docs/examples/AI_WORKFLOW_EXAMPLES.md | AI 工作流示例 | ai workflow, python api, build, 工作流, 示例, agent |

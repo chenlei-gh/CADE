@@ -414,6 +414,55 @@ check("aliases loaded", len(catalog.aliases) > 10, f"got {len(catalog.aliases)}"
 check("倒角 → chamfer", "倒角" in catalog.aliases)
 check("至少20个别名", len(catalog.aliases) >= 20, f"got {len(catalog.aliases)}")
 
+# ═══════════════════════════════════════════════════════════════
+# 13. Keyword Fallback + Example/Tutorial Coverage
+# ═══════════════════════════════════════════════════════════════
+print("\n" + "=" * 70)
+print("  13. Keyword Fallback + Example/Tutorial Coverage")
+print("=" * 70)
+
+by_id = {e.id: e for e in catalog.entries}
+
+# Case 1: index.yaml keywords win — entry with curated keywords must NOT
+# be overwritten/merged by frontmatter fallback.
+with_kw = [e for e in catalog.entries if e.category == "playbook" and e.keywords]
+check("index keywords present on playbooks", len(with_kw) > 0,
+      f"got {len(with_kw)}")
+
+# Case 2: fallback — pb.auto_color has no index.yaml keywords but its .md
+# frontmatter does; fallback must backfill.
+ac = by_id.get("pb.auto_color")
+check("pb.auto_color exists", ac is not None)
+if ac:
+    check("pb.auto_color fallback keywords", len(ac.keywords) > 0,
+          f"got {ac.keywords}")
+
+# Case 3: neither side declares keywords -> [] (never None, never crash).
+framework_entries = [e for e in catalog.entries if e.category == "framework"]
+no_kw = [e for e in framework_entries if not e.keywords]
+check("framework entries without keywords are [] not None",
+      all(isinstance(e.keywords, list) for e in no_kw),
+      f"{len(no_kw)} entries")
+
+# Example/tutorial categories parsed.
+check("geo.fillet_checker parsed as example",
+      by_id.get("geo.fillet_checker") is not None
+      and by_id["geo.fillet_checker"].category == "example",
+      by_id.get("geo.fillet_checker").category if by_id.get("geo.fillet_checker") else "missing")
+tut = by_id.get("tutorial.command")
+check("tutorial.command parsed as tutorial",
+      tut is not None and tut.category == "tutorial",
+      tut.category if tut else "missing")
+if tut:
+    check("tutorial.command has index keywords", len(tut.keywords) > 0,
+          f"got {tut.keywords}")
+
+# Retrieval recall: teaching queries must hit the tutorial entries.
+hits = catalog.search("教程")
+tut_hits = [e.id for e in hits if e.id.startswith("tutorial.")]
+check("query '教程' hits tutorial entries", len(tut_hits) > 0,
+      f"got {[e.id for e in hits[:5]]}")
+
 # Summary
 print("\n" + "=" * 70)
 print(f"  KERNEL EDGE CASES: {passed}/{total}")

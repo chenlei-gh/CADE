@@ -12,6 +12,21 @@ Design boundary (governance):
   - "Existence of an official example" != "official best practice".
     Recommendations live in knowledge/failure_patterns, not in this index.
 
+Scope (schema 3, 2026-09-11): the same *.edu frameworks also ship the
+NON-cpp evidence a CAA developer needs — how the official samples are
+BUILT and ORGANIZED, not just which APIs they call:
+
+  kind="imakefile"     module.m/Imakefile.mk      (libs from LINK_WITH)
+  kind="local_header"  module.m/LocalInterfaces/*.h (CATI* includes)
+  kind="nls"           CNext/resources/msgcatalog/**/*.CATNls (left-side keys)
+  kind="rsc"           CNext/resources/msgcatalog/**/*.CATRsc (left-side keys)
+
+These land in a SEPARATE top-level "resources" section keyed by
+CAADoc-relative path (unique by construction). The four source maps
+(examples / by_interface / by_method / by_symbol) stay SOURCE-ONLY:
+resource records never feed them, so every existing query behaves
+exactly as before. Presence != recommendation, same as sources.
+
 Output: cache/usecase_index.json  (gitignored, regenerated locally)
 
 Usage:
@@ -59,6 +74,114 @@ def _scan_cpp(path: Path) -> dict:
         if m.group(0) not in include_set and m.group(0) not in call_set
     })
     return {"interfaces": interfaces, "methods": methods, "symbols": symbols}
+
+
+# LINK_WITH = \n#   JS0GROUP \n#   CATMathematics
+_LINK_WITH_RE = re.compile(
+    r"LINK_WITH\s*=\s*(?P<body>.*?)(?=^\s*[A-Z_]+\s*=|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+
+# Comment / continuation artifacts inside a LINK_WITH body.
+_LINK_TOKEN_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+
+
+def _scan_imakefile(path: Path) -> dict:
+    """Extract LINK_WITH library tokens from one Imakefile.mk.
+
+    Raw tokens only: the listed library names, no prerequisite inference.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {"libs": []}
+    m = _LINK_WITH_RE.search(text)
+    if not m:
+        return {"libs": []}
+    body = m.group("body").replace("\\", " ")
+    libs = sorted({
+        tok for tok in body.split()
+        if _LINK_TOKEN_RE.match(tok) and not tok.startswith("DIROBJ")
+    })
+    return {"libs": libs}
+
+
+def _scan_local_header(path: Path) -> dict:
+    """Extract CATI* includes from one LocalInterfaces/*.h."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {"interfaces": []}
+    interfaces = sorted({m.group("name") for m in _INCLUDE_RE.finditer(text)})
+    return {"interfaces": interfaces}
+
+
+# AniCommandHeader.CreateOneImage.Title = "...";   (both .CATNls/.CATRsc)
+_RSC_KEY_RE = re.compile(r"^\s*(?P<key>[A-Za-z_][A-Za-z0-9_.]*)\s*=")
+
+
+def _scan_msgcat_keys(path: Path) -> dict:
+    """Extract left-side keys from one .CATNls/.CATRsc file.
+
+    Raw facts only: which key appears in which file. Keys can span lines
+    (quoted values with embedded newlines), so the regex is line-anchored
+    and simply ignores lines without a leading key.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {"keys": []}
+    keys = sorted({
+        m.group("key")
+        for line in text.splitlines()
+        for m in [_RSC_KEY_RE.match(line)]
+        if m
+    })
+    return {"keys": keys}
+
+
+def _edu_module(path: Path, caadoc_root: Path) -> tuple:
+    """(framework.edu, module.m-or-None) for a file under CAADoc."""
+    parts = path.relative_to(caadoc_root).parts
+    framework = parts[0] if parts else ""
+    module = next((part for part in parts if part.endswith(".m")), None)
+    return framework, module
+
+
+def _scan_resources(caadoc_root: Path) -> tuple:
+    """Scan *.edu for non-source evidence files.
+
+    Returns (resources, by_kind):
+      resources: rel_path -> {"kind", "framework", "module", + kind tokens}
+      by_kind:   kind -> [rel_path, ...]  (sorted)
+    """
+    resources = {}
+    by_kind = {}
+
+    def _add(path: Path, kind: str, extra: dict) -> None:
+        rel = str(path.relative_to(caadoc_root)).replace("\\", "/")
+        framework, module = _edu_module(path, caadoc_root)
+        resources[rel] = {
+            "kind": kind,
+            "framework": framework,
+            "module": module,
+            **extra,
+        }
+        by_kind.setdefault(kind, []).append(rel)
+
+    for mk in sorted(caadoc_root.glob("*.edu/*/*.mk")):
+        if mk.name.lower() == "imakefile.mk":
+            _add(mk, "imakefile", _scan_imakefile(mk))
+    for h in sorted(caadoc_root.glob("*.edu/*/LocalInterfaces/*.h")):
+        _add(h, "local_header", _scan_local_header(h))
+    for nls in sorted(caadoc_root.glob("*.edu/**/msgcatalog/**/*.CATNls")):
+        _add(nls, "nls", _scan_msgcat_keys(nls))
+    for rsc in sorted(caadoc_root.glob("*.edu/**/msgcatalog/**/*.CATRsc")):
+        _add(rsc, "rsc", _scan_msgcat_keys(rsc))
+
+    for kind in by_kind:
+        by_kind[kind].sort()
+    return resources, by_kind
 
 
 def find_catia_root():
@@ -123,6 +246,8 @@ def build_index(caadoc_root: Path) -> dict:
         for sym in tokens["symbols"]:
             by_symbol.setdefault(sym, []).append(key)
 
+    resources, by_kind = _scan_resources(caadoc_root)
+
     return {
         "meta": {
             "caadoc_root": str(caadoc_root),
@@ -130,13 +255,17 @@ def build_index(caadoc_root: Path) -> dict:
             "interface_token_count": len(by_interface),
             "method_token_count": len(by_method),
             "symbol_token_count": len(by_symbol),
+            "resource_count": len(resources),
+            "resource_kind_counts": {k: len(v) for k, v in sorted(by_kind.items())},
             "build_seconds": round(time.time() - t0, 2),
-            "schema": 2,
+            "schema": 3,
         },
         "examples": examples,
         "by_interface": by_interface,
         "by_method": by_method,
         "by_symbol": by_symbol,
+        "resources": resources,
+        "by_kind": by_kind,
     }
 
 
@@ -163,7 +292,8 @@ def main() -> int:
     print(f"UseCaseIndex built: {meta['example_count']} examples, "
           f"{meta['interface_token_count']} interfaces, "
           f"{meta['method_token_count']} methods, "
-          f"{meta['symbol_token_count']} symbols "
+          f"{meta['symbol_token_count']} symbols, "
+          f"{meta['resource_count']} resources {meta['resource_kind_counts']} "
           f"({meta['build_seconds']}s) -> {out}")
     if args.verbose:
         # Smoke: the canonical verified case

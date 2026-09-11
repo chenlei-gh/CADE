@@ -79,13 +79,15 @@ class CatalogIndex:
         self._entry_refs: List[List[str]] = []  # per-entry cross-reference targets
         self._field_index: List[Dict[str, List[str]]] = []  # per-entry searchable tokens
         self._search_cache: Dict[str, List[CatalogEntry]] = {}  # query → results (LRU-ish)
+        self._skill_root: "Optional[Path]" = None  # set on full parse; enables md fallback
 
     # ─── Process-wide cache (per skill_root + file mtime) ─────────
     _PROC_CACHE: Dict[str, "CatalogIndex"] = {}
     _PROC_CACHE_MTIME: Dict[str, float] = {}
     _SEARCH_CACHE_MAX = 128
     # Bump whenever parsing/scoring changes so stale disk pickles are dropped.
-    _CACHE_VERSION = 3
+    # 4: keywords missing-fallback to .md frontmatter + example category.
+    _CACHE_VERSION = 4
     # Observability counters — tests assert the disk cache actually engages
     # (a silently-failing cache went unnoticed here once before).
     CACHE_STATS: Dict[str, int] = {"disk_hit": 0, "disk_miss": 0, "rebuilt": 0}
@@ -120,9 +122,11 @@ class CatalogIndex:
         # Tier 3: full parse
         if index is None:
             index = cls()
+            index._skill_root = Path(skill_root)
             content = catalog_file.read_text(encoding="utf-8", errors="replace")
             index._parse(content)
             index._scan_frameworks(skill_root)
+            index._apply_md_keyword_fallback()
             index._save_disk_cache(skill_root, catalog_file, sig)
             cls.CACHE_STATS["rebuilt"] += 1
 
@@ -394,6 +398,10 @@ class CatalogIndex:
             "failure_pattern": ("### Failure Pattern 索引", "### Knowledge 索引"),
             "knowledge": ("### Knowledge 索引", "### Pattern 索引"),
             "pattern": ("### Pattern 索引", "### Example 索引"),
+            # example: examples/ table (### Example 索引) ends at the tutorial
+            # sub-heading; tutorial table (docs/examples/) runs to file end.
+            "example": ("### Example 索引", "### 教程示例"),
+            "tutorial": ("### 教程示例", None),
         }
 
         for category, (start_marker, end_marker) in sections.items():
@@ -543,6 +551,58 @@ class CatalogIndex:
                 raw_line="",
             ))
             self._entry_refs.append([])
+
+    # Frontmatter block + keywords list, same shape _scan_frameworks uses.
+    _FM_RE = re.compile(r"^---\n(.*?)\n---", re.S)
+    _FM_KW_RE = re.compile(r"^keywords:\s*\[(.*?)\]", re.M)
+
+    def _frontmatter_keywords(self, md_path: Path) -> List[str]:
+        """keywords: [...] from one .md's YAML frontmatter ([] if absent)."""
+        try:
+            text = md_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return []
+        m = self._FM_RE.match(text)
+        if not m:
+            return []
+        kw_m = self._FM_KW_RE.search(m.group(1))
+        if not kw_m:
+            return []
+        out = []
+        for tok in kw_m.group(1).split(","):
+            tok = tok.strip().strip("'\"").lower()
+            if len(tok) >= 3:
+                out.append(tok)
+        return out
+
+    def _apply_md_keyword_fallback(self) -> None:
+        """Fill keywords for catalog entries that declare none, from the
+        entry's own .md frontmatter.
+
+        Why: index.yaml's table is the catalog's discovery/registration
+        layer; the .md frontmatter is the content's self-described keyword
+        authority. Playbooks/patterns/examples registered in index.yaml
+        without a keyword column were invisible to search. MISSING-fallback
+        only: an entry that already has index.yaml keywords keeps them
+        (no merge), so the two sources can never drift against each other.
+        """
+        if self._skill_root is None:
+            return
+        for entry in self.entries:
+            if entry.keywords:
+                continue  # index.yaml keywords win; never merge
+            rel = entry.file
+            if not rel or not rel.endswith(".md"):
+                # Directory-style entry (e.g. examples/geometry/fillet_checker/):
+                # resolve to the same-named .md beside the directory.
+                cand = (rel.rstrip("/") + ".md")
+                rel = cand
+            md_path = self._skill_root / rel
+            if not md_path.is_file():
+                continue
+            kws = self._frontmatter_keywords(md_path)
+            if kws:
+                entry.keywords = kws
 
     def _expand_aliases(self, query: str) -> str:
         """Expand Chinese aliases in query to their English keywords."""
