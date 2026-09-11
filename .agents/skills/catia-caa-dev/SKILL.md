@@ -687,7 +687,7 @@ CADE 的所有知识检索必须走统一门面，禁止绕过：
 Agent 诊断：`python skills/retrieval.py` 输出五索引健康报告。
 
 **UseCaseIndex（官方样例存在性索引）** — 回答“CAA 官方有没有这样用过？”：
-- 数据源：CAADoc 用例 .cpp（1214 个），builder `tools/build_usecase_index.py` 生成 `cache/usecase_index.json`
+- 数据源：CAADoc 用例 .cpp（1233 个）+ 官方资源（Imakefile 566 / LocalInterfaces 774 / CATNls 273 / CATRsc 61），builder `tools/build_usecase_index.py` 生成 `cache/usecase_index.json`
 - 只记录**存在性**（include / 方法调用 / 枚举出现于哪个样例），不推断归属、不做推荐
 - 方法归属在查询时用 `MethodIndex.owners_of()` join；最佳实践判断属于 Knowledge/failure_patterns
 - 查询：`r.find_usecases_for_interface("CATIVisProperties")`、`r.find_usecases_for_method("SetPropertiesAtt")`（返回 `{owners, examples}`）

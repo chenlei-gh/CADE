@@ -56,7 +56,7 @@ authoritative data source and a single lifecycle:
 | **ApiRegistry** | `capabilities/*.md` + `templates/**` + `knowledge/frameworks/*.md` + `knowledge/failure_patterns/*.md` | "Is this API name real?" | 342 APIs |
 | **HeaderMap** | B28 install `<FW>/PublicInterfaces/*.h` scan → `cache/header_map_<ver>.json` | "Does this class/header exist in CATIA?" | 5500 headers, 503 frameworks |
 | **MethodIndex** | `cache/caadoc_index.json` (pre-parsed SDK headers) → `cache/method_index.pickle` | "Does type X really have method M?" | 2655 types |
-| **UseCaseIndex** | CAADoc use-case `.cpp` scan → `cache/usecase_index.json` (builder: `tools/build_usecase_index.py`) | "Has CAA officially used X this way?" | 1233 examples |
+| **UseCaseIndex** | CAADoc use-case `.cpp` scan + official resources (Imakefile/LocalInterfaces/CATNls/CATRsc) → `cache/usecase_index.json` (builder: `tools/build_usecase_index.py`) | "Has CAA officially used X this way?" | 1233 examples + 1674 resource files |
 
 **UseCaseIndex boundary**: it records *presence only* — which official
 sample `#include`s an interface, calls a method, or uses an enum. It never

@@ -180,6 +180,7 @@ class Retrieval:
                 "examples": n_ex,
                 "interfaces": len(uc.get("by_interface", {})),
                 "methods": len(uc.get("by_method", {})),
+                "resources": len(uc.get("resources", {})),
             }
         except Exception as e:
             report["usecase_index"] = {"ok": False, "error": str(e)}

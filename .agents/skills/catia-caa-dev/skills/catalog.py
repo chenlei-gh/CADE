@@ -26,7 +26,7 @@ class CatalogEntry:
     id: str
     file: str
     title: str = ""
-    category: str = ""  # capability | playbook | knowledge | philosophy | pattern | framework
+    category: str = ""  # capability | playbook | knowledge | philosophy | pattern | framework | example | tutorial
     keywords: List[str] = field(default_factory=list)
     raw_line: str = ""
 
