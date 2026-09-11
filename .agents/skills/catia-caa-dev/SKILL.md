@@ -1066,17 +1066,24 @@ python skills/build.py . --timeout 1200       # 自定义超时
 python skills/build.py ./MyFw.edu/MyModule.m  # 只编译指定模块
 ```
 
-**输出**:
+**输出**（CLI 默认瘦身，不含原始日志；完整日志在 `output_log` 指向的 build.log）：
 ```json
 {
   "status": "success",
   "message": "Build successful",
   "error_count": 0,
-  "warning_count": 2,
+  "cascade_count": 0,
+  "warning_count": 1,
+  "codepage_warning_count": 3,
+  "codepage_warning_files": ["src/Foo.cpp"],
   "duration": "2m 35s",
-  "workspace": "D:\\workspace\\MyFw.edu"
+  "workspace": "D:\\workspace\\MyFw.edu",
+  "output_tail": "...日志末尾片段...",
+  "output_log": "D:\\workspace\\MyFw.edu\\...\\build.log"
 }
 ```
+
+字段口径：`error_count` 只计根因（连锁报错的缺失产物归 `cascade_count`）；`warning_count` 只含可行动警告（C4819 代码页噪音隔离在 `codepage_warning_*`，要消除就把对应源文件存成带 BOM 的 UTF-8）；需要原始 mkmk 全文用 `--full-output`。
 
 ### 2. Build Time 命名命令（27 个，AI 友好）
 
