@@ -42,3 +42,11 @@ capabilities:
       - intents/services.py
     note: CAA service exposure. Returns a blocked/do_not_fix state by design;
       no kernel route exists. Not a bug.
+
+  create_feature:
+    status: unavailable
+    action: do_not_fix
+    implementation:
+      - intents/objects.py
+    note: B28 verified unavailable; current feature templates depend on nonexistent APIs.
+      See knowledge/failure_patterns/fp_template_feature_apis.md.

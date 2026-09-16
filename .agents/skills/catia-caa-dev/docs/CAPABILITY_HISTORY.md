@@ -72,6 +72,12 @@
 - **Enable condition**: kernel intent router 增加 service 意图并接通实现后，
   将 `lifecycle.yaml` 中状态改为 active。
 
+### create_feature
+- **Status**: unavailable（见 `skills/lifecycle.yaml`）
+- **Why not enabled**: feature 模板经 B28 全目录核实基于不存在的 API（CATIMmiResultFeature / SetResult / catalog 调用链，见 `knowledge/failure_patterns/fp_template_feature_apis.md`）。
+- **Boundary**: `create_feature()` 返回 `status: error` 并附不可用原因与替代指引（手工基于 CATMecModUseItf 开发）；在 `skills/lifecycle.yaml` 中标记为 `unavailable` 与 `action: do_not_fix`，禁止 Agent 误判为临时故障并尝试自动修复。
+- **Enable condition**: 基于真实 B28 CATMecModUseItf 规范重新验证并实现新特征模板与生成逻辑后，将 `lifecycle.yaml` 状态改为 active。
+
 ---
 
 ## 维护规程
