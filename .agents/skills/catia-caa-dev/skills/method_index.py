@@ -72,6 +72,10 @@ class MethodIndex:
         self._bases: Dict[str, str] = {}          # type → direct base class
         self._catia_install = ""
         self._hm = None                           # injected HeaderMap (optional)
+        # Skill root this instance was built from. Kept so later dependencies
+        # (HeaderMap fallback, env config) resolve against the root the caller
+        # gave, not whichever directory this module happens to live in.
+        self._root: Optional[Path] = None
         self._loaded = False
         self._pending_meta: Dict = {}             # meta from last JSON parse
         self._pickle_meta: Dict = {}              # meta from the pickle cache
@@ -84,6 +88,7 @@ class MethodIndex:
         mi._hm = header_map  # shared instance from retrieval; avoids
                              # re-loading the header map per unknown type
         skill_root = Path(skill_root)
+        mi._root = skill_root
 
         # 1. Method tables from the caadoc index cache (SDK header source).
         #    The full JSON is ~16MB (schema 2: raw facts only, derived maps
@@ -117,7 +122,12 @@ class MethodIndex:
         try:
             sys.path.insert(0, str(skill_root / "skills"))
             from env import CAAEnvironment
-            env = CAAEnvironment()
+            # Pass the config path explicitly: CAAEnvironment otherwise derives
+            # its root from __file__, which points at the install directory even
+            # when this index was built for a different skill root.
+            env = CAAEnvironment(
+                config_file=str(skill_root / "config" / "caa_env_config.txt")
+            )
             env.load_config()
             mi._catia_install = env.config.get("CATIA_INSTALL", "")
             cur_ver = env.config.get("CATIA_VERSION", "")
@@ -263,7 +273,10 @@ class MethodIndex:
             hm = self._hm
             if hm is None:
                 from header_map import HeaderMap
-                hm = HeaderMap.load(Path(__file__).resolve().parent.parent)
+                # Load against the instance root so a relocated skill tree does
+                # not silently fall back to the install directory. HeaderMap
+                # shares one instance per resolved root either way.
+                hm = HeaderMap.load(self._root or Path(__file__).resolve().parent.parent)
             entry = hm.lookup(type_name)
         except Exception:
             return None
