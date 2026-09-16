@@ -106,6 +106,7 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 | pb.auto_annotate_3d | playbooks/pb_auto_annotate_3d.md | 自动3D标注 | cap.annotation, cap.geometry_query |
 | pb.assembly_constraint_check | playbooks/pb_assembly_constraint_check.md | 装配约束检查 | cap.assembly_tree, cap.geometry_query |
 | pb.dialog_wizard | playbooks/pb_dialog_wizard.md | 对话框向导模式 | cap.selection, cap.parameter_system |
+| pb.native_command_investigation | playbooks/pb_native_command_investigation.md | 原生命令逆向调查方法论 | cap.visualization |
 
 ### Framework 索引 (CAADoc)
 
@@ -147,6 +148,7 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 | fp.startup_interface_qi | knowledge/failure_patterns/fp_startup_interface_qi.md | 操作类接口（CATIIsolate/CATIOsmUpdate）在 GetStartUp 的 StartUp 上 QI 而非特征本体 |
 | fp.runtime_resource_not_synced | knowledge/failure_patterns/fp_runtime_resource_not_synced.md | 资源未同步到 Runtime View（dico/icons/NLS）导致按钮消失、图标缺失 |
 | fp.statecommand_check_header | knowledge/failure_patterns/fp_statecommand_check_header.md | Check Header 常驻面板回调不得靠 CATStateCommand 续命（有文档不弹窗），应 CATDlgDialog 自订阅 |
+| fp.vis_properties_sok_3d_unchanged | knowledge/failure_patterns/fp_vis_properties_sok_3d_unchanged.md | VisProperties 返回成功但 3D 视图未生效（属性覆盖层级排查） |
 
 ### Knowledge 索引
 
@@ -157,6 +159,7 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 | mecmod.feature_patterns | knowledge/mecmod/feature_patterns.md | feature, attribute, StartUp, factory | CATISpecObject, CATISpecAttribute | R19+ |
 | mecmod.container_lookup | knowledge/mecmod/container_lookup.md | container, ListMembersHere, GeometricalSet, CATIAlias | CATIContainer, CATIAlias | R19+ |
 | mecmod.reference_planes | knowledge/mecmod/reference_planes.md | reference plane, datum plane, 基准面, origin, GetReferencePlanes | CATIPrtPart, CATIPrtContainer | R19+ |
+| mecmod.vis_properties_hierarchy | knowledge/mecmod/vis_properties_hierarchy.md | visualization, color, BRep Face, override, 属性覆盖 | CATIVisProperties, Selection | R28 |
 | part.fillet | knowledge/part/fillet.md | fillet, radius, blend | CATIFillet | R19+ |
 | part.hole | knowledge/part/hole.md | hole, diameter, depth, counterbore | CATIHole | R19+ |
 | part.chamfer | knowledge/part/chamfer.md | chamfer, bevel, angle | CATIChamfer | R19+ |
