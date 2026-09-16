@@ -555,6 +555,63 @@ tut_hits = [e.id for e in hits if e.id.startswith("tutorial.")]
 check("query '教程' hits tutorial entries", len(tut_hits) > 0,
       f"got {[e.id for e in hits[:5]]}")
 
+# ═══════════════════════════════════════════════════════════════
+# 14. Evidence Demand & Authoritative Routing (L8)
+# ═══════════════════════════════════════════════════════════════
+print("\n" + "=" * 70)
+print("  14. Evidence Demand & Authoritative Routing")
+print("=" * 70)
+
+k_route = Kernel()
+
+# 14.1 MethodIndex methods_of
+r_facade = k_route.retrieval
+if r_facade and r_facade.method_index:
+    mi = r_facade.method_index
+    prod_methods = mi.methods_of("CATIProduct")
+    check("MethodIndex methods_of: CATIProduct count >= 30", len(prod_methods) >= 30, f"got {len(prod_methods)}")
+    check("MethodIndex methods_of: includes AddProduct", "AddProduct" in prod_methods)
+    check("MethodIndex methods_of: includes GetPartNumber", "GetPartNumber" in prod_methods)
+    check("MethodIndex methods_of: unknown type empty", mi.methods_of("NonExistentType_XYZ") == [])
+
+# 14.2 ANALYZE Method routing (T4)
+r_t4 = k_route.execute(KernelMode.ANALYZE, "CATIProduct 有哪些方法？")
+check("ANALYZE method routing: status ok", r_t4.get("status") == "ok", r_t4.get("status", "?"))
+check("ANALYZE method routing: query_type method_lookup", r_t4.get("query_type") == "method_lookup", r_t4.get("query_type", "?"))
+check("ANALYZE method routing: count >= 30", r_t4.get("count", 0) >= 30, f"got {r_t4.get('count')}")
+check("ANALYZE method routing: has methods", "GetPartNumber" in r_t4.get("methods", []))
+
+# 14.3 ANALYZE Header routing (T5)
+r_t5 = k_route.execute(KernelMode.ANALYZE, "CATIVisProperties.h 在哪个 Framework？")
+check("ANALYZE header routing: status ok", r_t5.get("status") == "ok", r_t5.get("status", "?"))
+check("ANALYZE header routing: query_type header_lookup", r_t5.get("query_type") == "header_lookup", r_t5.get("query_type", "?"))
+check("ANALYZE header routing: framework Visualization", r_t5.get("framework") == "Visualization", r_t5.get("framework", "?"))
+check("ANALYZE header routing: module CATVis3DGrid", r_t5.get("module") == "CATVis3DGrid", r_t5.get("module", "?"))
+
+# 14.4 ANALYZE Unknown header early stop (no fallthrough to workspace)
+r_t5_miss = k_route.execute(KernelMode.ANALYZE, "NonExistentHeader123.h 在哪个 Framework？")
+check("ANALYZE unknown header: status ok", r_t5_miss.get("status") == "ok", r_t5_miss.get("status", "?"))
+check("ANALYZE unknown header: matched not_found", r_t5_miss.get("matched") == "not_found", f"got {r_t5_miss.get('matched')}")
+
+# 14.5 DEVELOP Evidence demand: pure scaffold has no knowledge_refs / knowledge_content
+r_dev_comp = k_route.execute(KernelMode.DEVELOP, "create component PureComp in Mod.m", preview=True)
+check("DEVELOP pure component: no knowledge_refs", "knowledge_refs" not in r_dev_comp)
+check("DEVELOP pure component: no knowledge_content", "knowledge_content" not in r_dev_comp)
+
+r_dev_fw = k_route.execute(KernelMode.DEVELOP, "create framework PureFw", preview=True)
+check("DEVELOP pure framework: no knowledge_refs", "knowledge_refs" not in r_dev_fw)
+check("DEVELOP pure framework: no knowledge_content", "knowledge_content" not in r_dev_fw)
+
+r_dev_cmd = k_route.execute(KernelMode.DEVELOP, "create command PureCmd in Mod.m", preview=True)
+check("DEVELOP pure command: no knowledge_refs", "knowledge_refs" not in r_dev_cmd)
+check("DEVELOP pure command: no knowledge_content", "knowledge_content" not in r_dev_cmd)
+
+# 14.6 DEVELOP Evidence demand: domain concept triggers targeted evidence
+demand_color = k_route._determine_evidence_demand(
+    {"intent": {"type": "CreateCommand"}}, "create command ColorCmd with color and selection in Mod.m"
+)
+check("DEVELOP domain command: evidence_demand targeted", demand_color == "targeted", demand_color)
+
 # Summary
 print("\n" + "=" * 70)
 print(f"  KERNEL EDGE CASES: {passed}/{total}")

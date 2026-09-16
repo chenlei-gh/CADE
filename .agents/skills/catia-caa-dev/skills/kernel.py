@@ -167,19 +167,31 @@ class Kernel:
         self._catalog = None  # lazily-loaded shared CatalogIndex
 
     @property
+    def retrieval(self):
+        """Unified retrieval facade — loaded once per process."""
+        if not getattr(self, '_retrieval_attempted', False):
+            self._retrieval_attempted = True
+            try:
+                from retrieval import get_retrieval
+                self._retrieval_facade = get_retrieval(Path(__file__).parent.parent)
+            except Exception:
+                self._retrieval_facade = None
+        return getattr(self, '_retrieval_facade', None)
+
+    @property
     def catalog(self):
         """Shared CatalogIndex from the retrieval facade — loaded once per
         process, then reused by _is_knowledge_query / _lookup_knowledge /
         _consult_knowledge. Goes through get_retrieval() rather than
         CatalogIndex.load() so the facade owns the index lifecycle
         (see docs/architecture/retrieval.md, Mandatory Entry Point)."""
-        if self._catalog is None:
+        r = self.retrieval
+        if r is not None:
             try:
-                from retrieval import get_retrieval
-                self._catalog = get_retrieval(Path(__file__).parent.parent).catalog
+                return r.catalog
             except Exception:
-                self._catalog = False  # don't retry on failure
-        return self._catalog or None
+                return None
+        return None
 
     # ─── Public API ────────────────────────────────────────────
 
@@ -314,29 +326,29 @@ class Kernel:
                 data=result,
             ).to_dict()
 
-        # Phase 2.2: Knowledge grounding — consult catalog/knowledge base for
-        # APIs relevant to this request and attach them for traceability.
-        # Downstream verification (Phase 3) validates generated #includes
-        # against the same knowledge base via ApiRegistry whitelist.
-        knowledge_refs = self._consult_knowledge(request)
-        if knowledge_refs:
-            result["knowledge_refs"] = knowledge_refs
+        # Phase 2.2: Knowledge grounding — only when evidence demand is TARGETED.
+        # Pure scaffolds (framework, module, component, interface, bare command)
+        # have self-contained templates and skip grounding, eliminating
+        # gratuitous Catalog searches and irrelevant doc injection (T1~T3).
+        evidence_demand = self._determine_evidence_demand(plan, request)
+        if evidence_demand != "none":
+            knowledge_refs, matched_entries = self._consult_knowledge(request)
+            if knowledge_refs:
+                result["knowledge_refs"] = knowledge_refs
 
-        # Phase 2.3: Auto-inject knowledge CONTENT so every caller — not just
-        # the ones disciplined enough to query first — generates against the
-        # verified API patterns. This is the main lever for equalizing output
-        # quality across AI agents. Skipped in preview (nothing generated yet).
-        if not preview and knowledge_refs:
-            try:
-                ref_ids = {r["id"] for r in knowledge_refs if r.get("id")}
-                ranked = [e for e in self.catalog.search(request, max_results=5)
-                          if e.id in ref_ids] if self.catalog else []
-                if ranked:
-                    result["knowledge_content"] = self._read_knowledge_files(
-                        ranked, max_files=2, max_chars_per_file=8000,
-                        max_total_chars=12000)
-            except Exception:
-                pass  # grounding is best-effort, never blocks develop
+            # Phase 2.3: Auto-inject knowledge CONTENT so every caller generates
+            # against verified API patterns. Skipped in preview (nothing generated yet).
+            # Reuses matched_entries from Phase 2.2 to eliminate duplicate Catalog searches.
+            if not preview and matched_entries:
+                try:
+                    ref_ids = {r["id"] for r in knowledge_refs if r.get("id")}
+                    ranked = [e for e in matched_entries if e.id in ref_ids]
+                    if ranked:
+                        result["knowledge_content"] = self._read_knowledge_files(
+                            ranked, max_files=2, max_chars_per_file=8000,
+                            max_total_chars=12000)
+                except Exception:
+                    pass  # grounding is best-effort, never blocks develop
 
         # Phase 2.5: Apply cross-domain extras (data_extension, imakefile deps)
         if not preview and extras and any(extras.values()):
@@ -433,7 +445,19 @@ class Kernel:
             except ImportError:
                 pass
 
-        # ── Path 3: Knowledge / API query ──
+        # ── Path 3a: Header / Framework structural query (HeaderMap authoritative index) ──
+        header_result = self._try_header_lookup(request)
+        if header_result:
+            self._state = KernelState.COMPLETED
+            return header_result
+
+        # ── Path 3b: Interface / Method structural query (MethodIndex authoritative index) ──
+        method_result = self._try_method_lookup(request)
+        if method_result:
+            self._state = KernelState.COMPLETED
+            return method_result
+
+        # ── Path 3c: General Knowledge / API query (Catalog semantic search) ──
         if self._is_knowledge_query(request_lower):
             result = self._lookup_knowledge(request_lower, include_content=detail)
             if result:
@@ -724,6 +748,160 @@ class Kernel:
             }
         except Exception:
             return {"intent": intent.to_dict(), "plan": {}, "steps": 0}
+
+    def _determine_evidence_demand(self, plan: dict, request: str) -> str:
+        """Determine knowledge evidence demand for DEVELOP pipeline.
+
+        Returns:
+            "none": Scaffold/boilerplate generation with self-contained templates.
+                    No external API knowledge grounding needed (eliminates redundant
+                    Catalog queries and context pollution).
+            "targeted": Request involves specific CAA domain concepts (selection,
+                        color, BRep, geometry, etc.) that benefit from verified
+                        API pattern injection.
+        """
+        intent_data = plan.get("intent", {}) if plan else {}
+        intent_type = intent_data.get("type", "")
+
+        # 1. Deterministic structural scaffolds: always "none"
+        if intent_type in ("CreateFramework", "CreateModule", "CreateComponent", "CreateInterface"):
+            return "none"
+
+        # 2. Command / Dialog: check if specific domain API evidence is requested
+        domain_triggers = (
+            "select", "pick", "filter", "color", "vis", "render",
+            "brep", "topo", "geom", "curve", "surface", "mesh",
+            "feature", "part", "product", "asm", "assembly", "constraint",
+            "update", "recompute", "persist", "stream", "container",
+            "drafting", "drawing", "view", "sheet", "ref",
+            "选择", "过滤", "颜色", "渲染", "拓扑", "几何", "曲面", "网格",
+            "特征", "装配", "约束", "更新", "持久化", "工程图", "参考",
+        )
+        req_lower = request.lower()
+        if any(trigger in req_lower for trigger in domain_triggers):
+            return "targeted"
+
+        # Pure command/dialog scaffolds without domain features are self-contained
+        if intent_type in ("CreateCommand", "CreateCommandWithDialog", "CreateDialog"):
+            return "none"
+
+        return "none"
+
+    def _try_header_lookup(self, request: str) -> Optional[dict]:
+        """Check if request is an authoritative header/framework lookup (HeaderMap)."""
+        import re
+        request_lower = request.lower()
+
+        # Pattern 1: explicit .h file mentioned, e.g. "CATIVisProperties.h 在哪个 Framework"
+        h_match = re.search(r'\b([A-Za-z0-9_]+)\.h\b', request, re.IGNORECASE)
+        stem = None
+        if h_match:
+            stem = h_match.group(1)
+        elif any(kw in request_lower for kw in ("header", "头文件")) and any(
+            kw in request_lower for kw in ("framework", "框架", "module", "模块", "which", "where", "哪", "属于", "位于")
+        ):
+            # Pattern 2: "CATIVisProperties 头文件在哪个框架"
+            id_match = re.search(r'\b(CAT[A-Z0-9][A-Za-z0-9_]*)\b', request)
+            if id_match:
+                stem = id_match.group(1)
+
+        if not stem:
+            return None
+
+        # Check if query intent relates to header location / framework attribution
+        header_intent = (
+            h_match is not None
+            or any(kw in request_lower for kw in ("framework", "框架", "module", "模块", "which", "where", "哪", "属于", "位于", "header", "头文件"))
+        )
+        if not header_intent:
+            return None
+
+        r = self.retrieval
+        if not r:
+            return None
+
+        try:
+            hm = r.header_map
+            hit = hm.lookup(stem) if hm else None
+        except Exception:
+            hit = None
+
+        if hit:
+            mod, fw = hit
+            return KernelResult(
+                status="ok", mode="analyze", state=self._state.value,
+                message=f"{stem}.h belongs to Framework '{fw}' (Module '{mod}').",
+                data={
+                    "query_type": "header_lookup",
+                    "header": f"{stem}.h",
+                    "framework": fw,
+                    "module": mod,
+                },
+            ).to_dict()
+
+        # If explicit .h was queried with location intent, early stop with not found instead of falling through
+        if h_match and any(kw in request_lower for kw in ("framework", "框架", "module", "模块", "which", "where", "哪", "属于", "位于")):
+            return KernelResult(
+                status="ok", mode="analyze", state=self._state.value,
+                message=f"Header '{stem}.h' was not found in HeaderMap index.",
+                data={
+                    "query_type": "header_lookup",
+                    "header": f"{stem}.h",
+                    "matched": "not_found",
+                },
+            ).to_dict()
+
+        return None
+
+    def _try_method_lookup(self, request: str) -> Optional[dict]:
+        """Check if request is an authoritative interface/method query (MethodIndex)."""
+        import re
+        request_lower = request.lower()
+
+        # Check intent: querying methods of a type
+        method_keywords = (
+            "method", "methods", "方法", "函数", "有哪些方法", "包含哪些方法",
+            "包含什么方法", "提供的方法", "接口方法", "api", "apis"
+        )
+        if not any(kw in request_lower for kw in method_keywords):
+            return None
+
+        # Extract candidate CAA type name: typically CAT[A-Z0-9]\w+ or PascalCase
+        type_candidates = re.findall(r'\b(CAT[A-Z0-9][A-Za-z0-9_]*)\b', request)
+        if not type_candidates:
+            m = re.search(r'(?:methods?\s+of|method\s+in)\s+([A-Za-z0-9_]+)', request, re.IGNORECASE)
+            if m:
+                type_candidates = [m.group(1)]
+
+        if not type_candidates:
+            return None
+
+        r = self.retrieval
+        if not r:
+            return None
+
+        try:
+            mi = r.method_index
+            if not mi:
+                return None
+        except Exception:
+            return None
+
+        for cand in type_candidates:
+            if mi.has_type(cand):
+                methods = mi.methods_of(cand)
+                return KernelResult(
+                    status="ok", mode="analyze", state=self._state.value,
+                    message=f"Found {len(methods)} methods for {cand}.",
+                    data={
+                        "query_type": "method_lookup",
+                        "type": cand,
+                        "methods": methods,
+                        "count": len(methods),
+                    },
+                ).to_dict()
+
+        return None
 
     def _execute_develop_plan(self, plan: dict, preview: bool = False) -> dict:
         """Execute a development plan via existing actions"""
@@ -1140,10 +1318,12 @@ class Kernel:
         "api", "interface", "class", "method", "function",
         "pattern", "example", "tutorial", "documentation", "reference",
         "implement", "explain", "describe",
+        "s_ok", "failure", "crash", "bug", "失败", "报错", "未改变", "不生效", "不显示",
     )
     _KNOWLEDGE_QUESTION_WORDS = (
         "how do", "how to", "how does", "what is", "what are", "what does",
-        "where is", "which ", "when ",
+        "where is", "which ", "when ", "why ", "why does", "why is",
+        "为什么", "为何", "怎么", "如何", "何为", "怎样",
     )
 
     def _is_knowledge_query(self, request: str) -> bool:
@@ -1255,20 +1435,20 @@ class Kernel:
             })
         return content
 
-    def _consult_knowledge(self, request: str) -> list:
+    def _consult_knowledge(self, request: str) -> tuple[list, list]:
         """Lightweight knowledge grounding for the develop pipeline.
 
-        Returns a short list of {file, apis} refs from the catalog so the
-        caller can see which knowledge entries governed this generation.
+        Returns (refs, matched_entries) so callers can inspect refs and
+        reuse matched_entries without re-querying the Catalog.
         Kept deliberately small (max 3 refs) — this is traceability, not
         a full knowledge dump. Failures are silent (never block develop).
         """
         try:
             if not self.catalog:
-                return []
+                return [], []
             entries = self.catalog.search(request, max_results=3)
             if not entries:
-                return []
+                return [], []
             # Enrich with verified APIs from the registry where possible
             try:
                 from api_registry import get_registry
@@ -1286,9 +1466,9 @@ class Kernel:
                     if apis:
                         ref["apis"] = apis
                 refs.append(ref)
-            return refs
+            return refs, entries
         except Exception:
-            return []
+            return [], []
 
     # ─── Build / Run / Support Routing ─────────────────────────
 

@@ -218,6 +218,26 @@ class MethodIndex:
     def has_type(self, type_name: str) -> bool:
         return type_name in self._methods
 
+    def methods_of(self, type_name: str, include_inherited: bool = True) -> List[str]:
+        """All methods callable on type (own, optionally plus inherited).
+
+        Returns empty list when the type is unknown.
+        """
+        if not self.has_type(type_name):
+            return []
+        if not include_inherited:
+            return sorted(self._methods.get(type_name, ()))
+        pool: Set[str] = set()
+        visited: Set[str] = set()
+        current: Optional[str] = type_name
+        depth = 0
+        while current and current not in visited and depth < _MAX_ANCESTOR_DEPTH:
+            visited.add(current)
+            pool.update(self._methods.get(current, ()))
+            current = self._base_of(current)
+            depth += 1
+        return sorted(pool)
+
     def method_exists(self, type_name: str, method: str) -> Optional[bool]:
         """True if method is callable on type (own or inherited).
 
