@@ -2,7 +2,7 @@
 Retrieval — Unified Knowledge Access Layer
 ===========================================
 Single entry point for CADE's retrieval indexes (catalog, API registry,
-header map, method index). Exists for two reasons:
+header map, method index, use case index). Exists for two reasons:
 
 1. Correctness: every index is loaded at most once per process through
    get_retrieval(). Before this module, diagnostics.py re-called
@@ -117,7 +117,7 @@ class Retrieval:
     # ─── Diagnostics ─────────────────────────────────────────────
 
     def health(self) -> dict:
-        """Health report for all four indexes — Agent-facing diagnostics.
+        """Health report for all five indexes — Agent-facing diagnostics.
 
         Each index reports independently so one broken index cannot hide
         the state of the others. Top-level "ok" is True only when every

@@ -168,13 +168,15 @@ class Kernel:
 
     @property
     def catalog(self):
-        """Shared CatalogIndex — loaded once per Kernel, then reused by
-        _is_knowledge_query / _lookup_knowledge / _consult_knowledge.
-        Avoids parsing index.yaml 2-3x per request."""
+        """Shared CatalogIndex from the retrieval facade — loaded once per
+        process, then reused by _is_knowledge_query / _lookup_knowledge /
+        _consult_knowledge. Goes through get_retrieval() rather than
+        CatalogIndex.load() so the facade owns the index lifecycle
+        (see docs/architecture/retrieval.md, Mandatory Entry Point)."""
         if self._catalog is None:
             try:
-                from catalog import CatalogIndex
-                self._catalog = CatalogIndex.load(Path(__file__).parent.parent)
+                from retrieval import get_retrieval
+                self._catalog = get_retrieval(Path(__file__).parent.parent).catalog
             except Exception:
                 self._catalog = False  # don't retry on failure
         return self._catalog or None
