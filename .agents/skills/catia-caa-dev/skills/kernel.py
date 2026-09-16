@@ -296,13 +296,23 @@ class Kernel:
         plan = self._build_develop_plan(request)
 
         if plan is None:
+            self._state = KernelState.FAILED
             return KernelResult(
-                status="error", mode="develop",
+                status="error", mode="develop", state=self._state.value,
                 message=f"Cannot build development plan for: {request}",
             ).to_dict()
 
         self._state = KernelState.GENERATING
         result = self._execute_develop_plan(plan, preview=preview)
+
+        if isinstance(result, dict) and result.get("status") in ("error", "blocked"):
+            self._state = KernelState.FAILED
+            return KernelResult(
+                status="error", mode="develop",
+                state=self._state.value,
+                message=result.get("message", "Development failed."),
+                data=result,
+            ).to_dict()
 
         # Phase 2.2: Knowledge grounding — consult catalog/knowledge base for
         # APIs relevant to this request and attach them for traceability.
@@ -764,13 +774,9 @@ class Kernel:
             else:
                 return {"status": "error", "message": f"Unsupported or unavailable intent: {intent_type}"}
 
-            # If action returned error (e.g., module not found), treat as pending
-            if isinstance(result, dict) and result.get("status") == "error":
-                return {
-                    "status": "pending",
-                    "message": f"Plan generated: {result.get('message', '')}",
-                    "preview": {"plan_steps": plan.get("steps", 0), "intent": intent_data},
-                }
+            # If action returned error or blocked, preserve status directly (do not mask as pending)
+            if isinstance(result, dict) and result.get("status") in ("error", "blocked"):
+                return result
             if not isinstance(result, dict):
                 return {"status": "ok", "message": str(result)}
 
@@ -806,8 +812,8 @@ class Kernel:
                     )
 
             return result
-        except ImportError:
-            return {"status": "pending", "message": f"Plan ready: {intent_type} {name} in {module}"}
+        except ImportError as e:
+            return {"status": "error", "message": f"Required module not available: {e}"}
 
     def _apply_changeset_dict(self, changeset_dict: dict) -> dict:
         """Reconstruct a serialized ChangeSet and apply it to the workspace.

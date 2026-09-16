@@ -308,7 +308,7 @@ AI 只知道 3 个 Mode:
 | 🔌 **有 MCP 用 MCP，没有就走 CLI** | 配置了 CADE MCP 时所有功能通过 MCP 工具调用（响应已自动 Token 优化）。**当前环境没有 MCP 时**，按 [`capabilities.yaml`](capabilities.yaml) 的 `cli`/`python` binding 用**绝对路径**直跑——例如编译 = `python <SKILL_ROOT>/skills/build.py <workspace>`，修复 = `python <SKILL_ROOT>/skills/cade.py fix <workspace>`。详见下方「Agent Shell 调用契约」。 |
 | 📊 **信 status 不信 output** | API 返回 `{"status": "ok", "error_count": 0}` 就够了。CLI 默认已剔除原始 mkmk 日志（只留 `output_tail` 尾部片段），完整日志在 `output_log` 指向的 build.log；需要全文用 `build.py --full-output`。 |
 | 🆕 **模糊需求用 develop()** | 用户说"我想做一个..."、"能不能..."时直接调用 `develop()`。Kernel 自动做需求澄清 → 分解增强（Playbook/Capability/依赖）→ 规划 → 生成 → **自动写入磁盘（auto-apply）** → 代码验证。如果返回 `needs_clarification`，把问题展示给用户。 |
-| ✅ **develop() 一次调用即完成，不要等"确认"** | `develop()` 会自动把生成结果写入磁盘并自带备份（`result.apply_result.rollback_id`），不存在"生成预览 → 再手动 apply"的第二步。返回 `status: "ok"` 就代表文件已经真实存在；只有意图无法解析（如模块不存在）才会停在 `status: "pending"`，此时也没有文件被写入。需要撤销时用 `repair()` 的 rollback，而不是去找一个不存在的 confirm 接口。 |
+| ✅ **develop() 一次调用即完成，不要等"确认"** | `develop()` 会自动把生成结果写入磁盘并自带备份（`result.apply_result.rollback_id`），不存在"生成预览 → 再手动 apply"的第二步。返回 `status: "ok"` 就代表文件已经真实存在；意图无法解析或底层报错（如模块不存在、能力不可用）时返回 `status: "error"`，此时没有文件被写入。需要撤销时用 `repair()` 的 rollback，而不是去找一个不存在的 confirm 接口。 |
 | 🔍 **只读操作用 analyze()** | 所有查询、诊断、分析用 `analyze()`。它永不会修改文件，无需确认。 |
 | 📄 **知识问题加 detail=true** | 问 CAA API/Pattern/做法类问题时调 `analyze(request, detail=true)`，一次调用直接返回排序后的知识**文件内容**，不要再 analyze → read 文件 → grep 定位的多轮往返。返回已按相关性排序并带 reading_guide。 |
 | 🔧 **修复用 repair()** | 修复诊断问题、重构（重命名/移动）、回滚用 `repair()`。Kernel 内部运行 diagnose → fix → verify 最多重试 3 次。 |

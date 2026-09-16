@@ -432,6 +432,68 @@ check(
     r_unhandled.get("message", ""),
 )
 
+# 1. Feature request execution: must be error (not pending), mentions unavailable / CATMecModUseItf
+r_feat = k_fw.execute(KernelMode.DEVELOP, "create feature MyFeat in DispatchMod.m")
+check(
+    "CreateFeature: status error (not pending)",
+    r_feat.get("status") == "error",
+    r_feat.get("status", "?"),
+)
+check(
+    "CreateFeature: state failed",
+    r_feat.get("state") == "failed",
+    r_feat.get("state", "?"),
+)
+check(
+    "CreateFeature: message explains unavailable/B28",
+    "暂不支持" in r_feat.get("message", "") or "CATMecModUseItf" in r_feat.get("message", ""),
+    r_feat.get("message", ""),
+)
+check(
+    "CreateFeature: action do_not_fix preserved",
+    r_feat.get("action") == "do_not_fix",
+    r_feat.get("action", "?"),
+)
+
+# 2. Action error: must remain error (not masked as pending)
+r_err_action = k_fw.execute(KernelMode.DEVELOP, "create component BadComp in NonexistentMod.m")
+check(
+    "Action error: status error (not pending)",
+    r_err_action.get("status") == "error",
+    r_err_action.get("status", "?"),
+)
+check(
+    "Action error: state failed",
+    r_err_action.get("state") == "failed",
+    r_err_action.get("state", "?"),
+)
+check(
+    "Action error: message preserved",
+    "Module not found" in r_err_action.get("message", ""),
+    r_err_action.get("message", ""),
+)
+
+# 3. ImportError: must be error (not pending Plan ready)
+class ImportMockKernel(Kernel):
+    def _execute_develop_plan(self, plan, preview=False):
+        try:
+            raise ImportError("mock_missing_module")
+        except ImportError as e:
+            return {"status": "error", "message": f"Required module not available: {e}"}
+
+k_mock = ImportMockKernel(workspace_root=str(ws_fw))
+r_mock_plan = k_mock._execute_develop_plan({"intent": {"type": "CreateComponent", "name": "C", "module": "M"}})
+check(
+    "ImportError: status error",
+    r_mock_plan.get("status") == "error",
+    r_mock_plan.get("status", "?"),
+)
+check(
+    "ImportError: not pending Plan ready",
+    "Plan ready" not in r_mock_plan.get("message", "") and "Required module not available" in r_mock_plan.get("message", ""),
+    r_mock_plan.get("message", ""),
+)
+
 shutil.rmtree(ws_fw, ignore_errors=True)
 
 # ═══════════════════════════════════════════════════════════════

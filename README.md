@@ -38,7 +38,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `42/42 suites (quick, 100%)` | **44 test files** | *2026-09-11*
+> 🟢 **CI Status**: `42/42 suites (quick, 100%)` | **44 test files** | *2026-09-16*
 
 > ✅ **Production readiness**: Conditional GO — see [SKILL.md § Production Readiness](.agents/skills/catia-caa-dev/SKILL.md#-生产就绪评估) before deploying
 
@@ -218,7 +218,7 @@ cade test --quick   # 42 suites (~60s), quick mode skips CATIA lifecycle
 cade test           # 43 suites, full including CATIA lifecycle
 ```
 
-> 🟢 **Verified**: 42/42 suites quick (100%) — last run 2026-09-11
+> 🟢 **Verified**: 42/42 suites quick (100%) — last run 2026-09-16
 
 - **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
@@ -320,7 +320,7 @@ cade test                         # full: 43 suites (launches CATIA)
 ### ⚡ Test Results
 
 <details>
-<summary>43 suites (42 quick + 1 CATIA lifecycle) · 44 files · 700+ checks · 2026-09-11</summary>
+<summary>43 suites (42 quick + 1 CATIA lifecycle) · 44 files · 700+ checks · 2026-09-16</summary>
 
 | | | |
 |---|---|---|
@@ -607,7 +607,7 @@ cade test                           # 43 套件全量测试 (启动 CATIA)
 ### ⚡ 测试结果
 
 <details>
-<summary>43 套件（快速模式 42 套 + 1 套 CATIA 生命周期）· 44 文件 · 700+ 检查 · 2026-09-11</summary>
+<summary>43 套件（快速模式 42 套 + 1 套 CATIA 生命周期）· 44 文件 · 700+ 检查 · 2026-09-16</summary>
 
 | | | |
 |---|---|---|

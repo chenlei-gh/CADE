@@ -38,11 +38,13 @@ def create_feature(
     # The original implementation is preserved in git history.
     return {
         "status": "error",
+        "capability": "create_feature",
+        "action": "do_not_fix",
         "intent": "create_feature",
         "message": (
-            f"暂不支持自动创建特征 '{name}'：feature 模版经 B28 全目录核实"
-            "基于不存在的 API (CATIMmiResultFeature / SetResult / catalog "
-            "调用链)。请手工基于 CATMecModUseItf 开发，证据见 "
+            f"暂不支持自动创建特征 '{name}' (capability unavailable, action: do_not_fix)："
+            "feature 模版经 B28 全目录核实基于不存在的 API (CATIMmiResultFeature / "
+            "SetResult / catalog 调用链)。请手工基于 CATMecModUseItf 开发，证据见 "
             "knowledge/failure_patterns/fp_template_feature_apis.md"
         ),
     }
