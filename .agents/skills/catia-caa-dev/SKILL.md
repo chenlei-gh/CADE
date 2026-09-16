@@ -285,7 +285,7 @@ AI 只知道 3 个 Mode:
   │  Requirement → Intent → Plan   │
   │       │           │       │    │
   │  Clarify    Intent   Planner   │
-  │       │     Models  +Optimize  │
+  │       │     Models  + Impact   │
   │  Decompose     │       │       │
   │       │        │       │       │
   │       └────────┼───────┘       │
