@@ -233,7 +233,7 @@ class Kernel:
             "mode": mode.value,
             "status": result.get("status", "?"),
             "end_state": self._state.value,
-            "multi_intent": bool(result.get("sub_intents")),
+            "multi_intent": bool(result.get("multi_intent")),
             "duration_ms": round((time.perf_counter() - t0) * 1000),
         })
         return result

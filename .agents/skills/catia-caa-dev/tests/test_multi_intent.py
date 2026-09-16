@@ -156,10 +156,43 @@ r = k.execute(KernelMode.DEVELOP, "create command TestCmd in TestModule.m TestFW
 check("single: returns ok/pending", r["status"] in ("ok", "pending"), r["status"])
 
 # Compound intent — multi path
+# Capture the telemetry offset first: the assertion below must inspect the
+# record actually appended to kernel_log.jsonl, not just the returned dict.
+# A previous bug wrote bool(result.get("sub_intents")) — a key that never
+# exists — so the log said multi_intent=false while the result said true.
+import json
+import kernel as _kmod
+
+_log_path = _kmod._KERNEL_LOG
+try:
+    _before = (_log_path.read_text(encoding="utf-8").count("\n")
+               if _log_path.exists() else 0)
+except OSError:
+    _before = 0
+
 r2 = k.execute(KernelMode.DEVELOP, "export BOM and auto color parts in TestModule.m TestFW.edu")
 check("compound: status not error", r2["status"] != "error", r2["status"])
 check("compound: has results", "results" in r2)
 check("compound: multi_intent flag", r2.get("multi_intent") or r2["status"] == "partial")
+
+# telemetry contract: the appended record must agree with the result.
+try:
+    _new = [l for l in _log_path.read_text(encoding="utf-8").splitlines()[_before:]
+            if l.strip()]
+    _recs = [json.loads(l) for l in _new]
+except Exception:
+    _recs = []
+
+_dev_recs = [r for r in _recs if r.get("mode") == "develop"]
+check("telemetry: a develop record was appended", len(_dev_recs) > 0,
+      f"{len(_recs)} new record(s)")
+if _dev_recs:
+    check("telemetry: multi_intent matches result (not a phantom key)",
+          _dev_recs[-1].get("multi_intent") is True,
+          f"logged={_dev_recs[-1].get('multi_intent')} result={r2.get('multi_intent')}")
+    check("telemetry: record shape intact",
+          {"kind", "mode", "status", "end_state", "duration_ms"} <= set(_dev_recs[-1]),
+          f"keys={sorted(_dev_recs[-1])}")
 
 shutil.rmtree(ws, ignore_errors=True)
 
