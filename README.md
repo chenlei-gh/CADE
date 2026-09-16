@@ -163,8 +163,6 @@ cade impact IMyInterface interface delete
 
 - **Planner** — Intent → DevelopmentPlan (task decomposition)
 - **Impact Analyzer** — Assess blast radius before refactoring  
-- **Optimizer** — Score & rank alternative plans
-
 ### 🎨 Smart Icon Resolution (v3.2 — Color-Coded)
 
 Commands get **context-aware, color-coded icons** from IBM Carbon:
@@ -200,16 +198,16 @@ Three new CAA domains unlocked — powered by 6 knowledge files + 3 patterns:
 CADE's Knowledge System organizes knowledge in **5 layers** — AI finds answers 10x faster:
 
 ```
-🎯 Capability (10)  → "What can CATIA do?"        AI entry point
-📋 Playbook   (2)   → "How to accomplish this?"    Battle-tested recipes
-📚 Knowledge  (29)  → "How to use this API?"       Code reference
+🎯 Capability (13)  → "What can CATIA do?"        AI entry point
+📋 Playbook   (14)  → "How to accomplish this?"    Battle-tested recipes
+📚 Knowledge  (52)  → "How to use this API?"       Code reference
 🗂 Framework  (148) → "Which framework?"           CAADoc navigation
 📖 CAADoc          → "What's the exact API?"      Official docs
 ```
 
 Retrieval path: **Capability → Playbook → Knowledge → Framework → CAADoc**
 
-→ **234 total knowledge assets** (29K + 13P + 13C + 14PB + 149FW + 1E + 6PH + 3FP)
+→ **241 total knowledge assets** (32K + 14P + 13C + 13PB + 148FW + 1E + 6PH + 14FP)
 
 ### 🔍 Deep Audit
 
@@ -225,29 +223,29 @@ cade test           # 43 suites, full including CATIA lifecycle
 - **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
 - **Hardcoded Path Detection** — 92 files scanned
-- **Retrieval Benchmark** — cache-engagement tripwire for the 4 indexes
+- **Retrieval Benchmark** — cache-engagement tripwire for the 5 indexes
 
 ### 🧭 Retrieval Architecture Contract (v1)
 
-All knowledge lookup in CADE now goes through a **single facade** with a uniform cache lifecycle. No feature code scans B28 headers, greps `knowledge/`, or infers capability from file existence.
+All knowledge lookup in CADE now goes through a **single facade**. No feature code scans B28 headers, greps `knowledge/`, or infers capability from file existence.
 
 ```
 Agent / CLI / Kernel
         │
         ▼
-  Retrieval facade (get_retrieval)   ← single entry point
+Retrieval facade (get_retrieval)   ← single entry point
         │
-   ┌────┼────────┬───────────┐
-   ▼    ▼        ▼           ▼
-Catalog ApiRegistry HeaderMap MethodIndex
-  │        │          │           │
-index.yaml md files  B28 scan    caadoc_index
-                     (cached)    (pickle cache)
+├───────────┬───────────┬───────────┬─────────────┐
+▼           ▼           ▼           ▼             ▼
+Catalog     ApiRegistry HeaderMap   MethodIndex   UseCaseIndex
+│           │           │           │             │
+index.yaml  md files    B28 scan    caadoc_index  usecase_index
+            (cached)                (pickle)      (json)
 ```
 
-- **4 indexes, one lifecycle** — process cache → disk cache (mtime + version) → full rebuild
+- **5 indexes, one facade** — every index is process-cached and reached only through `get_retrieval()`; catalog / method_index / header_map add a disk cache (mtime + version)
 - **Decision Rules** — HeaderMap is authority for existence, MethodIndex for method validity, capabilities.yaml for capability truth
-- **Agent diagnostics** — `python skills/retrieval.py` prints a JSON health report for all four indexes
+- **Agent diagnostics** — `python skills/retrieval.py` prints a JSON health report for all five indexes
 
 → Full contract: [docs/architecture/retrieval.md](.agents/skills/catia-caa-dev/docs/architecture/retrieval.md)
 
@@ -359,9 +357,9 @@ User Intent
     ↓
 🎯 Capability    "What can CATIA do?"    13 files
     ↓
-📋 Playbook      "How to accomplish?"     6 files
+📋 Playbook      "How to accomplish?"    14 files
     ↓
-📚 Knowledge     "How to use this API?"  29 files
+📚 Knowledge     "How to use this API?"  52 files
     ↓
 🗂 Framework     "Which framework?"      148 files
     ↓
@@ -376,7 +374,7 @@ graph TD
     K --> R[Requirement<br/>Clarifier]
     D[Decision Trees] -.-> R
     R --> E[Decomposer<br/>decisions -> extras]
-    E --> I[Planner +<br/>Impact + Optimizer]
+    E --> I[Planner +<br/>Impact]
     E --> Q[Knowledge<br/>5-Layer Retrieval]
     I --> S[Specification]
     S --> G[Generator<br/>17+ Templates]
@@ -412,9 +410,9 @@ graph TD
 | Build Commands | 35 |
 | Spec Types | 8 |
 | Refactor Ops | 3 |
-| Domain Entities | 10 |
-| Knowledge Assets | 233 (46K + 15P + 13C + 148FW + 10FP + 6PH) |
-| Retrieval Indexes | 4 (Catalog / ApiRegistry / HeaderMap / MethodIndex) |
+| Domain Entities | 8 |
+| Knowledge Assets | 241 (32K + 14P + 13C + 13PB + 148FW + 1E + 6PH + 14FP) |
+| Retrieval Indexes | 5 (Catalog / ApiRegistry / HeaderMap / MethodIndex / UseCaseIndex) |
 
 ---
 
@@ -436,12 +434,12 @@ your_project/
 │   │   ├── repair.py               ← Repair loop
 │   │   ├── refactor.py             ← Rename / move / extract
 │   │   ├── diagnostics.py          ← Issue detection + fix plans
-│   │   ├── retrieval.py            ← Unified retrieval facade (4 indexes)
+│   │   ├── retrieval.py            ← Unified retrieval facade (5 indexes)
 │   │   ├── catalog.py              ← Knowledge catalog index
 │   │   ├── header_map.py           ← B28 header→framework map
 │   │   ├── method_index.py         ← Type→method existence check
 │   │   ├── api_registry.py         ← Knowledge-driven API whitelist
-│   │   ├── intent/                 ← Intent Engine (Planner + Impact + Optimizer)
+│   │   ├── intent/                 ← Intent Engine (Planner + Impact)
 │   │   ├── intents/                ← Intent-specific handlers
 │   │   └── ...
 │   ├── templates/                  ← 82 code templates (19 types)
@@ -450,7 +448,7 @@ your_project/
 │   ├── knowledge/                  ← CAA knowledge base
 │   │   ├── frameworks/             ← 148 CAADoc framework indexes
 │   │   ├── philosophy/             ← 6 CAA philosophy docs
-│   │   ├── failure_patterns/       ← 3 failure patterns
+│   │   ├── failure_patterns/       ← 14 failure patterns
 │   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
 │   ├── patterns/                   ← Architecture patterns
 │   ├── examples/                   ← Real CAA project examples
@@ -523,7 +521,7 @@ pip install Pillow
 
 **📉 Token 优化器** — MCP 响应自动压缩，平均节省 50% token。
 
-**🧩 Intent Engine** — 复杂任务自动分解为可执行步骤。Planner（意图→计划）+ Impact Analyzer（影响分析）+ Optimizer（方案排序）。
+**🧩 Intent Engine** — 复杂任务自动分解为可执行步骤。Planner（意图→计划）+ Impact Analyzer（影响分析）。
 
 **🎨 智能图标解析 (v3.2 — 颜色编码)** — 命令自动获取语义化、颜色分类图标：
 
@@ -603,7 +601,7 @@ cade rollback --id latest           # 撤销任意操作
 cade suggest                        # AI 推荐下一步
 cade docs                           # 自动生成文档
 cade test --quick                   # 42 套件快速测试 (~60s)
-cade test                           # 42 套件全量测试 (启动 CATIA)
+cade test                           # 43 套件全量测试 (启动 CATIA)
 ```
 
 ### ⚡ 测试结果
@@ -639,7 +637,7 @@ Kernel（多意图分解 → 需求澄清 → 规划 → 生成 → 验证 → �
      ↓
 Primitives（actions / generator / diagnostics / refactor / build / run）
      ↓
-Retrieval（统一检索门面：Catalog / ApiRegistry / HeaderMap / MethodIndex）
+Retrieval（统一检索门面：Catalog / ApiRegistry / HeaderMap / MethodIndex / UseCaseIndex）
      ↓
 Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework → CAADoc）
 ```
@@ -660,9 +658,9 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 | **CLI 命令** | 24 |
 | **MCP 模式** | 3（develop / analyze / repair） |
 | **Build 命令** | 35 |
-| **领域实体** | 10 |
-| **知识资产** | 233（46K + 15P + 13C + 148FW + 10FP + 6PH） |
-| **检索索引** | 4（Catalog / ApiRegistry / HeaderMap / MethodIndex） |
+| **领域实体** | 8 |
+| **知识资产** | 241（32K + 14P + 13C + 13PB + 148FW + 1E + 6PH + 14FP） |
+| **检索索引** | 5（Catalog / ApiRegistry / HeaderMap / MethodIndex / UseCaseIndex） |
 
 ### 📂 项目结构
 
@@ -682,12 +680,12 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 │   │   ├── repair.py               ← 修复闭环
 │   │   ├── refactor.py             ← 重命名 / 移动 / 提取
 │   │   ├── diagnostics.py          ← 问题检测 + 修复计划
-│   │   ├── retrieval.py            ← 统一检索门面（4 索引）
+│   │   ├── retrieval.py            ← 统一检索门面（5 索引）
 │   │   ├── catalog.py              ← 知识目录索引
 │   │   ├── header_map.py           ← B28 头文件→框架映射
 │   │   ├── method_index.py         ← 类型→方法存在性检查
 │   │   ├── api_registry.py         ← 知识驱动 API 白名单
-│   │   ├── intent/                 ← 意图引擎（规划 + 影响分析 + 优化）
+│   │   ├── intent/                 ← 意图引擎（规划 + 影响分析）
 │   │   ├── intents/                ← 意图处理器
 │   │   └── ...
 │   ├── templates/                  ← 82 个代码模板（19 种类型）
@@ -696,7 +694,7 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 │   ├── knowledge/                  ← CAA 知识库
 │   │   ├── frameworks/             ← 148 个 CAADoc 框架索引
 │   │   ├── philosophy/             ← 6 篇 CAA 哲学
-│   │   ├── failure_patterns/       ← 3 个失败模式
+│   │   ├── failure_patterns/       ← 14 个失败模式
 │   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
 │   ├── patterns/                   ← 架构模式
 │   ├── examples/                   ← 真实 CAA 项目示例

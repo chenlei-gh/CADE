@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（10 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（29K+14P+13Capability+15Playbook+148Framework+6Philosophy+3Failure+3DecisionTree），官方图标运行时引用+语义解析+HD PNG、75模板(16类型)、44测试套件、cade dev一键闭环。"
+description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（8 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（32K+14P+13Capability+14Playbook+148Framework+6Philosophy+14Failure+3DecisionTree），官方图标运行时引用+语义解析+HD PNG、75模板(16类型)、43测试套件、cade dev一键闭环。"
 triggers:
   - CAA component
   - CATIA component
@@ -1353,7 +1353,7 @@ python tests/test_master.py --quick
 │   ├── diagnostics.py                # Diagnostics + FixPlan
 │   ├── refactor.py                   # 安全重构
 │   ├── generator.py                  # 代码生成器
-│   ├── meta_model.py                 # Rich Domain Model (10 实体)
+│   ├── meta_model.py                 # Rich Domain Model (8 实体)
 │   ├── analyzer.py                   # 工作区分析器
 │   ├── changeset.py                  # Writer/变更集管理
 │   ├── backup.py                     # 回滚系统

@@ -10,7 +10,7 @@ Also runs all existing test suites as subprocesses at the end.
 
 Sections:
   1.  File Structure & Module Imports (25 tests)
-  2.  Rich Domain Model — 10 entities (20 tests)
+  2.  Rich Domain Model — 8 entities (20 tests)
   3.  Specification Layer — all spec classes (12 tests)
   4.  Diagnostics & FixPlan (8 tests)
   5.  Refactor Engine (6 tests)
@@ -299,7 +299,7 @@ for cf in ["caa_env_config.txt", "requirements.txt"]:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# SECTION 2: Rich Domain Model — 10 Entities (20 tests)
+# SECTION 2: Rich Domain Model — 8 Entities (20 tests)
 # ═══════════════════════════════════════════════════════════════════
 
 print("\n" + "=" * 70)
