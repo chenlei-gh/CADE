@@ -120,9 +120,9 @@ any lookup result looks wrong.
 
 ---
 
-## 3. Cache Lifecycle (uniform across indexes)
+## 3. Cache Lifecycle
 
-Every index follows the same three-tier pattern:
+The four regular retrieval indexes follow the same three-tier pattern:
 
 1. **Process cache** — one instance per skill_root per process,
    invalidated when the underlying cache file's mtime changes.
@@ -130,6 +130,13 @@ Every index follows the same three-tier pattern:
    source mtime plus a parser `_CACHE_VERSION` bump.
 3. **Full rebuild** — parse the authoritative source, then populate
    both caches.
+
+**UseCaseIndex lifecycle**:
+`UseCaseIndex` is a prebuilt JSON artifact (`cache/usecase_index.json`)
+generated offline by `tools/build_usecase_index.py`. At runtime it follows
+a two-tier model: process-cached on first load, falling back to an empty
+index if the cache file is absent. Rebuilds are performed explicitly via
+the builder script rather than transparently on cache miss.
 
 Cache corruption must log a warning, never fail silently (the catalog
 `self/cls` bug went unnoticed for months because it failed silently).
@@ -211,11 +218,12 @@ Forbidden:
 
 ## 6. Extending This Contract
 
-Before adding a fifth index or a new lookup path:
+Before adding another index or a new lookup path:
 
 1. Check whether an existing index already answers the question.
-2. If not, add the index behind the `Retrieval` facade with the same
-   three-tier lifecycle.
+2. If not, add the index behind the `Retrieval` facade with a clearly
+   defined lifecycle (three-tier for live indexes, or prebuilt artifact
+   for static evidence stores).
 3. Register it in `Retrieval.health()` and in
    `tests/test_retrieval_benchmark.py`.
 4. Update this document's index table and Decision Rules.
