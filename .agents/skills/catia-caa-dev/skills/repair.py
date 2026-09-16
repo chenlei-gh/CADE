@@ -484,17 +484,6 @@ class RepairLoop:
 
         return cs
 
-    def _execute_fix_plan(self, fix_plan: dict) -> None:
-        """Execute a single FixPlan — deprecated, use _build_fix_changeset + apply.
-
-        Kept for backward compatibility. New code should use the ChangeSet path.
-        """
-        cs = self._build_fix_changeset(fix_plan)
-        if not cs.is_empty:
-            apply_result = cs.apply(workspace_root=self.workspace_root)
-            if apply_result.get("status") != "applied":
-                raise RuntimeError(f"FixPlan apply failed: {apply_result}")
-
     # ─── Backup ────────────────────────────────────────────────────
 
     def _create_backup(self) -> str:

@@ -159,12 +159,9 @@ class Kernel:
     Internal: state machine + module dispatch
     """
 
-    MAX_RETRIES = 3
-
     def __init__(self, workspace_root: str = None):
         self.workspace_root = Path(workspace_root).resolve() if workspace_root else Path.cwd()
         self._state = KernelState.IDLE
-        self._catalog = None  # lazily-loaded shared CatalogIndex
 
     @property
     def retrieval(self):
