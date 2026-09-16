@@ -229,8 +229,10 @@ intent_tests = [
     ("generate workbench MyWb", "CreateWorkbench"),
     ("create module MyMod", "CreateModule"),
     ("create framework MyFw", "CreateFramework"),
+    ("create component MyComp", "CreateComponent"),
     ("创建对话框 MyDlg", "CreateDialog"),
     ("创建命令 MyCmd 带对话框", "CreateCommandWithDialog"),
+    ("创建组件 MyComp", "CreateComponent"),
 ]
 
 for req, expected in intent_tests:
@@ -397,6 +399,37 @@ check(
 check(
     "CreateCommandWithDialog: command cpp",
     (mod_dir / "src" / "DispatchCmd.cpp").is_file(),
+)
+
+r_comp = k_fw.execute(
+    KernelMode.DEVELOP, "create component DispatchComp in DispatchMod.m"
+)
+msg_comp = r_comp.get("message", "")
+check("CreateComponent: not Plan-would-execute", "Plan would execute" not in msg_comp, msg_comp)
+check("CreateComponent: status ok", r_comp.get("status") == "ok", r_comp.get("status", "?"))
+check("CreateComponent: header", (mod_dir / "LocalInterfaces" / "DispatchComp.h").is_file())
+check("CreateComponent: cpp", (mod_dir / "src" / "DispatchComp.cpp").is_file())
+
+# Unhandled intent rejection (no "Plan would execute" false success)
+plan_unhandled = {
+    "intent": {
+        "type": "UnimplementedIntent",
+        "name": "FakeTarget",
+        "module": "DispatchMod.m",
+        "framework": "DispatchFw.edu",
+    }
+}
+r_unhandled = k_fw._execute_develop_plan(plan_unhandled)
+check(
+    "Unhandled intent: status error",
+    r_unhandled.get("status") == "error",
+    r_unhandled.get("status", "?"),
+)
+check(
+    "Unhandled intent: rejected message",
+    "Unsupported or unavailable intent: UnimplementedIntent"
+    in r_unhandled.get("message", ""),
+    r_unhandled.get("message", ""),
 )
 
 shutil.rmtree(ws_fw, ignore_errors=True)

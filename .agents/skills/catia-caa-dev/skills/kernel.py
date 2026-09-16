@@ -731,6 +731,7 @@ class Kernel:
                 create_interface,
                 create_module,
                 create_workbench,
+                create_component,
             )
             from intents import create_executable_command, create_feature, create_extension
 
@@ -758,8 +759,10 @@ class Kernel:
                 result = create_interface(ctx, name=name, module=module, framework=framework)
             elif intent_type == "CreateDialog":
                 result = create_dialog(ctx, name=name, module=module, framework=framework)
+            elif intent_type == "CreateComponent":
+                result = create_component(ctx, name=name, module=module, framework=framework)
             else:
-                return {"status": "ok", "message": f"Plan would execute: {intent_type} {name}"}
+                return {"status": "error", "message": f"Unsupported or unavailable intent: {intent_type}"}
 
             # If action returned error (e.g., module not found), treat as pending
             if isinstance(result, dict) and result.get("status") == "error":
@@ -859,6 +862,7 @@ class Kernel:
             ("扩展", "CreateExtension"),
             ("接口", "CreateInterface"),
             ("工作台", "CreateWorkbench"),
+            ("组件", "CreateComponent"),
             ("模块", "CreateModule"),
             ("框架", "CreateFramework"),
             # English keywords (check with word boundaries to avoid substring matches)
@@ -870,6 +874,7 @@ class Kernel:
             ("extension", "CreateExtension"),
             ("interface", "CreateInterface"),
             ("workbench", "CreateWorkbench"),
+            ("component", "CreateComponent"),
             ("module", "CreateModule"),
             ("framework", "CreateFramework"),
         ]
