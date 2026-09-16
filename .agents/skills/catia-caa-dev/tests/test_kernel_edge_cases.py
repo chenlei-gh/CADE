@@ -474,24 +474,21 @@ check(
 )
 
 # 3. ImportError: must be error (not pending Plan ready)
-class ImportMockKernel(Kernel):
-    def _execute_develop_plan(self, plan, preview=False):
-        try:
-            raise ImportError("mock_missing_module")
-        except ImportError as e:
-            return {"status": "error", "message": f"Required module not available: {e}"}
-
-k_mock = ImportMockKernel(workspace_root=str(ws_fw))
-r_mock_plan = k_mock._execute_develop_plan({"intent": {"type": "CreateComponent", "name": "C", "module": "M"}})
+from unittest.mock import patch
+with patch.dict(sys.modules, {"actions": None}):
+    r_import_err = k_fw._execute_develop_plan({
+        "intent": {"type": "CreateComponent", "name": "C", "module": "M"}
+    })
 check(
     "ImportError: status error",
-    r_mock_plan.get("status") == "error",
-    r_mock_plan.get("status", "?"),
+    r_import_err.get("status") == "error",
+    r_import_err.get("status", "?"),
 )
 check(
     "ImportError: not pending Plan ready",
-    "Plan ready" not in r_mock_plan.get("message", "") and "Required module not available" in r_mock_plan.get("message", ""),
-    r_mock_plan.get("message", ""),
+    "Plan ready" not in r_import_err.get("message", "")
+    and "Required module not available" in r_import_err.get("message", ""),
+    r_import_err.get("message", ""),
 )
 
 shutil.rmtree(ws_fw, ignore_errors=True)
