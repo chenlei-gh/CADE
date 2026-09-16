@@ -3,8 +3,8 @@ id: pb.native_command_investigation
 title: Native Command Investigation / 原生命令逆向调查方法论
 category: playbook
 domain: infrastructure
-keywords: [reverse engineering, native command, dll, vtable, slot, investigation, B28, 逆向, 官方命令, 私有接口]
-capabilities: [cap.visualization]
+keywords: [reverse engineering, native command, dll, vtable, slot, investigation, B28, 逆向, 原生命令, 官方命令, 私有接口]
+capabilities: []
 apis: []
 frameworks: []
 difficulty: advanced
@@ -16,6 +16,8 @@ tags: [playbook, methodology, investigation, reverse_engineering]
 # Native Command Investigation (原生命令逆向调查方法论)
 
 本 Playbook 总结在面对官方公开 CAA 文档存在能力盲区、但 CATIA 原生界面拥有对应功能时的决策分析与逆向调查方法论。
+
+> **方法论定位**：本方法论为跨领域的通用逆向调查框架，不绑定单一特定 Capability。文中所涉实测验证案例（如 Slot 17/18 属性重置）属于 Visualization/MecMod 领域，作为案例证据引用，不构成该方法论之能力边界。
 
 ---
 

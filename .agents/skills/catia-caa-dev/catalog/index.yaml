@@ -106,7 +106,7 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 | pb.auto_annotate_3d | playbooks/pb_auto_annotate_3d.md | 自动3D标注 | cap.annotation, cap.geometry_query |
 | pb.assembly_constraint_check | playbooks/pb_assembly_constraint_check.md | 装配约束检查 | cap.assembly_tree, cap.geometry_query |
 | pb.dialog_wizard | playbooks/pb_dialog_wizard.md | 对话框向导模式 | cap.selection, cap.parameter_system |
-| pb.native_command_investigation | playbooks/pb_native_command_investigation.md | 原生命令逆向调查方法论 | cap.visualization |
+| pb.native_command_investigation | playbooks/pb_native_command_investigation.md | 原生命令逆向调查方法论 | - |
 
 ### Framework 索引 (CAADoc)
 
