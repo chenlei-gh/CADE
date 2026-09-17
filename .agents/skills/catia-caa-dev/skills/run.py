@@ -11,6 +11,7 @@ import glob
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,21 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from env import CAAEnvironment
 from utils import Cache, Logger, output_json
+
+# Startup detection polling interval (seconds). The sleep and the elapsed-time
+# accounting MUST use the same constant: they previously disagreed (0.5s sleep
+# vs 0.2s accounting), so an actual 5s wait was logged as "2.0s".
+POLL_INTERVAL = 0.5
+POLL_MAX_ATTEMPTS = 30
+
+# Grace period after taskkill before re-checking whether a PID really died.
+PROCESS_EXIT_SETTLE = 0.5
+
+# Age beyond which an unreferenced cade_run_*.bat is treated as an orphan.
+# Normal launches reach the blocking `call mkrun` well inside this window, and
+# a batch still executing keeps its host cmd.exe alive (caught by the in-use
+# guard instead of this threshold), so this only catches killed hosts.
+STALE_BAT_AGE_SECONDS = 3600
 
 
 def _clean_cnext_sessions():
@@ -89,6 +105,92 @@ def check_process_running(process_name: str) -> list:
         pass
 
     return running_processes
+
+
+def _pid_running(pid: int) -> bool:
+    """Return True if a CNEXT.exe process with this exact PID is still alive.
+
+    Scoped to the PID rather than the process name: stop_catia loops over
+    several PIDs, and a name-only lookup cannot tell whether the specific
+    process it just killed actually exited or a sibling is still running.
+    """
+    return any(p["pid"] == pid for p in check_process_running("CNEXT.exe"))
+
+
+def _wait_pid_exit(pid: int, attempts: int = 6) -> bool:
+    """Wait for a PID to disappear, returning True once it is confirmed gone.
+
+    A force-killed process is not necessarily absent from tasklist on the very
+    next query, so a single check would report a false failure for a process
+    that is in fact shutting down. Polls with a bounded budget and reports the
+    truth if the process is genuinely still alive after it expires.
+    """
+    for attempt in range(attempts):
+        if not _pid_running(pid):
+            return True
+        if attempt < attempts - 1:
+            time.sleep(PROCESS_EXIT_SETTLE)
+    return not _pid_running(pid)
+
+
+def _live_cmd_commandlines() -> str | None:
+    """Return the concatenated command lines of all live cmd.exe processes.
+
+    None means the query failed, i.e. in-use state is unknown and callers must
+    not delete anything. Querying once and scanning the blob keeps orphan
+    reclamation O(1) in subprocess calls instead of one WMIC spawn per file.
+    """
+    try:
+        result = subprocess.run(
+            ["wmic", "process", "where", "name='cmd.exe'", "get", "CommandLine"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,
+        )
+        if result.returncode != 0:
+            return None
+        return (result.stdout or "").lower()
+    except Exception:
+        return None
+
+
+def _reclaim_stale_run_bats(logger=None) -> int:
+    """Delete aged, unreferenced cade_run_*.bat files left by killed hosts.
+
+    Self-deletion in the batch body covers the normal and stop_catia paths;
+    this only reclaims files whose host cmd.exe was killed before the script
+    could finish. A file must clear BOTH the age threshold AND the absence of
+    any live cmd.exe reference — a batch parked on `call mkrun` keeps its host
+    alive, so in-flight launches are never deleted underneath themselves.
+    Bails out entirely when the process query fails (never delete on doubt),
+    and swallows per-file errors so reclamation cannot break a launch.
+    """
+    candidates = [
+        path
+        for path in glob.glob(str(Path(tempfile.gettempdir()) / "cade_run_*.bat"))
+        if time.time() - os.path.getmtime(path) >= STALE_BAT_AGE_SECONDS
+    ]
+    if not candidates:
+        return 0
+
+    live_cmdlines = _live_cmd_commandlines()
+    if live_cmdlines is None:
+        return 0
+
+    reclaimed = 0
+    for path in candidates:
+        try:
+            if Path(path).name.lower() in live_cmdlines:
+                continue
+            os.unlink(path)
+            reclaimed += 1
+        except OSError:
+            pass
+    if reclaimed and logger:
+        logger.write(f"Reclaimed {reclaimed} stale cade_run_*.bat file(s)")
+    return reclaimed
 
 
 def start_catia_runtime(
@@ -173,7 +275,6 @@ def start_catia_runtime(
     # When workspace is provided, use mkrun (standard CAA dev workflow)
     # instead of CATSTART, because mkrun properly initializes Runtime View paths.
     if workspace_path:
-        import tempfile
         catia_path = Path(caa_env.config.get("CATIA_INSTALL", ""))
         arch = caa_env.get_architecture() or "win_b64"
         tck_init = catia_path / arch / "code" / "command" / "tck_init.bat"
@@ -207,7 +308,18 @@ def start_catia_runtime(
             f"set CATGraphicPath={rv}\\resources\\graphic;%CATGraphicPath%\r\n"
             f'cd /d "{workspace_path}"\r\n'
             f"call mkrun\r\n"
+            # Self-delete once the script is done. Python launches this batch
+            # through a detached `start /min cmd /c`, so the interpreter exits
+            # long before the batch does and cannot unlink it in a finally
+            # block — without this line every launch leaks a .bat in %TEMP%
+            # (207 had accumulated). `(goto)` with no target forces the
+            # interpreter to abort and release the file handle so del succeeds.
+            f'(goto) 2>nul & del "%~f0"\r\n'
         )
+        # Reclaim .bat files orphaned by previously killed host cmd.exe
+        # processes. Runs before creating ours so the new file is never a
+        # candidate (it is also too young to qualify).
+        _reclaim_stale_run_bats(logger)
         # newline="" prevents text-mode \n -> \r\n translation from doubling
         # the \r\n already embedded in bat_content (see env.py build_time_command
         # for the full explanation of the \r\r\n corruption this caused).
@@ -299,11 +411,13 @@ def start_catia_runtime(
             # Quick poll (shorter intervals, return early if found)
             logger.write("Waiting for CNEXT...")
             runtime_result = None
-            for i in range(30):
-                time.sleep(0.5)
+            for i in range(POLL_MAX_ATTEMPTS):
+                time.sleep(POLL_INTERVAL)
                 running = check_process_running("CNEXT.exe")
                 if running:
-                    logger.write(f"CNEXT detected after {(i + 1) * 0.2:.1f}s")
+                    logger.write(
+                        f"CNEXT detected after {(i + 1) * POLL_INTERVAL:.1f}s"
+                    )
                     runtime_result = {
                         "status": "started",
                         "message": "CATIA started successfully",
@@ -363,21 +477,21 @@ def stop_catia(force: bool = False) -> dict:
         try:
             if not force:
                 # Graceful shutdown first
-                result = subprocess.run(
+                subprocess.run(
                     ["taskkill", "/PID", str(pid)],
                     capture_output=True,
                     timeout=15,
                 )
                 time.sleep(5)  # CNEXT needs time to flush state files
                 # Check if still running
-                still_running = check_process_running("CNEXT.exe")
-                if any(p["pid"] == pid for p in still_running):
+                if _pid_running(pid):
                     # Force kill
                     subprocess.run(
                         ["taskkill", "/F", "/PID", str(pid)],
                         capture_output=True,
                         timeout=10,
                     )
+                    time.sleep(PROCESS_EXIT_SETTLE)
             else:
                 # Force kill immediately
                 subprocess.run(
@@ -385,7 +499,7 @@ def stop_catia(force: bool = False) -> dict:
                     capture_output=True,
                     timeout=10,
                 )
-            stopped.append(pid)
+                time.sleep(PROCESS_EXIT_SETTLE)
         except Exception:
             # Last resort: force kill
             try:
@@ -394,14 +508,31 @@ def stop_catia(force: bool = False) -> dict:
                     capture_output=True,
                     timeout=10,
                 )
-                stopped.append(pid)
+                time.sleep(PROCESS_EXIT_SETTLE)
             except Exception:
-                failed.append(pid)
+                pass
+
+        # taskkill reports failure through its exit code and never raises, so
+        # a bare `stopped.append(pid)` used to claim success for processes
+        # that were still alive. Confirm against the live process list instead.
+        if _wait_pid_exit(pid):
+            stopped.append(pid)
+        else:
+            failed.append(pid)
 
     method = "force" if force else "graceful+force"
+    if failed and not stopped:
+        status = "failed"
+    elif failed:
+        status = "partial"
+    else:
+        status = "stopped"
+    message = f"Stopped {len(stopped)} process(es) [{method}]"
+    if failed:
+        message += f" — {len(failed)} still running (pid={failed})"
     return {
-        "status": "stopped" if not failed else "partial",
-        "message": f"Stopped {len(stopped)} process(es) [{method}]",
+        "status": status,
+        "message": message,
         "stopped": stopped,
         "failed": failed,
     }
