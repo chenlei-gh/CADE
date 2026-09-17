@@ -18,9 +18,11 @@
     ],
     "bmp_mode": "8-bit indexed (palette 0 = CATIA_BG)",
     "bmp_colors": 14,
+    "bmp_used_colors": 14,
     "hard_checks": {
       "colors_ceiling_ok": true,
       "corners_pure": true,
+      "corners_palette_index_zero": true,
       "no_edge_collision": true,
       "bmp_format_ok": true
     },
@@ -28,6 +30,7 @@
     "fg_in_guidance": true,
     "isolated_noise_px": 1,
     "alpha_clean": true,
+    "alpha_clean_scope": "all_scales_evaluated",
     "alpha_clean_definition": "All four corners 100% transparent (A=0) and zero RGB contamination on A=0 pixels across all exported PNG scales",
     "alpha_measured_by_scale": {
       "512": {

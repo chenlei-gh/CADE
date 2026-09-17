@@ -144,19 +144,33 @@ def lint_bmp_asset(bmp_path: Path) -> dict:
         bmp_mode_ok = (im.mode == "P")
         pal = im.getpalette() or []
         palette_bg_ok = (len(pal) >= 3 and (pal[0], pal[1], pal[2]) == CATIA_BG)
-        colors = len(im.getcolors(maxcolors=256) or [])
+        used_colors = len(im.getcolors(maxcolors=256) or [])
+
+        # Strict Palette Index 0 check on raw 'P' image:
+        # CNEXT transparency demands that transparent background pixels actually map to index 0
+        corners_idx_zero = False
+        has_zero_pixels = False
+        if bmp_mode_ok:
+            corners_idx = [
+                im.getpixel((x, y))
+                for x, y in [(0, 0), (CANVAS - 1, 0), (0, CANVAS - 1), (CANVAS - 1, CANVAS - 1)]
+            ]
+            corners_idx_zero = all(idx == 0 for idx in corners_idx)
+            used_indexes = {idx for _, idx in (im.getcolors(maxcolors=256) or [])}
+            has_zero_pixels = (0 in used_indexes)
 
         rgb = im.convert("RGB")
-        corners_ok = _corner_pure(rgb)
+        corners_pure = _corner_pure(rgb)
         no_collision, edge_stats = _check_edge_collision(rgb)
         fg = _fg_ratio(rgb)
         noise_px = _detect_isolated_noise(rgb)
 
     hard_checks = {
-        "colors_ceiling_ok": colors <= MAX_COLORS,
-        "corners_pure": corners_ok,
+        "colors_ceiling_ok": used_colors <= MAX_COLORS,
+        "corners_pure": corners_pure,
+        "corners_palette_index_zero": corners_idx_zero,
         "no_edge_collision": no_collision,
-        "bmp_format_ok": bmp_mode_ok and palette_bg_ok,
+        "bmp_format_ok": bmp_mode_ok and palette_bg_ok and corners_idx_zero and has_zero_pixels,
     }
 
     soft_lints = {
@@ -170,7 +184,8 @@ def lint_bmp_asset(bmp_path: Path) -> dict:
 
     return {
         "file": str(bmp_path),
-        "colors": colors,
+        "colors": used_colors,
+        "used_colors": used_colors,
         "hard_checks": hard_checks,
         "soft_lints": soft_lints,
         "pass": all(hard_checks.values()),

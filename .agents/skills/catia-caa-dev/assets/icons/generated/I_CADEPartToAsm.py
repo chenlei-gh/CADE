@@ -20,8 +20,11 @@ from typing import Tuple
 from PIL import Image, ImageDraw, ImageFilter
 
 HERE = Path(__file__).resolve().parent
-SKILL = HERE.parents[2]                      # catia-caa-dev/
-REPO = HERE.parents[5]                       # repository root
+# Explicit stepwise path navigation with defensive assertion
+SKILL = HERE.parent.parent.parent            # catia-caa-dev/
+REPO = SKILL.parent.parent.parent           # repository root (D:/Vault/DevTools/CADE)
+assert (SKILL / "SKILL.md").exists(), f"Invalid SKILL path computed: {SKILL}"
+assert (REPO / ".git").exists() or (REPO / "README.md").exists(), f"Invalid REPO path: {REPO}"
 sys.path.insert(0, str(SKILL / "tools"))
 sys.path.insert(0, str(SKILL / "skills"))
 
@@ -218,6 +221,7 @@ def _verify_generated_assets(assets: dict) -> dict:
     return {
         "bmp_lint": bmp_report,
         "alpha_lint": alpha_reports.get("png_512", {}),
+        "alpha_lint_master": alpha_reports.get("png_512", {}),
         "alpha_reports_by_scale": alpha_reports,
     }
 
@@ -244,11 +248,13 @@ def update_provenance_json(lint_results: dict) -> None:
         "scales": [512, 256, 64, 32, 22],
         "bmp_mode": "8-bit indexed (palette 0 = CATIA_BG)",
         "bmp_colors": bmp_lint["colors"],
+        "bmp_used_colors": bmp_lint.get("used_colors", bmp_lint["colors"]),
         "hard_checks": bmp_lint["hard_checks"],
         "fg_ratio": bmp_lint["soft_lints"]["fg_ratio"],
         "fg_in_guidance": bmp_lint["soft_lints"]["fg_in_guidance"],
         "isolated_noise_px": bmp_lint["soft_lints"]["isolated_noise_px"],
         "alpha_clean": all_scales_clean,
+        "alpha_clean_scope": "all_scales_evaluated",
         "alpha_clean_definition": "All four corners 100% transparent (A=0) and zero RGB contamination on A=0 pixels across all exported PNG scales",
         "alpha_measured_by_scale": {
             k.replace("png_", ""): {

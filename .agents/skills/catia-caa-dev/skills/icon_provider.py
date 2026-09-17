@@ -589,16 +589,17 @@ def _compose_official(official: Path, badge: str = None, size: int = 22,
 def _save_palette_bmp(rgb: Image.Image, out: Path) -> None:
     """Save RGB as 8-bit palettized BMP, background pinned to palette index 0.
 
-    CNEXT transparency is palette-based; the background (top-left pixel,
-    CATIA's convention) must occupy palette index 0. Badge-glyph colors are
+    CNEXT transparency is palette-based; the background must strictly occupy
+    palette index 0 with CATIA_BG (192, 192, 192). Badge-glyph colors are
     seeded first so the tiny badge survives quantization, then the base
     image's own colors fill the rest of the 256-entry palette."""
-    bg = rgb.getpixel((0, 0))
-    badge_colors = [CATIA_BG, CATIA_INK, _OFFICIAL_INK, (10, 0, 255), (0, 0, 150)]
+    assert rgb.mode == "RGB", f"Expected RGB mode, got {rgb.mode}"
+    # Strictly enforce CATIA_BG at palette index 0
+    palette = list(CATIA_BG)
+    seen = {CATIA_BG}
+    badge_colors = [CATIA_INK, _OFFICIAL_INK, (10, 0, 255), (0, 0, 150)]
     for spec in BADGE_GLYPH_COLORS.values():
         badge_colors += [spec[k] for k in ("BODY", "EDGE", "DIM") if k in spec]
-    palette = list(bg)
-    seen = {bg}
     for col in badge_colors:
         if col not in seen:
             palette += list(col)
@@ -611,8 +612,8 @@ def _save_palette_bmp(rgb: Image.Image, out: Path) -> None:
     palette += [0, 0, 0] * (256 - len(palette) // 3)
     pal_img = Image.new("P", (1, 1))
     pal_img.putpalette(palette)
-    rgb.quantize(palette=pal_img, dither=Image.Dither.NONE).save(
-        out, format="BMP")
+    quantized = rgb.quantize(palette=pal_img, dither=Image.Dither.NONE)
+    quantized.save(out, format="BMP")
 
 
 def _render_placeholder(badge: str = None, size: int = 22,
