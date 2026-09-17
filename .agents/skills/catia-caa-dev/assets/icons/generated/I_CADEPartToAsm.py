@@ -20,9 +20,20 @@ from typing import Tuple
 from PIL import Image, ImageDraw, ImageFilter
 
 HERE = Path(__file__).resolve().parent
-# Explicit stepwise path navigation with defensive assertion
-SKILL = HERE.parent.parent.parent            # catia-caa-dev/
-REPO = SKILL.parent.parent.parent           # repository root (D:/Vault/DevTools/CADE)
+
+# Robust marker-based resolution: eliminates relative index ambiguity across environments
+SKILL = HERE
+while SKILL != SKILL.parent and not (SKILL / "SKILL.md").exists():
+    SKILL = SKILL.parent
+
+REPO = SKILL
+while REPO != REPO.parent and not ((REPO / ".git").exists() or (REPO / "README.md").exists()):
+    REPO = REPO.parent
+
+# Step-by-step directory structure verification:
+#   HERE:                                .../CADE/.agents/skills/catia-caa-dev/assets/icons/generated
+#   HERE.parent.parent.parent (3 steps): .../CADE/.agents/skills/catia-caa-dev (SKILL)
+#   SKILL.parent.parent.parent (3 steps): .../CADE (REPO: skills -> .agents -> CADE)
 assert (SKILL / "SKILL.md").exists(), f"Invalid SKILL path computed: {SKILL}"
 assert (REPO / ".git").exists() or (REPO / "README.md").exists(), f"Invalid REPO path: {REPO}"
 sys.path.insert(0, str(SKILL / "tools"))

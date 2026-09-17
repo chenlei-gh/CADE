@@ -49,8 +49,13 @@ def _snap_background(rgb: Image.Image) -> Image.Image:
     px = rgb.load()
     w, h = rgb.size
     corners = [px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1]]
-    # Average the four corners as the reference background.
-    ref = tuple(sum(c[i] for c in corners) // 4 for i in range(3))
+    # Robust corner sampling: filter corners matching CATIA_BG within tolerance,
+    # or fallback to median per channel to reject single-corner contamination.
+    valid_bg_corners = [c for c in corners if all(abs(c[i] - CATIA_BG[i]) <= BG_TOLERANCE for i in range(3))]
+    if valid_bg_corners:
+        ref = tuple(sum(c[i] for c in valid_bg_corners) // len(valid_bg_corners) for i in range(3))
+    else:
+        ref = tuple(sorted(c[i] for c in corners)[len(corners) // 2] for i in range(3))
     snapped = 0
     for y in range(h):
         for x in range(w):
