@@ -125,6 +125,11 @@ def create_runtime_view(
 
     # Execute command with Build Time environment
     # mkCreateRuntimeView is a Build Time tool that requires mkinit.bat initialization
+    # Declared before the try so the finally below can clean up on every exit
+    # path — including the early return for a missing mkinit.bat, which fires
+    # before these are assigned.
+    tmpfile = None
+    batfile = None
     try:
         # Use Build Time environment initialization
         catia_install = caa_env.config.get("CATIA_INSTALL", "")
@@ -219,15 +224,6 @@ def create_runtime_view(
             "timestamp": start_time.isoformat(),
         }
 
-        # Clean up temp files
-        try:
-            if tmpfile.exists():
-                tmpfile.unlink()
-            if batfile.exists():
-                batfile.unlink()
-        except Exception:
-            pass
-
         # Save to cache
         cache.save(runtime_result)
 
@@ -252,6 +248,22 @@ def create_runtime_view(
             "exception": str(e),
             "created": False,
         }
+
+    finally:
+        # Runs on every exit path, so the workspace-local .mkcreate_* files are
+        # gone once this function returns or raises — success, timeout, or
+        # exception alike. Previously the cleanup sat inside the try body, so
+        # both except branches returned straight past it and left the files
+        # behind in the user's workspace. Cleanup failures are swallowed so
+        # they can never mask the real return value or exception.
+        for temp_path in (tmpfile, batfile):
+            if temp_path is None:
+                continue
+            try:
+                if temp_path.exists():
+                    temp_path.unlink()
+            except Exception:
+                pass
 
 
 def check_runtime_view(workspace_path: Path) -> dict:

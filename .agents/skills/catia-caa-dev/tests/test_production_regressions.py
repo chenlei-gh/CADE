@@ -3,6 +3,7 @@
 
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from datetime import datetime, timedelta
@@ -25,6 +26,7 @@ from diagnostics import DiagnosticsEngine
 from generator import TemplateGenerator
 from parser import parse_mkmk_output
 from repair import RepairLoop, RepairState
+import runtime_view as runtime_view_module
 from utils import Cache, gc_stale_buckets
 
 workspace = Path(tempfile.mkdtemp(prefix="cade_production_regressions_"))
@@ -779,8 +781,118 @@ try:
           all((mgr.backup_dir / i).is_dir() for i in frozen_ids))
     check("suffixed ids stay valid for _validate_backup_id",
           all(mgr._validate_backup_id(i) is None for i in frozen_ids))
+    # ── create_runtime_view() CLI lifecycle ──────────────────────
+    # runtime_view.py::create_runtime_view backs `python runtime_view.py
+    # --create`. It is a *different* implementation from
+    # build.create_runtime_view (which `cade rv` uses and whose finally is
+    # already correct). This one writes .mkcreate_output.tmp and
+    # .mkcreate_run.bat into the workspace itself, and its cleanup used to sit
+    # inside the try body — so the timeout and exception handlers returned
+    # straight past it and left both files in the user's workspace.
+    mk_ws = workspace / "runtime_view_ws"
+    fake_catia = workspace / "fake_catia"
+    mk_cmd_dir = fake_catia / "win_b64" / "code" / "command"
+    mk_cmd_dir.mkdir(parents=True, exist_ok=True)
+    (mk_cmd_dir / "mkinit.bat").write_text("@echo off\r\n", encoding="ascii")
+    (mk_cmd_dir / "mkCreateRuntimeView.bat").write_text(
+        "@echo off\r\n", encoding="ascii"
+    )
+
+    # Same tool layout minus mkinit.bat, to exercise the early return that
+    # fires before the temp paths are assigned.
+    noinit_catia = workspace / "fake_catia_noinit"
+    noinit_dir = noinit_catia / "win_b64" / "code" / "command"
+    noinit_dir.mkdir(parents=True, exist_ok=True)
+    (noinit_dir / "mkCreateRuntimeView.bat").write_text(
+        "@echo off\r\n", encoding="ascii"
+    )
+
+    class _SilentLogger:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def write(self, *args, **kwargs):
+            pass
+
+        def clear(self):
+            pass
+
+    class _SilentCache:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def save(self, *args, **kwargs):
+            pass
+
+    def _run_runtime_view(run_patch, install):
+        shutil.rmtree(mk_ws, ignore_errors=True)
+        mk_ws.mkdir(parents=True, exist_ok=True)
+
+        class _Env:
+            config = {"CATIA_INSTALL": install}
+
+            def get_architecture(self):
+                return "win_b64"
+
+            def initialize(self):
+                return {"ok": True}
+
+        with patch.object(runtime_view_module, "CAAEnvironment", _Env), patch.object(
+            runtime_view_module, "Logger", _SilentLogger
+        ), patch.object(runtime_view_module, "Cache", _SilentCache), patch.object(
+            runtime_view_module.subprocess, "run", **run_patch
+        ):
+            return runtime_view_module.create_runtime_view(mk_ws)
+
+    def _mkcreate_residue():
+        return [
+            name
+            for name in (".mkcreate_output.tmp", ".mkcreate_run.bat")
+            if (mk_ws / name).exists()
+        ]
+
+    def _fake_success(*_args, **_kwargs):
+        # Stand in for mkCreateRuntimeView actually producing the view.
+        # subprocess.run's argv is positional, hence *args.
+        (mk_ws / "win_b64").mkdir(exist_ok=True)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    ok_result = _run_runtime_view({"side_effect": _fake_success}, str(fake_catia))
+    check("runtime_view success reports success",
+          ok_result.get("status") == "success", str(ok_result.get("status")))
+    check("runtime_view success leaves no .mkcreate_* files",
+          _mkcreate_residue() == [], str(_mkcreate_residue()))
+
+    timeout_result = _run_runtime_view(
+        {"side_effect": subprocess.TimeoutExpired("cmd", 300)}, str(fake_catia)
+    )
+    check("runtime_view timeout keeps its timeout status",
+          timeout_result.get("status") == "timeout",
+          str(timeout_result.get("status")))
+    check("runtime_view timeout leaves no .mkcreate_* files",
+          _mkcreate_residue() == [], str(_mkcreate_residue()))
+
+    boom_result = _run_runtime_view(
+        {"side_effect": RuntimeError("boom")}, str(fake_catia)
+    )
+    check("runtime_view exception keeps its error status",
+          boom_result.get("status") == "error", str(boom_result.get("status")))
+    check("runtime_view exception leaves no .mkcreate_* files",
+          _mkcreate_residue() == [], str(_mkcreate_residue()))
+
+    # Early return fires before tmpfile/batfile are assigned; the finally
+    # guard must tolerate those still being None instead of raising.
+    early_result = _run_runtime_view({"side_effect": _fake_success}, str(noinit_catia))
+    check("runtime_view missing mkinit.bat returns error, not a crash",
+          early_result.get("status") == "error",
+          str(early_result.get("message"))[:70])
+    check("runtime_view missing mkinit.bat leaves no .mkcreate_* files",
+          _mkcreate_residue() == [], str(_mkcreate_residue()))
 finally:
     shutil.rmtree(uniq_ws, ignore_errors=True)
+    shutil.rmtree(mk_ws, ignore_errors=True)
+    shutil.rmtree(fake_catia, ignore_errors=True)
+    shutil.rmtree(noinit_catia, ignore_errors=True)
 
 print(f"\nProduction regressions: {passed}/{total}")
 if failures:
