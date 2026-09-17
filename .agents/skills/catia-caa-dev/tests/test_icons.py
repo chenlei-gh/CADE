@@ -524,10 +524,13 @@ if ph:
           d[:2] == b"BM"
           and abs(int.from_bytes(d[18:22], "little", signed=True)) == 22
           and int.from_bytes(d[28:30], "little") == 24)
+    ph.unlink()  # reading it was the last use
 
 # Placeholder without badge
 ph2 = _render_placeholder()
 check("placeholder no badge", ph2 is not None and ph2.exists())
+if ph2:
+    ph2.unlink()  # reading it was the last use
 
 
 # ═══════════════════════════════════════════════════════════════
