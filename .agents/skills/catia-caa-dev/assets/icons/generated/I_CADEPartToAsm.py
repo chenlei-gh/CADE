@@ -16,6 +16,7 @@ Outputs:
 """
 import json, sys
 from pathlib import Path
+from typing import Tuple
 from PIL import Image, ImageDraw, ImageFilter
 
 HERE = Path(__file__).resolve().parent
@@ -157,7 +158,7 @@ def build_ultra_3d_master():
     return master
 
 
-def export_multi_scale_assets(master: Image.Image, out_dir: Path) -> dict:
+def export_multi_scale_assets(master: Image.Image, out_dir: Path) -> Tuple[dict, dict]:
     """Unified multi-scale export pipeline with strict engineering validation."""
     assert master.size == (MASTER_SIZE, MASTER_SIZE), f"Master must be {MASTER_SIZE}x{MASTER_SIZE}"
     assert master.mode == "RGBA", "Master must be RGBA mode"
@@ -272,5 +273,8 @@ if __name__ == "__main__":
         p = results[f"png_{size}"]
         print(f"  - {desc:32s}: {p.name}")
     print(f"  - CATIA Normal BMP (8-bit indexed) : {results['bmp_22'].name}")
+    all_clean = all(r["alpha_clean"] for r in lint_data["alpha_reports_by_scale"].values())
+    total_dirty = sum(r["dirty_zero_alpha_pixels"] for r in lint_data["alpha_reports_by_scale"].values())
+    scales_count = len(lint_data["alpha_reports_by_scale"])
     print(f"  - Unified BMP Lint : Hard Gates PASS, fg={lint_data['bmp_lint']['soft_lints']['fg_ratio']:.1%}, colors={lint_data['bmp_lint']['colors']}")
-    print(f"  - Unified Alpha Lint: alpha_clean={lint_data['alpha_lint']['alpha_clean']}, dirty_zero_px={lint_data['alpha_lint']['dirty_zero_alpha_pixels']}")
+    print(f"  - Unified Alpha Lint: all_scales_clean={all_clean} ({scales_count}/{scales_count} scales PASS, total_dirty_zero_px={total_dirty})")
