@@ -166,11 +166,14 @@ Negative: text, letters, watermark, gradient, blur, photorealistic,
 | **画布硬截断** | **Hard Gate（必检）** | 主体任何一边在画布边缘截断比例不得 > 60%（严禁机械零件被切掉边缘） | 不通过则打回 |
 | **BMP 格式规范** | **Hard Gate（必检）** | 必须为 22×22、8-bit indexed BMP，调色板索引 0 必须为 `CATIA_BG (192,192,192)` | 不通过则打回 |
 | **BMP 色数上限** | **Hard Gate（必检）** | 22×22 运行时 BMP 色数不得超过 16 色 | 不通过则打回 |
+| **Alpha 纯净度（PNG）** | **Hard Gate（必检）** | 覆盖全尺度 PNG：四角 Alpha 严格为 0，且 A=0 像素零 RGB 污染（杜绝重采样脏边） | 不通过则打回 |
 | **前景比例** | **Soft Lint（指导）** | 全局有效区间 [15%, 70%]；居中块状零件推荐 [68%, 72%] | 报告占比，提供优化建议 |
 | **孤立噪点** | **Soft Lint（报告）** | 统计孤立漂移像素点（连通度为 0 的像素） | 报告噪点数供人工复核，不作为当前硬失败条件 |
+| **半透明比率（PNG）** | **Soft Lint（报告）** | 统计全尺度 PNG 下采样抗锯齿产生的半透明像素比率 | 报告比率供视觉复核，不作为硬门禁 |
 | **最小线宽** | **Soft Lint（报告）** | 检查 22×22 关键轮廓是否维持 >= 1px | 报告细线分布供设计参考，不一刀切打死 |
 
-> **统一 Lint 实施规范**：上述工程防错门禁已在 `tools/icon_gen_pipeline.py` 中抽象为模块级复用函数 `lint_bmp_asset()` 与 `lint_alpha_png()`。路径 A（Ultra-3D 参数化脚本）与路径 B（AI 图片后处理）必须统一在导出阶段调用该 Lint，以真实测量数据写入 `provenance.json`，严禁两套标准或未经检测硬编码通过。
+> **统一 Lint 实施规范**：上述工程防错门禁已在 `tools/icon_gen_pipeline.py` 中抽象为模块级复用函数 `lint_bmp_asset()`、`lint_alpha_png()` 与 `clean_zero_alpha_rgb()`。路径 A（Ultra-3D 参数化脚本）与路径 B（AI 图片后处理）必须统一在导出阶段调用该 Lint，以真实测量数据写入 `provenance.json`，严禁两套标准或未经检测硬编码通过。
+> **Alpha 纯净度界定**：`alpha_clean: true` 严格指代“四角全透明（A=0）且全透明像素零非零 RGB 脏溢出”；半透明像素（0 < A < 255）为真实曲面光影下采样抗锯齿产物，属于视觉过渡度量，最终融合效果由 CATIA 实机验收裁决。
 
 ### E. CATIA 实机验收（最终裁决）
 - 机器指标负责兜底排除坏图，实机效果由 B28 真实工具栏加载裁决；

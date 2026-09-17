@@ -28,10 +28,43 @@
     "fg_in_guidance": true,
     "isolated_noise_px": 1,
     "alpha_clean": true,
-    "alpha_measured": {
-      "corners_alpha_zero": true,
-      "dirty_zero_alpha_pixels": 0,
-      "semi_transparent_ratio": 0.319
+    "alpha_clean_definition": "All four corners 100% transparent (A=0) and zero RGB contamination on A=0 pixels across all exported PNG scales",
+    "alpha_measured_by_scale": {
+      "512": {
+        "size": "512x512",
+        "corners_alpha_zero": true,
+        "dirty_zero_alpha_pixels": 0,
+        "semi_transparent_ratio": 0.319,
+        "alpha_clean": true
+      },
+      "256": {
+        "size": "256x256",
+        "corners_alpha_zero": true,
+        "dirty_zero_alpha_pixels": 0,
+        "semi_transparent_ratio": 0.447,
+        "alpha_clean": true
+      },
+      "64": {
+        "size": "64x64",
+        "corners_alpha_zero": true,
+        "dirty_zero_alpha_pixels": 0,
+        "semi_transparent_ratio": 0.615,
+        "alpha_clean": true
+      },
+      "32": {
+        "size": "32x32",
+        "corners_alpha_zero": true,
+        "dirty_zero_alpha_pixels": 0,
+        "semi_transparent_ratio": 0.793,
+        "alpha_clean": true
+      },
+      "22": {
+        "size": "22x22",
+        "corners_alpha_zero": true,
+        "dirty_zero_alpha_pixels": 0,
+        "semi_transparent_ratio": 0.84,
+        "alpha_clean": true
+      }
     }
   },
   "candidates": {

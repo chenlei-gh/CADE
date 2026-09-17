@@ -26,7 +26,7 @@ sys.path.insert(0, str(SKILL / "skills"))
 
 from icon_design_lib import draw_gradient_poly, draw_cylinder_shading  # noqa: E402
 from icon_provider import _save_palette_bmp, CATIA_BG                  # noqa: E402
-from icon_gen_pipeline import lint_bmp_asset, lint_alpha_png           # noqa: E402
+from icon_gen_pipeline import lint_bmp_asset, lint_alpha_png, clean_zero_alpha_rgb  # noqa: E402
 
 STEM = "I_CADEPartToAsm"
 MASTER_SIZE = 512
@@ -167,7 +167,8 @@ def export_multi_scale_assets(master: Image.Image, out_dir: Path) -> dict:
 
     for size, suffix, desc in EXPORT_SCALES:
         resampled = master if size == MASTER_SIZE else master.resize((size, size), Image.Resampling.LANCZOS)
-        
+        resampled = clean_zero_alpha_rgb(resampled)
+
         # 1. 导出透明 PNG
         png_path = out_dir / f"{STEM}{suffix}.png"
         resampled.save(png_path)
@@ -198,12 +199,15 @@ def _verify_generated_assets(assets: dict) -> dict:
         assert path.exists(), f"Missing expected output: {path}"
         assert path.stat().st_size > 0, f"Empty asset file: {path}"
 
-    # 2. Unified Alpha PNG Linting on 512 Master and all scales
-    master_png = assets["png_512"]
-    alpha_report = lint_alpha_png(master_png)
-    assert alpha_report["has_transparency"], f"{master_png.name} has no transparency"
-    assert alpha_report["corners_alpha_zero"], f"{master_png.name} four corners must have Alpha == 0"
-    assert alpha_report["alpha_clean"], f"{master_png.name} Alpha channel failed cleanliness check: {alpha_report}"
+    # 2. Unified Alpha PNG Linting across ALL exported scales (512, 256, 64, 32, 22)
+    alpha_reports = {}
+    for key, path in assets.items():
+        if key.startswith("png_"):
+            report = lint_alpha_png(path)
+            assert report["has_transparency"], f"{path.name} has no transparency"
+            assert report["corners_alpha_zero"], f"{path.name} four corners must have Alpha == 0"
+            assert report["alpha_clean"], f"{path.name} Alpha channel failed cleanliness check: {report}"
+            alpha_reports[key] = report
 
     # 3. Unified BMP Linting on 22x22 Normal BMP
     bmp_path = assets["bmp_22"]
@@ -212,7 +216,8 @@ def _verify_generated_assets(assets: dict) -> dict:
 
     return {
         "bmp_lint": bmp_report,
-        "alpha_lint": alpha_report,
+        "alpha_lint": alpha_reports.get("png_512", {}),
+        "alpha_reports_by_scale": alpha_reports,
     }
 
 
@@ -225,6 +230,13 @@ def update_provenance_json(lint_results: dict) -> None:
 
     bmp_lint = lint_results["bmp_lint"]
     alpha_lint = lint_results["alpha_lint"]
+    alpha_by_scale = lint_results.get("alpha_reports_by_scale", {})
+
+    all_scales_clean = (
+        all(r["alpha_clean"] for r in alpha_by_scale.values())
+        if alpha_by_scale
+        else alpha_lint["alpha_clean"]
+    )
 
     data["gate"] = {
         "master_size": f"{MASTER_SIZE}x{MASTER_SIZE}",
@@ -235,11 +247,17 @@ def update_provenance_json(lint_results: dict) -> None:
         "fg_ratio": bmp_lint["soft_lints"]["fg_ratio"],
         "fg_in_guidance": bmp_lint["soft_lints"]["fg_in_guidance"],
         "isolated_noise_px": bmp_lint["soft_lints"]["isolated_noise_px"],
-        "alpha_clean": alpha_lint["alpha_clean"],
-        "alpha_measured": {
-            "corners_alpha_zero": alpha_lint["corners_alpha_zero"],
-            "dirty_zero_alpha_pixels": alpha_lint["dirty_zero_alpha_pixels"],
-            "semi_transparent_ratio": alpha_lint["semi_transparent_ratio"],
+        "alpha_clean": all_scales_clean,
+        "alpha_clean_definition": "All four corners 100% transparent (A=0) and zero RGB contamination on A=0 pixels across all exported PNG scales",
+        "alpha_measured_by_scale": {
+            k.replace("png_", ""): {
+                "size": r["size"],
+                "corners_alpha_zero": r["corners_alpha_zero"],
+                "dirty_zero_alpha_pixels": r["dirty_zero_alpha_pixels"],
+                "semi_transparent_ratio": r["semi_transparent_ratio"],
+                "alpha_clean": r["alpha_clean"],
+            }
+            for k, r in alpha_by_scale.items()
         },
     }
     json_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

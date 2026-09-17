@@ -177,9 +177,38 @@ def lint_bmp_asset(bmp_path: Path) -> dict:
     }
 
 
+def clean_zero_alpha_rgb(im: Image.Image) -> Image.Image:
+    """Zero out RGB channels for completely transparent pixels (A == 0).
+
+    Prevents dirty color bleeding/halo artifacts when downsampled RGBA images
+    are composited by diverse UI engines or non-premultiplied renderers.
+    Leaves semi-transparent (0 < A < 255) and opaque pixels completely untouched.
+    """
+    if im.mode != "RGBA":
+        return im
+    b = bytearray(im.tobytes())
+    for i in range(3, len(b), 4):
+        if b[i] == 0:
+            b[i - 3] = 0
+            b[i - 2] = 0
+            b[i - 1] = 0
+    return Image.frombytes("RGBA", im.size, bytes(b))
+
+
 def lint_alpha_png(png_path: Path) -> dict:
     """Reusable engineering lint for transparent multi-scale PNG assets.
-    Verifies Alpha integrity, corner transparency, and detects halo/dirty edges."""
+
+    Verifies Alpha integrity and detects RGB contamination in transparent pixels:
+    - has_transparency: Image contains transparent pixels (min_alpha < 255).
+    - corners_alpha_zero: Four canvas corners are 100% transparent (A == 0).
+    - dirty_zero_alpha_pixels: Pixels with A == 0 must have RGB == (0,0,0) with no dirty color leakage.
+    - semi_transparent_ratio: Ratio of semi-transparent anti-aliasing pixels (0 < A < 255) vs total visible.
+
+    Note on `alpha_clean`:
+    Indicates strict zero-alpha and corner cleanliness (no dirty RGB spill on fully transparent pixels).
+    It does not mathematically guarantee absence of visual anti-aliasing halos; semi_transparent_ratio
+    is provided as a soft metric for visual QA.
+    """
     with Image.open(png_path) as im:
         assert im.mode == "RGBA", f"PNG must be RGBA mode, got {im.mode}"
         w, h = im.size
