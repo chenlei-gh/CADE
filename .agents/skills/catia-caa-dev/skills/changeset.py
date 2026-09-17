@@ -166,6 +166,26 @@ class ChangeSet:
     def add_warning(self, msg: str):
         self.warnings.append(msg)
 
+    def merge_metadata(self, **kv: Any) -> None:
+        """Merge contributor metadata into this ChangeSet.
+
+        Several actions can write into one ChangeSet (create_command +
+        create_dialog + add_command_to_workbench). A plain
+        `cs.metadata = {...}` assignment would silently drop whatever an
+        earlier contributor wrote, so each contributor merges only its own
+        keys. Re-writing the same key with the same value stays idempotent; a
+        differing value is kept as-is and surfaced as a warning rather than
+        resolved silently by call order.
+        """
+        for key, value in kv.items():
+            if key in self.metadata and self.metadata[key] != value:
+                self.add_warning(
+                    f"metadata conflict on '{key}': kept {self.metadata[key]!r}, "
+                    f"ignored {value!r}"
+                )
+                continue
+            self.metadata[key] = value
+
     @property
     def is_empty(self) -> bool:
         return not (self.created or self.modified or self.deleted or self.patches)

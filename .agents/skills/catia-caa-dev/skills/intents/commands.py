@@ -12,10 +12,8 @@ from changeset import ChangeSet
 from meta_model import Visibility
 
 from .helpers import (
-    changeset_from_dict,
     generate_next_steps,
     generate_tooltip,
-    merge_changeset,
     validate_command_params,
 )
 
@@ -58,7 +56,12 @@ def create_executable_command(
     )
     components = {"command": name, "dialog": None, "workbench": None}
 
-    # Create command
+    # All three actions write into the SAME ChangeSet. Serializing each result
+    # and re-merging (the previous flow) dropped the second writer of any file
+    # two actions share: create_command and create_dialog both contribute to
+    # the framework .CATNls catalog, so the merged value kept only one of the
+    # two blocks and the dialog's own keys (<Dialog>.LabelId) never reached
+    # disk. Nothing below applies the ChangeSet — the caller does.
     cmd_result = create_command(
         ctx,
         name=name,
@@ -70,36 +73,32 @@ def create_executable_command(
         tooltip=tooltip,
         category=category,
         visibility=visibility,
+        cs=master_cs,
     )
     if cmd_result["status"] == "error":
         return cmd_result
-    merge_changeset(master_cs, changeset_from_dict(cmd_result["changeset"]))
 
     # Create dialog
     if with_dialog and dialog_name:
-        dlg_result = create_dialog(ctx, dialog_name, module, framework)
+        dlg_result = create_dialog(ctx, dialog_name, module, framework, cs=master_cs)
         if dlg_result["status"] != "error":
-            merge_changeset(master_cs, changeset_from_dict(dlg_result["changeset"]))
             components["dialog"] = dialog_name
 
     # Add to workbench
     if add_to_workbench:
-        wb_result = add_cmd_to_wb(ctx, name, add_to_workbench)
+        wb_result = add_cmd_to_wb(ctx, name, add_to_workbench, cs=master_cs)
         if wb_result["status"] != "error":
-            merge_changeset(master_cs, changeset_from_dict(wb_result["changeset"]))
             components["workbench"] = add_to_workbench
 
-    master_cs.metadata.update(
-        {
-            "intent": "create_executable_command",
-            "command": name,
-            "module": module,
-            "framework": framework,
-            "has_dialog": with_dialog,
-            "dialog_name": dialog_name,
-            "workbench": add_to_workbench,
-            "components": components,
-        }
+    master_cs.merge_metadata(
+        intent="create_executable_command",
+        command=name,
+        module=module,
+        framework=framework,
+        has_dialog=with_dialog,
+        dialog_name=dialog_name,
+        workbench=add_to_workbench,
+        components=components,
     )
 
     return {
