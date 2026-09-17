@@ -47,13 +47,24 @@ class BackupManager:
             changeset: ChangeSet to backup
 
         Returns:
-            backup_id: Unique backup identifier (timestamp)
+            backup_id: Unique backup identifier (timestamp, collision-safe)
         """
-        backup_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[
-            :17
-        ]  # Include microseconds
+        # Microsecond precision, not truncated: the previous [:17] slice kept a
+        # single microsecond digit, so every backup created inside the same
+        # ~100 ms window shared an id and silently reused the same directory.
+        base_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        backup_id = base_id
+        suffix = 1
+        while (self.backup_dir / backup_id).exists():
+            backup_id = f"{base_id}_{suffix}"
+            suffix += 1
+
         backup_path = self.backup_dir / backup_id
-        backup_path.mkdir(parents=True, exist_ok=True)
+        # exist_ok=False: the loop above must have resolved any collision, so an
+        # existing directory here means a concurrent writer won the race.
+        # Failing loudly is correct — overwriting it would destroy a rollback
+        # point that a caller may already hold by id.
+        backup_path.mkdir(parents=True, exist_ok=False)
 
         # Backup files that will be modified. Both whole-file rewrites
         # (changeset.modified) and in-place patches (changeset.patches) are

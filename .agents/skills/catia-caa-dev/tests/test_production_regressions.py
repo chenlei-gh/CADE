@@ -15,8 +15,10 @@ sys.path.insert(0, str(SKILL_ROOT / "skills"))
 
 from actions import ActionContext, create_framework
 from analyzer import WorkspaceAnalyzer
+import backup as backup_module
 import build as build_module
 import cade as cade_module
+from backup import BackupManager
 from build import verify_build
 from changeset import ChangeSet, Patch, merge_changesets
 from diagnostics import DiagnosticsEngine
@@ -634,6 +636,81 @@ try:
     check("_resolve_workspace_root(root) is unchanged", resolved(path_ws) == path_ws)
 finally:
     shutil.rmtree(path_ws, ignore_errors=True)
+
+# ── backup_id uniqueness: rollback points must never be overwritten ──────
+# create_backup() used to slice strftime("%Y%m%d_%H%M%S_%f")[:17], keeping one
+# microsecond digit. Every backup made inside the same ~100 ms window got the
+# same id, and mkdir(exist_ok=True) silently reused the directory, so an
+# earlier rollback point was destroyed while rollback() still reported
+# success (restoring an intermediate state).
+uniq_ws = Path(tempfile.mkdtemp(prefix="cade_backup_unique_"))
+try:
+    src = uniq_ws / "UniqFW.edu" / "UniqMod.m" / "src"
+    src.mkdir(parents=True)
+    target = src / "Uniq.CATNls"
+    true_original = 'A.Title = "a";\n'
+    target.write_text(true_original, encoding="utf-8")
+
+    mgr = BackupManager(uniq_ws)
+    burst_ids = [mgr.create_backup(ChangeSet(action=f"burst{i}", description="b"))
+                 for i in range(25)]
+    check("backup ids are unique across a rapid burst",
+          len(set(burst_ids)) == len(burst_ids),
+          f"{len(set(burst_ids))} distinct of {len(burst_ids)}")
+    check("each burst backup has its own directory",
+          len([d for d in mgr.backup_dir.iterdir() if d.is_dir()]) == len(burst_ids),
+          f"{len([d for d in mgr.backup_dir.iterdir() if d.is_dir()])} dirs")
+
+    # Two sequential edits to the same file must each keep their own rollback
+    # point, and the later one must not hold the earlier one's content.
+    snapshots = []
+    for content in ['B.Title = "b";', 'C.Title = "c";', 'D.Title = "d";']:
+        cs = ChangeSet(action="seq", description="seq")
+        cs.add_patch(Patch(file=target, operation="append", target="", content=content))
+        snapshots.append(cs.apply(workspace_root=uniq_ws).get("rollback_id"))
+    check("sequential backups on one file get distinct ids",
+          len(set(snapshots)) == 3, str(snapshots))
+
+    first_saved = (mgr.backup_dir / snapshots[0] / "modified"
+                   / "UniqFW.edu" / "UniqMod.m" / "src" / "Uniq.CATNls")
+    first_ok = (first_saved.is_file()
+                and first_saved.read_text(encoding="utf-8") == true_original)
+    check("earliest rollback point still holds the true original", first_ok,
+          "" if first_ok else
+          ("missing snapshot" if not first_saved.is_file() else "content mismatch"))
+
+    # Roll back the OLDEST id: must restore the original, not an intermediate.
+    restored = mgr.rollback(snapshots[0])
+    restored_content = target.read_text(encoding="utf-8")
+    oldest_ok = restored.get("status") == "success" and restored_content == true_original
+    check("rolling back the oldest id restores the true original", oldest_ok,
+          "" if oldest_ok else f"status={restored.get('status')} content={restored_content!r}")
+
+    # Deterministic collision: freeze the clock so every call produces the
+    # same base id, then verify the suffix loop allocates distinct dirs.
+    frozen = datetime(2026, 1, 1, 0, 0, 0, 123456)
+
+    class _FrozenDatetime:
+        @staticmethod
+        def now():
+            return frozen
+
+    with patch.object(backup_module, "datetime", _FrozenDatetime):
+        frozen_ids = [
+            mgr.create_backup(ChangeSet(action=f"frozen{i}", description="f"))
+            for i in range(3)
+        ]
+    check("same-microsecond backups get suffixes instead of colliding",
+          frozen_ids == ["20260101_000000_123456",
+                         "20260101_000000_123456_1",
+                         "20260101_000000_123456_2"],
+          str(frozen_ids))
+    check("each suffixed id has its own directory",
+          all((mgr.backup_dir / i).is_dir() for i in frozen_ids))
+    check("suffixed ids stay valid for _validate_backup_id",
+          all(mgr._validate_backup_id(i) is None for i in frozen_ids))
+finally:
+    shutil.rmtree(uniq_ws, ignore_errors=True)
 
 print(f"\nProduction regressions: {passed}/{total}")
 if failures:
