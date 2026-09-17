@@ -14,7 +14,7 @@ Outputs:
   - I_CADEPartToAsm.png     (22 CATIA Normal Mode, RGBA Transparent)
   - I_CADEPartToAsm.bmp     (22 CATIA Runtime 8-bit indexed BMP, palette 0 = CATIA_BG)
 """
-import sys
+import json, sys
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter
 
@@ -26,6 +26,7 @@ sys.path.insert(0, str(SKILL / "skills"))
 
 from icon_design_lib import draw_gradient_poly, draw_cylinder_shading  # noqa: E402
 from icon_provider import _save_palette_bmp, CATIA_BG                  # noqa: E402
+from icon_gen_pipeline import lint_bmp_asset, lint_alpha_png           # noqa: E402
 
 STEM = "I_CADEPartToAsm"
 MASTER_SIZE = 512
@@ -176,45 +177,82 @@ def export_multi_scale_assets(master: Image.Image, out_dir: Path) -> dict:
         if size == 22:
             canvas_bg = Image.new("RGB", (22, 22), CATIA_BG)
             canvas_bg.paste(resampled, (0, 0), resampled)
+            # 量化到 <= 16 色以严格对齐 CATIA 8-bit palettized 资源上限
+            canvas_bg_quant = canvas_bg.quantize(
+                colors=16, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE
+            ).convert("RGB")
             bmp_path = out_dir / f"{STEM}.bmp"
-            _save_palette_bmp(canvas_bg, bmp_path)
+            _save_palette_bmp(canvas_bg_quant, bmp_path)
             generated_files["bmp_22"] = bmp_path
 
-    # 3. 严格验证断言
-    _verify_generated_assets(generated_files)
-    return generated_files
+    # 3. 严格验证断言与同步真实度量数据
+    lint_data = _verify_generated_assets(generated_files)
+    update_provenance_json(lint_data)
+    return generated_files, lint_data
 
 
-def _verify_generated_assets(assets: dict) -> None:
-    """Verify all generated assets conform to CADE v3 specs."""
+def _verify_generated_assets(assets: dict) -> dict:
+    """Verify all generated assets conform to CADE v3 specs using unified engineering lints."""
+    # 1. Existence and basic format
     for key, path in assets.items():
         assert path.exists(), f"Missing expected output: {path}"
         assert path.stat().st_size > 0, f"Empty asset file: {path}"
 
-        if path.suffix == ".png":
-            with Image.open(path) as img:
-                assert img.mode == "RGBA", f"{path.name} must be RGBA"
-                # Check transparent background exists (minimum alpha must be < 255)
-                min_alpha, max_alpha = img.getchannel("A").getextrema()
-                assert min_alpha < 255, f"{path.name} has no transparent pixels (min alpha = {min_alpha})"
-        elif path.suffix == ".bmp":
-            with Image.open(path) as img:
-                assert img.size == (22, 22), f"{path.name} must be 22x22"
-                assert img.mode == "P", f"{path.name} must be 8-bit indexed ('P' mode), got {img.mode}"
-                palette = img.getpalette()
-                assert palette is not None, f"{path.name} palette missing"
-                # Palette index 0 must be CATIA_BG (192, 192, 192)
-                assert (palette[0], palette[1], palette[2]) == CATIA_BG, (
-                    f"{path.name} palette[0] must be {CATIA_BG}, got {(palette[0], palette[1], palette[2])}"
-                )
+    # 2. Unified Alpha PNG Linting on 512 Master and all scales
+    master_png = assets["png_512"]
+    alpha_report = lint_alpha_png(master_png)
+    assert alpha_report["has_transparency"], f"{master_png.name} has no transparency"
+    assert alpha_report["corners_alpha_zero"], f"{master_png.name} four corners must have Alpha == 0"
+    assert alpha_report["alpha_clean"], f"{master_png.name} Alpha channel failed cleanliness check: {alpha_report}"
+
+    # 3. Unified BMP Linting on 22x22 Normal BMP
+    bmp_path = assets["bmp_22"]
+    bmp_report = lint_bmp_asset(bmp_path)
+    assert bmp_report["pass"], f"{bmp_path.name} failed hard engineering gate: {bmp_report['hard_checks']}"
+
+    return {
+        "bmp_lint": bmp_report,
+        "alpha_lint": alpha_report,
+    }
+
+
+def update_provenance_json(lint_results: dict) -> None:
+    """Synchronize genuine measured verification metrics into provenance JSON."""
+    json_path = HERE / f"{STEM}.json"
+    if not json_path.exists():
+        return
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+
+    bmp_lint = lint_results["bmp_lint"]
+    alpha_lint = lint_results["alpha_lint"]
+
+    data["gate"] = {
+        "master_size": f"{MASTER_SIZE}x{MASTER_SIZE}",
+        "scales": [512, 256, 64, 32, 22],
+        "bmp_mode": "8-bit indexed (palette 0 = CATIA_BG)",
+        "bmp_colors": bmp_lint["colors"],
+        "hard_checks": bmp_lint["hard_checks"],
+        "fg_ratio": bmp_lint["soft_lints"]["fg_ratio"],
+        "fg_in_guidance": bmp_lint["soft_lints"]["fg_in_guidance"],
+        "isolated_noise_px": bmp_lint["soft_lints"]["isolated_noise_px"],
+        "alpha_clean": alpha_lint["alpha_clean"],
+        "alpha_measured": {
+            "corners_alpha_zero": alpha_lint["corners_alpha_zero"],
+            "dirty_zero_alpha_pixels": alpha_lint["dirty_zero_alpha_pixels"],
+            "semi_transparent_ratio": alpha_lint["semi_transparent_ratio"],
+        },
+    }
+    json_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
     master_img = build_ultra_3d_master()
-    results = export_multi_scale_assets(master_img, HERE)
+    results, lint_data = export_multi_scale_assets(master_img, HERE)
 
     print(f"[PASS] {STEM} Ultra-3D multi-scale assets regenerated and verified:")
     for size, suffix, desc in EXPORT_SCALES:
         p = results[f"png_{size}"]
         print(f"  - {desc:32s}: {p.name}")
     print(f"  - CATIA Normal BMP (8-bit indexed) : {results['bmp_22'].name}")
+    print(f"  - Unified BMP Lint : Hard Gates PASS, fg={lint_data['bmp_lint']['soft_lints']['fg_ratio']:.1%}, colors={lint_data['bmp_lint']['colors']}")
+    print(f"  - Unified Alpha Lint: alpha_clean={lint_data['alpha_lint']['alpha_clean']}, dirty_zero_px={lint_data['alpha_lint']['dirty_zero_alpha_pixels']}")

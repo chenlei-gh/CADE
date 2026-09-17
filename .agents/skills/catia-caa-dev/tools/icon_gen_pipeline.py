@@ -110,7 +110,8 @@ def _check_edge_collision(rgb: Image.Image) -> tuple:
 
 def _detect_isolated_noise(rgb: Image.Image) -> int:
     """Soft lint: counts isolated foreground pixels that have no 8-neighbors.
-    Returns count of stray isolated pixels."""
+    Returns count of stray isolated pixels.
+    NOTE: Used for report and human review; not a hard gate failure condition."""
     px = rgb.load()
     w, h = rgb.size
     
@@ -133,6 +134,98 @@ def _detect_isolated_noise(rgb: Image.Image) -> int:
                 if neighbors == 0:
                     isolated_count += 1
     return isolated_count
+
+
+def lint_bmp_asset(bmp_path: Path) -> dict:
+    """Reusable engineering lint for any 22x22 CATIA runtime BMP.
+    Returns hard_checks, soft_lints, and overall pass/fail status."""
+    with Image.open(bmp_path) as im:
+        assert im.size == (CANVAS, CANVAS), f"BMP must be {CANVAS}x{CANVAS}, got {im.size}"
+        bmp_mode_ok = (im.mode == "P")
+        pal = im.getpalette() or []
+        palette_bg_ok = (len(pal) >= 3 and (pal[0], pal[1], pal[2]) == CATIA_BG)
+        colors = len(im.getcolors(maxcolors=256) or [])
+
+        rgb = im.convert("RGB")
+        corners_ok = _corner_pure(rgb)
+        no_collision, edge_stats = _check_edge_collision(rgb)
+        fg = _fg_ratio(rgb)
+        noise_px = _detect_isolated_noise(rgb)
+
+    hard_checks = {
+        "colors_ceiling_ok": colors <= MAX_COLORS,
+        "corners_pure": corners_ok,
+        "no_edge_collision": no_collision,
+        "bmp_format_ok": bmp_mode_ok and palette_bg_ok,
+    }
+
+    soft_lints = {
+        "fg_ratio": round(fg, 3),
+        "fg_in_guidance": FG_MIN <= fg <= FG_MAX,
+        "fg_guidance_note": "15%-70% general envelope; 68%-72% recommended for centered solid mechanical parts",
+        "isolated_noise_px": noise_px,
+        "isolated_noise_note": "Report-only soft lint; does not trigger hard failure",
+        "edge_ratios": edge_stats,
+    }
+
+    return {
+        "file": str(bmp_path),
+        "colors": colors,
+        "hard_checks": hard_checks,
+        "soft_lints": soft_lints,
+        "pass": all(hard_checks.values()),
+    }
+
+
+def lint_alpha_png(png_path: Path) -> dict:
+    """Reusable engineering lint for transparent multi-scale PNG assets.
+    Verifies Alpha integrity, corner transparency, and detects halo/dirty edges."""
+    with Image.open(png_path) as im:
+        assert im.mode == "RGBA", f"PNG must be RGBA mode, got {im.mode}"
+        w, h = im.size
+        alpha = im.getchannel("A")
+        min_a, max_a = alpha.getextrema()
+        has_transparency = min_a < 255
+
+        # Check four corners are 100% transparent (A == 0)
+        px_a = alpha.load()
+        corners_alpha_zero = all(
+            px_a[x, y] == 0
+            for x, y in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]
+        )
+
+        # Transparency dirty edge / contamination check:
+        # For pixels with A == 0, RGB should be clean (ideally (0,0,0) or uniform).
+        px = im.load()
+        dirty_zero_alpha_px = 0
+        semi_trans_count = 0
+        opaque_count = 0
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = px[x, y]
+                if a == 0:
+                    if (r, g, b) != (0, 0, 0):
+                        dirty_zero_alpha_px += 1
+                elif a < 255:
+                    semi_trans_count += 1
+                else:
+                    opaque_count += 1
+
+        total_visible = semi_trans_count + opaque_count
+        semi_ratio = round(semi_trans_count / total_visible, 3) if total_visible > 0 else 0.0
+
+        # Alpha is clean if corners are fully transparent and zero-alpha pixels carry no dirty RGB spill
+        alpha_clean = corners_alpha_zero and has_transparency and (dirty_zero_alpha_px == 0)
+
+        return {
+            "file": str(png_path),
+            "size": f"{w}x{h}",
+            "has_transparency": has_transparency,
+            "corners_alpha_zero": corners_alpha_zero,
+            "dirty_zero_alpha_pixels": dirty_zero_alpha_px,
+            "semi_transparent_ratio": semi_ratio,
+            "alpha_clean": alpha_clean,
+        }
 
 
 def process(src: Path, stem: str, out_dir: Path) -> dict:
@@ -159,46 +252,23 @@ def process(src: Path, stem: str, out_dir: Path) -> dict:
     png_path = out_dir / f"{stem}_8x.png"
     preview.save(png_path)
 
-    # 5. Engineering Linting (Hard Gates vs Soft Lints)
-    colors = len(img.getcolors(maxcolors=256) or [])
-    fg = _fg_ratio(img)
-    corners_ok = _corner_pure(img)
-    no_collision, edge_stats = _check_edge_collision(img)
-    noise_px = _detect_isolated_noise(img)
-
-    # Validate generated BMP format
-    with Image.open(bmp_path) as bmp_check:
-        bmp_mode_ok = (bmp_check.mode == "P")
-        pal = bmp_check.getpalette() or []
-        palette_bg_ok = (len(pal) >= 3 and (pal[0], pal[1], pal[2]) == CATIA_BG)
-
-    hard_checks = {
-        "colors_ceiling_ok": colors <= MAX_COLORS,
-        "corners_pure": corners_ok,
-        "no_edge_collision": no_collision,
-        "bmp_format_ok": bmp_mode_ok and palette_bg_ok,
-    }
-
-    soft_lints = {
-        "fg_ratio": round(fg, 3),
-        "fg_in_guidance": FG_MIN <= fg <= FG_MAX,
-        "fg_guidance_note": "15%-70% general envelope; 68%-72% recommended for centered solid mechanical parts",
-        "isolated_noise_px": noise_px,
-        "edge_ratios": edge_stats,
-        "bg_snapped_px": snapped,
-    }
+    # 5. Engineering Linting via reusable lint_bmp_asset
+    bmp_lint = lint_bmp_asset(bmp_path)
+    colors = bmp_lint["colors"]
+    fg = bmp_lint["soft_lints"]["fg_ratio"]
+    corners_ok = bmp_lint["hard_checks"]["corners_pure"]
 
     gate = {
         "size": f"{CANVAS}x{CANVAS}",
         "colors": colors,
-        "colors_ok": colors <= MAX_COLORS,
-        "fg": round(fg, 3),
-        "fg_ok": FG_MIN <= fg <= FG_MAX,
+        "colors_ok": bmp_lint["hard_checks"]["colors_ceiling_ok"],
+        "fg": fg,
+        "fg_ok": bmp_lint["soft_lints"]["fg_in_guidance"],
         "corners_pure": corners_ok,
         "bg_snapped_px": snapped,
-        "hard_checks": hard_checks,
-        "soft_lints": soft_lints,
-        "pass": all(hard_checks.values()),
+        "hard_checks": bmp_lint["hard_checks"],
+        "soft_lints": bmp_lint["soft_lints"],
+        "pass": bmp_lint["pass"],
     }
 
     report = {

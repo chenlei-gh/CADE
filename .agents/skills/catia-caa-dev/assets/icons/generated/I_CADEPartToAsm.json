@@ -9,12 +9,30 @@
   "pipeline": "Ultra-3D multi-scale export pipeline (ICON_GENERATION_SPEC v3)",
   "gate": {
     "master_size": "512x512",
-    "scales": [512, 256, 64, 32, 22],
+    "scales": [
+      512,
+      256,
+      64,
+      32,
+      22
+    ],
     "bmp_mode": "8-bit indexed (palette 0 = CATIA_BG)",
-    "bmp_colors": 16,
-    "fg_guidance": "recommended 68%-72% for centered mechanical solids; actual normal=0.69",
-    "pure_corners": true,
-    "alpha_clean": true
+    "bmp_colors": 14,
+    "hard_checks": {
+      "colors_ceiling_ok": true,
+      "corners_pure": true,
+      "no_edge_collision": true,
+      "bmp_format_ok": true
+    },
+    "fg_ratio": 0.24,
+    "fg_in_guidance": true,
+    "isolated_noise_px": 1,
+    "alpha_clean": true,
+    "alpha_measured": {
+      "corners_alpha_zero": true,
+      "dirty_zero_alpha_pixels": 0,
+      "semi_transparent_ratio": 0.319
+    }
   },
   "candidates": {
     "v1_pixel_mesh": "Meshing gear pair (I_Part/I_Product vocabulary, 22x22 pixel art) - superseded as overly abstract and low-res",
