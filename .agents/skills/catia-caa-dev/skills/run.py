@@ -35,9 +35,10 @@ POLL_MAX_ATTEMPTS = 30
 PROCESS_EXIT_SETTLE = 0.5
 
 # Age beyond which an unreferenced cade_run_*.bat is treated as an orphan.
-# Normal launches reach the blocking `call mkrun` well inside this window, and
-# a batch still executing keeps its host cmd.exe alive (caught by the in-use
-# guard instead of this threshold), so this only catches killed hosts.
+# NOTE: this is NOT a "still launching?" window — the batch blocks on
+# `call mkrun` for the whole CATIA session, so a live file can be hours old
+# (observed >20 min). Safety comes from the in-use check, not this threshold;
+# the age test only avoids paying for a WMIC query on freshly written files.
 STALE_BAT_AGE_SECONDS = 3600
 
 
@@ -162,10 +163,16 @@ def _reclaim_stale_run_bats(logger=None) -> int:
     Self-deletion in the batch body covers the normal and stop_catia paths;
     this only reclaims files whose host cmd.exe was killed before the script
     could finish. A file must clear BOTH the age threshold AND the absence of
-    any live cmd.exe reference — a batch parked on `call mkrun` keeps its host
-    alive, so in-flight launches are never deleted underneath themselves.
+    any live cmd.exe reference. The in-use check is what actually protects an
+    in-flight launch (a batch parked on `call mkrun` stays alive for the whole
+    CATIA session and can far exceed the age threshold); the age test merely
+    skips freshly written files before spending a WMIC query on them.
     Bails out entirely when the process query fails (never delete on doubt),
     and swallows per-file errors so reclamation cannot break a launch.
+
+    Residual race: a cmd.exe that picks up a candidate between the WMIC query
+    and the unlink would have its file removed underneath it. Not closed, and
+    accepted for a once-per-launch safety net.
     """
     candidates = [
         path
@@ -326,7 +333,15 @@ def start_catia_runtime(
         with tempfile.NamedTemporaryFile(suffix=".bat", prefix="cade_run_", delete=False, mode="w", encoding="ascii", newline="") as f:
             f.write(bat_content)
             batfile = f.name
-        cmd_args = ["cmd", "/c", f"start /min cmd /c {batfile}"]
+        # Argument list, not a pre-joined string: run.py must survive a TEMP
+        # path containing spaces (e.g. C:\Users\John Smith\...). As a single
+        # string, `start /min cmd /c <path>` splits on the space and the batch
+        # is never executed, yet cmd still exits 0 — a silent launch failure.
+        # Wrapping the path in quotes does NOT help: `start` then treats it as
+        # the new window's title. The list form lets the argument layer quote
+        # the path while leaving `cmd` unquoted, which is what stops `start`
+        # from misreading it as a title (verified against a spaced temp dir).
+        cmd_args = ["cmd", "/c", "start", "/min", "cmd", "/c", batfile]
         logger.write(f"Using mkrun (workspace): {workspace_path}")
     else:
         # No workspace — use CATSTART for a plain CATIA launch.
