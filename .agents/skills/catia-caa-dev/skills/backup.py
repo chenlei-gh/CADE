@@ -37,6 +37,12 @@ class BackupManager:
         """
         Create backup before applying changeset.
 
+        Captures every file the changeset will change in place — both
+        whole-file rewrites (changeset.modified) and in-place patch targets
+        (changeset.patches) — plus files it will delete. Files created by the
+        changeset have no prior content; their paths are recorded in the
+        manifest so rollback() can remove them again.
+
         Args:
             changeset: ChangeSet to backup
 
@@ -49,21 +55,41 @@ class BackupManager:
         backup_path = self.backup_dir / backup_id
         backup_path.mkdir(parents=True, exist_ok=True)
 
-        # Backup files that will be modified
+        # Backup files that will be modified. Both whole-file rewrites
+        # (changeset.modified) and in-place patches (changeset.patches) are
+        # captured here: apply() edits patch targets directly, so if they are
+        # not copied to modified/ their pre-change content is lost and
+        # rollback() has nothing to restore.
         backed_up_files = []
+        backed_up_keys = set()
+
+        def _backup_modified(file_path: Path) -> None:
+            """Copy file_path into modified/ once, preserving structure."""
+            key = str(file_path)
+            if key in backed_up_keys:
+                # Same file reachable via several patches — one copy is enough.
+                return
+            backed_up_keys.add(key)
+            if not file_path.exists():
+                # Nothing to preserve: either it never existed (patch target
+                # created earlier in the same ChangeSet), or it is already
+                # gone. Not an error — rollback simply has no entry for it.
+                return
+            rel_path = (
+                file_path.relative_to(self.workspace_root)
+                if file_path.is_absolute()
+                else file_path
+            )
+            backup_file = backup_path / "modified" / rel_path
+            backup_file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(file_path, backup_file)
+            backed_up_files.append(str(rel_path))
+
         for file_path_str in changeset.modified.keys():
-            file_path = Path(file_path_str)
-            if file_path.exists():
-                # Preserve directory structure
-                rel_path = (
-                    file_path.relative_to(self.workspace_root)
-                    if file_path.is_absolute()
-                    else file_path
-                )
-                backup_file = backup_path / "modified" / rel_path
-                backup_file.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(file_path, backup_file)
-                backed_up_files.append(str(rel_path))
+            _backup_modified(Path(file_path_str))
+
+        for patch in changeset.patches:
+            _backup_modified(Path(patch.file))
 
         # Backup files that will be deleted
         for file_path in changeset.deleted:
@@ -77,14 +103,22 @@ class BackupManager:
                 backup_file.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(file_path, backup_file)
 
-        # Create manifest
+        # Create manifest. "modified" lists every file this ChangeSet will
+        # change in place (whole-file rewrites + patch targets);
+        # "backed_up_files" lists the subset whose pre-change content was
+        # actually copied into modified/ (absent files have nothing to save).
+        patch_targets = [str(patch.file) for patch in changeset.patches]
+        modified_paths = list(
+            dict.fromkeys([*changeset.modified.keys(), *patch_targets])
+        )
+
         manifest = {
             "backup_id": backup_id,
             "timestamp": datetime.now().isoformat(),
             "action": changeset.action,
             "description": changeset.description,
             "created": list(changeset.created.keys()),
-            "modified": list(changeset.modified.keys()),
+            "modified": modified_paths,
             "deleted": [str(p) for p in changeset.deleted],
             "backed_up_files": backed_up_files,
         }
