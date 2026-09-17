@@ -444,7 +444,22 @@ def get_icon(icon_name: str, style: str = "geo", size: int = 22,
         path = _render_placeholder(badge, size=size, format=format, alpha=alpha)
     if path:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        shutil.copy(path, cached)
+        try:
+            shutil.copy(path, cached)
+        finally:
+            # _compose_official / _render_placeholder hand back a scratch file
+            # under %TEMP% (named with os.getpid()). Copying it into the cache
+            # is its last use, so drop it here — otherwise every rendered
+            # (icon, badge, size, format) combination lingers in %TEMP% for the
+            # life of the machine, one per process that ever rendered it.
+            # Cleanup deliberately lives in get_icon and not in the renderers:
+            # those are part of ICON_HASH, and test_icons calls them directly
+            # and reads the file they return.
+            if path != cached:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass  # already gone / still locked — cache copy is intact
         return cached
     return path
 

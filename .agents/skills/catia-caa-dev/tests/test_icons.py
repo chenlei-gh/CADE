@@ -8,6 +8,7 @@ stem resolution, badge glyph rendering, BMP format, cache, and fallback.
 Run: python test_icons.py
 """
 
+import os
 import re
 import shutil
 import sys
@@ -527,6 +528,72 @@ if ph:
 # Placeholder without badge
 ph2 = _render_placeholder()
 check("placeholder no badge", ph2 is not None and ph2.exists())
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PART K: Scratch-file ownership
+# ═══════════════════════════════════════════════════════════════
+print("\n" + "=" * 60)
+print("  K. Scratch-file ownership (get_icon)")
+print("=" * 60)
+
+# _compose_official / _render_placeholder hand back a scratch file in %TEMP%
+# named with os.getpid(). get_icon copies it into the cache, and that copy is
+# the file's last use, so get_icon must remove it. Otherwise every rendered
+# (name, badge, size, format) combination stays behind for the life of the
+# machine — one per process that ever rendered it.
+#
+# The names are predictable, and they are compared by name rather than by a
+# before/after set diff: the scratch name embeds os.getpid(), so any combo
+# rendered earlier in this same process would already be present in the
+# "before" snapshot and a set diff would silently see nothing.
+_TEMP = Path(os.environ.get("TEMP", "/tmp"))
+_SCRATCH_CALLS = [
+    ("CreateHoleCmd", 22, "bmp", False),
+    ("CreateCircleCmd", 64, "png", True),
+    ("nonexistent_xyz", 22, "bmp", False),
+    ("CreateHoleCmd", 48, "bmp", False),
+]
+
+_scratch_paths = set()
+for _name, _size, _fmt, _alpha in _SCRATCH_CALLS:
+    _official = resolve_official_icon(_name)
+    _badge = resolve_icon_ex(_name)[1]
+    _ext = "png" if _fmt == "png" else "bmp"
+    if _official is not None:
+        _scratch_paths.add(
+            _TEMP / f"cade_icon_off_{_official.stem}_{_badge or 'base'}"
+                    f"_{_size}_{os.getpid()}.{_ext}"
+        )
+    _scratch_paths.add(
+        _TEMP / f"cade_icon_placeholder_{_badge or 'base'}"
+                f"_{_size}_{os.getpid()}.{_ext}"
+    )
+
+# Start from a clean slate: drop any scratch file this pid left earlier and
+# force real renders, since a cache hit returns before making one.
+for _p in _scratch_paths:
+    if _p.exists():
+        _p.unlink()
+for f in CACHE_DIR.glob("*.bmp"):
+    f.unlink()
+for f in CACHE_DIR.glob("*.png"):
+    f.unlink()
+
+for _name, _size, _fmt, _alpha in _SCRATCH_CALLS:
+    get_icon(_name, size=_size, format=_fmt, alpha=_alpha)
+
+leaked = sorted(p.name for p in _scratch_paths if p.exists())
+check("get_icon leaves no cade_icon_* scratch files", not leaked, str(leaked))
+
+# The cache itself must still be populated — cleanup must not eat the result.
+cached_ok = get_icon("CreateHoleCmd").exists()
+check("get_icon still populates the cache", cached_ok)
+
+# Deleting the scratch file must not have cost the cached copy its contents.
+cached_path = get_icon("CreateHoleCmd")
+check("cached icon is still a readable BMP",
+      cached_path.read_bytes()[:2] == b"BM")
 
 
 # ═══════════════════════════════════════════════════════════════
