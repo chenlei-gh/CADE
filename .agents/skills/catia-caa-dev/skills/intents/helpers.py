@@ -64,6 +64,10 @@ def merge_changeset(target: ChangeSet, source: ChangeSet):
     target.deleted.extend(source.deleted)
     target.patches.extend(source.patches)
     target.warnings.extend(source.warnings)
+    # Binary payloads live in a separate field but are indexed by the
+    # "[BINARY]" placeholders copied above — merge them in the same step so a
+    # merged result never claims a file whose bytes were left behind.
+    target.merge_binary_from(source)
 
 
 def generate_next_steps(components: Dict) -> List[str]:

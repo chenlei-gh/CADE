@@ -186,6 +186,33 @@ class ChangeSet:
                 continue
             self.metadata[key] = value
 
+    def merge_binary_from(self, other: "ChangeSet") -> None:
+        """Merge `other`'s queued binary payloads into this ChangeSet.
+
+        `_binary` is the byte payload behind a `created` entry whose value is
+        the "[BINARY]" placeholder. A merge that copied `created` but dropped
+        `_binary` produced a ChangeSet that advertised a file it could never
+        write, so the two must travel together.
+
+        Only paths that hold the placeholder in the merged `created` are
+        taken: if the merged value is a text payload, keeping the bytes would
+        silently replace that text. Same bytes is an idempotent no-op;
+        different bytes keep the value already queued and report a warning,
+        rather than letting merge order decide.
+        """
+        for path_str, data in other._binary.items():
+            if self.created.get(path_str) != "[BINARY]":
+                continue
+            existing = self._binary.get(path_str)
+            if existing is None:
+                self._binary[path_str] = data
+            elif existing != data:
+                self.add_warning(
+                    f"binary conflict on '{path_str}': kept the queued "
+                    f"payload ({len(existing)} bytes), ignored "
+                    f"{len(data)} bytes from the merged ChangeSet"
+                )
+
     @property
     def is_empty(self) -> bool:
         return not (self.created or self.modified or self.deleted or self.patches)
