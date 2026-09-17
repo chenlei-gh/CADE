@@ -125,6 +125,11 @@ try:
     check("2.3 tck_profile in command", "tck_profile" in display, "REQUIRED for build")
 except Exception as e:
     check("2.1 build_time_command()", False, str(e)[:80])
+finally:
+    # Ownership contract: this call materialized a temp .bat and we only
+    # generated the command (never executed it), so WE must remove it.
+    # Cleanup per call, not batched — _build_bat holds only the latest path.
+    env.cleanup_build_bat()
 
 for opt, label in [("-g", "debug"), ("-c", "clean"), ("-a", "full")]:
     try:
@@ -132,6 +137,8 @@ for opt, label in [("-g", "debug"), ("-c", "clean"), ("-a", "full")]:
         check(f"2.x build_time_command({label})", len(c) > 0, f"opt={opt}")
     except Exception as e:
         check(f"2.x build_time_command({label})", False, str(e)[:60])
+    finally:
+        env.cleanup_build_bat()
 
 # ═══ Part 3: mkmk Output Parser ═══
 print("\n" + "=" * 70)
@@ -334,6 +341,10 @@ for opt, label in [("-u", "incremental"), ("-a", "full"), ("-c", "clean"), ("-g"
             check(f"9.x tck_profile in {label}", True)
     except Exception as e:
         check(f"9.x build_time_command({label})", False, str(e)[:60])
+    finally:
+        # Same ownership contract as Part 2: command-only usage, so the
+        # generated .bat must be removed here, after each individual call.
+        env.cleanup_build_bat()
 
 # ═══ Part 10: Management Commands (command generation only) ═══
 print("\n" + "=" * 70)
