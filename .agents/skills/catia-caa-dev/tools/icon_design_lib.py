@@ -188,3 +188,77 @@ def cycle_arrows(d, cx, cy, r, color=INK, accent=CYAN_EDGE, width=2):
         x = round(cx + r * math.cos(a))
         y = round(cy + r * math.sin(a))
         d.rectangle([x - 1, y - 1, x + 1, y + 1], fill=col)
+
+
+def transfer_arrow(d, x0, y0, x1, y1, color=INK):
+    """Hard-pixel directional transfer arrow (horizontal, vertical, diagonal).
+    Clean 1px stroke + solid pixel arrowhead without anti-aliasing."""
+    d.line([(x0, y0), (x1, y1)], fill=color, width=1)
+    if x1 > x0 and y1 == y0:  # pointing right
+        d.polygon([(x1, y1), (x1 - 2, y1 - 2), (x1 - 2, y1 + 2)], fill=color)
+    elif x1 < x0 and y1 == y0:  # pointing left
+        d.polygon([(x1, y1), (x1 + 2, y1 - 2), (x1 + 2, y1 + 2)], fill=color)
+    elif y1 > y0 and x1 == x0:  # pointing down
+        d.polygon([(x1, y1), (x1 - 2, y1 - 2), (x1 + 2, y1 - 2)], fill=color)
+    elif x1 > x0 and y1 > y0:  # pointing down-right
+        d.point([(x1, y1), (x1 - 1, y1), (x1, y1 - 1), (x1 - 2, y1), (x1, y1 - 2)], fill=color)
+
+
+def micro_part(d, x, y, w=6, h=6, face=FACE, edge=INK):
+    """Micro solid part block with 1px top-left highlight and hard ink border."""
+    d.rectangle([x, y, x + w - 1, y + h - 1], fill=face, outline=edge)
+    if w >= 4 and h >= 4:
+        d.line([(x + 1, y + 1), (x + w - 2, y + 1)], fill=WHITE)
+        d.line([(x + 1, y + 1), (x + 1, y + h - 2)], fill=WHITE)
+
+
+def assembly_bracket(d, x, y, w, h, edge=INK):
+    """Open L-bracket docking boundary representing assembly context."""
+    d.rectangle([x, y, x + 1, y + h - 1], fill=edge)
+    d.rectangle([x, y + h - 2, x + w - 1, y + h - 1], fill=edge)
+
+
+def draw_gradient_poly(target, points, c_top, c_bot, canvas_size=512):
+    """Render smooth vertical linear gradient across an arbitrary convex polygon."""
+    from PIL import Image, ImageDraw
+    mask = Image.new("L", (canvas_size, canvas_size), 0)
+    md = ImageDraw.Draw(mask)
+    md.polygon(points, fill=255)
+
+    min_y = min(p[1] for p in points)
+    max_y = max(p[1] for p in points)
+    h = max(max_y - min_y, 1)
+
+    grad = Image.new("RGBA", (canvas_size, canvas_size), c_top)
+    gd = ImageDraw.Draw(grad)
+    for y in range(int(min_y), int(max_y) + 1):
+        t = (y - min_y) / h
+        c = tuple(int(c_top[i] * (1 - t) + c_bot[i] * t) for i in range(4))
+        gd.line([(0, y), (canvas_size, y)], fill=c)
+    target.paste(grad, (0, 0), mask)
+
+
+def draw_cylinder_shading(target, cx, cy_top, cy_bot, r, c_base, c_spec, c_shadow, c_rim, canvas_size=512):
+    """Render metallic cylinder surface shading with Phong-style specular strip and rim bounce."""
+    from PIL import Image, ImageDraw
+    mask = Image.new("L", (canvas_size, canvas_size), 0)
+    md = ImageDraw.Draw(mask)
+    md.rectangle([cx - r, cy_top, cx + r, cy_bot], fill=255)
+
+    cyl = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+    cd = ImageDraw.Draw(cyl)
+
+    for x in range(int(cx - r), int(cx + r) + 1):
+        nx = (x - cx) / r
+        spec_dist = abs(nx - (-0.38))
+        spec_int = max(0.0, 1.0 - (spec_dist / 0.35)) ** 2
+        diffuse = max(0.0, -nx * 0.7 + 0.3)
+        rim_int = max(0.0, (nx - 0.7) / 0.3) ** 1.5 if nx > 0.7 else 0.0
+
+        r_col = int(c_base[0] * diffuse + c_shadow[0] * (1 - diffuse) + c_spec[0] * spec_int + c_rim[0] * rim_int)
+        g_col = int(c_base[1] * diffuse + c_shadow[1] * (1 - diffuse) + c_spec[1] * spec_int + c_rim[1] * rim_int)
+        b_col = int(c_base[2] * diffuse + c_shadow[2] * (1 - diffuse) + c_spec[2] * spec_int + c_rim[2] * rim_int)
+
+        cd.line([(x, cy_top), (x, cy_bot)], fill=(min(255, max(0, r_col)), min(255, max(0, g_col)), min(255, max(0, b_col)), 255))
+
+    target.paste(cyl, (0, 0), mask)
