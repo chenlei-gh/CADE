@@ -128,6 +128,11 @@ class ChangeSet:
 
     def add_create(self, path: Path, content: str):
         self.created[str(path)] = content
+        # Invariant: _binary[p] is meaningful only while created[p] is the
+        # "[BINARY]" placeholder, because apply() prefers _binary over content.
+        # Queuing text for a path that still holds a payload would leave the
+        # bytes to silently win and overwrite the text.
+        self._discard_stale_binary_payloads()
 
     def add_create_binary(self, path: Path, data: bytes):
         """Add a binary file (icon, etc.) — written during apply"""
@@ -186,6 +191,20 @@ class ChangeSet:
                 continue
             self.metadata[key] = value
 
+    def _discard_stale_binary_payloads(self) -> None:
+        """Drop payloads whose `created` entry is no longer the placeholder.
+
+        Keeps the invariant that ``_binary[p]`` exists only while
+        ``created[p] == "[BINARY]"``. Paths absent from `created` are left
+        alone: they never participate in a write, so they are residual data
+        rather than a conflicting write semantics.
+        """
+        for path_str in [
+            p for p, content in self.created.items()
+            if content != "[BINARY]" and p in self._binary
+        ]:
+            del self._binary[path_str]
+
     def merge_binary_from(self, other: "ChangeSet") -> None:
         """Merge `other`'s queued binary payloads into this ChangeSet.
 
@@ -194,11 +213,15 @@ class ChangeSet:
         `_binary` produced a ChangeSet that advertised a file it could never
         write, so the two must travel together.
 
-        Only paths that hold the placeholder in the merged `created` are
-        taken: if the merged value is a text payload, keeping the bytes would
-        silently replace that text. Same bytes is an idempotent no-op;
-        different bytes keep the value already queued and report a warning,
-        rather than letting merge order decide.
+        The merged `created` value decides, not `other` alone: a payload is
+        carried over only for paths that are still binary after the merge. The
+        invariant is then re-established against the merged `created`, so a
+        payload queued earlier on a path that `other` turned into text does not
+        survive to overwrite that text.
+
+        Same bytes is an idempotent no-op; different bytes keep the payload
+        already queued and report a warning, rather than letting merge order
+        decide.
         """
         for path_str, data in other._binary.items():
             if self.created.get(path_str) != "[BINARY]":
@@ -212,6 +235,7 @@ class ChangeSet:
                     f"payload ({len(existing)} bytes), ignored "
                     f"{len(data)} bytes from the merged ChangeSet"
                 )
+        self._discard_stale_binary_payloads()
 
     @property
     def is_empty(self) -> bool:
@@ -321,6 +345,17 @@ class ChangeSet:
                 )
                 # The missing bytes are the root cause; also reporting "already
                 # exists" would suggest deleting the file, which cannot fix it.
+                continue
+            # Inverse of the check above, and the last line of defence for the
+            # "_binary[p] only counts while created[p] is the placeholder"
+            # invariant: add_create()/merge_binary_from() maintain it, so
+            # reaching this means an unhandled construction path (or a dict
+            # rebuilt by hand). apply() writes _binary in preference to
+            # `content`, so this state would silently replace text with bytes.
+            if content != "[BINARY]" and path_str in self._binary:
+                errors.append(
+                    f"Stale binary payload for text created file: {path_str}"
+                )
                 continue
             if p.exists() and path_str not in self._binary:
                 # Binary payloads (icons, etc.) are explicitly queued bytes —
