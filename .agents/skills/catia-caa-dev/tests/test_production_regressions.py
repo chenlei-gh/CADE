@@ -519,10 +519,80 @@ try:
             },
         }],
     }
-    static_fix._create_backup = lambda: "test-backup"
     fixed_result = static_fix.run()
     check("static fix succeeds", fixed_result.state == RepairState.FIXED, fixed_result.message)
     check("static fix discloses no build", "build verification was not run" in fixed_result.message.lower(), fixed_result.message)
+    # A fix that applied must hand back the real rollback id minted by apply()
+    # (BackupManager), never a synthetic value.
+    check("static fix returns the real rollback id",
+          len(fixed_result.backup_ids) == 1 and fixed_result.backup_ids[0],
+          str(fixed_result.backup_ids))
+
+    # delete_file: diagnostics._check_orphaned emits FixAction.DELETE_FILE with
+    # auto_fixable=True. Without a delete branch the ChangeSet came back empty,
+    # so the run burned all retries and escalated while the orphan survived.
+    orphan_dir = repair_ws / "TestFW.edu" / "TestMod.m" / "src"
+    orphan_dir.mkdir(parents=True)
+    orphan = orphan_dir / "Orphan.cpp"
+    orphan.write_text("// orphan content\n", encoding="utf-8")
+
+    delete_fix = RepairLoop(repair_ws, with_build=False)
+    delete_fix._diagnose_static = lambda: {
+        "total": 1,
+        "auto_fixable": 1,
+        "diagnostics": [{
+            "severity": "warning",
+            "message": f"orphaned file {orphan.name}",
+            "file": str(orphan),
+            "auto_fixable": True,
+            "fix_plan": {
+                "action": "delete_file",
+                "file": str(orphan),
+                "description": f"Remove orphaned file {orphan.name}",
+            },
+        }],
+    }
+    delete_result = delete_fix.run()
+    check("delete_file fix reaches FIXED",
+          delete_result.state == RepairState.FIXED, delete_result.message)
+    check("delete_file actually removes the orphan", not orphan.exists(),
+          f"exists={orphan.exists()}")
+    check("delete_file records a rollback id",
+          len(delete_result.backup_ids) == 1, str(delete_result.backup_ids))
+
+    # Deleting is the one fix with no in-memory fallback, so the persisted
+    # BackupManager entry must be able to bring the file back.
+    if delete_result.backup_ids:
+        with patch.object(build_module, "verify_build", return_value={}):
+            restored = backup_module.rollback_operation(
+                repair_ws, delete_result.backup_ids[0]
+            )
+        check("delete_file rollback restores the orphan",
+              restored.get("status") == "success" and orphan.exists()
+              and orphan.read_text(encoding="utf-8") == "// orphan content\n",
+              str(restored.get("status")))
+    else:
+        check("delete_file rollback restores the orphan", False,
+              "no rollback id to restore from")
+
+    # Escalation must not advertise a restore path when nothing was applied.
+    noop_fix = RepairLoop(repair_ws, with_build=False)
+    noop_fix._diagnose_static = lambda: {
+        "total": 1, "auto_fixable": 1,
+        "diagnostics": [{
+            "severity": "error", "message": "already there", "file": "generated.h",
+            "auto_fixable": True,
+            # create_file on an existing path yields an empty ChangeSet.
+            "fix_plan": {"action": "create_file", "file": "generated.h", "line": "x"},
+        }],
+    }
+    noop_result = noop_fix.run()
+    check("empty-ChangeSet run applies nothing so reports no rollback points",
+          noop_result.backup_ids == [], str(noop_result.backup_ids))
+    check("no-rollback escalation omits the restore hint",
+          "backup_id=" not in noop_result.message
+          and "nothing to roll back" in noop_result.message.lower(),
+          noop_result.message)
 
     # Addins are neither interfaces nor generic components; workbench names are unique.
     analyzer_fw = workspace / "AnalyzerFramework.edu"

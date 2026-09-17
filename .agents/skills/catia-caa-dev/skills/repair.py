@@ -12,15 +12,17 @@ Two-phase diagnosis:
   2. Build   — mkmk compilation (slow but catches real errors)
 
 Repair loop:
-  diagnose → preview → confirm → backup → apply → verify → repeat
+  diagnose → preview → confirm → apply → verify → repeat
+
+Rollback: every fix is applied through its own ChangeSet, and ChangeSet.apply()
+persists a BackupManager backup under <workspace>/.caa_backups before writing.
+The ids land in RepairResult.backup_ids (newest last); undoing a whole run means
+calling backup.rollback_operation() on them in reverse order.
 """
 
 from __future__ import annotations
 
-import shutil
-import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -52,7 +54,12 @@ class RepairResult:
     message: str = ""
     details: List[Dict[str, Any]] = field(default_factory=list)
     preview: List[Dict[str, Any]] = field(default_factory=list)  # New
-    backup_id: Optional[str] = None  # New: rollback point
+    # Rollback points for the fixes this run applied, in apply order. One id
+    # per fix: each fix_plan is applied through its own ChangeSet, so a run
+    # that fixes N issues mints N independent BackupManager backups. Undoing
+    # the whole run therefore means rolling these back in reverse order.
+    # Empty when nothing was applied — do not advertise a restore path then.
+    backup_ids: List[str] = field(default_factory=list)
     diagnostics: List[Dict[str, Any]] = field(default_factory=list)  # raw findings
 
     def is_success(self) -> bool:
@@ -68,8 +75,8 @@ class RepairResult:
         }
         if self.preview:
             d["preview"] = self.preview
-        if self.backup_id:
-            d["backup_id"] = self.backup_id
+        if self.backup_ids:
+            d["backup_ids"] = self.backup_ids
         if self.details:
             d["details"] = self.details
         if self.diagnostics:
@@ -109,8 +116,10 @@ class RepairLoop:
         self._attempts = 0
         self._fixes_applied = 0
         self._details: List[Dict[str, Any]] = []
-        self._backups: List[Path] = []
-        self._backup_dir: Optional[Path] = None
+        # Rollback ids minted by apply() for the fixes that succeeded, in
+        # order. Populated on the fly — only real ids from successful applies
+        # are recorded, so an unattempted or rejected fix contributes none.
+        self._backup_ids: List[str] = []
 
     def run(self) -> RepairResult:
         """
@@ -202,8 +211,9 @@ class RepairLoop:
                 diagnostics=all_diagnostics,
             )
 
-        # ── Create backup ──
-        backup_id = self._create_backup()
+        # No workspace-wide snapshot is taken here: every cs.apply() below
+        # creates its own BackupManager backup under <workspace>/.caa_backups
+        # and returns the id, which is what rollback_operation() consumes.
 
         # ── Retry loop ──
         for attempt in range(1, self.MAX_RETRIES + 1):
@@ -219,6 +229,9 @@ class RepairLoop:
                             apply_result = cs.apply(workspace_root=self.workspace_root)
                             if apply_result.get("status") == "applied":
                                 fixed_count += 1
+                                rollback_id = apply_result.get("rollback_id")
+                                if rollback_id:
+                                    self._backup_ids.append(rollback_id)
                             else:
                                 self._details.append({
                                     "attempt": attempt,
@@ -251,7 +264,7 @@ class RepairLoop:
                         fixes_applied=self._fixes_applied,
                         message=f"Fixed all {fixed_count} issue(s) in {attempt} attempt(s). Build clean.",
                         details=self._details,
-                        backup_id=backup_id,
+                        backup_ids=list(self._backup_ids),
                     )
             elif fixed_count == len(auto_fixable):
                 self._state = RepairState.FIXED
@@ -264,11 +277,21 @@ class RepairLoop:
                         "Static verification only; build verification was not run."
                     ),
                     details=self._details,
-                    backup_id=backup_id,
+                    backup_ids=list(self._backup_ids),
                 )
 
         # Max retries exceeded
         self._state = RepairState.ESCALATED
+        # Only advertise a restore path when there is actually something to
+        # restore: pointing at an id that was never minted sends the user to a
+        # backup that does not exist.
+        if self._backup_ids:
+            restore_hint = (
+                "Rollback points (undo in reverse order): "
+                + ", ".join(self._backup_ids)
+            )
+        else:
+            restore_hint = "No changes were applied; nothing to roll back."
         return RepairResult(
             state=RepairState.ESCALATED,
             attempts=self.MAX_RETRIES,
@@ -276,10 +299,10 @@ class RepairLoop:
             message=(
                 f"Max retries ({self.MAX_RETRIES}) exceeded. "
                 f"{self._fixes_applied} fix(es) applied. "
-                f"Manual review needed. Restore with backup_id={backup_id}"
+                f"Manual review needed. {restore_hint}"
             ),
             details=self._details,
-            backup_id=backup_id,
+            backup_ids=list(self._backup_ids),
         )
 
     # ─── Diagnosis ────────────────────────────────────────────────
@@ -482,24 +505,16 @@ class RepairLoop:
                             ))
                             break
 
+        elif action_name == "delete_file":
+            # Orphaned-file removal (diagnostics._check_orphaned emits
+            # FixAction.DELETE_FILE with auto_fixable=True). Without this
+            # branch the ChangeSet stayed empty, so the run burned its retries
+            # and escalated while the orphan survived. Deleting is the one
+            # operation with no in-memory fallback: _deleted_backups lives on
+            # this ChangeSet, which is discarded right after apply(). The only
+            # way back is the BackupManager entry apply() persists, which is
+            # why run() records its rollback_id.
+            if file_path.exists():
+                cs.add_delete(file_path)
+
         return cs
-
-    # ─── Backup ────────────────────────────────────────────────────
-
-    def _create_backup(self) -> str:
-        """Create a timestamped backup of all files before repair"""
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_id = f"repair_{ts}"
-        self._backup_dir = Path(tempfile.gettempdir()) / "cade_backups" / backup_id
-        self._backup_dir.mkdir(parents=True, exist_ok=True)
-
-        # Back up all .cpp/.h/.mk files in workspace
-        for pattern in ["**/*.cpp", "**/*.h", "**/*.mk", "**/*.dico", "**/*.CATRsc",
-                        "**/*.CATNls"]:
-            for f in self.workspace_root.glob(pattern):
-                rel = f.relative_to(self.workspace_root)
-                dst = self._backup_dir / rel
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(f, dst)
-
-        return backup_id
