@@ -281,6 +281,20 @@ class ChangeSet:
         # Check that created files don't already exist and parent would be creatable
         for path_str, content in self.created.items():
             p = Path(path_str)
+            # A "[BINARY]" placeholder is only an index into _binary — apply()
+            # writes those bytes in place of `content`. When the matching entry
+            # is missing (a ChangeSet rebuilt from a dict that lost _binary),
+            # apply() used to skip the write and still list the path under
+            # "created". Only explicitly queued placeholders are checked here;
+            # an icon that never produced bytes is create_command()'s concern,
+            # not a malformed ChangeSet.
+            if content == "[BINARY]" and path_str not in self._binary:
+                errors.append(
+                    f"Binary payload missing for created file: {path_str}"
+                )
+                # The missing bytes are the root cause; also reporting "already
+                # exists" would suggest deleting the file, which cannot fix it.
+                continue
             if p.exists() and path_str not in self._binary:
                 # Binary payloads (icons, etc.) are explicitly queued bytes —
                 # overwriting stale renders is their intended semantics.
@@ -420,7 +434,11 @@ class ChangeSet:
                 if path_str in self._binary:
                     p.write_bytes(self._binary[path_str])
                 elif content == "[BINARY]":
-                    pass  # binary placeholder — already handled or skipped
+                    # Unreachable via apply(): _pre_validate_files() rejects a
+                    # placeholder without bytes before any write. Kept as a
+                    # guard so a future caller that writes without validating
+                    # cannot create an empty file here.
+                    pass
                 else:
                     enc = _text_encoding_for(p)
                     # GBK cannot encode emoji like ⚠ — replace rather than fail
