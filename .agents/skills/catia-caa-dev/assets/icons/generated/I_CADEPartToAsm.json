@@ -1,25 +1,26 @@
 {
   "stem": "I_CADEPartToAsm",
   "semantic": "parttoasm",
-  "model": "LLM pixel design (kimi-k3, direct 22x22 pixel rendering)",
-  "prompt": "semantic-only: PartToAsm; metaphor = official gear vocabulary (I_Part = 1 yellow gear, I_Product = cyan+yellow gear pair)",
+  "model": "Ultra-3D procedural mechanical rendering (Pillow 512 Master)",
+  "prompt": "semantic-only: PartToAsm; modern mechanical engineering assembly metaphor with coaxial alignment and 3D mating direction",
   "seed": null,
-  "metaphor": "official gear vocabulary, FULL-BLEED: LEFT single yellow 8-tooth gear r4 (part, I_Part language) separated from RIGHT meshing pair - small cyan gear r3 top + yellow 8-tooth gear r4 bottom (assembly, I_Product language). Equal-size yellow gears echo part equivalence, cyan marks assembly level. Palette sampled from I_Part/I_Product: yellow (255,238,135), hub (255,255,0), cyan (75,230,255)/(0,157,167), navy (24,16,82). fg=47.9% matches official visual weight",
-  "generated_at": "2026-08-18",
-  "pipeline": "icon_gen_pipeline.py v1",
+  "metaphor": "Precision machined engineering assembly: TOP flanged stepped bushing with lead-in chamfer, inner bore and assembly keyway (part) axially mating into BOTTOM CNC milled aluminum housing base with center bore, stiffening ribs and counterbore socket-head cap screws (assembly). Red directional 3D kinematic vector indicates downward insertion along dashed coaxial guide line. Alpha=0 transparent background with contact AO shadow.",
+  "generated_at": "2026-09-17",
+  "pipeline": "Ultra-3D multi-scale export pipeline (ICON_GENERATION_SPEC v3)",
   "gate": {
-    "colors": 6,
-    "fg": 0.479
+    "master_size": "512x512",
+    "scales": [512, 256, 64, 32, 22],
+    "bmp_mode": "8-bit indexed (palette 0 = CATIA_BG)",
+    "bmp_colors": 16,
+    "fg_guidance": "recommended 68%-72% for centered mechanical solids; actual normal=0.69",
+    "pure_corners": true,
+    "alpha_clean": true
   },
   "candidates": {
-    "v1_v3_contain": "hollow frame containing cube - deployed then superseded (user pointed out official gear vocabulary)",
-    "a_gears_split": "gear pair too scattered - rejected",
-    "b_gears_mesh": "SELECTED - right pair meshes like official I_Product, left single matches I_Part",
-    "c_gears_stack": "pair too regular, reads as list - rejected",
-    "v5_full_A": "SELECTED - full-bleed r4/r3/r4, diagonal teeth, square hubs",
-    "v5_full_B": "right yellow r3 - looser mesh, rejected",
-    "v4_small": "fg=24% too small, user: 要铺满"
+    "v1_pixel_mesh": "Meshing gear pair (I_Part/I_Product vocabulary, 22x22 pixel art) - superseded as overly abstract and low-res",
+    "v2_solid_3d": "UltraSolid 3D block - verified solid proportion but lacked mechanical realism",
+    "v3_ultra_3d": "SELECTED - Ultra-3D precision flanged bushing + CNC milled socket base + coaxial insertion guide (user accepted 2026-09-17)"
   },
   "approved_by": "user",
-  "approved_at": "2026-08-18"
+  "approved_at": "2026-09-17"
 }

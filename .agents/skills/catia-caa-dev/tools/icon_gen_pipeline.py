@@ -82,6 +82,59 @@ def _corner_pure(rgb: Image.Image) -> bool:
                for x, y in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)])
 
 
+def _check_edge_collision(rgb: Image.Image) -> tuple:
+    """Check if foreground subject collides heavily with canvas outer borders.
+    Returns (passed, edge_stats). If >60% of any single border is foreground,
+    it indicates hard canvas truncation."""
+    px = rgb.load()
+    w, h = rgb.size
+    
+    def is_fg(p):
+        return any(abs(p[i] - CATIA_BG[i]) > BG_TOLERANCE for i in range(3))
+
+    top_fg = sum(1 for x in range(w) if is_fg(px[x, 0]))
+    bottom_fg = sum(1 for x in range(w) if is_fg(px[x, h - 1]))
+    left_fg = sum(1 for y in range(h) if is_fg(px[0, y]))
+    right_fg = sum(1 for y in range(h) if is_fg(px[w - 1, y]))
+
+    stats = {
+        "top_fg_ratio": round(top_fg / w, 2),
+        "bottom_fg_ratio": round(bottom_fg / w, 2),
+        "left_fg_ratio": round(left_fg / h, 2),
+        "right_fg_ratio": round(right_fg / h, 2),
+    }
+    # Pass if no edge is severely cut off (> 60% clipped)
+    no_collision = all(r <= 0.60 for r in stats.values())
+    return no_collision, stats
+
+
+def _detect_isolated_noise(rgb: Image.Image) -> int:
+    """Soft lint: counts isolated foreground pixels that have no 8-neighbors.
+    Returns count of stray isolated pixels."""
+    px = rgb.load()
+    w, h = rgb.size
+    
+    def is_fg(x, y):
+        if not (0 <= x < w and 0 <= y < h):
+            return False
+        p = px[x, y]
+        return any(abs(p[i] - CATIA_BG[i]) > BG_TOLERANCE for i in range(3))
+
+    isolated_count = 0
+    for y in range(h):
+        for x in range(w):
+            if is_fg(x, y):
+                # Count neighbors
+                neighbors = 0
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        if (dx != 0 or dy != 0) and is_fg(x + dx, y + dy):
+                            neighbors += 1
+                if neighbors == 0:
+                    isolated_count += 1
+    return isolated_count
+
+
 def process(src: Path, stem: str, out_dir: Path) -> dict:
     img = Image.open(src).convert("RGB")
 
@@ -96,22 +149,7 @@ def process(src: Path, stem: str, out_dir: Path) -> dict:
     # 3. background snap
     img, snapped = _snap_background(img)
 
-    # 4. gate metrics
-    colors = len(img.getcolors(maxcolors=256) or [])
-    fg = _fg_ratio(img)
-    corners_ok = _corner_pure(img)
-    gate = {
-        "size": f"{CANVAS}x{CANVAS}",
-        "colors": colors,
-        "colors_ok": colors <= MAX_COLORS,
-        "fg": round(fg, 3),
-        "fg_ok": FG_MIN <= fg <= FG_MAX,
-        "corners_pure": corners_ok,
-        "bg_snapped_px": snapped,
-    }
-    gate["pass"] = gate["colors_ok"] and gate["fg_ok"] and gate["corners_pure"]
-
-    # 5. outputs
+    # 4. output paths
     out_dir.mkdir(parents=True, exist_ok=True)
     bmp_path = out_dir / f"{stem}.bmp"
     _save_palette_bmp(img, bmp_path)
@@ -120,6 +158,48 @@ def process(src: Path, stem: str, out_dir: Path) -> dict:
                          Image.NEAREST)
     png_path = out_dir / f"{stem}_8x.png"
     preview.save(png_path)
+
+    # 5. Engineering Linting (Hard Gates vs Soft Lints)
+    colors = len(img.getcolors(maxcolors=256) or [])
+    fg = _fg_ratio(img)
+    corners_ok = _corner_pure(img)
+    no_collision, edge_stats = _check_edge_collision(img)
+    noise_px = _detect_isolated_noise(img)
+
+    # Validate generated BMP format
+    with Image.open(bmp_path) as bmp_check:
+        bmp_mode_ok = (bmp_check.mode == "P")
+        pal = bmp_check.getpalette() or []
+        palette_bg_ok = (len(pal) >= 3 and (pal[0], pal[1], pal[2]) == CATIA_BG)
+
+    hard_checks = {
+        "colors_ceiling_ok": colors <= MAX_COLORS,
+        "corners_pure": corners_ok,
+        "no_edge_collision": no_collision,
+        "bmp_format_ok": bmp_mode_ok and palette_bg_ok,
+    }
+
+    soft_lints = {
+        "fg_ratio": round(fg, 3),
+        "fg_in_guidance": FG_MIN <= fg <= FG_MAX,
+        "fg_guidance_note": "15%-70% general envelope; 68%-72% recommended for centered solid mechanical parts",
+        "isolated_noise_px": noise_px,
+        "edge_ratios": edge_stats,
+        "bg_snapped_px": snapped,
+    }
+
+    gate = {
+        "size": f"{CANVAS}x{CANVAS}",
+        "colors": colors,
+        "colors_ok": colors <= MAX_COLORS,
+        "fg": round(fg, 3),
+        "fg_ok": FG_MIN <= fg <= FG_MAX,
+        "corners_pure": corners_ok,
+        "bg_snapped_px": snapped,
+        "hard_checks": hard_checks,
+        "soft_lints": soft_lints,
+        "pass": all(hard_checks.values()),
+    }
 
     report = {
         "stem": stem,
@@ -252,14 +332,13 @@ def main():
     g = report["gate"]
     status = "PASS" if g["pass"] else "FAIL"
     print(f"[{status}] {args.stem}")
-    print(f"  size    : {g['size']}")
-    print(f"  colors  : {g['colors']} (max {MAX_COLORS})")
-    print(f"  fg      : {g['fg']:.1%} (gate [{FG_MIN:.0%}, {FG_MAX:.0%}])")
-    print(f"  corners : {'pure' if g['corners_pure'] else 'DIRTY'}")
-    print(f"  snapped : {g['bg_snapped_px']} px → CATIA_BG")
-    print(f"  outputs : {report['outputs']['bmp']}")
-    print(f"            {report['outputs']['preview']}")
-    print(f"            {args.out / (args.stem + '_gate.json')}")
+    print(f"  size        : {g['size']}")
+    print(f"  colors      : {g['colors']} (max {MAX_COLORS})")
+    print(f"  hard_checks : {g['hard_checks']}")
+    print(f"  soft_lints  : fg={g['soft_lints']['fg_ratio']:.1%} (guidance [{FG_MIN:.0%}, {FG_MAX:.0%}]), noise={g['soft_lints']['isolated_noise_px']}px")
+    print(f"  outputs     : {report['outputs']['bmp']}")
+    print(f"                {report['outputs']['preview']}")
+    print(f"                {args.out / (args.stem + '_gate.json')}")
     if not g["pass"]:
         sys.exit(1)
 

@@ -7,9 +7,12 @@ Metaphor (user-approved, Ultra-3D Master passed 2026-09-17):
   CENTER coaxial guide with 3D mating vector arrow
 
 Outputs:
-  - I_CADEPartToAsm_512.png (Ultra-3D Transparent Master)
-  - I_CADEPartToAsm_32.png (CATIA Large Mode)
-  - I_CADEPartToAsm.png / .bmp (CATIA Normal Mode)
+  - I_CADEPartToAsm_512.png (512 Master, RGBA Transparent)
+  - I_CADEPartToAsm_256.png (256 HD / Documentation, RGBA Transparent)
+  - I_CADEPartToAsm_64.png  (64 High-DPI UI, RGBA Transparent)
+  - I_CADEPartToAsm_32.png  (32 CATIA Large Mode, RGBA Transparent)
+  - I_CADEPartToAsm.png     (22 CATIA Normal Mode, RGBA Transparent)
+  - I_CADEPartToAsm.bmp     (22 CATIA Runtime 8-bit indexed BMP, palette 0 = CATIA_BG)
 """
 import sys
 from pathlib import Path
@@ -25,7 +28,17 @@ from icon_design_lib import draw_gradient_poly, draw_cylinder_shading  # noqa: E
 from icon_provider import _save_palette_bmp, CATIA_BG                  # noqa: E402
 
 STEM = "I_CADEPartToAsm"
-SIZE = 512
+MASTER_SIZE = 512
+SIZE = MASTER_SIZE
+
+# Multi-scale export specification: (size, suffix, description)
+EXPORT_SCALES = [
+    (512, "_512", "Master 高清透明原稿 (512x512)"),
+    (256, "_256", "高清/文档展示 (256x256)"),
+    (64,  "_64",  "中大图标 / 高分屏 UI (64x64)"),
+    (32,  "_32",  "CATIA Large 模式 (32x32)"),
+    (22,  "",     "CATIA Normal 模式 (22x22 PNG + BMP)"),
+]
 
 
 def build_ultra_3d_master():
@@ -143,29 +156,65 @@ def build_ultra_3d_master():
     return master
 
 
+def export_multi_scale_assets(master: Image.Image, out_dir: Path) -> dict:
+    """Unified multi-scale export pipeline with strict engineering validation."""
+    assert master.size == (MASTER_SIZE, MASTER_SIZE), f"Master must be {MASTER_SIZE}x{MASTER_SIZE}"
+    assert master.mode == "RGBA", "Master must be RGBA mode"
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    generated_files = {}
+
+    for size, suffix, desc in EXPORT_SCALES:
+        resampled = master if size == MASTER_SIZE else master.resize((size, size), Image.Resampling.LANCZOS)
+        
+        # 1. 导出透明 PNG
+        png_path = out_dir / f"{STEM}{suffix}.png"
+        resampled.save(png_path)
+        generated_files[f"png_{size}"] = png_path
+
+        # 2. 如果是 22x22 Normal 尺寸，增补导出 CATIA 兼容 8-bit indexed BMP
+        if size == 22:
+            canvas_bg = Image.new("RGB", (22, 22), CATIA_BG)
+            canvas_bg.paste(resampled, (0, 0), resampled)
+            bmp_path = out_dir / f"{STEM}.bmp"
+            _save_palette_bmp(canvas_bg, bmp_path)
+            generated_files["bmp_22"] = bmp_path
+
+    # 3. 严格验证断言
+    _verify_generated_assets(generated_files)
+    return generated_files
+
+
+def _verify_generated_assets(assets: dict) -> None:
+    """Verify all generated assets conform to CADE v3 specs."""
+    for key, path in assets.items():
+        assert path.exists(), f"Missing expected output: {path}"
+        assert path.stat().st_size > 0, f"Empty asset file: {path}"
+
+        if path.suffix == ".png":
+            with Image.open(path) as img:
+                assert img.mode == "RGBA", f"{path.name} must be RGBA"
+                # Check transparent background exists (minimum alpha must be < 255)
+                min_alpha, max_alpha = img.getchannel("A").getextrema()
+                assert min_alpha < 255, f"{path.name} has no transparent pixels (min alpha = {min_alpha})"
+        elif path.suffix == ".bmp":
+            with Image.open(path) as img:
+                assert img.size == (22, 22), f"{path.name} must be 22x22"
+                assert img.mode == "P", f"{path.name} must be 8-bit indexed ('P' mode), got {img.mode}"
+                palette = img.getpalette()
+                assert palette is not None, f"{path.name} palette missing"
+                # Palette index 0 must be CATIA_BG (192, 192, 192)
+                assert (palette[0], palette[1], palette[2]) == CATIA_BG, (
+                    f"{path.name} palette[0] must be {CATIA_BG}, got {(palette[0], palette[1], palette[2])}"
+                )
+
+
 if __name__ == "__main__":
     master_img = build_ultra_3d_master()
-    
-    # 保存 512 Master PNG
-    p512 = HERE / f"{STEM}_512.png"
-    master_img.save(p512)
+    results = export_multi_scale_assets(master_img, HERE)
 
-    # 导出 32x32 Large Icon (透明 PNG)
-    p32 = HERE / f"{STEM}_32.png"
-    master_img.resize((32, 32), Image.Resampling.LANCZOS).save(p32)
-
-    # 导出 22x22 Normal Icon (透明 PNG)
-    p22_png = HERE / f"{STEM}.png"
-    im22 = master_img.resize((22, 22), Image.Resampling.LANCZOS)
-    im22.save(p22_png)
-
-    # 兼容导出 22x22 8-bit BMP (背景钉浅灰索引 0 供旧版 CNEXT 读取)
-    canvas_bg = Image.new("RGB", (22, 22), CATIA_BG)
-    canvas_bg.paste(im22, (0, 0), im22)
-    p22_bmp = HERE / f"{STEM}.bmp"
-    _save_palette_bmp(canvas_bg, p22_bmp)
-
-    print(f"[PASS] {STEM} Ultra-3D multi-scale assets regenerated:")
-    print(f"  - 512 Master: {p512.name}")
-    print(f"  - 32 Large:   {p32.name}")
-    print(f"  - 22 Normal:  {p22_png.name} & {p22_bmp.name}")
+    print(f"[PASS] {STEM} Ultra-3D multi-scale assets regenerated and verified:")
+    for size, suffix, desc in EXPORT_SCALES:
+        p = results[f"png_{size}"]
+        print(f"  - {desc:32s}: {p.name}")
+    print(f"  - CATIA Normal BMP (8-bit indexed) : {results['bmp_22'].name}")
