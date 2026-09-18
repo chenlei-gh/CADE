@@ -10,10 +10,35 @@
 
 ## [未发布]
 
+### 🏗️ W-1-A Workbench 只读审计与不可变 Plan 门禁 (2026-09-18)
+
+- **只读审计门禁**：
+  - 新增 `inspect_create_workbench()`，实现 7 类只读安全门禁：
+    - Gate 1: C++ 标识符与全工作区同名冲突硬拦截（含已有 Workbench / Addin 类名判定）；
+    - Gate 2: 宿主模块存在性与 `BUILT_OBJECT_TYPE == 'SHARED LIBRARY'` 类型校验，拟建文件磁盘冲突拦截；
+    - Gate 3: `IdentityCard.xml` 严格 XML 强语法解析、命名空间（`xmlns`）兼容处理与 `System` / `ApplicationFrame` 依赖审计及补丁规划；
+    - Gate 4: `Imakefile.mk` 的 `LINK_WITH` 词元级审计（`JS0GROUP`、`CATApplicationFrame`），按行规划安全注入；
+    - Gate 5: Dictionary 同名映射冲突检测与标准条目规划（`{Workbench}Addin CATIAfrGeneralWksAddin lib{ModuleBareName}`）；
+    - Gate 6: NLS/RSC 资源与符合 B28 生产模式的 Addin C++ 源码规划（`CATImplementClass(..., DataExtension, CATBaseUnknown, ...)` + `TIE_CATIAfrGeneralWksAddin` + `CreateCommands/CreateToolbars`）；
+    - Gate 7: 确定性装配并输出规范的不可变 `WorkbenchCreatePlan` (schema 2.0)。
+  - 审计阶段不创建文件、不写入磁盘、不修改调用方 ChangeSet，保持零磁盘副作用与零状态变更。
+
+- **不可变 Plan 结构契约**：
+  - Plan 包含 `workbench_identity`、`file_creations`、`patches`、`source_snapshots` 与 `dependencies_audit`。
+  - 文件快照采用物理原始字节 `read_bytes()` 计算 SHA-256 与字节长度。
+  - `IdentityCard.xml` 与 `Imakefile.mk` 修改仅以 patch 计划形式输出，严格保留原文件换行格式。
+
+- **回归验证与实证**：
+  - 新增 WB1～WB8 回归用例（涵盖标识符冲突、模块类型门禁、XML 语法与命名空间解析、补丁合并、只读无副作用及 ChangeSet 零污染）。
+  - 生产回归套件规模达 604/604 全量通过。
+
+- **Git 提交基线**：
+  - `755b996` — `Implement W-1-A workbench create inspection gates`
+
 ### 🚀 Command 运行时闭环与生命周期重构 (2026-09-18, R-2-C / R-3-A / R-3-B / R-4-A / R-4-B 与 B28 真机实证)
 
 - **4 参数 Header 跨模块解耦注册 (R-2-C)**：
-  - **能力与机制**：重构 `add_command_to_workbench`，以 `(HeaderClassName, HeaderID)` 为唯一身份，采用 4 参数 `CATCommandHeader` 注册机制（`new HeaderClass("HeaderID", "LoadName", "ClassName", (void *)NULL)`）；引入词法预检门禁 `inspect_workbench_registration`，确保多 HeaderClass、缺少 `CreateCommands` 或 Payload 冲突等异常在 ChangeSet 创建前被硬拦截，避免进入下游变更阶段。
+  - **能力与机制**：重构 `add_command_to_workbench`，以 `(HeaderClassName, HeaderID)` 为唯一身份，采用 4 参数 `CATCommandHeader` 注册机制（`new HeaderClass("HeaderID", "LoadName", "ClassName", (void *)NULL)`）；解除 Workbench DLL 对 Command DLL 的编译期静态符号依赖，避免因直接静态链接导致工作台启动时被级联加载；引入词法预检门禁 `inspect_workbench_registration`，确保多 HeaderClass、缺少 `CreateCommands` 或 Payload 冲突等异常在 ChangeSet 创建前被硬拦截，避免进入下游变更阶段。
   - **验证结论**：验证 4 参数 Header 架构可避免 Workbench DLL 对 Command DLL 的静态链接依赖，并在 B28 Runtime 中实现按需动态加载。S1～S10 回归全量通过。
 - **Header 资源原子绑定 (R-3-A)**：
   - **能力与机制**：绑定以 `(HeaderClassName, HeaderID)` 为唯一键，自动化同步 `CATNls`、`CATRsc` 与图标文件；实施严格的冲突判定规则（同 Key 同 Value 幂等 no-op，同 Key 异 Value 抛出 `ValueError` 硬拦截），并在 Staged ChangeSet 与 Disk 状态间建立零重复写入与事务保护，前置校验无副作用。
@@ -25,7 +50,7 @@
   - **实证证据链**：基于真实工程通过 `create_command` → `add_command_to_workbench` → `attach_command_to_toolbar` → `mkmk -a` 生成双按钮工具栏与独立命令 DLL。
   - **运行时表现**：启动 CATIA 进程后，工具栏正确渲染双按钮，启动后进程模块快照未发现目标命令 DLL；触发 Header 后目标 DLL 出现在模块快照中，验证该命令路径的按需动态加载；目标 DLL 成功调用工厂宏实例化并执行 `Activate()`，弹出模态通知框并生成物理验证标记，全链路闭环通过。
 - **Command 级联安全删除与链缝合 (R-4-A)**：
-  - **能力与机制**：引入只读拓扑分析门禁 `inspect_delete_command` 与原子删除操作 `delete_command`，将变更作用域严格限定在 `CreateCommands()` 与 `CreateToolbars()` 函数边界内，杜绝越界修改；实现 4 种 Starter 拓扑缝合模式（`remove_only_child` 容器保留、`new_child` 次节点晋升 Child、`relink_next` 中间跳跃缝合、`remove_tail` 尾节点截断）；在 `Imakefile.mk` 源码清理中引入基于词元边界的精确匹配，完整保留 CRLF、制表符缩进与多行续行符（`\`）；orphan 资源采用“只审计元数据、不直接物理删除”策略，避免误删共享资产；在变更执行前执行括号平衡与语法完整性校验，遇到语法破损或冲突即刻实施门禁拦截。
+  - **能力与机制**：引入只读拓扑分析门禁 `inspect_delete_command` 与原子删除操作 `delete_command`，将变更作用域严格限定在 `CreateCommands()` 与 `CreateToolbars()` 函数边界内，防止越界修改；实现 4 种 Starter 拓扑缝合模式（`remove_only_child` 容器保留、`new_child` 次节点晋升 Child、`relink_next` 中间跳跃缝合、`remove_tail` 尾节点截断）；在 `Imakefile.mk` 源码清理中引入基于词元边界的精确匹配，完整保留 CRLF、制表符缩进与多行续行符（`\`）；orphan 资源采用“只审计元数据、不直接物理删除”策略，避免误删共享资产；在变更执行前执行括号平衡与语法完整性校验，遇到语法破损或冲突即刻实施门禁拦截。
   - **验证结论**：落地 DA1～DA25 生产回归用例覆盖（含作用域限定、词元边界匹配、CRLF/续行链保真、单/多工具栏缝合、事务门禁零变更与对称 rollback 验证）。
 - **Command 安全重命名与防并发篡改 (R-4-B)**：
   - **能力与机制**：引入只读审计门禁 `inspect_rename_command` 与原子重命名操作 `rename_command`；执行前记录目标源文件的 SHA-256 哈希与长度快照，在物理执行前校验磁盘文件一致性，遇并发篡改立即硬拦截并保持零变更；采用稳定 HeaderID 策略（严格保持 HeaderID、工具栏 Starter 引用与 NLS/RSC Key 稳定），仅更新 4 参数 Header 注册的第三参数 `ClassName`；对 C++ 类声明、类作用域、构造/析构函数声明及定义、`CATCreateClass` 工厂宏和 `#include` 实现精确替换，隔离字符串字面量、注释和前缀相似符号；`Imakefile.mk` 实现词元级无缝更新；ChangeSet 原生支持双向对称 `rollback()`，支持 staged 混合编排与多工作台显式隔离。
@@ -1187,4 +1212,4 @@ Phase 1 实现了核心的依赖图管理系统和增强查询功能。
 ---
 
 **维护者**: Kiro AI Agent  
-**最后更新**: 2026-07-08
+**最后更新**: 2026-09-18
