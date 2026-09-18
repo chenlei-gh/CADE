@@ -10,17 +10,19 @@
 
 ## [未发布]
 
-### 🏁 W-4 Release Hardening, Cross-Lifecycle Acceptance & V1 Frozen (2026-09-18, ACCEPTED / V1 FROZEN)
+### 🏁 W-4 Release Hardening, Cross-Lifecycle Acceptance & V1 Frozen (2026-09-18, ACCEPTED WITH DOCUMENTED INTEGRATION-SCOPE LIMITATION / V1 FROZEN FOR CURRENT IMPLEMENTED SCOPE)
 
 - **架构生命周期终审定性**：
   - **W-1（工作台挂载生成与 B28 Runtime 闭环）**：`CLOSED`（WB1～WB27 完整闭环，含 B28 真实进程与 GUI 区域渲染实证）；
   - **W-2（工作台逆向删除与事务安全）**：`CLOSED`（DW1～DW22 完整闭环，受控文件系统 ChangeSet 事务与反向精确 DICO 条目剔除）；
   - **W-3（挂载命令动态解耦与拓扑重织）**：`CLOSED WITH DOCUMENTED LIMITATIONS`（DC1～DC24 完整闭环，单链拓扑重织、无损解码与后置断言防护，已知受控文本边界固化）；
-  - **W-4（跨生命周期协同验收与硬化终审）**：`ACCEPTED / V1 FROZEN`（W4-1～W4-5 全量通过，CADE V1 核心架构全面收口并正式冻结，不再追求极端 C++ 语义 AST 全解析，转入生产级运维与缺陷收敛）。
+  - **W-4（跨生命周期协同验收与硬化终审）**：`ACCEPTED WITH DOCUMENTED INTEGRATION-SCOPE LIMITATION / V1 FROZEN FOR CURRENT IMPLEMENTED SCOPE`（W4-1～W4-5 全量通过，CADE V1 核心架构针对当前已实现能力范围正式冻结，转入生产级运维与缺陷收敛）。
+  - **集成边界说明 (Integration-Scope Limitation)**：
+    - W4-1 currently validates the lifecycle chain with a synthetic mount fixture rather than invoking the production R-3 mount API. The production Mount-to-Detach integration remains outside this specific test's coverage (R-3 Mount has separate isolated regression tests).
 
-- **跨生命周期端到端集成审计 (W4-1～W4-5)**：
-  - **W4-1（端到端正反双向全链路协同）**：
-    - 顺向链路：Create 工作台 (W-1-B) → 挂载命令 Header 与 Toolbar Starter (R-3) → 动态解耦命令并重织拓扑 (W-3-B) → 逆向删除工作台专属文件与 DICO 映射 (W-2-B)；
+- **跨生命周期集成审计 (W4-1～W4-5)**：
+  - **W4-1（生命周期集成测试：Create → Synthetic Mount Fixture → Detach → Delete 双向协同）**：
+    - 顺向链路：Create 工作台 (W-1-B) → 注入合成挂载代码夹具 (Synthetic Mount Fixture) → 动态解耦命令并重织拓扑 (W-3-B) → 逆向删除工作台专属文件与 DICO 映射 (W-2-B)；
     - 逆向三阶段回滚：依次执行 `delete.rollback()` 恢复专属文件与 DICO → `detach.rollback()` 恢复被解挂命令与工具栏 Starter → `create.rollback()` 彻底清除所有生成产物，DICO 与 Imakefile 100% 无损复原至操作前原始字节快照。
   - **W4-2（跨生命周期 ChangeSet 交叉冲突矩阵硬隔离）**：
     - 统一路径规范化 `_norm_path_key`，拦截针对已暂存 `deleted` 文件的 `detach_command` 调用（报 `CHANGESET_CONFLICT`）；

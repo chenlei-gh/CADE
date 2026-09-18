@@ -4789,7 +4789,7 @@ CATCmdContainer* DetachWbAddin::CreateToolbars()
     # ── W-4: Release Hardening & Cross-Lifecycle Acceptance (W4-1 ~ W4-5) ──
     # ══════════════════════════════════════════════════════════════════
 
-    # ── W4-1: 跨生命周期端到端闭环协同 (Create W-1 → Mount → Detach W-3 → Delete W-2) ──
+    # ── W4-1: 跨生命周期集成测试 (Create W-1 → Synthetic Mount Fixture → Detach W-3 → Delete W-2) ──
     ctx_wb.refresh(force=True)
     dico_raw_before_w4 = dico_file.read_bytes()
     imake_raw_before_w4 = imake_shared.read_bytes()
@@ -4807,7 +4807,7 @@ CATCmdContainer* DetachWbAddin::CreateToolbars()
     check("W4-1: W4WbAddin.cpp exists on disk", w4_addin_cpp.is_file())
     check("W4-1: DICO updated with W4WbAddin", "W4WbAddin" in dico_file.read_text(encoding="utf-8"))
 
-    # Step 2: 在 W4WbAddin.cpp 中挂载命令 CmdW4Hdr (模拟运行时命令挂载)
+    # Step 2: 注入合成挂载代码夹具 (Synthetic Mount Fixture, 挂载 CmdW4Hdr)
     w4_addin_content = """// W4WbAddin.cpp
 #include "W4WbAddin.h"
 #include "CATCommandHeader.h"
