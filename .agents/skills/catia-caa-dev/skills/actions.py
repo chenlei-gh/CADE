@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -4267,11 +4268,39 @@ CATCmdContainer* {addin_name}::CreateMenus()
     return {"status": "ok", "error": None, "plan": plan}
 
 
+def _norm_path_key(p: Any) -> str:
+    """Normalize path to a canonical resolved lower-case string for Windows-safe conflict detection."""
+    try:
+        return str(Path(p).resolve()).lower().replace("/", "\\")
+    except Exception:
+        return str(p).lower().replace("/", "\\")
+
+
+def compute_workbench_delete_plan_digest(plan: Dict[str, Any]) -> str:
+    """Compute a deterministic SHA-256 digest over the critical execution fields of a WorkbenchDeletePlan."""
+    payload = {
+        "plan_schema_version": plan.get("plan_schema_version"),
+        "plan_type": plan.get("plan_type"),
+        "workbench_identity": plan.get("workbench_identity"),
+        "action": plan.get("action"),
+        "reason_code": plan.get("reason_code"),
+        "file_deletions": plan.get("file_deletions"),
+        "patches": plan.get("patches"),
+        "preserved_resources": plan.get("preserved_resources"),
+        "source_snapshots": plan.get("source_snapshots"),
+        "command_relations": plan.get("command_relations"),
+        "module_dependencies_policy": plan.get("module_dependencies_policy"),
+    }
+    canonical_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
 def verify_workbench_delete_plan(plan: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
     """Validate a WorkbenchDeletePlan against current on-disk state (DW9).
 
     Verifies:
       - plan_schema_version is '2.0' and plan_type is 'delete_workbench'
+      - plan_digest matches recomputed SHA-256 of canonical execution payload
       - All source_snapshots match current physical byte hashes and lengths
       - All patches match target line exactly with normalized token verification,
         single-occurrence guarantee (expected_occurrences == 1), and estimated_new_content
@@ -4283,6 +4312,14 @@ def verify_workbench_delete_plan(plan: Dict[str, Any]) -> Tuple[bool, Optional[s
         return False, f"Incompatible plan schema version: {plan.get('plan_schema_version')}"
     if plan.get("plan_type") != "delete_workbench":
         return False, f"Invalid plan type: {plan.get('plan_type')}"
+
+    # Plan integrity digest check
+    plan_digest = plan.get("plan_digest")
+    if not plan_digest:
+        return False, "Plan integrity violation: missing plan_digest"
+    expected_digest = compute_workbench_delete_plan_digest(plan)
+    if plan_digest != expected_digest:
+        return False, f"Plan integrity violation: plan_digest mismatch (expected {expected_digest[:12]}, got {plan_digest[:12]}). Plan execution fields were modified after inspection."
 
     snapshots = plan.get("source_snapshots", {})
     for path_str, snap in snapshots.items():
@@ -4301,7 +4338,15 @@ def verify_workbench_delete_plan(plan: Dict[str, Any]) -> Tuple[bool, Optional[s
         p = Path(patch["path"])
         if not p.exists():
             return False, f"Patch target file does not exist: {p}"
-        text = p.read_text(encoding=patch.get("encoding", "utf-8"), errors="replace")
+        try:
+            raw_bytes = p.read_bytes()
+        except Exception as e:
+            return False, f"Failed to read patch target file: {p} ({e})"
+        enc = patch.get("encoding", "utf-8")
+        try:
+            text = raw_bytes.decode(enc)
+        except UnicodeDecodeError as e:
+            return False, f"Patch target file cannot be decoded with {enc}: {p} ({e})"
         target_line = patch.get("target_line", "")
         if not target_line or target_line not in text:
             return False, f"Target line to patch no longer exists in {p}: {target_line}"
@@ -4480,6 +4525,8 @@ def inspect_delete_workbench(
     total_matches = 0
     target_dico_path = None
     target_dico_line = None
+    target_dico_encoding = "utf-8"
+    target_dico_newline = "\n"
     estimated_dico_new_content = None
 
     if dico_dir.exists():
@@ -4490,7 +4537,20 @@ def inspect_delete_workbench(
         for dico_file in dico_dir.glob("*.dico"):
             if any(part.startswith(".") for part in dico_file.parts):
                 continue
-            dico_text = dico_file.read_text(encoding="utf-8", errors="replace")
+            dico_raw = dico_file.read_bytes()
+            try:
+                dico_text = dico_raw.decode("utf-8")
+                cur_enc = "utf-8"
+            except UnicodeDecodeError:
+                try:
+                    dico_text = dico_raw.decode("gbk")
+                    cur_enc = "gbk"
+                except UnicodeDecodeError:
+                    return {
+                        "status": "error",
+                        "error": f"Dictionary file {dico_file} has unsupported encoding (neither UTF-8 nor GBK)",
+                        "plan": None,
+                    }
             matches = list(dico_pattern.finditer(dico_text))
             if matches:
                 total_matches += len(matches)
@@ -4498,6 +4558,8 @@ def inspect_delete_workbench(
                 if len(matches) == 1 and target_dico_path is None:
                     target_dico_path = dico_file
                     target_dico_line = matches[0].group(0).strip()
+                    target_dico_encoding = cur_enc
+                    target_dico_newline = "\r\n" if b"\r\n" in dico_raw else "\n"
                     new_lines = []
                     for line in dico_text.splitlines(keepends=True):
                         if dico_pattern.match(line):
@@ -4654,6 +4716,8 @@ def inspect_delete_workbench(
             "target_line": target_dico_line,
             "match_mode": "exact_normalized_entry",
             "expected_occurrences": 1,
+            "encoding": target_dico_encoding,
+            "newline": target_dico_newline,
             "estimated_new_content": estimated_dico_new_content,
         }
     ]
@@ -4676,7 +4740,7 @@ def inspect_delete_workbench(
             source_snapshots[str(p)] = {
                 "sha256": hashlib.sha256(b).hexdigest(),
                 "byte_length": len(b),
-                "encoding": "utf-8"
+                "encoding": pt.get("encoding", "utf-8")
             }
 
     plan = {
@@ -4705,6 +4769,7 @@ def inspect_delete_workbench(
         },
         "warnings": warnings,
     }
+    plan["plan_digest"] = compute_workbench_delete_plan_digest(plan)
 
     return {
         "status": "ok",
@@ -4794,7 +4859,19 @@ def delete_workbench(
             "changeset": None,
         }
 
-    # ── Gate 3: Calling ChangeSet conflict isolation ──
+    # ── Gate 3: Calling ChangeSet conflict isolation & Internal Plan consistency ──
+    # Check internal plan conflict: a path cannot be simultaneously deleted and patched
+    del_keys = {_norm_path_key(d["path"]): d["path"] for d in plan.get("file_deletions", []) if "path" in d}
+    patch_keys = {_norm_path_key(pt["path"]): pt["path"] for pt in plan.get("patches", []) if "path" in pt}
+    internal_conflicts = set(del_keys.keys()).intersection(set(patch_keys.keys()))
+    if internal_conflicts:
+        conflict_paths = [del_keys[k] for k in internal_conflicts]
+        return {
+            "status": "error",
+            "message": f"Plan conflict detected: file cannot be scheduled for both deletion and patch: {', '.join(conflict_paths)}",
+            "changeset": None,
+        }
+
     master_cs = cs if cs is not None else ChangeSet(
         action="delete_workbench",
         description=f"Delete workbench '{name}'"
@@ -4802,18 +4879,24 @@ def delete_workbench(
 
     if cs is not None:
         conflicts = []
+        norm_cs_created = {_norm_path_key(k) for k in master_cs.created}
+        norm_cs_modified = {_norm_path_key(k) for k in master_cs.modified}
+        norm_cs_deleted = {_norm_path_key(p) for p in master_cs.deleted}
+
         for del_item in plan.get("file_deletions", []):
             dp = del_item["path"]
-            if dp in master_cs.created:
+            ndp = _norm_path_key(dp)
+            if ndp in norm_cs_created:
                 conflicts.append(f"Cannot delete file already staged for creation: {dp}")
-            if dp in master_cs.modified:
+            if ndp in norm_cs_modified:
                 conflicts.append(f"Cannot delete file already staged for modification: {dp}")
-            if Path(dp) in master_cs.deleted:
+            if ndp in norm_cs_deleted:
                 conflicts.append(f"File already staged for deletion: {dp}")
 
         for patch in plan.get("patches", []):
             pp = patch["path"]
-            if Path(pp) in master_cs.deleted:
+            npp = _norm_path_key(pp)
+            if npp in norm_cs_deleted:
                 conflicts.append(f"Cannot patch file already staged for deletion: {pp}")
 
         if conflicts:

@@ -3835,6 +3835,10 @@ try:
     # DW16 (并发篡改与 Plan 失效拦截): Plan with modified file fails Gate 2 with caller CS untouched
     # DW17 (调用方 ChangeSet 冲突隔离): Existing conflict in created/modified rejected before execution
     # DW18 (执行期故障注入与现场复原): Mid-flight error during apply triggers rollback restoring all files
+    # DW19 (Plan 完整性摘要与篡改拦截): plan_digest mismatch fails verification and blocks execution
+    # DW20 (Plan 内部矛盾拦截): File cannot be scheduled for both deletion and patch in same plan
+    # DW21 (路径规范化冲突隔离): Normalized path and case-insensitive conflict detection in caller CS
+    # DW22 (重复回滚幂等性验证): Idempotent repeated rollback without secondary damage
     # ══════════════════════════════════════════════════════════════════
 
     # ── DW11: Pending 内存暂存与零物理变更 ──
@@ -3934,6 +3938,51 @@ try:
     check("DW18: addin header still on disk after failure rollback", del_wb_h.read_bytes() == addin_h_before_b)
     check("DW18: addin cpp still on disk after failure rollback", del_wb_cpp.read_bytes() == addin_cpp_before_b)
     check("DW18: dico still on disk after failure rollback", dico_file.read_bytes() == dico_before_b)
+
+    # ── DW19: Plan 完整性摘要与篡改拦截 ──
+    r_plan19 = inspect_delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu")
+    plan19 = r_plan19.get("plan", {})
+    check("DW19: clean plan has plan_digest", bool(plan19.get("plan_digest")))
+    tampered_plan19 = dict(plan19)
+    tampered_plan19["file_deletions"] = list(plan19["file_deletions"]) + [{"path": str(wb_ws / "Extra.txt"), "kind": "extra", "action": "delete"}]
+    v_ok19, v_err19 = verify_workbench_delete_plan(tampered_plan19)
+    check("DW19: tampered plan_digest fails verification", not v_ok19)
+    check("DW19: error indicates integrity violation", "integrity violation" in (v_err19 or "").lower(), str(v_err19))
+    r_dw19 = delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu", plan=tampered_plan19)
+    check("DW19: delete_workbench rejects tampered plan", r_dw19.get("status") == "error", str(r_dw19))
+
+    # ── DW20: Plan 内部矛盾拦截 (同一文件同时标记 Delete 与 Patch) ──
+    from actions import compute_workbench_delete_plan_digest
+    r_plan20 = inspect_delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu")
+    plan20 = r_plan20.get("plan", {})
+    conflict_plan20 = dict(plan20)
+    conflict_plan20["file_deletions"] = list(plan20["file_deletions"]) + [{"path": str(dico_file), "kind": "dico", "action": "delete"}]
+    conflict_plan20["plan_digest"] = compute_workbench_delete_plan_digest(conflict_plan20)
+    r_dw20 = delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu", plan=conflict_plan20)
+    check("DW20: internal delete-patch conflict rejected", r_dw20.get("status") == "error", str(r_dw20))
+    check("DW20: error specifies cannot be scheduled for both deletion and patch", "both deletion and patch" in r_dw20.get("message", "").lower(), r_dw20.get("message"))
+
+    # ── DW21: 路径规范化冲突隔离 (跨格式与大小写匹配) ──
+    caller_cs_21 = ChangeSet(action="caller_21", description="test normalized conflict")
+    weird_path = str(del_wb_cpp).upper().replace("/", "\\")
+    caller_cs_21.add_modify(Path(weird_path), "// modified with weird path formatting")
+    r_dw21 = delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu", cs=caller_cs_21)
+    check("DW21: normalized path conflict detected", r_dw21.get("status") == "error", str(r_dw21))
+    check("DW21: conflict error message reported", "conflict" in r_dw21.get("message", "").lower(), r_dw21.get("message"))
+
+    # ── DW22: 重复回滚幂等性验证 ──
+    r_dw22 = delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu")
+    cs_dw22 = r_dw22.get("changeset")
+    app_res_22 = cs_dw22.apply(workspace_root=wb_ws)
+    check("DW22: initial apply succeeds", app_res_22.get("status") == "applied", str(app_res_22))
+    check("DW22: addin cpp deleted after apply", not del_wb_cpp.exists())
+    rb1 = cs_dw22.rollback()
+    check("DW22: first rollback succeeds", rb1.get("status") == "rolled_back" and len(rb1.get("errors", [])) == 0, str(rb1))
+    check("DW22: addin cpp restored", del_wb_cpp.read_bytes() == addin_cpp_before_b)
+    rb2 = cs_dw22.rollback()
+    check("DW22: repeated rollback succeeds without error", rb2.get("status") == "rolled_back" and len(rb2.get("errors", [])) == 0, str(rb2))
+    check("DW22: addin cpp still intact after repeated rollback", del_wb_cpp.read_bytes() == addin_cpp_before_b)
+    check("DW22: dico still intact after repeated rollback", dico_file.read_bytes() == dico_before_b)
 
 finally:
     shutil.rmtree(wb_ws, ignore_errors=True)

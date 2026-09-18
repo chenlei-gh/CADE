@@ -10,20 +10,25 @@
 
 ## [未发布]
 
-### 🛡️ W-2 Workbench 复合生命周期运维、逆向删除安全与拓扑解耦 (2026-09-18, CLOSED)
+### 🛡️ W-2 Workbench 复合生命周期运维与逆向物理删除事务 (2026-09-18, 文件系统删除事务收口 / 命令拓扑解耦待实现)
+
+- **架构状态与能力定性**：
+  - **W-2-A 只读安全审计**：`CLOSED WITH STATIC-SCAN LIMITATIONS`（严格静态扫描与 7 大门禁防线）。
+  - **W-2-B 物理原子删除**：`IMPLEMENTED / CONDITIONAL CLOSED`（受控文件系统 ChangeSet 事务删除与对称回滚）。
+  - **W-2 整体状态**：`NOT CLOSED`；命令拓扑解耦（`CreateCommands`/`CreateToolbars` 动态解挂与 Starter 链重织）尚未实现，由后续专项 **W-3** 独立闭环承接。
 
 - **W-2-A 只读安全审计与不可变 Plan 门禁**：
   - 新增 `inspect_delete_workbench()` 与 `verify_workbench_delete_plan()`，遵循“先审计、再规划、零副作用”契约；
-  - 组装不可变 `WorkbenchDeletePlan`（schema 2.0），内含 `workbench_identity`、`file_deletions`、`patches`、`preserved_resources`、`command_relations`、`source_snapshots`（原始字节 SHA-256 与字节长度）及 `dependency_evidence`；
-  - 落地 7 大只读安全门禁：Gate 1 身份解析（彻底移除模块盲目回退，严格依模型或 DICO 映射确定宿主模块）、Gate 2 宿主目录边界防御（`relative_to` 抛出 `ValueError` 杜绝路径逃逸）、Gate 3 DICO 精确唯一匹配（规范化 token 比对，强制 `expected_occurrences == 1`）、Gate 4 共享资源冲突检测（被引用的图标自动标记 `preserve`）、Gate 5 挂载命令所有权严格隔离（所有权定性为 `UNKNOWN`，动作严格限定为 `DETACH_ONLY`；显式请求级联删除时硬阻断 `status: "blocked"`）、Gate 6 模块依赖保守边界（保留 `Imakefile.mk` / `IdentityCard.xml` 依赖）、Gate 7 不可变 Plan 组装与防篡改失效保护；
+  - 组装结构化 `WorkbenchDeletePlan`（schema 2.0），内含 `workbench_identity`、`file_deletions`、`patches`、`preserved_resources`、`command_relations`、`source_snapshots`（原始字节 SHA-256 与字节长度）、`dependency_evidence` 及 `plan_digest`（规范化字段 SHA-256 摘要）；
+  - 落地 7 大只读安全门禁：Gate 1 身份解析（彻底移除模块盲目回退，严格依模型或 DICO 映射确定宿主模块）、Gate 2 宿主目录边界防御（`relative_to` 抛出 `ValueError` 杜绝路径逃逸）、Gate 3 DICO 精确唯一匹配（规范化 token 比对，强制 `expected_occurrences == 1`，严格编码与换行模式捕获）、Gate 4 共享资源冲突检测（被引用的图标自动标记 `preserve`）、Gate 5 挂载命令所有权严格隔离（所有权定性为 `UNKNOWN`，动作严格限定为 `DETACH_ONLY`；显式请求级联删除时硬阻断 `status: "blocked"`）、Gate 6 模块依赖保守边界（保留 `Imakefile.mk` / `IdentityCard.xml` 依赖）、Gate 7 不可变 Plan 组装与防篡改失效保护；
   - 覆盖 DW1～DW10 生产回归用例，审计阶段对磁盘与调用方 ChangeSet 保持零副作用。
 
-- **W-2-B 物理原子删除与 ChangeSet 事务执行**：
+- **W-2-B 物理原子删除与 ChangeSet 事务执行 (含加固补丁)**：
   - 新增 `delete_workbench()` 物理删除执行器，严格消费经校验的 `WorkbenchDeletePlan`（schema 2.0）；
-  - 落地 5 大执行期门禁：Gate 1 Plan 身份绑定、Gate 2 防篡改预检（源文件与 DICO 变更立即拦截，外部 ChangeSet 保持零污染）、Gate 3 调用方冲突排查（`created` / `modified` / `deleted` 集合互斥阻断）、Gate 4 事务暂存与原始 `raw_bytes` 备份（DICO 移除暂存为 `modified`，专属文件加入 `deleted`）、Gate 5 共享资源与命令源码物理豁免（共享图标与命令源码物理执行前后保持 100% 字节不变）；
-  - 覆盖 DW11～DW18 生产回归用例：Pending 内存暂存（DW11）、物理落地（DW12）、对称回滚（DW13）、共享图标豁免（DW14）、命令源码豁免（DW15）、防并发篡改（DW16）、ChangeSet 冲突隔离（DW17）、执行期故障注入与现场完整复原（DW18）；
-  - 明确事务边界：ChangeSet 回滚保障受控文件系统事务（新建、删除与修改文件的原始字节级还原），不宣称 CATIA 运行时进程状态或已加载 DLL 内存模块的自动回滚；
-  - 生产回归测试套件规模达 **750/750 全量通过**。
+  - 落地 5 大执行期门禁：Gate 1 Plan 身份绑定、Gate 2 防篡改与摘要预检（`plan_digest` 签名防篡改与源文件/DICO 变更立即拦截）、Gate 3 内部冲突与调用方冲突隔离（Plan 内部 Delete/Patch 冲突硬阻断，调用方 `created`/`modified`/`deleted` 比对采用跨平台规范化路径 `_norm_path_key` 消除大小写与分隔符盲区）、Gate 4 事务暂存与原始 `raw_bytes` 备份（DICO 移除暂存为 `modified`，专属文件加入 `deleted`）、Gate 5 共享资源与命令源码物理豁免（共享图标与命令源码物理执行前后保持 100% 字节不变）；
+  - 覆盖 DW11～DW22 生产回归用例：Pending 内存暂存（DW11）、物理落地（DW12）、对称回滚（DW13）、共享图标豁免（DW14）、命令源码豁免（DW15）、防并发篡改（DW16）、ChangeSet 冲突隔离（DW17）、执行期故障注入与现场完整复原（DW18）、Plan 完整性摘要与篡改拦截（DW19）、Plan 内部矛盾拦截（DW20）、路径规范化冲突隔离（DW21）、重复回滚幂等性与零二次破坏（DW22）；
+  - 明确事务边界：ChangeSet 回滚仅保障受控文件系统事务（新建、删除与修改文件的原始字节级还原），不宣称 CATIA 运行时进程状态或已加载 DLL 内存模块的自动回滚；
+  - 生产回归测试套件规模达 **765/765 全量通过**。
 
 ### 🏗️ W-1 Workbench 从零全生命周期生成与 B28 Runtime 闭环 (2026-09-18, CLOSED)
 
