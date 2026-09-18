@@ -3985,7 +3985,14 @@ try:
     check("DW22: dico still intact after repeated rollback", dico_file.read_bytes() == dico_before_b)
 
     # ── W-3-A: Workbench Command Detach Inspection & Deterministic Plan (inspect_detach_command) ──
-    from actions import inspect_detach_command, verify_workbench_detach_plan, compute_workbench_detach_plan_digest, detach_command
+    from actions import (
+        inspect_detach_command,
+        verify_workbench_detach_plan,
+        compute_workbench_detach_plan_digest,
+        detach_command,
+        _extract_create_commands_scope,
+        _extract_create_toolbars_scope,
+    )
 
     # 构造标准 Detach 测试工作台 DetachWb
     detach_wb_dir = mod_shared / "LocalInterfaces"
@@ -4462,6 +4469,321 @@ CATCmdContainer* DetachWbAddin::CreateToolbars()
     check("DC20: dico file 100% untouched", dico_file.read_bytes() == dico_bytes_orig_20)
     check("DC20: imakefile 100% untouched", (mod_shared / "Imakefile.mk").read_bytes() == imake_bytes_orig_20)
     mock_cmd_cpp.unlink()
+
+    # ── DC21: 多工具栏交叉共存下的精确解耦与工具栏拓扑隔离 ──
+    multi_tlb_template = """// DetachWbAddin.cpp
+#include "DetachWbAddin.h"
+#include "CATCommandHeader.h"
+#include "CATCmdContainer.h"
+#include "CATCmdStarter.h"
+
+MacDeclareHeader(DetachHeader);
+
+void DetachWbAddin::CreateCommands()
+{
+    new DetachHeader("CmdA1Hdr", "CmdMod", "CmdA1", (void*)NULL);
+    new DetachHeader("CmdA2Hdr", "CmdMod", "CmdA2", (void*)NULL);
+    new DetachHeader("CmdA3Hdr", "CmdMod", "CmdA3", (void*)NULL);
+    new DetachHeader("CmdB1Hdr", "CmdMod", "CmdB1", (void*)NULL);
+    new DetachHeader("CmdB2Hdr", "CmdMod", "CmdB2", (void*)NULL);
+}
+
+CATCmdContainer* DetachWbAddin::CreateToolbars()
+{
+    NewAccess(CATCmdContainer, pTlbAlpha, TlbAlpha);
+    AddToolbarView(pTlbAlpha, 1, Top);
+    NewAccess(CATCmdStarter, pStarterA1, StarterA1);
+    SetAccessCommand(pStarterA1, "CmdA1Hdr");
+    SetAccessChild(pTlbAlpha, pStarterA1);
+
+    NewAccess(CATCmdStarter, pStarterA2, StarterA2);
+    SetAccessCommand(pStarterA2, "CmdA2Hdr");
+    SetAccessNext(pStarterA1, pStarterA2);
+
+    NewAccess(CATCmdStarter, pStarterA3, StarterA3);
+    SetAccessCommand(pStarterA3, "CmdA3Hdr");
+    SetAccessNext(pStarterA2, pStarterA3);
+
+    NewAccess(CATCmdContainer, pTlbBeta, TlbBeta);
+    AddToolbarView(pTlbBeta, 1, Top);
+    NewAccess(CATCmdStarter, pStarterB1, StarterB1);
+    SetAccessCommand(pStarterB1, "CmdB1Hdr");
+    SetAccessChild(pTlbBeta, pStarterB1);
+
+    NewAccess(CATCmdStarter, pStarterB2, StarterB2);
+    SetAccessCommand(pStarterB2, "CmdB2Hdr");
+    SetAccessNext(pStarterB1, pStarterB2);
+
+    return pTlbAlpha;
+}
+"""
+    detach_wb_cpp.write_text(multi_tlb_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    raw_before_dc21 = detach_wb_cpp.read_bytes()
+    sha_before_dc21 = hashlib.sha256(raw_before_dc21).hexdigest()
+
+    # 针对 TlbAlpha 中的中间命令 CmdA2Hdr 进行审计与解耦
+    r_plan_dc21 = inspect_detach_command(ctx_wb, "DetachWb", "CmdA2Hdr")
+    check("DC21: inspect multi-toolbar succeeds", r_plan_dc21.get("status") == "ok")
+    plan_dc21 = r_plan_dc21.get("plan", {})
+    splices_dc21 = plan_dc21.get("toolbar_splices", [])
+    check("DC21: targets only one toolbar splice", len(splices_dc21) == 1)
+    check("DC21: correctly binds to TlbAlpha", splices_dc21[0].get("toolbar_id") == "TlbAlpha")
+    check("DC21: splice mode is relink_next", splices_dc21[0].get("splice_mode") == "relink_next")
+    check("DC21: prev starter is pStarterA1", splices_dc21[0].get("prev_starter") == "pStarterA1")
+    check("DC21: next starter is pStarterA3", splices_dc21[0].get("next_starter") == "pStarterA3")
+
+    # 执行物理落地
+    r_dc21 = detach_command(ctx_wb, "DetachWb", "CmdA2Hdr", plan=plan_dc21)
+    check("DC21: detach execution returns pending", r_dc21.get("status") == "pending")
+    cs_dc21 = r_dc21.get("changeset")
+    res_apply_21 = cs_dc21.apply()
+    check("DC21: apply succeeds", res_apply_21.get("status") == "applied" and len(res_apply_21.get("errors", [])) == 0)
+
+    # 检查磁盘内容：TlbAlpha 成功重织，TlbBeta 100% 保持原样
+    content_dc21 = detach_wb_cpp.read_text(encoding="utf-8")
+    check("DC21: CmdA2Hdr registration removed", 'new DetachHeader("CmdA2Hdr"' not in content_dc21)
+    check("DC21: pStarterA2 removed", 'pStarterA2' not in content_dc21)
+    check("DC21: relink statement added", 'SetAccessNext(pStarterA1, pStarterA3);' in content_dc21)
+    # 隔离断言：TlbBeta 所有语句原封未动
+    beta_statements = [
+        "NewAccess(CATCmdContainer, pTlbBeta, TlbBeta);",
+        "AddToolbarView(pTlbBeta, 1, Top);",
+        "NewAccess(CATCmdStarter, pStarterB1, StarterB1);",
+        'SetAccessCommand(pStarterB1, "CmdB1Hdr");',
+        "SetAccessChild(pTlbBeta, pStarterB1);",
+        "NewAccess(CATCmdStarter, pStarterB2, StarterB2);",
+        'SetAccessCommand(pStarterB2, "CmdB2Hdr");',
+        "SetAccessNext(pStarterB1, pStarterB2);",
+    ]
+    check("DC21: TlbBeta completely isolated and untouched", all(stmt in content_dc21 for stmt in beta_statements))
+
+    # 回滚并验证字节一致
+    res_rb_21 = cs_dc21.rollback()
+    check("DC21: rollback succeeds", res_rb_21.get("status") == "rolled_back")
+    check("DC21: 100% byte restoration after multi-toolbar detach", detach_wb_cpp.read_bytes() == raw_before_dc21)
+    check("DC21: sha256 identical", hashlib.sha256(detach_wb_cpp.read_bytes()).hexdigest() == sha_before_dc21)
+
+    # ── DC22: 行内与行间 C++ 注释混合防御 (单行/行尾/块注释结构性保护) ──
+    comment_cpp_template = """// DetachWbAddin.cpp
+#include "DetachWbAddin.h"
+#include "CATCommandHeader.h"
+#include "CATCmdContainer.h"
+#include "CATCmdStarter.h"
+
+// Header class declaration
+MacDeclareHeader(DetachHeader); // trailing header comment
+
+/* Multi-line comment before CreateCommands()
+   Demonstrating structural resilience against C++ comments */
+void DetachWbAddin::CreateCommands()
+{
+    // Section: Single command header with inline comment
+    new DetachHeader("CmdSingleHdr", "CmdMod", "CmdSingle", (void*)NULL); // target header
+    /* block comment */ new DetachHeader("CmdKeepHdr", "CmdMod", "CmdKeep", (void*)NULL);
+}
+
+CATCmdContainer* DetachWbAddin::CreateToolbars()
+{
+    /* Container setup */
+    NewAccess(CATCmdContainer, pTlbSingle, TlbSingle); // container line
+    AddToolbarView(pTlbSingle, 1, Top);
+
+    // Starter definition with trailing comments
+    NewAccess(CATCmdStarter, pStarterSingle, SingleStarter); // starter inline
+    SetAccessCommand(pStarterSingle, "CmdSingleHdr"); /* block comment on command */
+    SetAccessChild(pTlbSingle, pStarterSingle); // child link comment
+
+    return pTlbSingle;
+}
+"""
+    detach_wb_cpp.write_text(comment_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    raw_before_dc22 = detach_wb_cpp.read_bytes()
+    sha_before_dc22 = hashlib.sha256(raw_before_dc22).hexdigest()
+
+    # 审计带有复杂注释的代码
+    r_plan_dc22 = inspect_detach_command(ctx_wb, "DetachWb", "CmdSingleHdr")
+    check("DC22: inspect succeeds despite mixed comments", r_plan_dc22.get("status") == "ok")
+    plan_dc22 = r_plan_dc22.get("plan", {})
+    check("DC22: splice mode resolved correctly", plan_dc22.get("toolbar_splices", [])[0].get("splice_mode") == "remove_only_child")
+
+    # 执行解耦
+    r_dc22 = detach_command(ctx_wb, "DetachWb", "CmdSingleHdr", plan=plan_dc22)
+    check("DC22: detach execution returns pending", r_dc22.get("status") == "pending")
+    cs_dc22 = r_dc22.get("changeset")
+    res_apply_22 = cs_dc22.apply()
+    check("DC22: apply succeeds with comment preservation", res_apply_22.get("status") == "applied" and len(res_apply_22.get("errors", [])) == 0)
+
+    # 验证变换后的代码质量
+    content_dc22 = detach_wb_cpp.read_text(encoding="utf-8")
+    check("DC22: target header statement removed", 'new DetachHeader("CmdSingleHdr"' not in content_dc22)
+    check("DC22: kept command header intact", 'new DetachHeader("CmdKeepHdr"' in content_dc22)
+    check("DC22: preserved multi-line comment block", "Multi-line comment before CreateCommands()" in content_dc22)
+    check("DC22: preserved inline block comment", "/* block comment */" in content_dc22)
+    check("DC22: preserved container trailing comment", "// container line" in content_dc22)
+
+    # 作用域结构未被破坏断言
+    check("DC22: CreateCommands scope valid after comment detach", _extract_create_commands_scope(content_dc22) is not None)
+    check("DC22: CreateToolbars scope valid after comment detach", _extract_create_toolbars_scope(content_dc22) is not None)
+
+    # 回滚并确认字节级无损
+    res_rb_22 = cs_dc22.rollback()
+    check("DC22: rollback succeeds", res_rb_22.get("status") == "rolled_back")
+    check("DC22: 100% byte restoration with comments", detach_wb_cpp.read_bytes() == raw_before_dc22)
+    check("DC22: sha256 identical", hashlib.sha256(detach_wb_cpp.read_bytes()).hexdigest() == sha_before_dc22)
+
+    # ── DC23: 多宏与复杂宏包裹 Header 注册生命周期 (共享宏保留 vs 独占宏安全移除) ──
+    multi_macro_template = """// DetachWbAddin.cpp
+#include "DetachWbAddin.h"
+#include "CATCommandHeader.h"
+#include "CATCmdContainer.h"
+#include "CATCmdStarter.h"
+
+MacDeclareHeader(SharedHeader);
+MacDeclareHeader(UniqueHeader);
+
+void DetachWbAddin::CreateCommands()
+{
+    new SharedHeader("CmdShared1Hdr", "CmdMod", "CmdShared1", (void*)NULL);
+    new SharedHeader("CmdShared2Hdr", "CmdMod", "CmdShared2", (void*)NULL);
+    new UniqueHeader("CmdUniqueHdr", "CmdMod", "CmdUnique", (void*)NULL);
+}
+
+CATCmdContainer* DetachWbAddin::CreateToolbars()
+{
+    NewAccess(CATCmdContainer, pTlbMacro, TlbMacro);
+    AddToolbarView(pTlbMacro, 1, Top);
+    NewAccess(CATCmdStarter, pStarterS1, StarterS1);
+    SetAccessCommand(pStarterS1, "CmdShared1Hdr");
+    SetAccessChild(pTlbMacro, pStarterS1);
+
+    NewAccess(CATCmdStarter, pStarterS2, StarterS2);
+    SetAccessCommand(pStarterS2, "CmdShared2Hdr");
+    SetAccessNext(pStarterS1, pStarterS2);
+
+    NewAccess(CATCmdStarter, pStarterU, StarterU);
+    SetAccessCommand(pStarterU, "CmdUniqueHdr");
+    SetAccessNext(pStarterS2, pStarterU);
+
+    return pTlbMacro;
+}
+"""
+    detach_wb_cpp.write_text(multi_macro_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    raw_before_dc23 = detach_wb_cpp.read_bytes()
+    sha_before_dc23 = hashlib.sha256(raw_before_dc23).hexdigest()
+
+    # 阶段 1: 解耦 CmdShared1Hdr，SharedHeader 还有 CmdShared2Hdr 使用，必须保留 MacDeclareHeader(SharedHeader)
+    r_plan_dc23_1 = inspect_detach_command(ctx_wb, "DetachWb", "CmdShared1Hdr")
+    check("DC23: inspect shared header command succeeds", r_plan_dc23_1.get("status") == "ok")
+    r_dc23_1 = detach_command(ctx_wb, "DetachWb", "CmdShared1Hdr", plan=r_plan_dc23_1.get("plan"))
+    cs_dc23_1 = r_dc23_1.get("changeset")
+    cs_dc23_1.apply()
+    content_after_23_1 = detach_wb_cpp.read_text(encoding="utf-8")
+    check("DC23: CmdShared1Hdr removed", 'new SharedHeader("CmdShared1Hdr"' not in content_after_23_1)
+    check("DC23: MacDeclareHeader(SharedHeader) PRESERVED because CmdShared2Hdr exists", "MacDeclareHeader(SharedHeader);" in content_after_23_1)
+    check("DC23: MacDeclareHeader(UniqueHeader) intact", "MacDeclareHeader(UniqueHeader);" in content_after_23_1)
+
+    # 阶段 2: 接着解耦独占宏命令 CmdUniqueHdr，无其他命令使用 UniqueHeader，必须安全移除 MacDeclareHeader(UniqueHeader)
+    ctx_wb.refresh(force=True)
+    r_plan_dc23_2 = inspect_detach_command(ctx_wb, "DetachWb", "CmdUniqueHdr")
+    check("DC23: inspect unique header command succeeds", r_plan_dc23_2.get("status") == "ok")
+    r_dc23_2 = detach_command(ctx_wb, "DetachWb", "CmdUniqueHdr", plan=r_plan_dc23_2.get("plan"))
+    cs_dc23_2 = r_dc23_2.get("changeset")
+    cs_dc23_2.apply()
+    content_after_23_2 = detach_wb_cpp.read_text(encoding="utf-8")
+    check("DC23: CmdUniqueHdr removed", 'new UniqueHeader("CmdUniqueHdr"' not in content_after_23_2)
+    check("DC23: MacDeclareHeader(UniqueHeader) SAFELY REMOVED", "MacDeclareHeader(UniqueHeader);" not in content_after_23_2)
+    check("DC23: MacDeclareHeader(SharedHeader) STILL PRESERVED for CmdShared2Hdr", "MacDeclareHeader(SharedHeader);" in content_after_23_2)
+
+    # 阶段 3: 级联回滚，两阶段修改完全逆序复原
+    cs_dc23_2.rollback()
+    cs_dc23_1.rollback()
+    check("DC23: two-stage cascade rollback restored exact bytes", detach_wb_cpp.read_bytes() == raw_before_dc23)
+    check("DC23: sha256 identical after cascade rollback", hashlib.sha256(detach_wb_cpp.read_bytes()).hexdigest() == sha_before_dc23)
+
+    # ── DC24: 复杂往返全生命周期原子性验证 (多工具栏/宏/注释综合复合往返) ──
+    complex_lifecycle_template = """// DetachWbAddin.cpp
+#include "DetachWbAddin.h"
+#include "CATCommandHeader.h"
+#include "CATCmdContainer.h"
+#include "CATCmdStarter.h"
+
+// Macro declarations
+MacDeclareHeader(SharedAlphaHeader);
+MacDeclareHeader(SoleBetaHeader);
+
+/* Comprehensive lifecycle test case
+   Combining multi-toolbars, inline comments, and multi-macros */
+void DetachWbAddin::CreateCommands()
+{
+    // Tool A commands
+    new SharedAlphaHeader("CmdA1Hdr", "CmdMod", "CmdA1", (void*)NULL); // first
+    new SharedAlphaHeader("CmdA2Hdr", "CmdMod", "CmdA2", (void*)NULL); // second
+    // Tool B command
+    new SoleBetaHeader("CmdB1Hdr", "CmdMod", "CmdB1", (void*)NULL); /* sole */
+}
+
+CATCmdContainer* DetachWbAddin::CreateToolbars()
+{
+    /* Toolbar Alpha setup */
+    NewAccess(CATCmdContainer, pTlbAlpha, TlbAlpha);
+    AddToolbarView(pTlbAlpha, 1, Top);
+    NewAccess(CATCmdStarter, pStarterA1, StarterA1); // starter A1
+    SetAccessCommand(pStarterA1, "CmdA1Hdr");
+    SetAccessChild(pTlbAlpha, pStarterA1);
+
+    NewAccess(CATCmdStarter, pStarterA2, StarterA2); // starter A2
+    SetAccessCommand(pStarterA2, "CmdA2Hdr");
+    SetAccessNext(pStarterA1, pStarterA2);
+
+    /* Toolbar Beta setup */
+    NewAccess(CATCmdContainer, pTlbBeta, TlbBeta);
+    AddToolbarView(pTlbBeta, 1, Top);
+    NewAccess(CATCmdStarter, pStarterB1, StarterB1);
+    SetAccessCommand(pStarterB1, "CmdB1Hdr");
+    SetAccessChild(pTlbBeta, pStarterB1);
+
+    return pTlbAlpha;
+}
+"""
+    detach_wb_cpp.write_text(complex_lifecycle_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    raw_before_dc24 = detach_wb_cpp.read_bytes()
+    sha_before_dc24 = hashlib.sha256(raw_before_dc24).hexdigest()
+
+    # 执行解耦 CmdB1Hdr (remove_only_child 模式，且 SoleBetaHeader 被彻底移除)
+    r_dc24 = detach_command(ctx_wb, "DetachWb", "CmdB1Hdr")
+    check("DC24: detach pending", r_dc24.get("status") == "pending")
+    cs_dc24 = r_dc24.get("changeset")
+
+    # Cycle 1: Apply
+    res_apply_24 = cs_dc24.apply()
+    check("DC24: cycle 1 apply succeeds", res_apply_24.get("status") == "applied" and len(res_apply_24.get("errors", [])) == 0)
+    check("DC24: cycle 1 disk modified", detach_wb_cpp.read_bytes() != raw_before_dc24)
+    content_dc24_applied = detach_wb_cpp.read_text(encoding="utf-8")
+    check("DC24: sole macro removed", "MacDeclareHeader(SoleBetaHeader);" not in content_dc24_applied)
+    check("DC24: TlbBeta starter removed", "pStarterB1" not in content_dc24_applied)
+    check("DC24: TlbAlpha undisturbed", "pStarterA2" in content_dc24_applied)
+
+    # Cycle 1: Rollback
+    res_rb_24 = cs_dc24.rollback()
+    check("DC24: cycle 1 rollback succeeds", res_rb_24.get("status") == "rolled_back")
+    check("DC24: cycle 1 raw bytes restored", detach_wb_cpp.read_bytes() == raw_before_dc24)
+    check("DC24: cycle 1 sha256 restored", hashlib.sha256(detach_wb_cpp.read_bytes()).hexdigest() == sha_before_dc24)
+
+    # Cycle 2: Idempotent duplicate rollback
+    res_rb_24_dup = cs_dc24.rollback()
+    check("DC24: cycle 2 idempotent rollback ok", res_rb_24_dup.get("status") == "rolled_back")
+    check("DC24: cycle 2 raw bytes intact", detach_wb_cpp.read_bytes() == raw_before_dc24)
+
+    # Cycle 3: Replay apply and rollback
+    cs_dc24.apply()
+    check("DC24: cycle 3 replay apply modified", detach_wb_cpp.read_bytes() != raw_before_dc24)
+    cs_dc24.rollback()
+    check("DC24: cycle 3 replay rollback restored", detach_wb_cpp.read_bytes() == raw_before_dc24)
+    check("DC24: cycle 3 final sha256 matches exactly", hashlib.sha256(detach_wb_cpp.read_bytes()).hexdigest() == sha_before_dc24)
 
 finally:
     shutil.rmtree(wb_ws, ignore_errors=True)

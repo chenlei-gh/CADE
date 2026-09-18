@@ -10,12 +10,16 @@
 
 ## [未发布]
 
-### 🔌 W-3 Workbench 挂载命令动态解耦与拓扑重织 (2026-09-18, CLOSED)
+### 🔌 W-3 Workbench 挂载命令动态解耦与拓扑重织 (2026-09-18, CLOSED WITH DOCUMENTED LIMITATIONS)
 
 - **能力架构与闭环定性**：
   - **W-3-A 只读审计与拓扑规划**：`CLOSED WITH STATIC-SCAN LIMITATIONS`（严格作用域解析与 4 种 Starter 拓扑单链追踪）；
-  - **W-3-B 物理原子解耦与对称事务回滚 (含深度加固)**：`CLOSED`（5 大执行期门禁、4 种模式重织物理落地、严格无损解码、后置结构断言与 100% 对称字节还原）；
+  - **W-3-B 物理原子解耦与对称事务回滚 (含深度加固与复杂场景收敛)**：`CLOSED WITH DOCUMENTED STATIC-SCAN AND SCENARIO-COVERAGE LIMITATIONS`（5 大执行期门禁、4 种模式重织物理落地、严格无损解码、后置结构断言与 100% 对称字节还原）；
   - 彻底终结历史遗留的直接 `str.replace()` 缺陷，形成与 W-1（挂载生成）、W-2（工作台物理删除）对称的命令解耦闭环。
+  - **已知技术限制边界说明**：
+    - 物理文本级断言（`line.strip() == statement.strip()` 与出现次数统计）与作用域检测为受控文本行级别，覆盖已定义测试场景，非 Clang/AST 级 C++ 语义分析；
+    - 多行断行宏、复杂预处理宏展开、跨宏拆分语句、非常规代码缩进等极端场景需依赖后置断言拦截（`POST_TRANSFORMATION_ASSERTION_FAILED`）或人工审查；
+    - 4 种 Toolbar 拓扑模式覆盖了单链标准的 `remove_only_child`、`new_child`、`relink_next`、`remove_tail`，对于非规范写法或动态构造 starter 需依赖 `BLOCKED_UNRESOLVED_TOPOLOGY` 硬阻断。
 
 - **W-3-A 只读审计与 5 大安全门禁**：
   - 新增 `inspect_detach_command()`、`compute_workbench_detach_plan_digest()` 与 `verify_workbench_detach_plan()`，遵循“纯只读审计、严禁物理执行、零副作用”契约；
@@ -26,7 +30,7 @@
     - **Gate 4（命令源码与模块 100% 免疫）**：`file_deletions: []`，`imakefile_modifications: []`，`dico_modifications: []`，命令 `.h`/`.cpp` 及资源绝对保持零变更；
     - **Gate 5（不可变 Detach Plan 生成）**：组装结构化 `WorkbenchCommandDetachPlan`（schema 2.0），包含目标 Addin 原始字节 SHA-256 与字节长度快照，注入 `plan_digest` 执行字段完整性签名。
 
-- **W-3-B 物理原子解耦与对称事务回滚 (含安全深度加固)**：
+- **W-3-B 物理原子解耦与对称事务回滚 (含安全深度加固与复杂场景防御)**：
   - 新增 `detach_command()` 物理执行器，严格消费经校验的 `WorkbenchCommandDetachPlan`（schema 2.0）；
   - 落地 5 大执行期门禁与三大深度安全加固：
     - **Gate 1（Plan 身份绑定）**：校验 `workbench_name`、`header_id`、`framework` 与 `module`，参数不一致立即报错拦截；
@@ -34,12 +38,12 @@
     - **Gate 3（调用方 ChangeSet 全维度冲突隔离，加固）**：利用 `_norm_path_key` 全面检测目标 Addin.cpp 是否处于 `created`、`modified` 或 `deleted` 状态，存在任意冲突立即拦截（`CHANGESET_CONFLICT`），杜绝覆盖调用方已暂存内容；
     - **Gate 4（严格解码与作用域受限物理文本变换，加固）**：
       - 彻底移除 `errors="replace"` 容错解码回退，实行严格编码校验（优先 Plan 快照编码，失败尝试严格 GBK，均失败返回 `SOURCE_ENCODING_ERROR` 并零写入终止）；
-      - `CreateCommands()` 作用域内精准移除目标 `new HeaderClass("HeaderID", ...)` 语句；若该 Header 类在文件中无其他 Header 使用，一并安全移除 `MacDeclareHeader`；
+      - `CreateCommands()` 作用域内精准移除目标 `new HeaderClass("HeaderID", ...)` 语句；若该 Header 类在文件中无其他 Header 使用，一并安全移除 `MacDeclareHeader`；若仍有其他命令引用则严格保留；
       - `CreateToolbars()` 作用域内按 4 种拓扑模式重织（`remove_only_child` 移除容器子链；`new_child` 替换首节点接驳 `SetAccessChild`；`relink_next` 替换中间节点接驳 `SetAccessNext`；`remove_tail` 移除尾部链接）；
       - **后置结构验证（Post-transformation Assertions）**：文本变换完成后在写入暂存区前，严格断言目标 Header 注册已彻底移除、`statements_to_remove` 全部语句已消失、`statements_to_add` 新链接接驳语句存在且出现次数严格等于 1、`CreateCommands()` 与 `CreateToolbars()` 作用域结构完好；若任何断言失败立即抛出 `POST_TRANSFORMATION_ASSERTION_FAILED` 并拒绝暂存；
     - **Gate 5（ChangeSet 暂存与对称回滚）**：暂存为 `modified`，`ChangeSet._backups` 自动留存原始 `raw_bytes`；`rollback()` 100% 物理字节无损还原，命令源文件/DICO/Imakefile 零污染。
 
-- **回归验证 (DC1～DC20)**：
+- **回归验证 (DC1～DC24 全量覆盖)**：
   - **DC1～DC8 只读门禁**：DC1（非目标工作台拦截）、DC2（未注册 HeaderID 拦截）、DC3（Addin 越界防御）、DC4（CreateCommands 作用域损坏硬阻断）、DC5（4 种 Starter 拓扑缝合模式正确识别）、DC6（多重歧义 Header 拦截）、DC7（孤立 Starter 拓扑硬阻断）、DC8（纯只读审计验证：磁盘文件字节 100% 未变，调用方 ChangeSet 保持零修改）；
   - **DC9～DC16 物理执行与事务回滚**：DC9（Plan 身份绑定校验）、DC10（Plan 签名篡改与并发修改拦截）、DC11（ChangeSet 事务创建/删除冲突隔离）、DC12（`remove_only_child` 物理落地）、DC13（`new_child` 首节点接驳物理落地）、DC14（`relink_next` 中间节点接驳物理落地）、DC15（`remove_tail` 尾节点解挂物理落地）、DC16（对称物理回滚：ChangeSet `apply()` 后调用 `rollback()` 物理文件 100% 恢复原始 SHA-256 字节，且 DICO 与 Imakefile 零污染，验证幂等回滚无异常）；
   - **DC17～DC20 深度加固回归**：
@@ -47,7 +51,12 @@
     - **DC18**：非法编码或字节损坏时阻断（返回 `SOURCE_ENCODING_ERROR`，拒绝容错字符替换）；
     - **DC19**：后置断言异常校验（模拟生成重复语句或待删语句残留时硬阻断 `POST_TRANSFORMATION_ASSERTION_FAILED`，验证磁盘零修改）；
     - **DC20**：复杂多工具栏与复合回滚序列验证（往返序列 `detach → apply → rollback`、幂等回滚 `detach → apply → rollback → rollback`、重放再回滚 `detach → apply → rollback → apply → rollback`，物理字节与原始 SHA-256 100% 恢复，命令源文件/DICO/Imakefile 零污染）；
-  - 生产回归测试套件规模扩增至 **912/912 全量通过**。
+  - **DC21～DC24 复杂真实 CAA 场景收敛回归**：
+    - **DC21**：多工具栏交叉共存下的精确解耦与拓扑隔离（`TlbAlpha` 中间命令解挂重织，`TlbBeta` 语句 100% 保持原样与单链隔离，验证回滚字节还原）；
+    - **DC22**：行内与行间 C++ 注释混合防御（行首注释、行尾注释 `// inline`、块注释 `/* ... */` 结构性保留，作用域不被注释误导，后置断言与回滚 100% 严格一致）；
+    - **DC23**：多宏与复杂宏包裹 Header 注册生命周期（共享宏 `MacDeclareHeader` 在仍有命令引用时严格保留，独占宏在命令解耦后安全移除，支持两阶段级联回滚与字节级还原）；
+    - **DC24**：复杂往返全生命周期原子性验证（多工具栏、行内注释、多宏 Header 复合模板下的 `detach → apply → rollback → rollback (幂等) → apply → rollback` 往返验证，物理字节与原始 SHA-256 100% 严格匹配）；
+  - 生产回归测试套件规模扩增至 **965/965 全量通过**。
 
 ### 🛡️ W-2 Workbench 复合生命周期运维与逆向物理删除事务 (2026-09-18, 文件系统删除事务收口 / 命令拓扑解耦由 W-3 承接)
 
