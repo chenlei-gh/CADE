@@ -4276,6 +4276,29 @@ def _norm_path_key(p: Any) -> str:
         return str(p).lower().replace("/", "\\")
 
 
+def _read_dico_text_strict(path: Path) -> Tuple[Optional[str], Optional[str], Optional[bytes], Optional[str]]:
+    """Read a .dico file strictly with UTF-8, fallback to GBK, avoiding lossy replacement.
+
+    Returns:
+        (text, encoding, raw_bytes, error_message)
+        If decoding succeeds, error_message is None.
+        If both UTF-8 and GBK fail or an I/O error occurs, text and encoding are None,
+        and error_message contains the descriptive reason.
+    """
+    try:
+        raw_bytes = path.read_bytes()
+    except Exception as e:
+        return None, None, None, f"Failed to read file bytes from {path}: {e}"
+
+    try:
+        return raw_bytes.decode("utf-8"), "utf-8", raw_bytes, None
+    except UnicodeDecodeError:
+        try:
+            return raw_bytes.decode("gbk"), "gbk", raw_bytes, None
+        except UnicodeDecodeError as e:
+            return None, None, raw_bytes, f"Unsupported encoding in {path} (neither UTF-8 nor GBK valid: {e})"
+
+
 def compute_workbench_delete_plan_digest(plan: Dict[str, Any]) -> str:
     """Compute a deterministic SHA-256 digest over the critical execution fields of a WorkbenchDeletePlan."""
     payload = {
@@ -4456,21 +4479,23 @@ def inspect_delete_workbench(
         dico_dir = target_fw.path / "CNext" / "code" / "dictionary"
         if dico_dir.exists():
             for df in dico_dir.glob("*.dico"):
-                try:
-                    for line in df.read_text(encoding="utf-8", errors="replace").splitlines():
-                        parts = line.strip().split()
-                        if len(parts) >= 3 and parts[0].lower() == f"{target_wb.name.lower()}addin":
-                            lib_name = parts[2]
-                            if lib_name.startswith("lib"):
-                                lib_name = lib_name[3:]
-                            for m in target_fw.modules:
-                                if m.name.lower() in (f"{lib_name.lower()}.m", lib_name.lower()):
-                                    target_mod = m
-                                    break
-                        if target_mod:
-                            break
-                except Exception:
-                    pass
+                if any(part.startswith(".") for part in df.parts):
+                    continue
+                dico_text, _enc, _raw, err = _read_dico_text_strict(df)
+                if err or not dico_text:
+                    continue
+                for line in dico_text.splitlines():
+                    parts = line.strip().split()
+                    if len(parts) >= 3 and parts[0].lower() == f"{target_wb.name.lower()}addin":
+                        lib_name = parts[2]
+                        if lib_name.startswith("lib"):
+                            lib_name = lib_name[3:]
+                        for m in target_fw.modules:
+                            if m.name.lower() in (f"{lib_name.lower()}.m", lib_name.lower()):
+                                target_mod = m
+                                break
+                    if target_mod:
+                        break
                 if target_mod:
                     break
     if not target_mod and target_fw and module:
@@ -4537,20 +4562,13 @@ def inspect_delete_workbench(
         for dico_file in dico_dir.glob("*.dico"):
             if any(part.startswith(".") for part in dico_file.parts):
                 continue
-            dico_raw = dico_file.read_bytes()
-            try:
-                dico_text = dico_raw.decode("utf-8")
-                cur_enc = "utf-8"
-            except UnicodeDecodeError:
-                try:
-                    dico_text = dico_raw.decode("gbk")
-                    cur_enc = "gbk"
-                except UnicodeDecodeError:
-                    return {
-                        "status": "error",
-                        "error": f"Dictionary file {dico_file} has unsupported encoding (neither UTF-8 nor GBK)",
-                        "plan": None,
-                    }
+            dico_text, cur_enc, dico_raw, err = _read_dico_text_strict(dico_file)
+            if err or dico_text is None:
+                return {
+                    "status": "error",
+                    "error": f"Dictionary file {dico_file} has unsupported encoding (neither UTF-8 nor GBK): {err}",
+                    "plan": None,
+                }
             matches = list(dico_pattern.finditer(dico_text))
             if matches:
                 total_matches += len(matches)
@@ -4977,6 +4995,500 @@ def _delete_command_to_cs(cmd: Command, cs: ChangeSet):
     for f in [cmd.header, cmd.source, cmd.header_source]:
         if f and f.exists():
             cs.add_delete(f)
+
+
+# ══════════════════════════════════════════════════════════════════
+# W-3-A: Workbench Command Detach Inspection & Plan Generation
+# ══════════════════════════════════════════════════════════════════
+
+def compute_workbench_detach_plan_digest(plan: Dict[str, Any]) -> str:
+    """Compute a deterministic SHA-256 digest over the critical execution fields of a WorkbenchCommandDetachPlan."""
+    payload = {
+        "plan_schema_version": plan.get("plan_schema_version"),
+        "plan_type": plan.get("plan_type"),
+        "workbench_identity": plan.get("workbench_identity"),
+        "target_command": plan.get("target_command"),
+        "registration_site": plan.get("registration_site"),
+        "toolbar_splices": plan.get("toolbar_splices"),
+        "topology_status": plan.get("topology_status"),
+        "source_snapshots": plan.get("source_snapshots"),
+        "estimated_patches": plan.get("estimated_patches"),
+        "command_source_preserved": plan.get("command_source_preserved"),
+    }
+    canonical_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+def verify_workbench_detach_plan(plan: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    """Validate a WorkbenchCommandDetachPlan against current on-disk state.
+
+    Verifies:
+      - plan_schema_version is '2.0' and plan_type is 'detach_command'
+      - plan_digest matches recomputed SHA-256 of canonical execution payload
+      - All source_snapshots match current physical byte hashes and lengths
+      - registration_site statements still exist in the target Addin source
+    """
+    if not isinstance(plan, dict):
+        return False, "Plan is not a dictionary"
+    if plan.get("plan_schema_version") != "2.0":
+        return False, f"Incompatible plan schema version: {plan.get('plan_schema_version')}"
+    if plan.get("plan_type") != "detach_command":
+        return False, f"Invalid plan type: {plan.get('plan_type')}"
+
+    plan_digest = plan.get("plan_digest")
+    if not plan_digest:
+        return False, "Plan integrity violation: missing plan_digest"
+    expected_digest = compute_workbench_detach_plan_digest(plan)
+    if plan_digest != expected_digest:
+        return False, f"Plan integrity violation: plan_digest mismatch (expected {expected_digest[:12]}, got {plan_digest[:12]}). Plan execution fields were modified after inspection."
+
+    snapshots = plan.get("source_snapshots", {})
+    for path_str, snap in snapshots.items():
+        p = Path(path_str)
+        if not p.exists():
+            return False, f"Target file in plan snapshot does not exist on disk: {p}"
+        raw_bytes = p.read_bytes()
+        cur_hash = hashlib.sha256(raw_bytes).hexdigest()
+        if cur_hash != snap.get("sha256"):
+            return False, f"File content modified since plan generation: {p} (expected {snap.get('sha256')[:8]}, got {cur_hash[:8]})"
+        if len(raw_bytes) != snap.get("byte_length"):
+            return False, f"File length modified since plan generation: {p}"
+
+    reg_site = plan.get("registration_site", {})
+    if reg_site:
+        site_path = Path(reg_site.get("file", ""))
+        if not site_path.exists():
+            return False, f"Registration site file does not exist: {site_path}"
+        header_stmt = reg_site.get("header_statement", "")
+        if header_stmt:
+            file_text = site_path.read_text(encoding="utf-8", errors="replace")
+            if header_stmt not in file_text:
+                return False, f"Header registration statement no longer found in {site_path}: {header_stmt}"
+
+    return True, None
+
+
+def inspect_detach_command(
+    ctx: ActionContext,
+    workbench_name: str,
+    header_id: str,
+    *,
+    framework: Optional[str] = None,
+    module: Optional[str] = None,
+    cs: Optional[ChangeSet] = None,
+) -> Dict[str, Any]:
+    """Inspect workspace to compute a deterministic WorkbenchCommandDetachPlan (W-3-A).
+
+    Pure read-only pre-validation:
+      - Gate 1: Workbench identity & Addin resolution (strict module boundary, zero loose fallback)
+      - Gate 2: Header registration resolution in CreateCommands() scope (exact 4-parameter syntax)
+      - Gate 3: Toolbar starter topology pattern identification & splicing plan (4 modes or BLOCKED)
+      - Gate 4: Command source & module isolation (100% immune, zero file/dico/imakefile mutations)
+      - Gate 5: Deterministic schema 2.0 Detach Plan with byte snapshots & plan_digest
+      - Zero side-effects: no disk writes, calling ChangeSet remains 100% untouched.
+    """
+    ctx.refresh()
+
+    # C++ Identifier validation
+    if not re.match(r'^[a-zA-Z_]\w*$', workbench_name):
+        return {
+            "status": "error",
+            "error": f"Invalid workbench name: '{workbench_name}' (must be a valid C++ identifier)",
+            "plan": None,
+        }
+    if not re.match(r'^[a-zA-Z_]\w*$', header_id):
+        return {
+            "status": "error",
+            "error": f"Invalid header ID: '{header_id}' (must be a valid C++ identifier)",
+            "plan": None,
+        }
+
+    # ── Gate 1: Workbench identity and Addin source resolution ──
+    target_wb = None
+    target_fw = None
+    for f in ctx.snapshot.frameworks:
+        for w in f.workbenches:
+            if w.name.lower() == workbench_name.lower():
+                target_wb = w
+                target_fw = f
+                break
+        if target_wb:
+            break
+
+    if not target_wb or not target_fw:
+        return {
+            "status": "error",
+            "error": f"Workbench not found in workspace: '{workbench_name}'",
+            "plan": None,
+        }
+
+    if framework and target_fw.name.lower() != framework.lower():
+        return {
+            "status": "error",
+            "error": f"Workbench '{workbench_name}' belongs to framework '{target_fw.name}', not '{framework}'",
+            "plan": None,
+        }
+
+    target_mod = getattr(target_wb, "module", None)
+    if not target_mod and target_wb.path:
+        for m in target_fw.modules:
+            try:
+                target_wb.path.resolve().relative_to(m.path.resolve())
+                target_mod = m
+                break
+            except ValueError:
+                pass
+    if not target_mod and target_wb.addin_source and target_wb.addin_source.exists():
+        for m in target_fw.modules:
+            try:
+                target_wb.addin_source.resolve().relative_to(m.path.resolve())
+                target_mod = m
+                break
+            except ValueError:
+                pass
+    if not target_mod:
+        dico_dir = target_fw.path / "CNext" / "code" / "dictionary"
+        if dico_dir.exists():
+            for df in dico_dir.glob("*.dico"):
+                if any(part.startswith(".") for part in df.parts):
+                    continue
+                dico_text, _enc, _raw, err = _read_dico_text_strict(df)
+                if err or not dico_text:
+                    continue
+                for line in dico_text.splitlines():
+                    parts = line.strip().split()
+                    if len(parts) >= 3 and parts[0].lower() == f"{target_wb.name.lower()}addin":
+                        lib_name = parts[2]
+                        if lib_name.startswith("lib"):
+                            lib_name = lib_name[3:]
+                        for m in target_fw.modules:
+                            if m.name.lower() in (f"{lib_name.lower()}.m", lib_name.lower()):
+                                target_mod = m
+                                break
+                    if target_mod:
+                        break
+                if target_mod:
+                    break
+
+    if module:
+        expected_mod = module if module.endswith(".m") else f"{module}.m"
+        if not target_mod or target_mod.name != expected_mod:
+            return {
+                "status": "error",
+                "error": f"Workbench '{workbench_name}' belongs to module '{target_mod.name if target_mod else 'none'}', not '{expected_mod}'",
+                "plan": None,
+            }
+
+    if not target_mod:
+        return {
+            "status": "error",
+            "error": f"Cannot determine host module for workbench '{workbench_name}': host module unresolved",
+            "plan": None,
+        }
+
+    addin_class = f"{target_wb.name}Addin"
+    addin_cpp = target_wb.addin_source
+    if not addin_cpp:
+        addin_cpp = target_mod.path / "src" / f"{addin_class}.cpp"
+
+    # Boundary check
+    try:
+        addin_cpp.resolve().relative_to(target_mod.path.resolve())
+    except ValueError:
+        return {
+            "status": "error",
+            "error": f"Path traversal or out-of-boundary file detected: {addin_cpp}",
+            "plan": None,
+        }
+
+    if not addin_cpp.exists():
+        return {
+            "status": "error",
+            "error": f"Workbench Addin source file not found: {addin_cpp}",
+            "plan": None,
+        }
+
+    raw_bytes = addin_cpp.read_bytes()
+    raw_hash = hashlib.sha256(raw_bytes).hexdigest()
+    raw_len = len(raw_bytes)
+    try:
+        addin_text = raw_bytes.decode("utf-8")
+        raw_enc = "utf-8"
+    except UnicodeDecodeError:
+        try:
+            addin_text = raw_bytes.decode("gbk")
+            raw_enc = "gbk"
+        except UnicodeDecodeError:
+            return {
+                "status": "error",
+                "error": f"Addin source file {addin_cpp} has unsupported encoding (neither UTF-8 nor GBK)",
+                "plan": None,
+            }
+
+    # ── Gate 2: Header registration exact location in CreateCommands() scope ──
+    scope_cc = _extract_create_commands_scope(addin_text)
+    if not scope_cc:
+        return {
+            "status": "error",
+            "error": f"Cannot reliably extract CreateCommands() scope in {addin_cpp}: unbalanced braces or malformed function definition",
+            "plan": None,
+        }
+
+    cc_body, cc_start_idx, cc_end_idx = scope_cc
+    stripped_cc = strip_c_comments(cc_body)
+
+    # Search for header registration: new HeaderClass("HeaderID", "LoadName", "ClassName", (void*)NULL);
+    hdr_matches = list(re.finditer(
+        r'new\s+(\w+)\s*\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*(?:(?:\(void\s*\*\)\s*)?NULL|[^);]+)\s*\)\s*;?',
+        stripped_cc
+    ))
+    matching_hdrs = [m for m in hdr_matches if m.group(2) == header_id]
+
+    if not matching_hdrs:
+        # Fallback to general new HeaderClass("HeaderID", ...);
+        hdr_gen_matches = list(re.finditer(
+            r'new\s+(\w+)\s*\(\s*"([^"]+)"\s*,\s*(?:(?:\(void\s*\*\)\s*)?NULL|[^);]+)\s*\)\s*;?',
+            stripped_cc
+        ))
+        matching_hdrs = [m for m in hdr_gen_matches if m.group(2) == header_id]
+
+    if len(matching_hdrs) == 0:
+        return {
+            "status": "error",
+            "error": f"Command header registration '{header_id}' not found in CreateCommands() of workbench '{workbench_name}'",
+            "plan": None,
+        }
+    if len(matching_hdrs) > 1:
+        return {
+            "status": "error",
+            "error": f"Multiple ambiguous header registrations found for '{header_id}' in CreateCommands() of workbench '{workbench_name}' ({len(matching_hdrs)} registrations)",
+            "plan": None,
+        }
+
+    matched_hdr_stmt = matching_hdrs[0].group(0).strip()
+    matched_hdr_class = matching_hdrs[0].group(1)
+
+    # Check for MacDeclareHeader statement in file
+    mac_declare_stmt = None
+    m_mac = re.search(r'\bMacDeclareHeader\s*\(\s*' + re.escape(matched_hdr_class) + r'\s*\)\s*;?', strip_c_comments(addin_text))
+    if not m_mac:
+        m_mac = re.search(r'\bMacDeclareHeader\s*\(\s*' + re.escape(header_id) + r'\s*\)\s*;?', strip_c_comments(addin_text))
+    if m_mac:
+        mac_declare_stmt = m_mac.group(0).strip()
+
+    # ── Gate 3: Toolbar starter topology pattern identification & splicing plan ──
+    scope_tb = _extract_create_toolbars_scope(addin_text)
+    stripped_full = strip_c_comments(addin_text)
+    has_header_in_file = bool(re.search(
+        r'\bSetAccessCommand\s*\(\s*\w+\s*,\s*"' + re.escape(header_id) + r'"\s*\)',
+        stripped_full
+    ))
+
+    if has_header_in_file and not scope_tb:
+        return {
+            "status": "error",
+            "error": f"Header '{header_id}' is referenced by toolbar starter, but CreateToolbars() scope cannot be found or extracted in {addin_cpp}",
+            "plan": None,
+        }
+
+    toolbar_splices = []
+    topology_status = "DETACH_EXACT_REGISTRATION"
+
+    if scope_tb:
+        tb_body, tb_start_idx, tb_end_idx = scope_tb
+        toolbars = _discover_toolbars(tb_body)
+        stripped_tb = strip_c_comments(tb_body)
+
+        cmd_links = re.findall(r'\bSetAccessCommand\s*\(\s*(\w+)\s*,\s*"([^"]+)"\s*\)', stripped_tb)
+        matching_starters = [s for s, hdr in cmd_links if hdr == header_id]
+
+        if matching_starters:
+            children = re.findall(r'\bSetAccessChild\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)', stripped_tb)
+            child_map = {starter: tlb_v for tlb_v, starter in children}
+
+            next_links = re.findall(r'\bSetAccessNext\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)', stripped_tb)
+            prev_map = {nxt: prv for prv, nxt in next_links}
+
+            target_tlb_vars = set()
+            for s_var in matching_starters:
+                curr = s_var
+                seen_back = {curr}
+                while curr in prev_map and curr not in child_map:
+                    curr = prev_map[curr]
+                    if curr in seen_back:
+                        break
+                    seen_back.add(curr)
+                if curr in child_map:
+                    target_tlb_vars.add(child_map[curr])
+                else:
+                    return {
+                        "status": "error",
+                        "error": f"Orphaned starter '{s_var}' referencing header '{header_id}' cannot be traced to any toolbar container",
+                        "topology_status": "BLOCKED_UNRESOLVED_TOPOLOGY",
+                        "plan": None,
+                    }
+
+            target_toolbars = [t for t in toolbars if t["var"] in target_tlb_vars]
+
+            for tlb in target_toolbars:
+                tlb_var = tlb["var"]
+                tlb_id = tlb["id"]
+                try:
+                    chain_info = _trace_starter_chain(tb_body, tlb_var, header_id)
+                except ValueError as e:
+                    return {
+                        "status": "error",
+                        "error": f"Failed to trace starter chain in toolbar '{tlb_id}' ({tlb_var}): {e}",
+                        "topology_status": "BLOCKED_UNRESOLVED_TOPOLOGY",
+                        "plan": None,
+                    }
+
+                chain = chain_info["chain"]
+                starter_headers = chain_info["starter_headers"]
+                starters_for_hdr = [s for s in chain if starter_headers.get(s) == header_id]
+
+                if len(starters_for_hdr) > 1:
+                    return {
+                        "status": "error",
+                        "error": f"Duplicate mount of HeaderID '{header_id}' in toolbar '{tlb_id}' ({tlb_var})",
+                        "topology_status": "BLOCKED_UNRESOLVED_TOPOLOGY",
+                        "plan": None,
+                    }
+
+                if len(starters_for_hdr) == 1:
+                    tgt_starter = starters_for_hdr[0]
+                    n = len(chain)
+                    idx = chain.index(tgt_starter)
+
+                    if n == 1:
+                        splice_mode = "remove_only_child"
+                        prev_var = None
+                        next_var = None
+                    elif idx == 0:
+                        splice_mode = "new_child"
+                        prev_var = None
+                        next_var = chain[1]
+                    elif idx == n - 1:
+                        splice_mode = "remove_tail"
+                        prev_var = chain[idx - 1]
+                        next_var = None
+                    else:
+                        splice_mode = "relink_next"
+                        prev_var = chain[idx - 1]
+                        next_var = chain[idx + 1]
+
+                    stmts_to_remove = []
+                    stmts_to_add = []
+
+                    m_new = re.search(r'\bNewAccess\s*\(\s*CATCmdStarter\s*,\s*' + re.escape(tgt_starter) + r'\s*,[^;]*\);', tb_body)
+                    if m_new:
+                        stmts_to_remove.append(m_new.group(0))
+
+                    m_cmd = re.search(r'\bSetAccessCommand\s*\(\s*' + re.escape(tgt_starter) + r'\s*,\s*"[^"]*"\s*\);', tb_body)
+                    if m_cmd:
+                        stmts_to_remove.append(m_cmd.group(0))
+
+                    if splice_mode == "remove_only_child":
+                        m_child = re.search(r'\bSetAccessChild\s*\(\s*' + re.escape(tlb_var) + r'\s*,\s*' + re.escape(tgt_starter) + r'\s*\);', tb_body)
+                        if m_child:
+                            stmts_to_remove.append(m_child.group(0))
+                    elif splice_mode == "new_child" and next_var:
+                        m_child = re.search(r'\bSetAccessChild\s*\(\s*' + re.escape(tlb_var) + r'\s*,\s*' + re.escape(tgt_starter) + r'\s*\);', tb_body)
+                        if m_child:
+                            stmts_to_remove.append(m_child.group(0))
+                        m_next = re.search(r'\bSetAccessNext\s*\(\s*' + re.escape(tgt_starter) + r'\s*,\s*' + re.escape(next_var) + r'\s*\);', tb_body)
+                        if m_next:
+                            stmts_to_remove.append(m_next.group(0))
+                        stmts_to_add.append(f"SetAccessChild({tlb_var}, {next_var});")
+                    elif splice_mode == "relink_next" and prev_var and next_var:
+                        m_prev_next = re.search(r'\bSetAccessNext\s*\(\s*' + re.escape(prev_var) + r'\s*,\s*' + re.escape(tgt_starter) + r'\s*\);', tb_body)
+                        if m_prev_next:
+                            stmts_to_remove.append(m_prev_next.group(0))
+                        m_next = re.search(r'\bSetAccessNext\s*\(\s*' + re.escape(tgt_starter) + r'\s*,\s*' + re.escape(next_var) + r'\s*\);', tb_body)
+                        if m_next:
+                            stmts_to_remove.append(m_next.group(0))
+                        stmts_to_add.append(f"SetAccessNext({prev_var}, {next_var});")
+                    elif splice_mode == "remove_tail" and prev_var:
+                        m_prev_next = re.search(r'\bSetAccessNext\s*\(\s*' + re.escape(prev_var) + r'\s*,\s*' + re.escape(tgt_starter) + r'\s*\);', tb_body)
+                        if m_prev_next:
+                            stmts_to_remove.append(m_prev_next.group(0))
+
+                    toolbar_splices.append({
+                        "toolbar_id": tlb_id,
+                        "toolbar_var": tlb_var,
+                        "starter_var": tgt_starter,
+                        "splice_mode": splice_mode,
+                        "prev_starter": prev_var,
+                        "next_starter": next_var,
+                        "statements_to_remove": stmts_to_remove,
+                        "statements_to_add": stmts_to_add,
+                    })
+        else:
+            topology_status = "DETACH_HEADER_ONLY"
+    else:
+        topology_status = "DETACH_HEADER_ONLY"
+
+    # ── Gate 4: Command source & module isolation ──
+    # file_deletions is explicitly empty, imakefile/dico are untouched
+    file_deletions = []
+    imakefile_modifications = []
+    dico_modifications = []
+
+    # ── Gate 5: Assemble WorkbenchCommandDetachPlan schema 2.0 ──
+    estimated_patches = [
+        {
+            "path": str(addin_cpp),
+            "kind": "header_registration_removal",
+            "target_statement": matched_hdr_stmt,
+            "mac_declare_statement": mac_declare_stmt,
+            "toolbar_splices": toolbar_splices,
+        }
+    ]
+
+    source_snapshots = {
+        str(addin_cpp): {
+            "path": str(addin_cpp),
+            "sha256": raw_hash,
+            "byte_length": raw_len,
+            "encoding": raw_enc,
+        }
+    }
+
+    plan = {
+        "plan_schema_version": "2.0",
+        "plan_type": "detach_command",
+        "workbench_identity": {
+            "name": target_wb.name,
+            "addin_class": addin_class,
+            "framework": target_fw.name,
+            "module": target_mod.name,
+        },
+        "target_command": {
+            "header_id": header_id,
+            "header_class": matched_hdr_class,
+        },
+        "registration_site": {
+            "file": str(addin_cpp),
+            "header_statement": matched_hdr_stmt,
+            "mac_declare_statement": mac_declare_stmt,
+        },
+        "toolbar_splices": toolbar_splices,
+        "topology_status": topology_status,
+        "file_deletions": file_deletions,
+        "imakefile_modifications": imakefile_modifications,
+        "dico_modifications": dico_modifications,
+        "source_snapshots": source_snapshots,
+        "estimated_patches": estimated_patches,
+        "command_source_preserved": True,
+    }
+
+    plan["plan_digest"] = compute_workbench_detach_plan_digest(plan)
+
+    return {
+        "status": "ok",
+        "error": None,
+        "plan": plan,
+    }
 
 
 # ══════════════════════════════════════════════════════════════════

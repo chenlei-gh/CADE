@@ -3984,6 +3984,215 @@ try:
     check("DW22: addin cpp still intact after repeated rollback", del_wb_cpp.read_bytes() == addin_cpp_before_b)
     check("DW22: dico still intact after repeated rollback", dico_file.read_bytes() == dico_before_b)
 
+    # ── W-3-A: Workbench Command Detach Inspection & Deterministic Plan (inspect_detach_command) ──
+    from actions import inspect_detach_command, verify_workbench_detach_plan, compute_workbench_detach_plan_digest
+
+    # 构造标准 Detach 测试工作台 DetachWb
+    detach_wb_dir = mod_shared / "LocalInterfaces"
+    detach_src_dir = mod_shared / "src"
+    detach_wb_h = detach_wb_dir / "DetachWbAddin.h"
+    detach_wb_cpp = detach_src_dir / "DetachWbAddin.cpp"
+
+    detach_wb_h.write_text("""#ifndef DetachWbAddin_H
+#define DetachWbAddin_H
+#include "CATBaseUnknown.h"
+class DetachWbAddin : public CATBaseUnknown {
+    CATDeclareClass;
+public:
+    void CreateCommands();
+    CATCmdContainer* CreateToolbars();
+};
+#endif
+""", encoding="utf-8")
+
+    detach_cpp_template = """// DetachWbAddin.cpp
+#include "DetachWbAddin.h"
+#include "CATCommandHeader.h"
+#include "CATCmdContainer.h"
+#include "CATCmdStarter.h"
+
+MacDeclareHeader(DetachHeader);
+
+void DetachWbAddin::CreateCommands()
+{
+    new DetachHeader("CmdSingleHdr", "CmdMod", "CmdSingle", (void*)NULL);
+    new DetachHeader("CmdHeadHdr", "CmdMod", "CmdHead", (void*)NULL);
+    new DetachHeader("CmdMidHdr", "CmdMod", "CmdMid", (void*)NULL);
+    new DetachHeader("CmdTailHdr", "CmdMod", "CmdTail", (void*)NULL);
+    new DetachHeader("CmdStandaloneHdr", "CmdMod", "CmdStandalone", (void*)NULL);
+}
+
+CATCmdContainer* DetachWbAddin::CreateToolbars()
+{
+    NewAccess(CATCmdContainer, pTlbSingle, TlbSingle);
+    AddToolbarView(pTlbSingle, 1, Top);
+    NewAccess(CATCmdStarter, pStarterSingle, SingleStarter);
+    SetAccessCommand(pStarterSingle, "CmdSingleHdr");
+    SetAccessChild(pTlbSingle, pStarterSingle);
+
+    NewAccess(CATCmdContainer, pTlbMulti, TlbMulti);
+    AddToolbarView(pTlbMulti, 1, Top);
+    NewAccess(CATCmdStarter, pStarterHead, HeadStarter);
+    SetAccessCommand(pStarterHead, "CmdHeadHdr");
+    SetAccessChild(pTlbMulti, pStarterHead);
+
+    NewAccess(CATCmdStarter, pStarterMid, MidStarter);
+    SetAccessCommand(pStarterMid, "CmdMidHdr");
+    SetAccessNext(pStarterHead, pStarterMid);
+
+    NewAccess(CATCmdStarter, pStarterTail, TailStarter);
+    SetAccessCommand(pStarterTail, "CmdTailHdr");
+    SetAccessNext(pStarterMid, pStarterTail);
+
+    return pTlbSingle;
+}
+"""
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+
+    dico_file.write_text(
+        dico_file.read_text(encoding="utf-8") + "DetachWbAddin  CATIAfrGeneralWksAddin  libSharedMod\n",
+        encoding="utf-8"
+    )
+    ctx_wb.refresh(force=True)
+
+    # ── DC1: 目标工作台不存在时拒绝 ──
+    r_dc1 = inspect_detach_command(ctx_wb, "NonExistentWb", "CmdSingleHdr")
+    check("DC1: reject non-existent workbench", r_dc1.get("status") == "error", str(r_dc1))
+    check("DC1: error message clarifies not found", "not found" in r_dc1.get("error", "").lower(), str(r_dc1))
+    check("DC1: plan is None", r_dc1.get("plan") is None)
+
+    # ── DC2: 目标 HeaderID 在 CreateCommands 中不存在时拒绝 ──
+    r_dc2 = inspect_detach_command(ctx_wb, "DetachWb", "NoSuchHeaderHdr")
+    check("DC2: reject missing header registration", r_dc2.get("status") == "error", str(r_dc2))
+    check("DC2: error specifies not found in CreateCommands", "not found in createcommands" in r_dc2.get("error", "").lower(), str(r_dc2))
+    check("DC2: plan is None", r_dc2.get("plan") is None)
+
+    # ── DC3: Addin.cpp 越界或路径逃逸时拒绝 ──
+    wb_detach_obj = None
+    for f in ctx_wb.snapshot.frameworks:
+        for w in f.workbenches:
+            if w.name.lower() == "detachwb":
+                wb_detach_obj = w
+                break
+    check("DC3: target workbench object found", wb_detach_obj is not None)
+    orig_detach_src = wb_detach_obj.addin_source
+    wb_detach_obj.addin_source = wb_ws / "EscapeDetach.cpp"
+    r_dc3 = inspect_detach_command(ctx_wb, "DetachWb", "CmdSingleHdr")
+    check("DC3: path traversal rejected with error", r_dc3.get("status") == "error", str(r_dc3))
+    check("DC3: error identifies traversal", "traversal" in r_dc3.get("error", "").lower() or "out-of-boundary" in r_dc3.get("error", "").lower(), str(r_dc3))
+    check("DC3: plan is None", r_dc3.get("plan") is None)
+    wb_detach_obj.addin_source = orig_detach_src
+
+    # ── DC4: CreateCommands 作用域损坏 (大括号不平衡或语法损坏) 时拒绝 ──
+    broken_cpp = detach_cpp_template.replace("void DetachWbAddin::CreateCommands()", "void DetachWbAddin::CreateCommands( broken_syntax")
+    detach_wb_cpp.write_text(broken_cpp, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    r_dc4 = inspect_detach_command(ctx_wb, "DetachWb", "CmdSingleHdr")
+    check("DC4: malformed CreateCommands rejected", r_dc4.get("status") == "error", str(r_dc4))
+    check("DC4: error specifies scope extraction failure", "createcommands() scope" in r_dc4.get("error", "").lower(), str(r_dc4))
+    check("DC4: plan is None", r_dc4.get("plan") is None)
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+
+    # ── DC5: 4 种 Starter 拓扑模式只读识别与缝合计划生成 ──
+    # DC5a: remove_only_child
+    r_dc5a = inspect_detach_command(ctx_wb, "DetachWb", "CmdSingleHdr")
+    check("DC5a: inspect succeeds", r_dc5a.get("status") == "ok", str(r_dc5a))
+    splices_5a = r_dc5a.get("plan", {}).get("toolbar_splices", [])
+    check("DC5a: exactly 1 toolbar splice", len(splices_5a) == 1, str(splices_5a))
+    check("DC5a: splice_mode is remove_only_child", splices_5a[0].get("splice_mode") == "remove_only_child", str(splices_5a[0]))
+    check("DC5a: target starter is pStarterSingle", splices_5a[0].get("starter_var") == "pStarterSingle")
+    check("DC5a: prev and next are None", splices_5a[0].get("prev_starter") is None and splices_5a[0].get("next_starter") is None)
+    check("DC5a: statements_to_add is empty", len(splices_5a[0].get("statements_to_add", [])) == 0)
+
+    # DC5b: new_child (首节点重织)
+    r_dc5b = inspect_detach_command(ctx_wb, "DetachWb", "CmdHeadHdr")
+    check("DC5b: inspect succeeds", r_dc5b.get("status") == "ok", str(r_dc5b))
+    splices_5b = r_dc5b.get("plan", {}).get("toolbar_splices", [])
+    check("DC5b: exactly 1 toolbar splice", len(splices_5b) == 1, str(splices_5b))
+    check("DC5b: splice_mode is new_child", splices_5b[0].get("splice_mode") == "new_child", str(splices_5b[0]))
+    check("DC5b: target starter is pStarterHead", splices_5b[0].get("starter_var") == "pStarterHead")
+    check("DC5b: next starter is pStarterMid", splices_5b[0].get("next_starter") == "pStarterMid")
+    check("DC5b: statements_to_add re-wires child", "SetAccessChild(pTlbMulti, pStarterMid);" in splices_5b[0].get("statements_to_add", []))
+
+    # DC5c: relink_next (中间节点接驳)
+    r_dc5c = inspect_detach_command(ctx_wb, "DetachWb", "CmdMidHdr")
+    check("DC5c: inspect succeeds", r_dc5c.get("status") == "ok", str(r_dc5c))
+    splices_5c = r_dc5c.get("plan", {}).get("toolbar_splices", [])
+    check("DC5c: exactly 1 toolbar splice", len(splices_5c) == 1, str(splices_5c))
+    check("DC5c: splice_mode is relink_next", splices_5c[0].get("splice_mode") == "relink_next", str(splices_5c[0]))
+    check("DC5c: prev is pStarterHead and next is pStarterTail", splices_5c[0].get("prev_starter") == "pStarterHead" and splices_5c[0].get("next_starter") == "pStarterTail")
+    check("DC5c: statements_to_add relinks chain", "SetAccessNext(pStarterHead, pStarterTail);" in splices_5c[0].get("statements_to_add", []))
+
+    # DC5d: remove_tail (尾节点移除)
+    r_dc5d = inspect_detach_command(ctx_wb, "DetachWb", "CmdTailHdr")
+    check("DC5d: inspect succeeds", r_dc5d.get("status") == "ok", str(r_dc5d))
+    splices_5d = r_dc5d.get("plan", {}).get("toolbar_splices", [])
+    check("DC5d: exactly 1 toolbar splice", len(splices_5d) == 1, str(splices_5d))
+    check("DC5d: splice_mode is remove_tail", splices_5d[0].get("splice_mode") == "remove_tail", str(splices_5d[0]))
+    check("DC5d: prev is pStarterMid and next is None", splices_5d[0].get("prev_starter") == "pStarterMid" and splices_5d[0].get("next_starter") is None)
+    check("DC5d: statements_to_add is empty", len(splices_5d[0].get("statements_to_add", [])) == 0)
+
+    # ── DC6: 重复/多重歧义 HeaderID 注册时拒绝 ──
+    dup_cpp = detach_cpp_template.replace(
+        'new DetachHeader("CmdSingleHdr", "CmdMod", "CmdSingle", (void*)NULL);',
+        'new DetachHeader("CmdSingleHdr", "CmdMod", "CmdSingle", (void*)NULL);\n    new DetachHeader("CmdSingleHdr", "CmdMod", "CmdSingleDup", (void*)NULL);'
+    )
+    detach_wb_cpp.write_text(dup_cpp, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    r_dc6 = inspect_detach_command(ctx_wb, "DetachWb", "CmdSingleHdr")
+    check("DC6: reject duplicate header registrations", r_dc6.get("status") == "error", str(r_dc6))
+    check("DC6: error specifies ambiguous registrations", "multiple ambiguous" in r_dc6.get("error", "").lower(), str(r_dc6))
+    check("DC6: plan is None on duplicate", r_dc6.get("plan") is None)
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+
+    # ── DC7: 损坏/孤立 Starter 拓扑硬阻断 (BLOCKED_UNRESOLVED_TOPOLOGY) ──
+    orphan_cpp = detach_cpp_template.replace(
+        'return pTlbSingle;',
+        'NewAccess(CATCmdStarter, pOrphanStarter, OrphanStarter);\n    SetAccessCommand(pOrphanStarter, "CmdSingleHdr");\n    return pTlbSingle;'
+    )
+    detach_wb_cpp.write_text(orphan_cpp, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    r_dc7 = inspect_detach_command(ctx_wb, "DetachWb", "CmdSingleHdr")
+    check("DC7: reject orphaned starter", r_dc7.get("status") == "error", str(r_dc7))
+    check("DC7: topology status is BLOCKED_UNRESOLVED_TOPOLOGY", r_dc7.get("topology_status") == "BLOCKED_UNRESOLVED_TOPOLOGY", str(r_dc7))
+    check("DC7: error specifies orphaned starter", "orphaned starter" in r_dc7.get("error", "").lower(), str(r_dc7))
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+
+    # ── DC8: 纯只读审计验证与 Plan 2.0 签名防篡改 (零磁盘与零 ChangeSet 副作用) ──
+    cs_dc8 = ChangeSet(action="dc8_caller", description="calling cs")
+    bytes_before_dc8 = detach_wb_cpp.read_bytes()
+
+    r_dc8 = inspect_detach_command(ctx_wb, "DetachWb", "CmdStandaloneHdr", cs=cs_dc8)
+    check("DC8: inspect succeeds for standalone header", r_dc8.get("status") == "ok", str(r_dc8))
+    plan_dc8 = r_dc8.get("plan", {})
+    check("DC8: schema version is 2.0", plan_dc8.get("plan_schema_version") == "2.0")
+    check("DC8: plan_type is detach_command", plan_dc8.get("plan_type") == "detach_command")
+    check("DC8: topology_status is DETACH_HEADER_ONLY", plan_dc8.get("topology_status") == "DETACH_HEADER_ONLY")
+    check("DC8: file_deletions is strictly empty", len(plan_dc8.get("file_deletions", [])) == 0)
+    check("DC8: imakefile_modifications is strictly empty", len(plan_dc8.get("imakefile_modifications", [])) == 0)
+    check("DC8: command_source_preserved is True", plan_dc8.get("command_source_preserved") is True)
+    check("DC8: source_snapshots contains addin cpp", str(detach_wb_cpp) in plan_dc8.get("source_snapshots", {}))
+    check("DC8: plan has valid plan_digest", bool(plan_dc8.get("plan_digest")))
+
+    v_ok, v_err = verify_workbench_detach_plan(plan_dc8)
+    check("DC8: clean plan passes verify_workbench_detach_plan", v_ok is True and v_err is None, str(v_err))
+
+    # 篡改测试
+    tampered_plan = dict(plan_dc8)
+    tampered_plan["target_command"] = {"header_id": "TamperedHdr", "header_class": "TamperedCls"}
+    v_bad, v_bad_err = verify_workbench_detach_plan(tampered_plan)
+    check("DC8: tampered plan fails verification", v_bad is False and "integrity violation" in (v_bad_err or "").lower(), str(v_bad_err))
+
+    # 磁盘与调用方 ChangeSet 零修改确证
+    check("DC8: addin cpp bytes 100% untouched on disk", detach_wb_cpp.read_bytes() == bytes_before_dc8)
+    check("DC8: caller ChangeSet created is empty", len(cs_dc8.created) == 0)
+    check("DC8: caller ChangeSet modified is empty", len(cs_dc8.modified) == 0)
+    check("DC8: caller ChangeSet deleted is empty", len(cs_dc8.deleted) == 0)
+    check("DC8: caller ChangeSet patches is empty", len(cs_dc8.patches) == 0)
+
 finally:
     shutil.rmtree(wb_ws, ignore_errors=True)
 

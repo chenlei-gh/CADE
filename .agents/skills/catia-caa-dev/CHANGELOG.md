@@ -10,12 +10,27 @@
 
 ## [未发布]
 
-### 🛡️ W-2 Workbench 复合生命周期运维与逆向物理删除事务 (2026-09-18, 文件系统删除事务收口 / 命令拓扑解耦待实现)
+### 🔌 W-3-A Workbench 挂载命令动态解耦只读审计与拓扑规划 (2026-09-18, CLOSED WITH STATIC-SCAN LIMITATIONS)
+
+- **只读审计与 5 大安全门禁**：
+  - 新增 `inspect_detach_command()`、`compute_workbench_detach_plan_digest()` 与 `verify_workbench_detach_plan()`，遵循“纯只读审计、严禁物理执行、零副作用”契约；
+  - 落地 5 大只读安全门禁：
+    - **Gate 1（工作台与 Addin 关系定位）**：严格依模型与 DICO 映射确定宿主模块，禁止模块模糊回退；实施 `relative_to` 目录边界防御；
+    - **Gate 2（4 参数 Header 注册点精确定位）**：提取 `CreateCommands()` 作用域，严格匹配 `new HeaderClass("HeaderID", ...)` 注册语句与 `MacDeclareHeader`；作用域损坏或大括号不平衡立即报错，多重歧义注册硬拦截；
+    - **Gate 3（4 种 Starter 拓扑模式识别与缝合规划）**：提取 `CreateToolbars()` 作用域，单链拓扑追踪识别 4 种缝合模式（`remove_only_child`、`new_child` 首节点重织、`relink_next` 中间节点接驳、`remove_tail` 尾节点移除）；遇孤立 Starter 或损坏链条硬阻断标记 `BLOCKED_UNRESOLVED_TOPOLOGY`，严禁猜测性处理；
+    - **Gate 4（命令源码与模块 100% 免疫）**：`file_deletions: []`，`imakefile_modifications: []`，`dico_modifications: []`，命令 `.h`/`.cpp` 及资源绝对保持零变更；
+    - **Gate 5（不可变 Detach Plan 生成）**：组装结构化 `WorkbenchCommandDetachPlan`（schema 2.0），包含目标 Addin 原始字节 SHA-256 与字节长度快照，注入 `plan_digest` 执行字段完整性签名。
+- **回归验证 (DC1～DC8)**：
+  - DC1（非目标工作台拦截）、DC2（未注册 HeaderID 拦截）、DC3（Addin 越界防御）、DC4（CreateCommands 作用域损坏硬阻断）、DC5（4 种 Starter 拓扑缝合模式正确识别）、DC6（多重歧义 Header 拦截）、DC7（孤立 Starter 拓扑硬阻断）、DC8（纯只读审计验证：磁盘文件字节 100% 未变，调用方 ChangeSet 保持零修改）；
+  - 生产回归测试套件规模扩增至 **822/822 全量通过**。
+
+### 🛡️ W-2 Workbench 复合生命周期运维与逆向物理删除事务 (2026-09-18, 文件系统删除事务收口 / 命令拓扑解耦由 W-3 承接)
 
 - **架构状态与能力定性**：
   - **W-2-A 只读安全审计**：`CLOSED WITH STATIC-SCAN LIMITATIONS`（严格静态扫描与 7 大门禁防线）。
   - **W-2-B 物理原子删除**：`IMPLEMENTED / CONDITIONAL CLOSED`（受控文件系统 ChangeSet 事务删除与对称回滚）。
-  - **W-2 整体状态**：`NOT CLOSED`；命令拓扑解耦（`CreateCommands`/`CreateToolbars` 动态解挂与 Starter 链重织）尚未实现，由后续专项 **W-3** 独立闭环承接。
+  - **W-2-B 安全收尾清理**：提取统一的 `_read_dico_text_strict` 函数，Gate 1 回退路径与 Gate 3 彻底统一严格 UTF-8/GBK 读取，杜绝任何 `errors="replace"` 静默替换；明确 Windows 工作区规范化路径与执行字段完整性签名范围。
+  - **W-2 整体状态**：`NOT CLOSED`；命令拓扑解耦由专项 **W-3** 独立闭环承接。
 
 - **W-2-A 只读安全审计与不可变 Plan 门禁**：
   - 新增 `inspect_delete_workbench()` 与 `verify_workbench_delete_plan()`，遵循“先审计、再规划、零副作用”契约；
