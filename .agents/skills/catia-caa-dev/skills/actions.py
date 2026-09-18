@@ -1021,6 +1021,7 @@ def create_workbench(
     module: Optional[str] = None,
     plan: Optional[Dict[str, Any]] = None,
     cs: Optional[ChangeSet] = None,
+    generate_icon: bool = False,
 ) -> Dict[str, Any]:
     """Create a Workbench with Addin and register to general workshop (W-1-B Phase 2).
 
@@ -1042,6 +1043,7 @@ def create_workbench(
             framework=framework,
             module=module,
             cs=cs,
+            generate_icon=generate_icon,
         )
         if inspect_res.get("status") != "ok":
             return _error(inspect_res.get("error") or f"Inspection failed for workbench '{name}'")
@@ -1094,7 +1096,7 @@ def create_workbench(
     # 3. Post-plan newly discovered file collision checks (disk state)
     for fc in plan.get("file_creations", []):
         p = Path(fc["path"])
-        if p.exists():
+        if fc.get("kind") != "icon_binary" and p.exists():
             return _error(f"Target creation file already exists on disk: {p}")
 
     # 4. Caller ChangeSet conflict detection
@@ -1142,7 +1144,11 @@ def create_workbench(
     )
 
     for fc in plan.get("file_creations", []):
-        master_cs.add_create(Path(fc["path"]), fc["content"])
+        if fc.get("kind") == "icon_binary" and fc.get("binary_b64"):
+            import base64
+            master_cs.add_create_binary(Path(fc["path"]), base64.b64decode(fc["binary_b64"]))
+        else:
+            master_cs.add_create(Path(fc["path"]), fc["content"])
 
     for patch in plan.get("patches", []):
         master_cs.add_modify(Path(patch["path"]), patch["new_content"])
@@ -3775,6 +3781,7 @@ def inspect_create_workbench(
     framework: Optional[str] = None,
     module: Optional[str] = None,
     cs: Optional[ChangeSet] = None,
+    generate_icon: bool = False,
 ) -> Dict[str, Any]:
     """Inspect workspace to compute a deterministic WorkbenchCreatePlan (W-1-A Phase 1).
 
@@ -4186,6 +4193,27 @@ CATCmdContainer* {addin_name}::CreateMenus()
             "content": f'{addin_name}.Icon.Normal = "I_{workbench_name}";\n',
         },
     ])
+
+    if generate_icon:
+        icon_path = fw.path / "CNext" / "resources" / "graphic" / "icons" / "normal" / f"I_{workbench_name}.bmp"
+        icon_bytes = None
+        try:
+            from icon_provider import get_icon
+            ico_file = get_icon(workbench_name, format="bmp")
+            if ico_file and ico_file.exists():
+                icon_bytes = ico_file.read_bytes()
+        except Exception:
+            pass
+        if not icon_bytes:
+            icon_bytes = _resolve_icon_bytes("I_" + workbench_name, hint=workbench_name)
+        if icon_bytes:
+            import base64
+            file_creations.append({
+                "path": str(icon_path),
+                "kind": "icon_binary",
+                "content": "[BINARY]",
+                "binary_b64": base64.b64encode(icon_bytes).decode("ascii"),
+            })
 
     patches = []
     source_snapshots = []

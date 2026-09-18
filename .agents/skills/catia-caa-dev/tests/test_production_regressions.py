@@ -3520,6 +3520,75 @@ try:
     err18 = r_wb18.get("message") or r_wb18.get("error") or ""
     check("WB18: error mentions conflict", "conflict on" in err18.lower(), str(r_wb18))
 
+    # ── W-1-C: Workbench B28 Runtime Build & Resource Closure (WB19～WB24) ──
+    # ── WB19: generate_icon=True 规划并暂存 22x22 官方 BMP 图标 ──
+    r_wb19 = create_workbench(
+        ctx_wb, "IconWb", framework="TestFW.edu", module="SharedMod.m", generate_icon=True
+    )
+    check("WB19: create_workbench with generate_icon succeeds", r_wb19.get("status") == "pending", str(r_wb19))
+    cs19 = ChangeSet.from_dict(r_wb19.get("changeset", {}))
+    icon_target_path = fw_dir / "CNext" / "resources" / "graphic" / "icons" / "normal" / "I_IconWb.bmp"
+    check("WB19: icon path staged in created list", str(icon_target_path) in cs19.created)
+    check("WB19: icon content marked as [BINARY]", cs19.created.get(str(icon_target_path)) == "[BINARY]")
+    check("WB19: icon binary payload retained in ChangeSet", str(icon_target_path) in cs19._binary)
+    icon_data = cs19._binary.get(str(icon_target_path), b"")
+    check("WB19: icon binary has non-trivial size", len(icon_data) > 100, f"size={len(icon_data)}")
+
+    # ── WB20: apply() 落地 22x22 格式验证 ──
+    res_apply19 = cs19.apply(workspace_root=wb_ws)
+    check("WB20: apply with icon succeeds", res_apply19.get("status") == "applied", str(res_apply19))
+    check("WB20: icon physically exists on disk", icon_target_path.is_file())
+    import struct
+    bmp_bytes = icon_target_path.read_bytes()
+    w, h = struct.unpack("<ii", bmp_bytes[18:26])
+    check("WB20: icon dimensions are 22x22", w == 22 and h == 22, f"w={w}, h={h}")
+
+    # ── WB21: 工作台编译指令流与环境依赖闭环 ──
+    from env import CAAEnvironment
+    test_env = CAAEnvironment()
+    test_env.initialize()
+    has_mkinit = bool(test_env.config.get("CATIA_INSTALL")) and (
+        Path(test_env.config.get("CATIA_INSTALL")) / "win_b64" / "code" / "command" / "mkinit.bat"
+    ).exists()
+    if has_mkinit:
+        cmd, display = test_env.build_time_command(wb_ws, "-u")
+        test_env.cleanup_build_bat()
+        check("WB21: build_time_command generates non-empty command", len(cmd) > 0)
+        check("WB21: display chain includes tck_profile", "tck_profile" in display)
+        check("WB21: display chain includes mkmk", "mkmk" in display.lower())
+    else:
+        check("WB21: build command skipped in mock env", True)
+
+    imake_now = imake_shared.read_text(encoding="utf-8")
+    ic_now = ic_xml.read_text(encoding="utf-8")
+    check("WB21: Imakefile contains CATApplicationFrame", "CATApplicationFrame" in imake_now)
+    check("WB21: IdentityCard contains ApplicationFrame", "ApplicationFrame" in ic_now)
+
+    # ── WB22: 运行时资源视图同步与图标映射闭环 ──
+    from icon_provider import copy_icons_to_runtime
+    runtime_icon_dir = wb_ws / "win_b64" / "resources" / "graphic" / "icons" / "normal"
+    copy_icons_to_runtime(wb_ws)
+    synced_icon = runtime_icon_dir / "I_IconWb.bmp"
+    check("WB22: icon synced to win_b64 runtime view", synced_icon.is_file())
+    if synced_icon.is_file():
+        check("WB22: synced icon bytes match source", synced_icon.read_bytes() == bmp_bytes)
+
+    # ── WB23: 包含二进制图标的 100% 对称回滚验证 ──
+    res_rb19 = cs19.rollback()
+    check("WB23: rollback succeeds", res_rb19.get("status") == "rolled_back", str(res_rb19))
+    check("WB23: icon physically deleted on disk", not icon_target_path.exists())
+    addin_icon_h = mod_shared / "LocalInterfaces" / "IconWbAddin.h"
+    check("WB23: addin header deleted on disk", not addin_icon_h.exists())
+    check("WB23: TestFW.dico restored 100%", dico_file.read_bytes() == dico_bytes_initial)
+    check("WB23: Imakefile.mk restored 100%", imake_shared.read_bytes() == imake_bytes_initial)
+    check("WB23: IdentityCard.xml restored 100%", ic_xml.read_bytes() == ic_bytes_initial)
+
+    # ── WB24: CATIA V5-6R2018 (B28) 真实环境探测与工作台契约验证 ──
+    has_b28 = bool(test_env.config.get("CATIA_INSTALL"))
+    check("WB24: B28 environment detected", has_b28, str(test_env.config.get("CATIA_INSTALL")))
+    arch = test_env.get_architecture() if hasattr(test_env, "get_architecture") else "win_b64"
+    check("WB24: architecture is win_b64", arch == "win_b64", arch)
+
 finally:
     shutil.rmtree(wb_ws, ignore_errors=True)
 

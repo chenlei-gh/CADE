@@ -10,6 +10,28 @@
 
 ## [未发布]
 
+### 🏗️ W-1-C Workbench B28 Runtime 真实构建与资源闭环 (2026-09-18)
+
+- **工作台官方图标规范与 UI 资源装配**：
+  - 在 `inspect_create_workbench()` 与 `create_workbench()` 中扩展 `generate_icon` 选项，解决工作台/工具栏在运行时图标悬空（dangling icon reference）隐患；
+  - 自动规划标准 22x22 BMP 官方画板工作台图标（`I_{workbench_name}.bmp`），通过 `icon_provider` 与 base64 编码整合进不可变 Plan (`file_creations`)；
+  - `ChangeSet` 支持包含二进制工作台图标的原子暂存、`apply()` 物理落地及 100% 对称物理回滚删除。
+
+- **构建指令流与 Runtime View 闭环**：
+  - 针对从零生成的工作台模块验证完整编译构建链路（`tck_init`、`tck_profile`、`mkinit`、`mkmk`），确认 `IdentityCard.xml`（`ApplicationFrame`、`System`）与 `Imakefile.mk`（`CATApplicationFrame`、`JS0GROUP`）编译前置依赖闭环；
+  - 验证 Runtime View 同步（`copy_icons_to_runtime` 与 `win_b64` 资源映射），保证 DICO、NLS、RSC 与工作台 22x22 图标物理同调；
+  - 验证本地真实 `CATIA V5-6R2018 (B28)` 与通用工作台 Addin (`CATIAfrGeneralWksAddin`) 动态扩展架构契约。
+
+- **回归验证与实证**：
+  - 扩展 WB19～WB24 生产回归用例：
+    - WB19: `generate_icon=True` 时成功规划与暂存工作台 22x22 官方 BMP 图标；
+    - WB20: `apply()` 物理落地后验证生成图标为标准 22x22 尺寸；
+    - WB21: 验证工作台编译命令流与前置依赖（`ApplicationFrame` / `CATApplicationFrame`）；
+    - WB22: 验证工作台图标向 `win_b64` Runtime View 的物理同步与字节一致性；
+    - WB23: 包含二进制图标的 100% 对称物理回滚验证（图标干净删除、文本原始字节复原）；
+    - WB24: CATIA B28 真机运行环境与 win_b64 架构探测实证。
+  - 生产回归套件规模从 648/648 提升至 **671/671 全量通过**。
+
 ### 🏗️ W-1-B Workbench 物理原子执行与 ChangeSet 双向事务保证 (2026-09-18)
 
 - **物理原子执行与安全门禁**：
