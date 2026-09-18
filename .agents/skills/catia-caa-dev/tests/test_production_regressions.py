@@ -3650,6 +3650,173 @@ try:
     rv_dico_content = rv_dico_path.read_text(encoding="utf-8") if rv_dico_path.is_file() else ""
     check("WB27: runtime dictionary retains valid content without stale backup override", "RealValidAddin" in rv_dico_content and "STALE_BACKUP" not in rv_dico_content, rv_dico_content)
 
+    # ── W-2-A: Workbench Delete Inspection & Deterministic Plan (inspect_delete_workbench) ──
+    from actions import inspect_delete_workbench, verify_workbench_delete_plan
+
+    # 为 DW1～DW10 构造受控的标准待删除工作台 DelWb
+    del_wb_h = mod_shared / "LocalInterfaces" / "DelWbAddin.h"
+    del_wb_cpp = mod_shared / "src" / "DelWbAddin.cpp"
+    del_wb_nls = fw_dir / "CNext" / "resources" / "msgcatalog" / "DelWbAddin.CATNls"
+    del_wb_nls_zh = fw_dir / "CNext" / "resources" / "msgcatalog" / "Simplified_Chinese" / "DelWbAddin.CATNls"
+    del_wb_rsc = fw_dir / "CNext" / "resources" / "msgcatalog" / "DelWbAddin.CATRsc"
+    del_wb_bmp = fw_dir / "CNext" / "resources" / "graphic" / "icons" / "normal" / "I_DelWb.bmp"
+
+    del_wb_h.write_text(
+        '#ifndef DelWbAddin_H\n#define DelWbAddin_H\n#include "CATBaseUnknown.h"\n'
+        'class DelWbAddin : public CATBaseUnknown {\n  CATDeclareClass;\npublic:\n'
+        '  DelWbAddin();\n  virtual ~DelWbAddin();\n  void CreateCommands();\n  CATCmdContainer* CreateToolbars();\n};\n#endif\n',
+        encoding="utf-8"
+    )
+    del_wb_cpp.write_text(
+        '#include "DelWbAddin.h"\n#include "CATCreateWorkshop.h"\n'
+        'CATImplementClass(DelWbAddin, DataExtension, CATBaseUnknown, CATnull);\n'
+        '#include "TIE_CATIAfrGeneralWksAddin.h"\nTIE_CATIAfrGeneralWksAddin(DelWbAddin);\n'
+        'DelWbAddin::DelWbAddin() {}\nDelWbAddin::~DelWbAddin() {}\n'
+        'void DelWbAddin::CreateCommands() {\n'
+        '  new SharedCmd1Header("SharedCmd1Hdr", "SharedMod", "SharedCmd1", (void *)NULL);\n'
+        '  new ExclusiveCmdHeader("ExclusiveCmdHdr", "SharedMod", "ExclusiveCmd", (void *)NULL);\n'
+        '}\n'
+        'CATCmdContainer* DelWbAddin::CreateToolbars() {\n'
+        '  NewAccess(CATCmdContainer, pTlb, DelWbTlb);\n'
+        '  NewAccess(CATCmdStarter, pStr1, Str1);\n'
+        '  SetAccessCommand(pStr1, "SharedCmd1Hdr");\n'
+        '  SetAccessChild(pTlb, pStr1);\n'
+        '  AddToolbarView(pTlb, 1, Top);\n'
+        '  return pTlb;\n'
+        '}\n',
+        encoding="utf-8"
+    )
+    del_wb_nls.parent.mkdir(parents=True, exist_ok=True)
+    del_wb_nls.write_text("DelWbAddin.Title = \"Del Workbench\";\n", encoding="utf-8")
+    del_wb_nls_zh.parent.mkdir(parents=True, exist_ok=True)
+    del_wb_nls_zh.write_text("DelWbAddin.Title = \"删除工作台\";\n", encoding="utf-8")
+    del_wb_rsc.write_text("DelWbAddin.Icon.Normal = \"I_DelWb\";\n", encoding="utf-8")
+    del_wb_bmp.parent.mkdir(parents=True, exist_ok=True)
+    del_wb_bmp.write_bytes(b"BM_FAKE_DEL_WB_BMP_PAYLOAD_22X22")
+
+    # 创建共存的 OtherWb 以验证跨工作台挂载命令识别 (DW7)
+    other_wb_h = mod_shared / "LocalInterfaces" / "OtherWbAddin.h"
+    other_wb_cpp = mod_shared / "src" / "OtherWbAddin.cpp"
+    other_wb_h.write_text('#ifndef OtherWbAddin_H\n#define OtherWbAddin_H\n#endif\n', encoding="utf-8")
+    other_wb_cpp.write_text(
+        '#include "OtherWbAddin.h"\nCATImplementClass(OtherWbAddin, DataExtension, CATBaseUnknown, CATnull);\n'
+        '#include "TIE_CATIAfrGeneralWksAddin.h"\nTIE_CATIAfrGeneralWksAddin(OtherWbAddin);\n'
+        'void OtherWbAddin::CreateCommands() {\n'
+        '  new SharedCmd1Header("SharedCmd1Hdr", "SharedMod", "SharedCmd1", (void *)NULL);\n'
+        '}\n'
+        'CATCmdContainer* OtherWbAddin::CreateToolbars() { return (CATCmdContainer*)0; }\n',
+        encoding="utf-8"
+    )
+
+    dico_file.write_text(
+        "DelWbAddin  CATIAfrGeneralWksAddin  libSharedMod\n"
+        "OtherWbAddin  CATIAfrGeneralWksAddin  libSharedMod\n",
+        encoding="utf-8"
+    )
+
+    ctx_wb.refresh(force=True)
+
+    # ── DW1: Workbench 不存在时拒绝 ──
+    r_dw1 = inspect_delete_workbench(ctx_wb, "NonExistentWb", framework="TestFW.edu")
+    check("DW1: reject non-existent workbench", r_dw1.get("status") == "error", str(r_dw1))
+    check("DW1: error message clarifies not found", "not found" in r_dw1.get("error", "").lower(), str(r_dw1))
+
+    # ── DW2: Addin / Workbench 身份不匹配时拒绝 ──
+    r_dw2 = inspect_delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu", module="WrongMod.m")
+    check("DW2: reject module mismatch", r_dw2.get("status") == "error", str(r_dw2))
+    check("DW2: error specifies wrong module", "not 'WrongMod.m'" in r_dw2.get("error", ""), str(r_dw2))
+
+    # ── DW3: 宿主模块文件边界防御 ──
+    # 模拟越界路径情况 (验证 relative_to 防御)
+    try:
+        (wb_ws / "EscapeFile.cpp").resolve().relative_to(mod_shared.resolve())
+        dw3_escaped = True
+    except ValueError:
+        dw3_escaped = False
+    check("DW3: path traversal relative_to raises ValueError", not dw3_escaped)
+
+    # ── DW4: DICO 映射不存在时拒绝 ──
+    dico_backup_dw = dico_file.read_text(encoding="utf-8")
+    dico_file.write_text("OtherWbAddin  CATIAfrGeneralWksAddin  libSharedMod\n", encoding="utf-8")
+    r_dw4 = inspect_delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu")
+    check("DW4: reject missing dico entry", r_dw4.get("status") == "error", str(r_dw4))
+    check("DW4: error specifies dico entry missing", "not found" in r_dw4.get("error", "").lower(), str(r_dw4))
+    dico_file.write_text(dico_backup_dw, encoding="utf-8")
+
+    # ── DW5: DICO 多重模糊匹配时拒绝 ──
+    dico_file.write_text(
+        "DelWbAddin  CATIAfrGeneralWksAddin  libSharedMod\n"
+        "DelWbAddin  CATIAfrGeneralWksAddin  libSharedMod\n",
+        encoding="utf-8"
+    )
+    r_dw5 = inspect_delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu")
+    check("DW5: reject multiple ambiguous dico entries", r_dw5.get("status") == "error", str(r_dw5))
+    check("DW5: error specifies multiple ambiguous", "multiple ambiguous" in r_dw5.get("error", "").lower(), str(r_dw5))
+    dico_file.write_text(dico_backup_dw, encoding="utf-8")
+
+    # ── DW6: 图标被多个组件共享时禁止删除 (标记 preserve) ──
+    shared_rsc_file = fw_dir / "CNext" / "resources" / "msgcatalog" / "OtherComponent.CATRsc"
+    shared_rsc_file.write_text('OtherComponent.Icon.Normal = "I_DelWb";\n', encoding="utf-8")
+    r_dw6 = inspect_delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu")
+    check("DW6: inspection succeeds with shared icon", r_dw6.get("status") == "ok", str(r_dw6))
+    plan6 = r_dw6.get("plan", {})
+    del_paths_6 = [fd["path"] for fd in plan6.get("file_deletions", [])]
+    check("DW6: shared icon NOT in file_deletions", not any("I_DelWb.bmp" in p for p in del_paths_6), str(del_paths_6))
+    pres_paths_6 = [pr["path"] for pr in plan6.get("preserved_resources", [])]
+    check("DW6: shared icon is in preserved_resources", any("I_DelWb.bmp" in p for p in pres_paths_6), str(pres_paths_6))
+    check("DW6: warning issued for preserved shared icon", any("referenced by other components" in w for w in plan6.get("warnings", [])))
+    shared_rsc_file.unlink()
+
+    # ── DW7: Command 被多个 Workbench 引用时仅允许 DETACH_ONLY ──
+    r_dw7 = inspect_delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu")
+    check("DW7: inspection succeeds", r_dw7.get("status") == "ok", str(r_dw7))
+    plan7 = r_dw7.get("plan", {})
+    cmd_rels_7 = plan7.get("command_relations", [])
+    shared_cmd_rel = next((c for c in cmd_rels_7 if c.get("header_id") == "SharedCmd1Hdr"), None)
+    check("DW7: shared command identified", shared_cmd_rel is not None, str(cmd_rels_7))
+    if shared_cmd_rel:
+        check("DW7: external_references is PROVEN_SHARED", shared_cmd_rel.get("external_references") == "PROVEN_SHARED")
+        check("DW7: recommended_action is DETACH_ONLY", shared_cmd_rel.get("recommended_action") == "DETACH_ONLY")
+        check("DW7: ownership is UNKNOWN", shared_cmd_rel.get("ownership") == "UNKNOWN")
+    # 验证独占/未证实命令同样保持 DETACH_ONLY 与 UNKNOWN 所有权
+    excl_cmd_rel = next((c for c in cmd_rels_7 if c.get("header_id") == "ExclusiveCmdHdr"), None)
+    check("DW7: exclusive command identified", excl_cmd_rel is not None)
+    if excl_cmd_rel:
+        check("DW7: exclusive recommended_action is also DETACH_ONLY", excl_cmd_rel.get("recommended_action") == "DETACH_ONLY")
+        check("DW7: exclusive ownership is UNKNOWN", excl_cmd_rel.get("ownership") == "UNKNOWN")
+
+    # ── DW8: 外部引用不确定时进入 BLOCKED (禁止级联删除命令) ──
+    r_dw8 = inspect_delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu", cascade_commands=True)
+    check("DW8: cascade_commands blocked", r_dw8.get("status") == "blocked", str(r_dw8))
+    check("DW8: error mentions cascade delete commands blocked", "cascade delete commands blocked" in r_dw8.get("error", "").lower(), str(r_dw8))
+    check("DW8: plan is None when blocked", r_dw8.get("plan") is None)
+
+    # ── DW9: 源文件或 DICO 被修改后，计划失效校验 ──
+    r_dw9 = inspect_delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu")
+    plan9 = r_dw9.get("plan", {})
+    v_ok, v_err = verify_workbench_delete_plan(plan9)
+    check("DW9: clean plan verification succeeds", v_ok, str(v_err))
+    # 模拟并发篡改 DICO
+    dico_file.write_text(dico_backup_dw + "// concurrent edit\n", encoding="utf-8")
+    v_bad, v_bad_err = verify_workbench_delete_plan(plan9)
+    check("DW9: tampered dico invalidates plan", not v_bad)
+    check("DW9: error specifies modified content or length", "modified" in (v_bad_err or "").lower(), str(v_bad_err))
+    dico_file.write_text(dico_backup_dw, encoding="utf-8")
+
+    # ── DW10: 只读审计对磁盘和调用者 ChangeSet 零副作用 ──
+    caller_cs_dw10 = ChangeSet(action="caller_cs", description="caller untouched test")
+    addin_h_before_b = del_wb_h.read_bytes()
+    addin_cpp_before_b = del_wb_cpp.read_bytes()
+    dico_before_b = dico_file.read_bytes()
+
+    inspect_delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu", cs=caller_cs_dw10)
+    check("DW10: caller CS created remains empty", len(caller_cs_dw10.created) == 0)
+    check("DW10: caller CS modified remains empty", len(caller_cs_dw10.modified) == 0)
+    check("DW10: caller CS deleted remains empty", len(caller_cs_dw10.deleted) == 0)
+    check("DW10: addin header untouched on disk", del_wb_h.read_bytes() == addin_h_before_b)
+    check("DW10: addin cpp untouched on disk", del_wb_cpp.read_bytes() == addin_cpp_before_b)
+    check("DW10: dico untouched on disk", dico_file.read_bytes() == dico_before_b)
+
 finally:
     shutil.rmtree(wb_ws, ignore_errors=True)
 

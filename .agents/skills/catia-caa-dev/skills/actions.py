@@ -4267,6 +4267,383 @@ CATCmdContainer* {addin_name}::CreateMenus()
     return {"status": "ok", "error": None, "plan": plan}
 
 
+def verify_workbench_delete_plan(plan: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    """Validate a WorkbenchDeletePlan against current on-disk state (DW9).
+
+    Verifies:
+      - plan_schema_version is '2.0' and plan_type is 'delete_workbench'
+      - All source_snapshots match current physical byte hashes and lengths
+      - All patches match target line exactly without divergence
+    """
+    if not isinstance(plan, dict):
+        return False, "Plan is not a dictionary"
+    if plan.get("plan_schema_version") != "2.0":
+        return False, f"Incompatible plan schema version: {plan.get('plan_schema_version')}"
+    if plan.get("plan_type") != "delete_workbench":
+        return False, f"Invalid plan type: {plan.get('plan_type')}"
+
+    snapshots = plan.get("source_snapshots", {})
+    for path_str, snap in snapshots.items():
+        p = Path(path_str)
+        if not p.exists():
+            return False, f"Target file in plan snapshot does not exist on disk: {p}"
+        raw_bytes = p.read_bytes()
+        cur_hash = hashlib.sha256(raw_bytes).hexdigest()
+        if cur_hash != snap.get("sha256"):
+            return False, f"File content modified since plan generation: {p} (expected {snap.get('sha256')[:8]}, got {cur_hash[:8]})"
+        if len(raw_bytes) != snap.get("byte_length"):
+            return False, f"File length modified since plan generation: {p}"
+
+    patches = plan.get("patches", [])
+    for patch in patches:
+        p = Path(patch["path"])
+        if not p.exists():
+            return False, f"Patch target file does not exist: {p}"
+        text = p.read_text(encoding=patch.get("encoding", "utf-8"), errors="replace")
+        target_line = patch.get("target_line", "")
+        if target_line and target_line not in text:
+            return False, f"Target line to patch no longer exists in {p}: {target_line}"
+
+    return True, None
+
+
+def inspect_delete_workbench(
+    ctx: ActionContext,
+    workbench_name: str,
+    *,
+    framework: Optional[str] = None,
+    module: Optional[str] = None,
+    cascade_commands: bool = False,
+    cs: Optional[ChangeSet] = None,
+) -> Dict[str, Any]:
+    """Inspect workspace to compute a deterministic WorkbenchDeletePlan (W-2-A).
+
+    Pure read-only pre-validation across 7 strict security gates:
+      Gate 1: Target workbench discovery and single identity resolution (DW1, DW2)
+      Gate 2: Host module boundary and addin file path confinement (DW3)
+      Gate 3: Dictionary (*.dico) mapping entry exact location and uniqueness (DW4, DW5)
+      Gate 4: Exclusive UI resources (NLS/RSC) and shared icon conflict detection (DW6)
+      Gate 5: Mounted commands extraction and ownership isolation (DETACH_ONLY) (DW7, DW8)
+      Gate 6: Module dependencies conservatism policy (preserves Imakefile/IdentityCard)
+      Gate 7: Deterministic WorkbenchDeletePlan (schema 2.0) with raw byte snapshots (DW9, DW10)
+
+    Guarantees zero physical disk mutation, zero deletion, and zero mutation to
+    caller-owned ChangeSet.
+    """
+    ctx.refresh()
+
+    # ── Gate 1: Target workbench discovery and identity resolution ──
+    if not workbench_name:
+        return {"status": "error", "error": "Workbench name must not be empty", "plan": None}
+
+    target_wb = None
+    target_fw = None
+    for f in ctx.snapshot.frameworks:
+        if framework and f.name != framework and f.name != f"{framework}.edu":
+            continue
+        for wb in f.workbenches:
+            if wb.name.lower() == workbench_name.lower():
+                target_wb = wb
+                target_fw = f
+                break
+        if target_wb:
+            break
+
+    if not target_wb:
+        return {
+            "status": "error",
+            "error": f"Workbench not found in workspace: '{workbench_name}'",
+            "plan": None,
+        }
+
+    target_mod = getattr(target_wb, "module", None)
+    if not target_mod and target_fw:
+        if target_wb.addin_source and target_wb.addin_source.exists():
+            for m in target_fw.modules:
+                if str(target_wb.addin_source).startswith(str(m.path)):
+                    target_mod = m
+                    break
+        if not target_mod and target_fw.modules:
+            target_mod = target_fw.modules[0]
+
+    if module:
+        expected_mod = module if module.endswith(".m") else f"{module}.m"
+        if not target_mod or target_mod.name != expected_mod:
+            return {
+                "status": "error",
+                "error": f"Workbench '{workbench_name}' belongs to module '{target_mod.name if target_mod else 'none'}', not '{expected_mod}'",
+                "plan": None,
+            }
+
+    if not target_mod:
+        return {
+            "status": "error",
+            "error": f"Cannot determine host module for workbench '{workbench_name}'",
+            "plan": None,
+        }
+
+    addin_class = f"{target_wb.name}Addin"
+    if target_wb.addin_source and target_wb.addin_source.exists():
+        src_text = target_wb.addin_source.read_text(encoding="utf-8", errors="replace")
+        m_cls = re.search(r'CATImplementClass\s*\(\s*(\w+)', src_text)
+        if m_cls:
+            addin_class = m_cls.group(1)
+
+    # ── Gate 2: Host module boundary and file path confinement ──
+    addin_h = target_mod.path / "LocalInterfaces" / f"{addin_class}.h"
+    addin_cpp = target_mod.path / "src" / f"{addin_class}.cpp"
+    if target_wb.addin_source:
+        addin_cpp = target_wb.addin_source
+
+    for cand_path in [addin_h, addin_cpp]:
+        try:
+            cand_path.resolve().relative_to(target_mod.path.resolve())
+        except ValueError:
+            return {
+                "status": "error",
+                "error": f"Path traversal or out-of-boundary file detected: {cand_path}",
+                "plan": None,
+            }
+
+    # ── Gate 3: Dictionary (*.dico) mapping exact location and uniqueness ──
+    dico_dir = target_fw.path / "CNext" / "code" / "dictionary"
+    matched_dicos = []
+    total_matches = 0
+    target_dico_path = None
+    target_dico_line = None
+    estimated_dico_new_content = None
+
+    if dico_dir.exists():
+        dico_pattern = re.compile(
+            r'^\s*' + re.escape(addin_class) + r'\s+CATIAfrGeneralWksAddin\s+lib' + re.escape(target_mod.bare_name) + r'\s*$',
+            re.MULTILINE
+        )
+        for dico_file in dico_dir.glob("*.dico"):
+            if any(part.startswith(".") for part in dico_file.parts):
+                continue
+            dico_text = dico_file.read_text(encoding="utf-8", errors="replace")
+            matches = list(dico_pattern.finditer(dico_text))
+            if matches:
+                total_matches += len(matches)
+                matched_dicos.append(dico_file)
+                if len(matches) == 1 and target_dico_path is None:
+                    target_dico_path = dico_file
+                    target_dico_line = matches[0].group(0).strip()
+                    new_lines = []
+                    for line in dico_text.splitlines(keepends=True):
+                        if dico_pattern.match(line):
+                            continue
+                        new_lines.append(line)
+                    estimated_dico_new_content = "".join(new_lines)
+
+    if total_matches == 0:
+        return {
+            "status": "error",
+            "error": f"Dictionary entry for '{addin_class}' not found in framework '{target_fw.name}'",
+            "plan": None,
+        }
+    if total_matches > 1:
+        return {
+            "status": "error",
+            "error": f"Multiple ambiguous dictionary entries found for '{addin_class}' ({total_matches} entries)",
+            "plan": None,
+        }
+
+    # ── Gate 4: Exclusive UI resources (NLS/RSC) and shared icon conflict detection ──
+    file_deletions = []
+    preserved_resources = []
+    warnings = []
+    scanned_files_set = set()
+
+    if addin_h.exists():
+        file_deletions.append({
+            "path": str(addin_h),
+            "kind": "addin_header",
+            "action": "delete",
+            "reason_code": "WORKBENCH_OWNED_RESOURCE"
+        })
+    if addin_cpp.exists():
+        file_deletions.append({
+            "path": str(addin_cpp),
+            "kind": "addin_source",
+            "action": "delete",
+            "reason_code": "WORKBENCH_OWNED_RESOURCE"
+        })
+
+    nls_en = target_fw.path / "CNext" / "resources" / "msgcatalog" / f"{addin_class}.CATNls"
+    nls_zh = target_fw.path / "CNext" / "resources" / "msgcatalog" / "Simplified_Chinese" / f"{addin_class}.CATNls"
+    rsc_file = target_fw.path / "CNext" / "resources" / "msgcatalog" / f"{addin_class}.CATRsc"
+    icon_file = target_fw.path / "CNext" / "resources" / "graphic" / "icons" / "normal" / f"I_{workbench_name}.bmp"
+
+    for res_p, res_kind in [(nls_en, "nls"), (nls_zh, "nls"), (rsc_file, "rsc")]:
+        if res_p.exists():
+            file_deletions.append({
+                "path": str(res_p),
+                "kind": res_kind,
+                "action": "delete",
+                "reason_code": "WORKBENCH_OWNED_RESOURCE"
+            })
+
+    if icon_file.exists():
+        icon_name = f"I_{workbench_name}"
+        is_icon_shared = False
+        sharing_referrers = []
+
+        for f in ctx.snapshot.frameworks:
+            msg_dir = f.path / "CNext" / "resources" / "msgcatalog"
+            if msg_dir.exists():
+                for other_rsc in msg_dir.rglob("*.CATRsc"):
+                    if any(part.startswith(".") for part in other_rsc.parts):
+                        continue
+                    if other_rsc.resolve() == rsc_file.resolve():
+                        continue
+                    scanned_files_set.add(str(other_rsc))
+                    rsc_content = other_rsc.read_text(encoding="utf-8", errors="replace")
+                    if icon_name in rsc_content:
+                        is_icon_shared = True
+                        sharing_referrers.append(str(other_rsc))
+
+        if is_icon_shared:
+            preserved_resources.append({
+                "path": str(icon_file),
+                "kind": "icon_binary",
+                "action": "preserve",
+                "reason_code": "SHARED_RESOURCE",
+                "referrers": sharing_referrers
+            })
+            warnings.append(
+                f"Icon file '{icon_file.name}' is referenced by other components ({', '.join(Path(r).name for r in sharing_referrers)}); preserved."
+            )
+        else:
+            file_deletions.append({
+                "path": str(icon_file),
+                "kind": "icon_binary",
+                "action": "delete",
+                "reason_code": "WORKBENCH_OWNED_RESOURCE"
+            })
+
+    # ── Gate 5: Mounted commands extraction and ownership isolation (DETACH_ONLY) ──
+    command_relations = []
+    if addin_cpp.exists():
+        cpp_text = addin_cpp.read_text(encoding="utf-8", errors="replace")
+        cc_scope = _extract_create_commands_scope(cpp_text)
+        if cc_scope:
+            cc_body = cc_scope[0]
+            for m_hdr in re.finditer(
+                r'new\s+(\w+)\s*\(\s*"([^"]+)"\s*,\s*(?:"([^"]+)"|NULL)\s*,\s*(?:"([^"]+)"|NULL)',
+                cc_body
+            ):
+                hdr_cls, hdr_id, load_name, cmd_cls = m_hdr.group(1), m_hdr.group(2), m_hdr.group(3), m_hdr.group(4)
+                
+                is_shared_cmd = False
+                ext_referrers = []
+                for f in ctx.snapshot.frameworks:
+                    for other_wb in f.workbenches:
+                        if other_wb == target_wb:
+                            continue
+                        wb_src = other_wb.addin_source or other_wb.path
+                        if wb_src and wb_src.exists():
+                            scanned_files_set.add(str(wb_src))
+                            other_code = wb_src.read_text(encoding="utf-8", errors="replace")
+                            if f'"{hdr_id}"' in other_code:
+                                is_shared_cmd = True
+                                if other_wb.name not in ext_referrers:
+                                    ext_referrers.append(other_wb.name)
+
+                cmd_rel = {
+                    "header_id": hdr_id,
+                    "header_class": hdr_cls,
+                    "command_class": cmd_cls or "",
+                    "workbench_relation": "mounted",
+                    "ownership": "UNKNOWN",
+                    "external_references": "PROVEN_SHARED" if is_shared_cmd else "NOT_FULLY_PROVEN",
+                    "sharing_workbenches": ext_referrers,
+                    "recommended_action": "DETACH_ONLY"
+                }
+                command_relations.append(cmd_rel)
+
+    if cascade_commands and command_relations:
+        return {
+            "status": "blocked",
+            "error": "Cascade delete commands blocked: external command ownership cannot be proven; commands must be detached only",
+            "plan": None,
+            "command_relations": command_relations
+        }
+
+    # ── Gate 6: Module dependencies conservatism policy ──
+    dependencies_policy = {
+        "framework_identity_card": "preserved",
+        "module_imakefile": "preserved",
+        "reason": "Preserved to protect potentially coexisting commands, dialogs, or future components in host module."
+    }
+
+    # ── Gate 7: Deterministic WorkbenchDeletePlan (schema 2.0) with byte snapshots ──
+    patches = [
+        {
+            "path": str(target_dico_path),
+            "kind": "dico_entry_removal",
+            "target_line": target_dico_line,
+            "match_mode": "exact_normalized_entry",
+            "expected_occurrences": 1,
+            "estimated_new_content": estimated_dico_new_content,
+        }
+    ]
+
+    source_snapshots = {}
+    for fd in file_deletions:
+        p = Path(fd["path"])
+        if p.exists():
+            b = p.read_bytes()
+            source_snapshots[str(p)] = {
+                "sha256": hashlib.sha256(b).hexdigest(),
+                "byte_length": len(b),
+                "encoding": "utf-8" if fd.get("kind") != "icon_binary" else "binary"
+            }
+
+    for pt in patches:
+        p = Path(pt["path"])
+        if p.exists():
+            b = p.read_bytes()
+            source_snapshots[str(p)] = {
+                "sha256": hashlib.sha256(b).hexdigest(),
+                "byte_length": len(b),
+                "encoding": "utf-8"
+            }
+
+    plan = {
+        "plan_schema_version": "2.0",
+        "plan_type": "delete_workbench",
+        "workbench_identity": {
+            "name": target_wb.name,
+            "addin_class": addin_class,
+            "framework": target_fw.name,
+            "module": target_mod.name,
+            "module_bare_name": target_mod.bare_name,
+        },
+        "action": "delete_workbench",
+        "reason_code": "WORKBENCH_OWNED_RESOURCE",
+        "file_deletions": file_deletions,
+        "patches": patches,
+        "preserved_resources": preserved_resources,
+        "source_snapshots": source_snapshots,
+        "command_relations": command_relations,
+        "module_dependencies_policy": dependencies_policy,
+        "dependency_evidence": {
+            "scan_scope": "workspace",
+            "scanned_files": len(scanned_files_set),
+            "unresolved_references": [],
+            "confidence": "bounded_static_scan"
+        },
+        "warnings": warnings,
+    }
+
+    return {
+        "status": "ok",
+        "error": None,
+        "plan": plan
+    }
+
+
 def delete_module(ctx: ActionContext, name: str, framework: str = None) -> Dict:
     """Delete a Module and ALL its contents (commands, dialogs, interfaces, components)"""
     ctx.refresh()

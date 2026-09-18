@@ -9,7 +9,14 @@
     "build_successful": true,
     "gui_screenshot_captured": true
   },
-  "overall_status": "CLOSED",
+  "overall_status": "BASE_LIFECYCLE_CLOSED_SUB_CONTROL_PENDING",
+  "status_breakdown": {
+    "cnext_process_and_dll_loaded": "VERIFIED",
+    "addin_marker_executed": "VERIFIED",
+    "top_level_window_and_dock_rendered": "VERIFIED",
+    "custom_toolbar_control_subpixel_match": "PENDING_CONTROL_TREE_PROBE",
+    "functional_button_interaction": "NOT_IN_SCOPE"
+  },
   "build": {
     "exit_code": 0,
     "duration_seconds": 14.680738687515259,

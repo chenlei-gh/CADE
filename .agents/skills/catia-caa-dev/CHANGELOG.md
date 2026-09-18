@@ -10,6 +10,39 @@
 
 ## [未发布]
 
+### 🛡️ W-2-A Workbench 只读安全审计与不可变 Plan 门禁 (2026-09-18, CLOSED)
+
+- **只读安全审计与不可变 Plan 架构**：
+  - 新增 `inspect_delete_workbench()` 与 `verify_workbench_delete_plan()`，遵循“先审计、再规划、零副作用”契约；
+  - 组装不可变 `WorkbenchDeletePlan`（schema 2.0），内含 `workbench_identity`、`file_deletions`、`patches`、`preserved_resources`、`command_relations`、`source_snapshots`（原始字节 SHA-256 与字节长度）及 `dependency_evidence`；
+  - 审计全过程不修改磁盘文件、不创建/删除目录、不修改调用方 ChangeSet。
+
+- **7 大只读安全门禁**：
+  - **Gate 1（工作台发现与身份解析）**：精确识别目标工作台与 Addin 类（`{workbench}Addin`），工作台不存在或模块/框架身份不匹配立即报错（DW1、DW2）；
+  - **Gate 2（宿主模块根目录边界防御）**：通过 `relative_to` 实施严格路径归属与穿越防护，杜绝路径逃逸（DW3）；
+  - **Gate 3（DICO 映射精确匹配与唯一性）**：扫描 Framework 下非隐藏 `.dico` 字典，严格定位 `{addin_class} CATIAfrGeneralWksAddin {module_lib}` 映射行；条目缺失拒绝，多重模糊匹配硬拦截（DW4、DW5）；
+  - **Gate 4（专属 UI 资源与共享图标冲突检测）**：自动收集工作台专属 Addin 源码与 NLS/RSC 资源；若工作台图标（`I_{workbench}.bmp`）在其他组件的 `.CATRsc` 中被引用，自动标为 `preserve`，绝不加入待删列表（DW6）；
+  - **Gate 5（挂载命令提取与所有权严格隔离）**：解析 `CreateCommands()` 作用域内 Header 注册，严格界定“挂载关系不等于所有权”，所有挂载命令所有权一律定性为 `UNKNOWN`，动作严格为 `DETACH_ONLY`（DW7）；当传入 `cascade_commands=True` 时因外部引用无法证伪直接进入 `BLOCKED`，禁止级联误删命令源码（DW8）；
+  - **Gate 6（模块依赖保守边界）**：保留 `Imakefile.mk` / `IdentityCard.xml` 依赖，不盲目自动裁剪模块级依赖，保护宿主模块内共存或未来组件；
+  - **Gate 7（不可变 Plan 组装与防篡改失效保护）**：记录源文件与字典的原始字节快照，执行前重新校验字节一致性，文件篡改时计划自动失效（DW9）；执行期对磁盘与调用方 ChangeSet 零污染（DW10）。
+
+- **生产回归验证**：
+  - 新增 DW1～DW10 共 10 组生产回归用例：
+    - DW1: 工作台不存在时拒绝；
+    - DW2: 模块/框架身份不匹配时拒绝；
+    - DW3: 宿主模块目录边界防御（`relative_to` 抛出 `ValueError`）；
+    - DW4: DICO 映射缺失时拒绝；
+    - DW5: DICO 多重模糊匹配时拒绝；
+    - DW6: 共享图标自动标记 `preserve`，排除于待删列表并发出警告；
+    - DW7: 挂载命令所有权定性为 `UNKNOWN`，动作严格限定为 `DETACH_ONLY`，识别跨工作台引用；
+    - DW8: 显式请求级联删除命令时硬阻断（`status: "blocked"`）；
+    - DW9: 源文件或 DICO 篡改后计划自动失效；
+    - DW10: 只读审计对磁盘与调用方 ChangeSet 零副作用。
+  - 生产回归测试套件规模提升至 **711/711 全量通过**。
+
+- **收口判定**：
+  - **W-2-A**: CLOSED
+
 ### 🚀 W-1 Workbench 全生命周期生成与 B28 Runtime 闭环实证 (2026-09-18)
 
 - **层次 1（真实构建实证）**：
@@ -32,7 +65,21 @@
 - **字典同步幽灵覆盖 Bug 根因修复**：
   - 修复 `build.py` 中 `_copy_dictionaries_to_runtime` 使用宽泛 `rglob("CNext/code/dictionary/*.dico")` 误读 `.caa_backups` 隐藏备份目录并用历史旧字典覆盖 Runtime View 目标文件的系统级隐患，强制实施 `not any(part.startswith(".") for part in dico.parts)` 路径过滤；
   - 新增 WB27 生产回归用例锁定该安全契约，防止有效字典被隐藏备份篡改。
-- **收口判定**：W-1-A CLOSED，W-1-B CLOSED，W-1-C LEVEL 1 / LEVEL 2 / LEVEL 3 开发端真机物理实证闭环（同批次数据统一自洽，证据链与边界定义完整记录）。
+- **收口判定**：
+  - **W-1-A**: CLOSED
+  - **W-1-B**: CLOSED（基于当前开发端测试证据）
+  - **W-1-C**:
+    - **Level 1（构建实证）**: VERIFIED（B28 `mkmk -a` 返回码 0，耗时 14.7s）
+    - **Level 2（产物审计）**: VERIFIED（`WbGuiMod.dll`、DICO、NLS、RSC、22×22 BMP 产物与哈希自洽）
+    - **Level 3（运行时基础链路）**: VERIFIED
+      - CNEXT 进程启动: 有开发机审计证据（PID 82588）
+      - DLL 动态加载: 有开发机审计证据（`WbGuiMod.dll`）
+      - Addin marker 执行: 有开发机审计证据（`wb_gui_executed.marker`）
+      - CATIA 主窗口渲染: 有开发机审计证据（HWND 1051266，2560x1440 与 2000x220 截图固化）
+      - 自定义工具栏控件识别: PENDING（待后续专项 UI 探针）
+      - 自定义图标实际渲染: PENDING（待后续专项模板匹配）
+      - 按钮交互功能: NOT IN SCOPE / NOT VERIFIED
+  - 生产回归测试：开发机报告 678/678 PASS 全量通过（尚不能仅凭 GitHub 提交独立重放确认）。
 
 ### 🏗️ W-1-C Workbench 资源装配、构建前置审计与安全加固 (2026-09-18, CLOSED)
 
