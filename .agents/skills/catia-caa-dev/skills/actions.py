@@ -3394,6 +3394,175 @@ def inspect_rename_command(
     }
 
 
+def rename_command(
+    ctx: ActionContext,
+    old_name: str,
+    new_name: str,
+    *,
+    module: Optional[str] = None,
+    framework: Optional[str] = None,
+    workbench_name: Optional[str] = None,
+    cs: Optional[ChangeSet] = None,
+    plan: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Rename a command entity and cascade update C++ source, Imakefile, and Header registration (R-4-B Phase 2).
+
+    Strictly consumes the CommandRenamePlan computed by inspect_rename_command()
+    to maintain transaction integrity and zero-mutation guarantees upon failure.
+    Performs:
+      - Snapshot hash integrity verification against concurrent tampering
+      - Atomic file renames (add_create(new) + add_delete(old))
+      - Imakefile.mk token boundary migration
+      - 4-parameter Header registration ClassName update with HeaderID strictly preserved
+      - ChangeSet staging with full rollback symmetry
+    """
+    ctx.refresh()
+
+    if plan is None:
+        inspect_res = inspect_rename_command(
+            ctx,
+            old_name,
+            new_name,
+            module=module,
+            framework=framework,
+            workbench_name=workbench_name,
+            cs=cs,
+        )
+        if inspect_res.get("status") != "ok":
+            return _error(inspect_res.get("error") or f"Rename inspection failed for command '{old_name}'")
+        plan = inspect_res["plan"]
+
+    # 1. Verify source snapshot hashes to prevent concurrent modification / tampering
+    for f_item in plan.get("file_renames", []):
+        old_f = Path(f_item["old_path"])
+        f_str = str(old_f)
+        current_content = None
+        if cs is not None and f_str in cs.created:
+            current_content = cs.created[f_str]
+        elif cs is not None and f_str in cs.modified:
+            current_content = cs.modified[f_str]
+        elif old_f.exists():
+            current_content = old_f.read_text(encoding="utf-8", errors="replace")
+
+        if current_content is None:
+            return _error(f"Source file not found during rename execution: {old_f}")
+
+        cur_hash = hashlib.sha256(current_content.encode("utf-8")).hexdigest()
+        expected_hash = f_item["source_snapshot"]["content_hash"]
+        if cur_hash != expected_hash:
+            return _error(f"Source file has been modified concurrently: {old_f}")
+
+    imk_update = plan.get("imakefile_updates")
+    if imk_update:
+        imk_f = Path(imk_update["path"])
+        imk_str = str(imk_f)
+        cur_imk = None
+        if cs is not None and imk_str in cs.created:
+            cur_imk = cs.created[imk_str]
+        elif cs is not None and imk_str in cs.modified:
+            cur_imk = cs.modified[imk_str]
+        elif imk_f.exists():
+            cur_imk = imk_f.read_text(encoding="utf-8", errors="replace")
+
+        if cur_imk is None:
+            return _error(f"Imakefile not found during rename execution: {imk_f}")
+
+        cur_hash = hashlib.sha256(cur_imk.encode("utf-8")).hexdigest()
+        expected_hash = imk_update["source_snapshot"]["content_hash"]
+        if cur_hash != expected_hash:
+            return _error(f"Imakefile has been modified concurrently: {imk_f}")
+
+    hdr_update = plan.get("header_update")
+    cur_addin = None
+    cc_scope = None
+    if hdr_update:
+        addin_f = Path(hdr_update["addin_source"])
+        addin_str = str(addin_f)
+        if cs is not None and addin_str in cs.created:
+            cur_addin = cs.created[addin_str]
+        elif cs is not None and addin_str in cs.modified:
+            cur_addin = cs.modified[addin_str]
+        elif addin_f.exists():
+            cur_addin = addin_f.read_text(encoding="utf-8", errors="replace")
+
+        if cur_addin is None:
+            return _error(f"Addin source file not found during rename execution: {addin_f}")
+
+        cur_hash = hashlib.sha256(cur_addin.encode("utf-8")).hexdigest()
+        expected_hash = hdr_update["source_snapshot"]["content_hash"]
+        if cur_hash != expected_hash:
+            return _error(f"Addin source file has been modified concurrently: {addin_f}")
+
+        cc_scope = _extract_create_commands_scope(cur_addin)
+        if not cc_scope:
+            return _error(f"Cannot reliably extract CreateCommands() scope in {addin_f}")
+
+    # 2. Initialize or connect master ChangeSet
+    master_cs = cs if cs is not None else ChangeSet(
+        action="rename_command",
+        description=f"Rename command '{old_name}' to '{new_name}'",
+    )
+
+    # 3. Stage atomic file renames
+    for f_item in plan.get("file_renames", []):
+        old_p = Path(f_item["old_path"])
+        new_p = Path(f_item["new_path"])
+        new_c = f_item["new_content"]
+        master_cs.add_create(new_p, new_c)
+        master_cs.add_delete(old_p)
+
+    # 4. Stage Imakefile token replacement
+    if imk_update:
+        imk_p = Path(imk_update["path"])
+        new_imk = imk_update["new_content"]
+        if str(imk_p) in master_cs.created:
+            master_cs.created[str(imk_p)] = new_imk
+        else:
+            master_cs.add_modify(imk_p, new_imk)
+
+    # 5. Stage Addin Header registration update
+    if hdr_update:
+        addin_p = Path(hdr_update["addin_source"])
+        old_stmt = hdr_update["old_statement"]
+        new_stmt = hdr_update["new_statement"]
+        new_addin = _remove_statement_line(
+            cur_addin,
+            old_stmt,
+            replace_with=new_stmt,
+            search_start=cc_scope[1],
+            search_end=cc_scope[2],
+        )
+        if new_stmt != old_stmt and new_addin == cur_addin:
+            return _error(f"Failed to replace header registration statement in {addin_p}")
+
+        if str(addin_p) in master_cs.created:
+            master_cs.created[str(addin_p)] = new_addin
+        else:
+            master_cs.add_modify(addin_p, new_addin)
+
+    # 6. Record metadata and return structured result
+    master_cs.metadata.update(
+        {
+            "command": new_name,
+            "old_name": old_name,
+            "new_name": new_name,
+            "class_name": new_name,
+            "header_id": hdr_update.get("header_id") if hdr_update else None,
+            "workbench_name": hdr_update.get("workbench_name") if hdr_update else None,
+            "file_renames": [
+                {"old_path": r["old_path"], "new_path": r["new_path"]}
+                for r in plan.get("file_renames", [])
+            ],
+            "resource_impact_report": plan.get("resource_impact_report"),
+            "plan": plan,
+        }
+    )
+
+    res = _result(master_cs)
+    res["plan"] = plan
+    return res
+
+
 def delete_module(ctx: ActionContext, name: str, framework: str = None) -> Dict:
     """Delete a Module and ALL its contents (commands, dialogs, interfaces, components)"""
     ctx.refresh()

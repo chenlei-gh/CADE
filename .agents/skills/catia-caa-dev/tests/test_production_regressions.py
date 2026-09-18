@@ -1924,7 +1924,7 @@ finally:
 # DA13 (同一 Toolbar 重复 MountKey 拦截): Duplicate mount of same Header in same toolbar rejected as error
 da_ws = Path(tempfile.mkdtemp(prefix="cade_da_test_"))
 try:
-    from actions import inspect_delete_command, delete_command, inspect_rename_command
+    from actions import inspect_delete_command, delete_command, inspect_rename_command, rename_command
 
     fw_dir = da_ws / "TestFW.edu"
     (fw_dir / "IdentityCard").mkdir(parents=True)
@@ -2901,6 +2901,145 @@ try:
     aff_res = res_report.get("affected_resources", [])
     check("RN15: affected resources found", len(aff_res) > 0, str(aff_res))
     check("RN15: plan has no resource mutation tasks", "resource_updates" not in p_rn1)
+
+    # ══════════════════════════════════════════════════════════════════
+    # R-4-B Phase 2: Command Rename Physical Execution (rename_command)
+    # RN16 (端到端物理执行 rename_command 与 apply)
+    # RN17 (物理执行后的 rollback 完整对称还原)
+    # RN18 (源文件 Hash 篡改故障注入防并发拦截)
+    # RN19 (多工作台显式指定 workbench_name 精确执行与非目标隔离)
+    # RN20 (与 staged ChangeSet 混合编排原子性与预检零变更)
+    # ══════════════════════════════════════════════════════════════════
+
+    # ── RN16: 端到端物理执行 rename_command 与 apply ──
+    ctx.refresh()
+    r_rn16 = rename_command(ctx, "DiskCmd", "NewDiskCmd", workbench_name="SampleWorkbench")
+    check("RN16: rename_command succeeds", r_rn16.get("status") == "pending", str(r_rn16))
+    cs_dict_16 = r_rn16.get("changeset")
+    check("RN16: changeset returned in result", cs_dict_16 is not None)
+    check("RN16: plan attached to result", r_rn16.get("plan") is not None)
+
+    cs_16 = ChangeSet.from_dict(cs_dict_16)
+    res_apply_16 = cs_16.apply(workspace_root=da_ws)
+    check("RN16: cs apply succeeds", res_apply_16.get("status") == "applied", str(res_apply_16))
+
+    new_h = mod_dir / "LocalInterfaces" / "NewDiskCmd.h"
+    new_cpp = src_dir / "NewDiskCmd.cpp"
+    old_h = mod_dir / "LocalInterfaces" / "DiskCmd.h"
+    old_cpp = src_dir / "DiskCmd.cpp"
+    imake_path = mod_dir / "Imakefile.mk"
+
+    check("RN16: new header file created", new_h.exists())
+    check("RN16: new cpp file created", new_cpp.exists())
+    check("RN16: old header file deleted", not old_h.exists())
+    check("RN16: old cpp file deleted", not old_cpp.exists())
+
+    new_h_text = new_h.read_text(encoding="utf-8")
+    new_cpp_text = new_cpp.read_text(encoding="utf-8")
+    check("RN16: class declaration updated", "class ExportedByTestMod NewDiskCmd : public CATCommand" in new_h_text)
+    check("RN16: constructor updated in header", "NewDiskCmd();" in new_h_text)
+    check("RN16: destructor updated in header", "~NewDiskCmd();" in new_h_text)
+    check("RN16: CATCreateClass updated", "CATCreateClass(NewDiskCmd)" in new_cpp_text)
+    check("RN16: constructor scope updated", "NewDiskCmd::NewDiskCmd()" in new_cpp_text)
+    check("RN16: destructor scope updated", "NewDiskCmd::~NewDiskCmd()" in new_cpp_text)
+    check("RN16: include updated", '#include "NewDiskCmd.h"' in new_cpp_text)
+    check("RN16: literal preserved", 'const char* keep_literal = "DiskCmd";' in new_cpp_text)
+    check("RN16: helper symbol preserved", 'DiskCmdHelper* pHelper = NULL;' in new_cpp_text)
+
+    imake_text_16 = imake_path.read_text(encoding="utf-8")
+    check("RN16: Imakefile updated to new token", "NewDiskCmd.cpp" in imake_text_16)
+    check("RN16: Imakefile DiskCmdHelper preserved", "DiskCmdHelper.cpp" in imake_text_16)
+
+    addin_text_16 = addin_cpp.read_text(encoding="utf-8")
+    check("RN16: header registration updated to NewDiskCmd", 'new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "NewDiskCmd", (void *)NULL);' in addin_text_16)
+    check("RN16: old header registration removed", 'new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd"' not in addin_text_16)
+    check("RN16: toolbar starter references stable HeaderID", 'SetAccessCommand(pDiskCmdStr, "DiskCmdHdr");' in addin_text_16)
+
+    # ── RN17: 物理执行后的 rollback 完整对称还原 ──
+    rb_res_17 = cs_16.rollback()
+    check("RN17: rollback succeeds", rb_res_17.get("status") == "rolled_back", str(rb_res_17))
+    check("RN17: old header file restored", old_h.exists())
+    check("RN17: old cpp file restored", old_cpp.exists())
+    check("RN17: new header file deleted", not new_h.exists())
+    check("RN17: new cpp file deleted", not new_cpp.exists())
+
+    imake_text_17 = imake_path.read_text(encoding="utf-8")
+    check("RN17: Imakefile restored to DiskCmd.cpp", "DiskCmd.cpp" in imake_text_17)
+    check("RN17: Imakefile NewDiskCmd.cpp removed", "NewDiskCmd.cpp" not in imake_text_17)
+
+    addin_text_17 = addin_cpp.read_text(encoding="utf-8")
+    check("RN17: header registration restored to DiskCmd", 'new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);' in addin_text_17)
+
+    # ── RN18: 源文件 Hash 篡改故障注入（防并发篡改拦截） ──
+    ctx.refresh()
+    r_plan_18 = inspect_rename_command(ctx, "DiskCmd", "TamperTargetCmd", workbench_name="SampleWorkbench")
+    check("RN18: pre-inspection succeeds", r_plan_18.get("status") == "ok")
+    plan_18 = r_plan_18.get("plan")
+
+    original_cpp_content = old_cpp.read_text(encoding="utf-8")
+    old_cpp.write_text(original_cpp_content + "\n// Concurrent external tamper\n", encoding="utf-8")
+
+    caller_cs_18 = ChangeSet(action="tamper_test", description="tamper test")
+    r_rn18 = rename_command(ctx, "DiskCmd", "TamperTargetCmd", workbench_name="SampleWorkbench", cs=caller_cs_18, plan=plan_18)
+    check("RN18: concurrent modification rejected as error", r_rn18.get("status") == "error", str(r_rn18))
+    err_msg_18 = r_rn18.get("message", "") or r_rn18.get("error", "")
+    check("RN18: error mentions modified concurrently", "modified concurrently" in err_msg_18.lower() or "not found" in err_msg_18.lower(), str(r_rn18))
+    check("RN18: caller ChangeSet zero created mutation", caller_cs_18.created == {})
+    check("RN18: caller ChangeSet zero modified mutation", caller_cs_18.modified == {})
+    check("RN18: caller ChangeSet zero deleted mutation", caller_cs_18.deleted == [])
+
+    # 还原 DiskCmd.cpp 并验证恢复正常
+    old_cpp.write_text(original_cpp_content, encoding="utf-8")
+    ctx.refresh()
+
+    # ── RN19: 多工作台环境中显式指定 workbench_name 的精确定位执行 ──
+    another_mod_dir = fw_dir / "AnotherMod.m"
+    another_src_dir = another_mod_dir / "src"
+    another_src_dir.mkdir(parents=True, exist_ok=True)
+    another_addin_cpp = another_src_dir / "AnotherWorkbenchAddin.cpp"
+    another_addin_content = (
+        '#include "AnotherWorkbenchAddin.h"\n\n'
+        'CATIAfrGeneralWksAddin\n\n'
+        'MacDeclareHeader(AnotherWorkbenchHeader);\n\n'
+        'void AnotherWorkbenchAddin::CreateCommands() {\n'
+        '    new AnotherWorkbenchHeader("AnotherCmdHdr", "TestMod", "OtherCmd", (void *)NULL);\n'
+        '}\n\n'
+        'void AnotherWorkbenchAddin::CreateToolbars() {}\n'
+    )
+    another_addin_cpp.write_text(another_addin_content, encoding="utf-8")
+    ctx.refresh()
+
+    r_rn19 = rename_command(ctx, "DiskCmd", "NewDiskCmdWb", workbench_name="SampleWorkbench")
+    check("RN19: rename_command with explicit workbench succeeds", r_rn19.get("status") == "pending", str(r_rn19))
+    cs_19 = ChangeSet.from_dict(r_rn19.get("changeset"))
+    res_apply_19 = cs_19.apply(workspace_root=da_ws)
+    check("RN19: apply succeeds", res_apply_19.get("status") == "applied", str(res_apply_19))
+
+    addin_text_19 = addin_cpp.read_text(encoding="utf-8")
+    check("RN19: target SampleWorkbench updated", 'new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "NewDiskCmdWb", (void *)NULL);' in addin_text_19)
+    another_addin_text_19 = another_addin_cpp.read_text(encoding="utf-8")
+    check("RN19: non-target AnotherWorkbench untouched", another_addin_text_19 == another_addin_content)
+
+    # 恢复原状
+    cs_19.rollback()
+    shutil.rmtree(another_mod_dir, ignore_errors=True)
+    ctx.refresh()
+
+    # ── RN20: 与 staged ChangeSet 混合编排的事务原子性验证 ──
+    mixed_cs = ChangeSet(action="mixed_pipeline", description="mixed pipeline")
+    extra_file = mod_dir / "extra_config.txt"
+    mixed_cs.add_create(extra_file, "initial extra config")
+
+    r_rn20 = rename_command(ctx, "DiskCmd", "StagedDiskCmd", workbench_name="SampleWorkbench", cs=mixed_cs)
+    check("RN20: rename_command succeeds into mixed ChangeSet", r_rn20.get("status") == "pending", str(r_rn20))
+    check("RN20: extra_file still present in created", str(extra_file) in mixed_cs.created)
+    check("RN20: new command files staged in created", str(src_dir / "StagedDiskCmd.cpp") in mixed_cs.created)
+    check("RN20: old command files staged in deleted", old_cpp in mixed_cs.deleted)
+
+    failed_rename_res = rename_command(ctx, "DiskCmd", "123BadName", workbench_name="SampleWorkbench", cs=mixed_cs)
+    check("RN20: invalid name rejected as error", failed_rename_res.get("status") == "error")
+    check("RN20: existing created entries intact", str(extra_file) in mixed_cs.created)
+    check("RN20: no corrupted state introduced", "123BadName" not in str(mixed_cs.created))
 
 finally:
     shutil.rmtree(da_ws, ignore_errors=True)
