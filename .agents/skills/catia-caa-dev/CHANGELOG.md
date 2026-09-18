@@ -10,6 +10,39 @@
 
 ## [未发布]
 
+### 🏗️ W-1-B Workbench 物理原子执行与 ChangeSet 双向事务保证 (2026-09-18)
+
+- **物理原子执行与安全门禁**：
+  - 重构 `create_workbench()` 为基于不可变 Plan (schema 2.0) 的物理原子执行引擎。
+  - 落地 5 大执行期安全门禁：
+    - Gate 1 (Plan 架构与身份绑定)：严格校验 `plan_schema_version == "2.0"` 以及 `workbench_identity`（工作台名、目标 Framework、宿主 Module 归属与存在性）；
+    - Gate 2 (宿主目录边界防御)：待创建与待打补丁文件通过 `relative_to(fw_root)` 实施路径约束，防止目录穿越与逃逸；
+    - Gate 3 (磁盘突现文件硬拦截)：物理执行前探测磁盘状态，若生成目标文件在审计后意外出现在磁盘，立即硬拦截，避免盲目覆盖；
+    - Gate 4 (调用者 ChangeSet 冲突隔离)：在传入外部 `cs` 时，自动排查 `created` / `modified` / `deleted` 集合冲突，保持复合编排拓扑隔离；
+    - Gate 5 (物理原始字节防篡改)：基于 `source_snapshot` 原始字节 SHA-256 哈希与字节长度，强校验 `IdentityCard.xml`、`Imakefile.mk`、`TestFW.dico` 等目标修改项，遇并发修改立即阻断。
+
+- **双向事务与对称回滚保证**：
+  - 严格保持两阶段事务：`create_workbench()` 返回 `status: "pending"`，所有变更先在内存暂存为 ChangeSet；
+  - 物理落地由 `ChangeSet.apply()` 负责执行，`rollback()` 支持 100% 对称物理还原（已创文件删除、修改文件原始字节复原）；
+  - 外部 ChangeSet 编排兼容：支持将工作台创建原子编排到宿主流程，支持元数据合并。
+
+- **回归验证与实证**：
+  - 扩展 WB9～WB18 生产回归用例：
+    - WB9: Pending 状态纯内存暂存与零物理变更；
+    - WB10: `apply()` 端到端物理落地与语法/格式校验；
+    - WB11: 工作区分析器 `WorkspaceAnalyzer` 发现与元数据绑定闭环；
+    - WB12: 并发修改防篡改硬拦截；
+    - WB13: Plan 身份篡改、版本异常与突现文件硬拦截；
+    - WB14: `rollback()` 物理双向对称还原（已创建文件删除、原文件 100% 原始字节恢复）；
+    - WB15: 外部 ChangeSet 编排兼容与元数据合并；
+    - WB16: 回滚后工作区环境洁净再预检验证；
+    - WB17: 中途写入失败自动恢复与原子性回滚保证；
+    - WB18: 外部 ChangeSet 冲突隔离。
+  - 生产回归套件规模从 604/604 跃升至 **648/648 全量通过**。
+
+- **Git 提交基线**：
+  - `5ecd33b` — `Implement W-1-B workbench create execution and tests`
+
 ### 🏗️ W-1-A Workbench 只读审计与不可变 Plan 门禁 (2026-09-18)
 
 - **只读审计门禁**：
