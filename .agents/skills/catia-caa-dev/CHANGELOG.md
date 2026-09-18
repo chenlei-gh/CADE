@@ -10,6 +10,42 @@
 
 ## [未发布]
 
+### 🏁 W-4 Release Hardening, Cross-Lifecycle Acceptance & V1 Frozen (2026-09-18, ACCEPTED / V1 FROZEN)
+
+- **架构生命周期终审定性**：
+  - **W-1（工作台挂载生成与 B28 Runtime 闭环）**：`CLOSED`（WB1～WB27 完整闭环，含 B28 真实进程与 GUI 区域渲染实证）；
+  - **W-2（工作台逆向删除与事务安全）**：`CLOSED`（DW1～DW22 完整闭环，受控文件系统 ChangeSet 事务与反向精确 DICO 条目剔除）；
+  - **W-3（挂载命令动态解耦与拓扑重织）**：`CLOSED WITH DOCUMENTED LIMITATIONS`（DC1～DC24 完整闭环，单链拓扑重织、无损解码与后置断言防护，已知受控文本边界固化）；
+  - **W-4（跨生命周期协同验收与硬化终审）**：`ACCEPTED / V1 FROZEN`（W4-1～W4-5 全量通过，CADE V1 核心架构全面收口并正式冻结，不再追求极端 C++ 语义 AST 全解析，转入生产级运维与缺陷收敛）。
+
+- **跨生命周期端到端集成审计 (W4-1～W4-5)**：
+  - **W4-1（端到端正反双向全链路协同）**：
+    - 顺向链路：Create 工作台 (W-1-B) → 挂载命令 Header 与 Toolbar Starter (R-3) → 动态解耦命令并重织拓扑 (W-3-B) → 逆向删除工作台专属文件与 DICO 映射 (W-2-B)；
+    - 逆向三阶段回滚：依次执行 `delete.rollback()` 恢复专属文件与 DICO → `detach.rollback()` 恢复被解挂命令与工具栏 Starter → `create.rollback()` 彻底清除所有生成产物，DICO 与 Imakefile 100% 无损复原至操作前原始字节快照。
+  - **W4-2（跨生命周期 ChangeSet 交叉冲突矩阵硬隔离）**：
+    - 统一路径规范化 `_norm_path_key`，拦截针对已暂存 `deleted` 文件的 `detach_command` 调用（报 `CHANGESET_CONFLICT`）；
+    - 拦截针对已暂存 `created` 文件的 `detach_command` 调用（报 `CHANGESET_CONFLICT`）；
+    - 拦截针对已暂存 `modified` 文件的 `delete_workbench` 物理删除调用（严格报事务冲突并阻断），保证复合事务间互斥隔离。
+  - **W4-3（极端边界防御与非规范语法硬阻断清单）**：
+    - 边界 1：非规范 C++ 标识符输入硬拦截；
+    - 边界 2：`CreateCommands()` 签名损坏、非规范宏声明导致大括号不平衡时硬阻断，输出详细作用域提取失败原因；
+    - 边界 3：无法定位所属容器或浮动孤立 Starter 时硬阻断，标记 `BLOCKED_UNRESOLVED_TOPOLOGY`；
+    - 边界 4：同一工具栏内重复挂载相同 HeaderID 时硬阻断，标记 `BLOCKED_UNRESOLVED_TOPOLOGY`；
+    - 边界 5：工作台删除时针对未知所有权命令的级联删除硬阻断，强制仅允许 `DETACH_ONLY`。
+  - **W4-4（失败路径零写入与调用方 ChangeSet 零污染契约）**：
+    - 目标 Header 缺失或报错时，目标 Addin.cpp 磁盘文件严格字节不变；
+    - 调用方传入的上下文安全文件在错误抛出时保持零变动；
+    - 调用方 `ChangeSet` 的 `created`、`deleted`、`modified` 集合严格零污染，仅保留调用方原有的暂存内容。
+  - **W4-5（连续幂等回滚与字节完全还原保证）**：
+    - 验证 `apply()` 落地变更后，连续执行 3 次 `rollback()` 均返回 `status='rolled_back'`；
+    - 每次回滚后物理文件字节与 SHA-256 均与原始基准 100% 严格一致，无任何副作用或异常残留。
+
+- **生产回归套件规模**：
+  - 新增 W4-1～W4-5 全生命周期终审集成测试；
+  - 生产回归测试用例总数提升至 **1011/1011 全量通过 (PASS)**。
+
+---
+
 ### 🔌 W-3 Workbench 挂载命令动态解耦与拓扑重织 (2026-09-18, CLOSED WITH DOCUMENTED LIMITATIONS)
 
 - **能力架构与闭环定性**：

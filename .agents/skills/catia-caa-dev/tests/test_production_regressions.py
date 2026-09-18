@@ -4785,6 +4785,208 @@ CATCmdContainer* DetachWbAddin::CreateToolbars()
     check("DC24: cycle 3 replay rollback restored", detach_wb_cpp.read_bytes() == raw_before_dc24)
     check("DC24: cycle 3 final sha256 matches exactly", hashlib.sha256(detach_wb_cpp.read_bytes()).hexdigest() == sha_before_dc24)
 
+    # ══════════════════════════════════════════════════════════════════
+    # ── W-4: Release Hardening & Cross-Lifecycle Acceptance (W4-1 ~ W4-5) ──
+    # ══════════════════════════════════════════════════════════════════
+
+    # ── W4-1: 跨生命周期端到端闭环协同 (Create W-1 → Mount → Detach W-3 → Delete W-2) ──
+    ctx_wb.refresh(force=True)
+    dico_raw_before_w4 = dico_file.read_bytes()
+    imake_raw_before_w4 = imake_shared.read_bytes()
+
+    # Step 1: 创建全新工作台 W4Wb (W-1-B)
+    r_w4_create = create_workbench(ctx_wb, "W4Wb", framework="TestFW.edu", module="SharedMod.m", generate_icon=True)
+    check("W4-1: create_workbench returns pending", r_w4_create.get("status") == "pending")
+    cs_w4_create = r_w4_create.get("changeset")
+    if isinstance(cs_w4_create, dict):
+        cs_w4_create = ChangeSet.from_dict(cs_w4_create)
+    res_w4_cr_apply = cs_w4_create.apply(workspace_root=wb_ws)
+    check("W4-1: create apply succeeds", res_w4_cr_apply.get("status") == "applied")
+
+    w4_addin_cpp = mod_shared / "src" / "W4WbAddin.cpp"
+    check("W4-1: W4WbAddin.cpp exists on disk", w4_addin_cpp.is_file())
+    check("W4-1: DICO updated with W4WbAddin", "W4WbAddin" in dico_file.read_text(encoding="utf-8"))
+
+    # Step 2: 在 W4WbAddin.cpp 中挂载命令 CmdW4Hdr (模拟运行时命令挂载)
+    w4_addin_content = """// W4WbAddin.cpp
+#include "W4WbAddin.h"
+#include "CATCommandHeader.h"
+#include "CATCmdContainer.h"
+#include "CATCmdStarter.h"
+#include "TIE_CATIAfrGeneralWksAddin.h"
+
+TIE_CATIAfrGeneralWksAddin(W4WbAddin);
+
+MacDeclareHeader(W4Header);
+
+void W4WbAddin::CreateCommands()
+{
+    new W4Header("CmdW4Hdr", "SharedMod", "CmdW4", (void*)NULL);
+}
+
+CATCmdContainer* W4WbAddin::CreateToolbars()
+{
+    NewAccess(CATCmdContainer, pTlbW4, TlbW4);
+    AddToolbarView(pTlbW4, 1, Top);
+    NewAccess(CATCmdStarter, pStarterW4, StarterW4);
+    SetAccessCommand(pStarterW4, "CmdW4Hdr");
+    SetAccessChild(pTlbW4, pStarterW4);
+    return pTlbW4;
+}
+"""
+    w4_addin_cpp.write_text(w4_addin_content, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+
+    # Step 3: 执行命令解耦 (W-3-B)
+    r_w4_detach = detach_command(ctx_wb, "W4Wb", "CmdW4Hdr")
+    check("W4-1: detach_command returns pending", r_w4_detach.get("status") == "pending")
+    cs_w4_detach = r_w4_detach.get("changeset")
+    if isinstance(cs_w4_detach, dict):
+        cs_w4_detach = ChangeSet.from_dict(cs_w4_detach)
+    res_w4_dt_apply = cs_w4_detach.apply(workspace_root=wb_ws)
+    check("W4-1: detach apply succeeds", res_w4_dt_apply.get("status") == "applied")
+    w4_after_detach = w4_addin_cpp.read_text(encoding="utf-8")
+    check("W4-1: CmdW4Hdr header statement removed", 'new W4Header("CmdW4Hdr"' not in w4_after_detach)
+    check("W4-1: pStarterW4 removed from toolbar", "pStarterW4" not in w4_after_detach)
+
+    # Step 4: 执行工作台逆向删除 (W-2-B)
+    ctx_wb.refresh(force=True)
+    r_w4_del = delete_workbench(ctx_wb, "W4Wb", framework="TestFW.edu")
+    check("W4-1: delete_workbench returns pending", r_w4_del.get("status") == "pending")
+    cs_w4_del = r_w4_del.get("changeset")
+    if isinstance(cs_w4_del, dict):
+        cs_w4_del = ChangeSet.from_dict(cs_w4_del)
+    res_w4_del_apply = cs_w4_del.apply(workspace_root=wb_ws)
+    check("W4-1: delete apply succeeds", res_w4_del_apply.get("status") == "applied")
+    check("W4-1: W4WbAddin.cpp deleted from disk", not w4_addin_cpp.exists())
+    check("W4-1: DICO entry cleanly removed", "W4WbAddin" not in dico_file.read_text(encoding="utf-8"))
+
+    # Step 5: 逆向三阶段回滚复原
+    cs_w4_del.rollback()
+    check("W4-1: rollback delete restores W4WbAddin.cpp", w4_addin_cpp.is_file())
+    cs_w4_detach.rollback()
+    check("W4-1: rollback detach restores mounted command", "CmdW4Hdr" in w4_addin_cpp.read_text(encoding="utf-8"))
+    cs_w4_create.rollback()
+    check("W4-1: rollback create removes all generated files", not w4_addin_cpp.exists())
+    check("W4-1: DICO restored to pre-w4 exact bytes", dico_file.read_bytes() == dico_raw_before_w4)
+    check("W4-1: Imakefile restored to pre-w4 exact bytes", imake_shared.read_bytes() == imake_raw_before_w4)
+
+    # ── W4-2: 跨生命周期 ChangeSet 交叉冲突矩阵硬隔离 (Cross-Lifecycle Conflict Defense) ──
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+
+    # Case 1: 外部 ChangeSet 已标记目标为 deleted，detach_command 必须拦截 (CHANGESET_CONFLICT)
+    external_cs_del = ChangeSet(action="external_del", description="external deletion")
+    external_cs_del.add_delete(detach_wb_cpp)
+    r_conf_del = detach_command(ctx_wb, "DetachWb", "CmdHeadHdr", cs=external_cs_del)
+    check("W4-2: reject detach on file already staged for deletion", r_conf_del.get("status") == "error")
+    check("W4-2: error code is CHANGESET_CONFLICT on delete conflict", r_conf_del.get("error") == "CHANGESET_CONFLICT")
+
+    # Case 2: 外部 ChangeSet 已标记目标为 created，detach_command 必须拦截 (CHANGESET_CONFLICT)
+    external_cs_cr = ChangeSet(action="external_cr", description="external creation")
+    external_cs_cr.add_create(detach_wb_cpp, "// pending content")
+    r_conf_cr = detach_command(ctx_wb, "DetachWb", "CmdHeadHdr", cs=external_cs_cr)
+    check("W4-2: reject detach on file already staged for creation", r_conf_cr.get("status") == "error")
+    check("W4-2: error code is CHANGESET_CONFLICT on create conflict", r_conf_cr.get("error") == "CHANGESET_CONFLICT")
+
+    # Case 3: 外部 ChangeSet 已标记目标为 modified，delete_workbench 必须拦截 (CHANGESET_CONFLICT)
+    external_cs_mod = ChangeSet(action="external_mod", description="external modification")
+    external_cs_mod.add_modify(detach_wb_cpp, "// pending mod content")
+    r_conf_wb_del = delete_workbench(ctx_wb, "DetachWb", framework="TestFW.edu", cs=external_cs_mod)
+    check("W4-2: reject delete_workbench on file already staged for modification", r_conf_wb_del.get("status") == "error")
+    check("W4-2: error mentions changeset conflict on delete vs modified", "conflict" in r_conf_wb_del.get("message", "").lower())
+
+    # ── W4-3: 极端边界与非规范语法防御清单 (Boundary Defenses & Hard Blocking Checklist) ──
+    # 边界 1: 非法 C++ 标识符拦截
+    r_bnd_1 = inspect_detach_command(ctx_wb, "Invalid-Wb-Name!", "CmdHeadHdr")
+    check("W4-3: reject invalid C++ identifier in workbench name", r_bnd_1.get("status") == "error")
+    r_bnd_1b = inspect_detach_command(ctx_wb, "DetachWb", "Invalid-Hdr-Name!")
+    check("W4-3: reject invalid C++ identifier in header id", r_bnd_1b.get("status") == "error")
+
+    # 边界 2: CreateCommands 签名损坏/非标准宏语法导致大括号不平衡
+    bad_syntax_cpp = detach_cpp_template.replace("void DetachWbAddin::CreateCommands()", "void DetachWbAddin::CreateCommands( UNBALANCED_MACRO(")
+    detach_wb_cpp.write_text(bad_syntax_cpp, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    r_bnd_2 = inspect_detach_command(ctx_wb, "DetachWb", "CmdHeadHdr")
+    check("W4-3: hard block on malformed CreateCommands scope", r_bnd_2.get("status") == "error")
+    check("W4-3: error details scope extraction failure", "createcommands() scope" in r_bnd_2.get("error", "").lower())
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+
+    # 边界 3: 动态拓扑/无法追溯容器的孤立 Starter
+    orphan_starter_cpp = detach_cpp_template.replace(
+        "return pTlbSingle;",
+        'NewAccess(CATCmdStarter, pDangling, DanglingStarter);\n    SetAccessCommand(pDangling, "CmdHeadHdr");\n    return pTlbSingle;'
+    )
+    detach_wb_cpp.write_text(orphan_starter_cpp, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    r_bnd_3 = inspect_detach_command(ctx_wb, "DetachWb", "CmdHeadHdr")
+    check("W4-3: hard block on orphaned starter topology", r_bnd_3.get("topology_status") == "BLOCKED_UNRESOLVED_TOPOLOGY")
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+
+    # 边界 4: 同一工具栏内重复挂载相同 HeaderID
+    dup_mount_cpp = detach_cpp_template.replace(
+        'SetAccessCommand(pStarterTail, "CmdTailHdr");',
+        'SetAccessCommand(pStarterTail, "CmdHeadHdr");'
+    )
+    detach_wb_cpp.write_text(dup_mount_cpp, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    r_bnd_4 = inspect_detach_command(ctx_wb, "DetachWb", "CmdHeadHdr")
+    check("W4-3: hard block on duplicate header mount in same toolbar", r_bnd_4.get("topology_status") == "BLOCKED_UNRESOLVED_TOPOLOGY")
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+
+    # 边界 5: 未知所有权命令级联删除硬阻断
+    r_bnd_5 = inspect_delete_workbench(ctx_wb, "DetachWb", framework="TestFW.edu", cascade_commands=True)
+    check("W4-3: block cascade command deletion when ownership is unknown", r_bnd_5.get("status") == "blocked")
+    check("W4-3: error identifies unproven command ownership", "command ownership cannot be proven" in r_bnd_5.get("error", "").lower())
+
+    # ── W4-4: 失败路径零写入与调用方 ChangeSet 零污染契约 (Zero Mutation on Error) ──
+    safe_target_file = mod_shared / "src" / "SafeKeep.txt"
+    safe_target_file.write_text("initial safe content\n", encoding="utf-8")
+    raw_safe_before = safe_target_file.read_bytes()
+    raw_detach_before = detach_wb_cpp.read_bytes()
+
+    clean_caller_cs = ChangeSet(action="caller_job", description="caller context")
+    clean_caller_cs.add_modify(safe_target_file, "staged modification\n")
+
+    r_err_detach = detach_command(ctx_wb, "DetachWb", "NonExistentCommandHdr", cs=clean_caller_cs)
+    check("W4-4: detach returns error on missing header", r_err_detach.get("status") == "error")
+    check("W4-4: target Addin.cpp byte-invariant on error", detach_wb_cpp.read_bytes() == raw_detach_before)
+    check("W4-4: caller safe file byte-invariant on error", safe_target_file.read_bytes() == raw_safe_before)
+    check("W4-4: caller cs created unchanged", len(clean_caller_cs.created) == 0)
+    check("W4-4: caller cs deleted unchanged", len(clean_caller_cs.deleted) == 0)
+    check("W4-4: caller cs modified untouched by detach", str(detach_wb_cpp) not in clean_caller_cs.modified)
+    check("W4-4: caller cs only holds its own staged file", len(clean_caller_cs.modified) == 1)
+    safe_target_file.unlink(missing_ok=True)
+
+    # ── W4-5: 连续幂等回滚与字节完全还原保证 (Idempotent Rollback & Invariance) ──
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    raw_base_w45 = detach_wb_cpp.read_bytes()
+    sha_base_w45 = hashlib.sha256(raw_base_w45).hexdigest()
+
+    r_w45 = detach_command(ctx_wb, "DetachWb", "CmdHeadHdr")
+    cs_w45 = r_w45.get("changeset")
+    if isinstance(cs_w45, dict):
+        cs_w45 = ChangeSet.from_dict(cs_w45)
+    cs_w45.apply(workspace_root=wb_ws)
+    check("W4-5: disk modified after apply", detach_wb_cpp.read_bytes() != raw_base_w45)
+
+    rb_res_1 = cs_w45.rollback()
+    check("W4-5: first rollback succeeds", rb_res_1.get("status") == "rolled_back")
+    check("W4-5: bytes restored on first rollback", detach_wb_cpp.read_bytes() == raw_base_w45)
+    check("W4-5: sha256 identical on first rollback", hashlib.sha256(detach_wb_cpp.read_bytes()).hexdigest() == sha_base_w45)
+
+    rb_res_2 = cs_w45.rollback()
+    check("W4-5: second rollback succeeds idempotently", rb_res_2.get("status") == "rolled_back")
+    check("W4-5: bytes identical after second rollback", detach_wb_cpp.read_bytes() == raw_base_w45)
+
+    rb_res_3 = cs_w45.rollback()
+    check("W4-5: third rollback succeeds idempotently", rb_res_3.get("status") == "rolled_back")
+    check("W4-5: bytes identical after third rollback", detach_wb_cpp.read_bytes() == raw_base_w45)
+
 finally:
     shutil.rmtree(wb_ws, ignore_errors=True)
 
