@@ -716,6 +716,8 @@ finally:
 # earlier rollback point was destroyed while rollback() still reported
 # success (restoring an intermediate state).
 uniq_ws = Path(tempfile.mkdtemp(prefix="cade_backup_unique_"))
+# Hoisted out of the try body so the finally clause can always reach it.
+rv_root = Path(tempfile.mkdtemp(prefix="cade_rv_test_"))
 try:
     src = uniq_ws / "UniqFW.edu" / "UniqMod.m" / "src"
     src.mkdir(parents=True)
@@ -789,8 +791,10 @@ try:
     # .mkcreate_run.bat into the workspace itself, and its cleanup used to sit
     # inside the try body — so the timeout and exception handlers returned
     # straight past it and left both files in the user's workspace.
-    mk_ws = workspace / "runtime_view_ws"
-    fake_catia = workspace / "fake_catia"
+    # These fixtures live outside `workspace`: its own finally (L626) already
+    # removed the root, so anything re-created under it survived the run.
+    mk_ws = rv_root / "runtime_view_ws"
+    fake_catia = rv_root / "fake_catia"
     mk_cmd_dir = fake_catia / "win_b64" / "code" / "command"
     mk_cmd_dir.mkdir(parents=True, exist_ok=True)
     (mk_cmd_dir / "mkinit.bat").write_text("@echo off\r\n", encoding="ascii")
@@ -800,7 +804,7 @@ try:
 
     # Same tool layout minus mkinit.bat, to exercise the early return that
     # fires before the temp paths are assigned.
-    noinit_catia = workspace / "fake_catia_noinit"
+    noinit_catia = rv_root / "fake_catia_noinit"
     noinit_dir = noinit_catia / "win_b64" / "code" / "command"
     noinit_dir.mkdir(parents=True, exist_ok=True)
     (noinit_dir / "mkCreateRuntimeView.bat").write_text(
@@ -890,9 +894,7 @@ try:
           _mkcreate_residue() == [], str(_mkcreate_residue()))
 finally:
     shutil.rmtree(uniq_ws, ignore_errors=True)
-    shutil.rmtree(mk_ws, ignore_errors=True)
-    shutil.rmtree(fake_catia, ignore_errors=True)
-    shutil.rmtree(noinit_catia, ignore_errors=True)
+    shutil.rmtree(rv_root, ignore_errors=True)
 
 print(f"\nProduction regressions: {passed}/{total}")
 if failures:

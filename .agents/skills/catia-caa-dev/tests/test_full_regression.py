@@ -49,6 +49,7 @@ QUARANTINE = {
 import argparse
 import importlib
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -546,6 +547,8 @@ if act_mod:
                 check(label, False, str(e)[:60])
     except Exception as e:
         check("7.1 ActionContext", False, str(e)[:60])
+    finally:
+        shutil.rmtree(tmp_ws, ignore_errors=True)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -729,6 +732,7 @@ if bk_mod:
     check("10.8 rollback_operation fn", callable(bk_mod.rollback_operation))
     check("10.9 list_rollback_points fn", callable(bk_mod.list_rollback_points))
     check("10.10 cleanup_backups fn", callable(bk_mod.cleanup_backups))
+    shutil.rmtree(tmp, ignore_errors=True)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -769,6 +773,8 @@ if an_mod:
             "11.9 get_all_workbenches", isinstance(snapshot.get_all_workbenches(), list)
         )
 
+    shutil.rmtree(tmp, ignore_errors=True)
+
 
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 12: CATIA Detection & Environment (8 tests)
@@ -807,13 +813,18 @@ if env_mod:
     # always rewrites its config_file, and the shared `env` above points at
     # the real config/caa_env_config.txt — writing it from a test would
     # clobber the machine's WORKSPACE setting on every regression run.
+    _tmp_cfg_dir = None
     try:
-        _tmp_cfg = Path(tempfile.mkdtemp()) / "caa_env_config_test.txt"
+        _tmp_cfg_dir = Path(tempfile.mkdtemp())
+        _tmp_cfg = _tmp_cfg_dir / "caa_env_config_test.txt"
         env_autodetect = env_mod.CAAEnvironment(config_file=_tmp_cfg)
         env_autodetect._auto_detect()
         check("12.6 _auto_detect no error", _tmp_cfg.exists())
     except Exception as e:
         check("12.6 _auto_detect", False, str(e)[:60])
+    finally:
+        if _tmp_cfg_dir:
+            shutil.rmtree(_tmp_cfg_dir, ignore_errors=True)
 
     check("12.7 get_info returns dict", isinstance(env.get_info(), dict))
 
@@ -844,7 +855,8 @@ if cade_mod:
 
 # Test via actions
 if act_mod:
-    ctx = act_mod.ActionContext(str(Path(tempfile.mkdtemp(prefix="cade_test_"))))
+    tmp_deps = Path(tempfile.mkdtemp(prefix="cade_test_"))
+    ctx = act_mod.ActionContext(str(tmp_deps))
     try:
         r = act_mod.get_dependencies(ctx, "TestCmd", "command")
         check(
@@ -864,6 +876,8 @@ if act_mod:
         )
     except Exception as e:
         check("13.5 get_dependents", False, str(e)[:60])
+
+    shutil.rmtree(tmp_deps, ignore_errors=True)
 
 # Version strategy
 vs_mod, _ = safe_import("version_strategy")
@@ -1011,6 +1025,7 @@ if ut_mod:
     tmp = Path(tempfile.mkdtemp())
     result = ut_mod.validate_framework_structure(tmp)
     check("17.6 validate_framework_structure", isinstance(result, dict))
+    shutil.rmtree(tmp, ignore_errors=True)
 
     # output_json (just check it doesn't crash; it's sys.exit)
     check("17.7 output_json callable", callable(ut_mod.output_json))
@@ -1082,7 +1097,8 @@ print("=" * 70)
 
 # 19.1 Intent → Action chain
 if int_mod and act_mod:
-    ctx = act_mod.ActionContext(str(Path(tempfile.mkdtemp(prefix="cade_int_"))))
+    _tmp19a = Path(tempfile.mkdtemp(prefix="cade_int_"))
+    ctx = act_mod.ActionContext(str(_tmp19a))
     # Test create_feature intent
     r = int_mod.create_feature(
         ctx,
@@ -1110,11 +1126,14 @@ if int_mod and act_mod:
         r.get("status", "?"),
     )
 
+    shutil.rmtree(_tmp19a, ignore_errors=True)
+
 
 
 # 19.2 Action → ChangeSet chain
 if act_mod and cs_mod:
-    ctx = act_mod.ActionContext(str(Path(tempfile.mkdtemp(prefix="cade_test_"))))
+    _tmp19b = Path(tempfile.mkdtemp(prefix="cade_test_"))
+    ctx = act_mod.ActionContext(str(_tmp19b))
     r = act_mod.create_command(
         ctx, name="ChainTest", module="TestMod.m", framework="TestFw"
     )
@@ -1123,6 +1142,7 @@ if act_mod and cs_mod:
         isinstance(r, dict) and "changeset" in r,
         r.get("status", "?"),
     )
+    shutil.rmtree(_tmp19b, ignore_errors=True)
 
 # 19.3 Changeset → Backup chain
 if cs_mod and bk_mod:
@@ -1132,6 +1152,7 @@ if cs_mod and bk_mod:
     bm2 = bk_mod.BackupManager(tmp2)
     bid2 = bm2.create_backup(cs)
     check("19.5 ChangeSet → Backup chain", len(bid2) > 0)
+    shutil.rmtree(tmp2, ignore_errors=True)
 
 # 19.4 Snapshot → Refactor chain
 if mm and ref_mod:
@@ -1146,8 +1167,10 @@ if spec_mod and gen_mod:
     try:
         gen = gen_mod.TemplateGenerator()
         ispec = spec_mod.InterfaceSpec(name="IChainTest", module="Mod.m")
-        r = gen.generate_from_spec(ispec, Path(tempfile.mkdtemp(prefix="cade_spec_")))
+        _spec_root = Path(tempfile.mkdtemp(prefix="cade_spec_"))
+        r = gen.generate_from_spec(ispec, _spec_root)
         check("19.7 Spec -> Generator chain", isinstance(r, dict), r.get("status", "?"))
+        shutil.rmtree(_spec_root, ignore_errors=True)
     except Exception as e:
         check("19.7 Spec -> Generator chain", False, str(e)[:60])
 

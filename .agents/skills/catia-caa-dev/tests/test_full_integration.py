@@ -696,6 +696,10 @@ report.test("list_workbenches", test_action_list_workbenches)
 report.test("list_interfaces", test_action_list_interfaces)
 report.test("create_command ChangeSet", test_action_create_command_changeset)
 
+# WS6 fixtures are shared by the GROUP 6 tests above and nothing reads them
+# afterwards, so the workspace can be released here.
+shutil.rmtree(WS6, ignore_errors=True)
+
 
 # ───────────────────────────────────────────────────────────────────
 #  GROUP 7: Environment & Build

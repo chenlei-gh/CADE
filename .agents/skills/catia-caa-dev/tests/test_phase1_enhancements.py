@@ -9,6 +9,7 @@ Test new features added in Phase 1:
   4. Breaking Dependents Detection
 """
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -319,3 +320,5 @@ print("  [OK] Find Orphaned Files")
 print("  [OK] RelationType Enum")
 print("  [OK] Manual Graph Operations")
 print("\nPhase 1 implementation verified!")
+
+shutil.rmtree(WORKSPACE, ignore_errors=True)

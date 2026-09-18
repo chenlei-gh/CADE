@@ -24,6 +24,7 @@ not as pass/fail) so CI/sandboxes without that workspace still work.
 """
 
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -406,3 +407,5 @@ print("=" * 70)
 
 if passed == total:
     print("\n  >>> All Build Time & Run Time commands working <<<")
+
+shutil.rmtree(WORKSPACE, ignore_errors=True)
