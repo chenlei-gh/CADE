@@ -54,7 +54,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from analyzer import WorkspaceAnalyzer
 from changeset import ChangeSet, Patch
@@ -675,56 +675,6 @@ def create_command(
                 operation="insert_after_brace",
                 target="void " + addin_name + "::CreateCommands()",
                 content=f'    new {name}Hdr("{cpp_base}.{name}", "{cpp_base}", "{name}", (void*)NULL);',
-            ))
-        # 4c. Add to CreateToolbars()
-        #
-        # IMPORTANT: SetAccessChild(pToolbar, X) is `pToolbar->SetChild(X)` —
-        # it sets the container's SOLE child pointer, it does NOT append.
-        # Calling it once per command (as a naive generator would) silently
-        # overwrites the previous binding, so only the LAST-registered
-        # command ever gets attached to the toolbar; earlier starters are
-        # created but never linked in, making their buttons invisible and
-        # unclickable (verified against official CAADoc samples, e.g.
-        # CAAAfrGeometryWks.cpp, which chain siblings with SetAccessNext).
-        #
-        # Correct pattern: the FIRST starter in a container uses
-        # SetAccessChild(container, first); every subsequent sibling must be
-        # linked with SetAccessNext(previous, next) instead.
-        if f'p{name}Cmd' not in addin_text:
-            existing_starters = re.findall(
-                r'NewAccess\(CATCmdStarter,\s*(\w+),', addin_text
-            )
-            new_var = f'p{name}Cmd'
-            if existing_starters:
-                prev_var = existing_starters[-1]
-                link_line = f'    SetAccessNext({prev_var}, {new_var});'
-                # Anchor on whichever statement actually linked prev_var into
-                # the toolbar/chain (either the first SetAccessChild call, or
-                # a SetAccessNext call if prev_var was itself a later
-                # sibling). Using the exact linking statement — rather than
-                # the NewAccess declaration line — guarantees the new
-                # SetAccessNext is appended immediately after the current
-                # end of the linked list, regardless of how many commands
-                # already exist.
-                link_match = re.search(
-                    r'(?:SetAccessChild\(pToolbar,\s*' + re.escape(prev_var) + r'\);'
-                    r'|SetAccessNext\(\w+,\s*' + re.escape(prev_var) + r'\);)',
-                    addin_text,
-                )
-                if not link_match:
-                    raise ValueError(
-                        f"Could not locate linking statement for existing "
-                        f"toolbar starter '{prev_var}' in {addin_cpp}"
-                    )
-                anchor_target = link_match.group(0)
-            else:
-                link_line = f'    SetAccessChild(pToolbar, {new_var});'
-                anchor_target = 'SetAccessChild(pToolbar'
-            cs.add_patch(Patch(
-                file=addin_cpp,
-                operation="insert_after",
-                target=anchor_target,
-                content=f'    NewAccess(CATCmdStarter, {new_var}, {name});\n    SetAccessCommand({new_var}, "{cpp_base}.{name}");\n{link_line}',
             ))
 
     # --- 5. Ensure Imakefile has WIZARD_LINK_MODULES (append, don't overwrite) ---
@@ -1765,6 +1715,466 @@ def add_command_to_workbench(
         header_id=target_header_id,
         load_name=target_load_name,
         class_name=target_class_name,
+    )
+    return _result(cs)
+
+
+def _mask_comments_and_strings(code: str) -> str:
+    """Mask C/C++ comments and string/char literals with spaces, preserving exact length and newlines."""
+    pattern = re.compile(
+        r'//[^\r\n]*'
+        r'|/\*[\s\S]*?\*/'
+        r'|"(?:\\.|[^"\\])*"'
+        r"|'(?:\\.|[^'\\])*'",
+        re.MULTILINE,
+    )
+
+    def replacer(match):
+        s = match.group(0)
+        return re.sub(r'[^\r\n]', ' ', s)
+
+    return pattern.sub(replacer, code)
+
+
+def _extract_create_toolbars_scope(text: str) -> Optional[Tuple[str, int, int]]:
+    """Extract body and character boundaries of CreateToolbars() method.
+
+    Returns (body, body_start_idx, body_end_idx) where:
+      - body_start_idx is the index right after the opening '{'
+      - body_end_idx is the index of the closing '}'
+      - body is text[body_start_idx:body_end_idx]
+    Returns None if CreateToolbars() or its balanced braces cannot be found.
+    """
+    masked = _mask_comments_and_strings(text)
+    m = re.search(r"CATCmdContainer\s*\*\s*(?:\w+::)?CreateToolbars\s*\([^)]*\)", masked)
+    if not m:
+        return None
+
+    open_brace_idx = masked.find('{', m.end())
+    if open_brace_idx == -1:
+        return None
+
+    depth = 0
+    end_brace_idx = -1
+    for i in range(open_brace_idx, len(masked)):
+        ch = masked[i]
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                end_brace_idx = i
+                break
+
+    if depth != 0 or end_brace_idx == -1:
+        return None
+
+    body_start_idx = open_brace_idx + 1
+    body_end_idx = end_brace_idx
+    body = text[body_start_idx:body_end_idx]
+    return body, body_start_idx, body_end_idx
+
+
+def _sanitize_identifier(name: str) -> str:
+    """Sanitize a command or header ID to a valid C++ identifier token."""
+    token = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+    if token.endswith("Hdr") and len(token) > 3:
+        token = token[:-3]
+    if not token or token == "_":
+        token = "Cmd"
+    if token[0].isdigit():
+        token = f"_{token}"
+    return token
+
+
+def _discover_toolbars(body: str) -> List[Dict[str, str]]:
+    """Discover all toolbars in CreateToolbars body.
+
+    A container is recognized as a Toolbar iff it has both:
+      1. NewAccess(CATCmdContainer, var, id)
+      2. AddToolbarView(var, ...)
+    Menubars and other containers lacking AddToolbarView are excluded (C1 / RB13).
+    """
+    stripped = strip_c_comments(body)
+    containers = re.findall(
+        r'NewAccess\s*\(\s*CATCmdContainer\s*,\s*(\w+)\s*,\s*(\w+)\s*\)',
+        stripped,
+    )
+    toolbars = []
+    seen_vars = set()
+    for var, tlb_id in containers:
+        if var in seen_vars:
+            continue
+        if re.search(r'\bAddToolbarView\s*\(\s*' + re.escape(var) + r'\s*,', stripped):
+            toolbars.append({"var": var, "id": tlb_id})
+            seen_vars.add(var)
+    return toolbars
+
+
+def _trace_starter_chain(
+    body: str,
+    tlb_var: str,
+    target_header_id: str,
+) -> Dict[str, Any]:
+    """Trace the starter chain for a specific toolbar container.
+
+    Checks:
+      - Starter declarations: NewAccess(CATCmdStarter, var, id)
+      - Single child entry: SetAccessChild(tlb_var, first_starter)
+      - Linked list siblings: SetAccessNext(prev, next)
+      - Commands: SetAccessCommand(var, "HeaderID")
+      - Anomaly detection (RB15/RB16):
+          * Incomplete syntax (missing/extra args)
+          * Multiple SetAccessChild on tlb_var
+          * Undefined starters in chain
+          * Forking / branching (multiple nexts from same starter)
+          * Cycles in chain
+          * Convergence (multiple predecessors to same starter)
+    """
+    stripped = strip_c_comments(body)
+
+    # 1. Incomplete statement syntax checks (RB16)
+    if re.search(r'\bSetAccessChild\s*\(\s*[^,)]+\s*\)', stripped):
+        raise ValueError("Incomplete SetAccessChild statement with missing arguments in CreateToolbars()")
+    if re.search(r'\bSetAccessNext\s*\(\s*[^,)]+\s*\)', stripped):
+        raise ValueError("Incomplete SetAccessNext statement with missing arguments in CreateToolbars()")
+    if re.search(r'\bSetAccessCommand\s*\(\s*[^,)]+\s*\)', stripped):
+        raise ValueError("Incomplete SetAccessCommand statement with missing arguments in CreateToolbars()")
+    if re.search(r'\bSetAccessChild\s*\(\s*[^,)]+,\s*[^,)]+,\s*[^)]+\)', stripped):
+        raise ValueError("Malformed SetAccessChild statement with too many arguments in CreateToolbars()")
+    if re.search(r'\bSetAccessNext\s*\(\s*[^,)]+,\s*[^,)]+,\s*[^)]+\)', stripped):
+        raise ValueError("Malformed SetAccessNext statement with too many arguments in CreateToolbars()")
+    if re.search(r'\bSetAccessCommand\s*\(\s*[^,)]+,\s*[^,)]+,\s*[^)]+\)', stripped):
+        raise ValueError("Malformed SetAccessCommand statement with too many arguments in CreateToolbars()")
+
+    # 2. Declared starters
+    starters = re.findall(r'\bNewAccess\s*\(\s*CATCmdStarter\s*,\s*(\w+)\s*,\s*(\w+)\s*\)', stripped)
+    declared_starters = {var: sid for var, sid in starters}
+
+    # 3. Children linked to toolbars
+    children = re.findall(r'\bSetAccessChild\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)', stripped)
+    tlb_children = [starter for c, starter in children if c == tlb_var]
+    if len(tlb_children) > 1:
+        raise ValueError(f"Multiple SetAccessChild calls found for toolbar container '{tlb_var}' ({tlb_children})")
+
+    # 4. Command headers
+    cmd_links = re.findall(r'\bSetAccessCommand\s*\(\s*(\w+)\s*,\s*"([^"]+)"\s*\)', stripped)
+    starter_headers: Dict[str, str] = {}
+    for s_var, hdr in cmd_links:
+        starter_headers[s_var] = hdr
+
+    if len(tlb_children) == 0:
+        return {
+            "chain": [],
+            "first_starter": None,
+            "last_starter": None,
+            "is_idempotent": False,
+            "starter_headers": starter_headers,
+        }
+
+    first_starter = tlb_children[0]
+    if first_starter not in declared_starters:
+        raise ValueError(f"Starter '{first_starter}' linked to toolbar '{tlb_var}' is not declared via NewAccess(CATCmdStarter, ...)")
+
+    # 5. Next links
+    next_links = re.findall(r'\bSetAccessNext\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)', stripped)
+    next_map: Dict[str, str] = {}
+    prev_map: Dict[str, str] = {}
+    for prev_var, next_var in next_links:
+        if prev_var in next_map:
+            raise ValueError(f"Fork/branching detected in toolbar chain: starter '{prev_var}' has multiple SetAccessNext calls")
+        if next_var in prev_map:
+            raise ValueError(f"Multiple predecessors point to starter '{next_var}' via SetAccessNext")
+        if next_var not in declared_starters:
+            raise ValueError(f"Starter '{next_var}' in SetAccessNext is not declared via NewAccess(CATCmdStarter, ...)")
+        next_map[prev_var] = next_var
+        prev_map[next_var] = prev_var
+
+    # 6. Trace chain
+    chain = [first_starter]
+    seen = {first_starter}
+    curr = first_starter
+    while curr in next_map:
+        nxt = next_map[curr]
+        if nxt in seen:
+            raise ValueError(f"Cycle detected in toolbar chain involving starter '{nxt}'")
+        chain.append(nxt)
+        seen.add(nxt)
+        curr = nxt
+
+    is_idempotent = any(starter_headers.get(s) == target_header_id for s in chain)
+
+    return {
+        "chain": chain,
+        "first_starter": first_starter,
+        "last_starter": chain[-1],
+        "is_idempotent": is_idempotent,
+        "starter_headers": starter_headers,
+    }
+
+
+def inspect_toolbar_mount(
+    ctx: ActionContext,
+    workbench_name: str,
+    header_id: str,
+    *,
+    toolbar_id: Optional[str] = None,
+    cs: Optional[ChangeSet] = None,
+) -> Dict:
+    """Inspect workbench and addin source to compute a deterministic ToolbarMountPlan.
+
+    Pure read-only inspection:
+      - Resolves workbench entity and addin source
+      - Extracts CreateToolbars() method scope
+      - Discovers toolbars via NewAccess(CATCmdContainer, ...) + AddToolbarView(...)
+      - Selects target toolbar according to C2 decision matrix (RB1~RB6)
+      - Traces starter chain & validates chain topology (RB15, RB16)
+      - Detects idempotency (C4 / RB10 / RB11)
+      - Generates sanitized, non-colliding starter variable names (RB12)
+      - Computes deterministic anchor statement and source offset
+    Returns a dict with status "ok" and a decoupled "plan" dict, or status "error".
+    """
+    if not header_id or not header_id.strip():
+        return {"status": "error", "error": "header_id must not be empty", "plan": None}
+
+    wbs = ctx.snapshot.get_all_workbenches()
+    wb = next((w for w in wbs if w.name.lower() == workbench_name.lower()), None)
+    if not wb:
+        return {"status": "error", "error": f"Workbench not found: {workbench_name}", "plan": None}
+
+    addin_source = wb.addin_source or wb.addin_source_path()
+    if not addin_source:
+        return {"status": "error", "error": f"Workbench '{workbench_name}' has no Addin source configured", "plan": None}
+
+    addin_str = str(addin_source)
+    old_content = None
+    if cs is not None and addin_str in cs.modified:
+        old_content = cs.modified[addin_str]
+    elif cs is not None and addin_str in cs.created:
+        old_content = cs.created[addin_str]
+    elif addin_source.exists():
+        old_content = addin_source.read_text(encoding="utf-8", errors="replace")
+
+    if old_content is None:
+        return {"status": "error", "error": f"Workbench '{workbench_name}' Addin source not found: {addin_source}", "plan": None}
+
+    scope = _extract_create_toolbars_scope(old_content)
+    if not scope:
+        return {"status": "error", "error": f"Could not locate CreateToolbars() in {addin_source}", "plan": None}
+
+    body, body_start_idx, body_end_idx = scope
+    toolbars = _discover_toolbars(body)
+
+    # C2 Decision Matrix (RB1~RB6)
+    if len(toolbars) == 0:
+        return {
+            "status": "error",
+            "error": f"No toolbars found in CreateToolbars() for workbench '{workbench_name}'. Cannot attach command without an existing toolbar.",
+            "plan": None,
+        }
+
+    target_tlb = None
+    if toolbar_id is None:
+        if len(toolbars) == 1:
+            target_tlb = toolbars[0]
+        else:
+            avail_ids = [t["id"] for t in toolbars]
+            return {
+                "status": "error",
+                "error": f"Multiple toolbars found in CreateToolbars() for workbench '{workbench_name}' ({avail_ids}). Please specify toolbar_id explicitly.",
+                "plan": None,
+            }
+    else:
+        target_tlb = next((t for t in toolbars if t["id"].lower() == toolbar_id.lower()), None)
+        if not target_tlb:
+            avail_ids = [t["id"] for t in toolbars]
+            return {
+                "status": "error",
+                "error": f"Toolbar '{toolbar_id}' not found in CreateToolbars() for workbench '{workbench_name}'. Available: {avail_ids}",
+                "plan": None,
+            }
+
+    tlb_var = target_tlb["var"]
+    try:
+        chain_info = _trace_starter_chain(body, tlb_var, header_id)
+    except ValueError as e:
+        return {"status": "error", "error": str(e), "plan": None}
+
+    chain = chain_info["chain"]
+    is_idempotent = chain_info["is_idempotent"]
+    last_starter_var = chain_info["last_starter"]
+
+    # Generate sanitized starter names and resolve variable collision in body (RB12)
+    token = _sanitize_identifier(header_id)
+    base_var = f"p{token}Str"
+    base_id = f"{token}Str"
+
+    new_starter_var = base_var
+    new_starter_id = base_id
+    suffix = 2
+    while re.search(r'\b' + re.escape(new_starter_var) + r'\b', body):
+        new_starter_var = f"{base_var}_{suffix}"
+        new_starter_id = f"{base_id}_{suffix}"
+        suffix += 1
+
+    # Determine insertion mode and anchor statement
+    if len(chain) == 0:
+        insertion_mode = "child"
+        last_starter_var = None
+        m_view = re.search(r'AddToolbarView\s*\(\s*' + re.escape(tlb_var) + r'\s*,[^;]*\);', body)
+        if m_view:
+            anchor_stmt = m_view.group(0)
+            anchor_end_in_body = m_view.end()
+        else:
+            m_new = re.search(r'NewAccess\s*\(\s*CATCmdContainer\s*,\s*' + re.escape(tlb_var) + r'\s*,[^;]*\);', body)
+            if not m_new:
+                return {"status": "error", "error": f"Could not locate anchor for toolbar '{tlb_var}' in CreateToolbars()", "plan": None}
+            anchor_stmt = m_new.group(0)
+            anchor_end_in_body = m_new.end()
+    else:
+        insertion_mode = "next"
+        patterns = [
+            r'NewAccess\s*\(\s*CATCmdStarter\s*,\s*' + re.escape(last_starter_var) + r'\s*,[^;]*\);',
+            r'SetAccessCommand\s*\(\s*' + re.escape(last_starter_var) + r'\s*,[^;]*\);',
+            r'SetAccessChild\s*\(\s*' + re.escape(tlb_var) + r'\s*,\s*' + re.escape(last_starter_var) + r'\s*\);',
+            r'SetAccessNext\s*\(\s*\w+\s*,\s*' + re.escape(last_starter_var) + r'\s*\);',
+        ]
+        best_end = -1
+        best_stmt = None
+        for pat in patterns:
+            for m in re.finditer(pat, body):
+                if m.end() > best_end:
+                    best_end = m.end()
+                    best_stmt = m.group(0)
+
+        if not best_stmt:
+            return {
+                "status": "error",
+                "error": f"Could not locate anchor statement for existing starter '{last_starter_var}' in CreateToolbars()",
+                "plan": None,
+            }
+        anchor_stmt = best_stmt
+        anchor_end_in_body = best_end
+
+    anchor_offset = body_start_idx + anchor_end_in_body
+    anchor_line = old_content[:anchor_offset].count('\n') + 1
+
+    plan = {
+        "toolbar_id": target_tlb["id"],
+        "toolbar_var": target_tlb["var"],
+        "insertion_mode": insertion_mode,
+        "anchor_statement": anchor_stmt,
+        "anchor_line": anchor_line,
+        "anchor_offset": anchor_offset,
+        "last_starter_var": last_starter_var,
+        "new_starter_var": new_starter_var,
+        "new_starter_id": new_starter_id,
+        "is_idempotent": is_idempotent,
+    }
+
+    return {
+        "status": "ok",
+        "error": None,
+        "workbench": wb,
+        "addin_source": addin_source,
+        "addin_content": old_content,
+        "plan": plan,
+    }
+
+
+def attach_command_to_toolbar(
+    ctx: ActionContext,
+    workbench_name: str,
+    header_id: str,
+    *,
+    toolbar_id: Optional[str] = None,
+    cs: Optional[ChangeSet] = None,
+) -> Dict:
+    """Attach a command HeaderID to a toolbar in workbench Addin source.
+
+    Inserts Starter creation and linking in CreateToolbars():
+      - First starter uses SetAccessChild(pToolbar, pStarter)
+      - Subsequent starters use SetAccessNext(pPrevStarter, pNextStarter)
+    Guarantees:
+      - Toolbar isolation (RB9)
+      - Idempotent no-op if (ToolbarID, HeaderID) already mounted (RB10)
+      - Multi-toolbar support (RB11)
+      - Variable name collision renaming (RB12)
+      - Menubar exclusion (RB13)
+      - Zero mutation on pre-validation errors (RB14)
+    """
+    inspection = inspect_toolbar_mount(
+        ctx,
+        workbench_name=workbench_name,
+        header_id=header_id,
+        toolbar_id=toolbar_id,
+        cs=cs,
+    )
+    if inspection["status"] == "error":
+        return _error(inspection["error"])
+
+    plan = inspection["plan"]
+    addin_source = inspection["addin_source"]
+    addin_str = str(addin_source)
+    old_content = inspection["addin_content"]
+    content = old_content
+
+    cs = cs if cs is not None else ChangeSet(
+        action="attach_command_to_toolbar",
+        description=f"Attach header '{header_id}' to toolbar '{plan['toolbar_id']}' in workbench '{workbench_name}'",
+    )
+
+    if not plan["is_idempotent"]:
+        scope = _extract_create_toolbars_scope(content)
+        if not scope:
+            return _error(f"Could not locate CreateToolbars() in {addin_source}")
+        _, body_start, body_end = scope
+
+        anchor = plan["anchor_statement"]
+        idx = content.find(anchor, body_start)
+        if idx == -1 or idx >= body_end:
+            return _error(f"Could not locate anchor statement in CreateToolbars(): {anchor}")
+
+        line_start = content.rfind('\n', 0, idx)
+        line_start = 0 if line_start == -1 else line_start + 1
+        indent = ""
+        while line_start < idx and content[line_start] in (' ', '\t'):
+            indent += content[line_start]
+            line_start += 1
+        if not indent:
+            indent = "    "
+
+        if plan["insertion_mode"] == "child":
+            lines = [
+                f"{indent}NewAccess(CATCmdStarter, {plan['new_starter_var']}, {plan['new_starter_id']});",
+                f"{indent}SetAccessCommand({plan['new_starter_var']}, \"{header_id}\");",
+                f"{indent}SetAccessChild({plan['toolbar_var']}, {plan['new_starter_var']});",
+            ]
+        else:
+            lines = [
+                f"{indent}NewAccess(CATCmdStarter, {plan['new_starter_var']}, {plan['new_starter_id']});",
+                f"{indent}SetAccessCommand({plan['new_starter_var']}, \"{header_id}\");",
+                f"{indent}SetAccessNext({plan['last_starter_var']}, {plan['new_starter_var']});",
+            ]
+        block = "\n".join(lines)
+
+        end_of_line = content.find('\n', idx + len(anchor))
+        if end_of_line != -1:
+            content = content[:end_of_line + 1] + block + "\n" + content[end_of_line + 1:]
+        else:
+            content = content + "\n" + block
+
+        if addin_str in cs.created:
+            cs.created[addin_str] = content
+        else:
+            cs.add_modify(addin_source, content)
+
+    cs.merge_metadata(
+        workbench=workbench_name,
+        toolbar_id=plan["toolbar_id"],
+        header_id=header_id,
+        starter_var=plan["new_starter_var"],
+        is_idempotent=plan["is_idempotent"],
     )
     return _result(cs)
 

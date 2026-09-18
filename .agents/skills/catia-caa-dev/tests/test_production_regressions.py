@@ -1581,6 +1581,333 @@ try:
 finally:
     shutil.rmtree(ra_ws, ignore_errors=True)
 
+# ── R-3-B: Explicit Toolbar Mounting (attach_command_to_toolbar & inspect_toolbar_mount) ──
+# RB1  (0 Toolbar): Returns error when CreateToolbars() contains no toolbars
+# RB2  (1 Toolbar 隐式选择): Auto-selects the only toolbar when toolbar_id is omitted
+# RB3  (1 Toolbar 显式选择): Selects the toolbar when toolbar_id matches
+# RB4  (>1 Toolbar 无 ID): Rejects ambiguity with error listing available toolbars
+# RB5  (>1 Toolbar 显式选择): Selects the specified toolbar among multiple
+# RB6  (无效 toolbar_id): Returns error when requested toolbar_id does not exist
+# RB7  (空 Toolbar 挂载): Uses SetAccessChild on empty toolbar container
+# RB8  (非空 Toolbar 挂载): Uses SetAccessNext on existing starter chain
+# RB9  (多 Toolbar 链表隔离): Mutating one toolbar does not affect or cross-link another toolbar
+# RB10 (MountKey 幂等零变更): (ToolbarID, HeaderID) already mounted -> ChangeSet zero mutation
+# RB11 (跨 Toolbar 复用同一 Header): Same HeaderID mounted to different toolbar creates independent starter
+# RB12 (Starter 变量名冲突去重): Colliding starter variable name gets deterministic numeric suffix
+# RB13 (Menubar 容器排除): Container without AddToolbarView is ignored, not recognized as toolbar
+# RB14 (事务门禁零变更): Inspection error results in changeset=None, leaves caller CS untouched
+# RB15 (异常链表拓扑拦截): Forking / cycle / multiple SetAccessChild detected and rejected as hard error
+# RB16 (语句残缺 / 缺失方法拦截): Incomplete C++ statement or missing CreateToolbars() rejected as hard error
+rb_ws = Path(tempfile.mkdtemp(prefix="cade_rb_test_"))
+try:
+    from actions import attach_command_to_toolbar, inspect_toolbar_mount
+
+    fw_dir = rb_ws / "TestFW.edu"
+    (fw_dir / "IdentityCard").mkdir(parents=True)
+    (fw_dir / "IdentityCard" / "IdentityCard.h").write_text("// ic", encoding="utf-8")
+    (fw_dir / "Imakefile.mk").write_text("", encoding="utf-8")
+
+    mod_dir = fw_dir / "TestMod.m"
+    src_dir = mod_dir / "src"
+    src_dir.mkdir(parents=True)
+    (mod_dir / "Imakefile.mk").write_text("BUILT_OBJECT_TYPE=SHARED LIBRARY", encoding="utf-8")
+
+    addin_cpp = src_dir / "SampleWorkbenchAddin.cpp"
+    addin_header = (
+        '#include "SampleWorkbenchAddin.h"\n'
+        '#include <iostream>\n\n'
+        'CATIAfrGeneralWksAddin\n\n'
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '}\n\n'
+    )
+
+    ctx = ActionContext(rb_ws)
+
+    # ── RB1: 0 Toolbar ──
+    addin_cpp.write_text(
+        addin_header +
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    return NULL;\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    r_rb1 = attach_command_to_toolbar(ctx, "SampleWorkbench", "DiskCmdHdr")
+    check("RB1: 0 toolbar returns error", r_rb1.get("status") == "error", str(r_rb1))
+    check("RB1: error message explains no toolbars found",
+          "no toolbars found" in r_rb1.get("message", "").lower(), r_rb1.get("message", ""))
+    check("RB1: changeset is None (zero mutation)", r_rb1.get("changeset") is None, str(r_rb1))
+
+    # ── RB13: Menubar 容器排除 (仅含 Menubar 仍报 0 toolbar) ──
+    addin_cpp.write_text(
+        addin_header +
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pMenuBar, MenuBar);\n'
+        '    SetAddinMenu(pMenuBar, 1);\n'
+        '    return pMenuBar;\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    r_rb13 = attach_command_to_toolbar(ctx, "SampleWorkbench", "DiskCmdHdr")
+    check("RB13: Menubar lacking AddToolbarView is excluded (0 toolbar error)",
+          r_rb13.get("status") == "error" and "no toolbars found" in r_rb13.get("message", "").lower(),
+          str(r_rb13))
+
+    # ── RB2 & RB7: 1 Toolbar 隐式选择 & 空 Toolbar 挂载 (SetAccessChild) ──
+    addin_cpp.write_text(
+        addin_header +
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pSingleTlb, SingleTlb);\n'
+        '    AddToolbarView(pSingleTlb, 1, Right);\n'
+        '    return pSingleTlb;\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    r_rb2 = attach_command_to_toolbar(ctx, "SampleWorkbench", "FirstCmdHdr")
+    check("RB2: 1 toolbar implicit selection succeeds", r_rb2.get("status") in ("success", "pending"), str(r_rb2))
+    cs_rb2 = r_rb2.get("changeset", {})
+    check("RB2: metadata has selected toolbar_id", cs_rb2.get("metadata", {}).get("toolbar_id") == "SingleTlb", str(cs_rb2))
+    ChangeSet.from_dict(cs_rb2).apply(workspace_root=rb_ws)
+
+    content_rb2 = addin_cpp.read_text(encoding="utf-8")
+    check("RB7: empty toolbar uses SetAccessChild",
+          "SetAccessChild(pSingleTlb, pFirstCmdStr);" in content_rb2, content_rb2)
+    check("RB7: creates Starter with correct NewAccess",
+          "NewAccess(CATCmdStarter, pFirstCmdStr, FirstCmdStr);" in content_rb2, content_rb2)
+    check("RB7: binds HeaderID via SetAccessCommand",
+          'SetAccessCommand(pFirstCmdStr, "FirstCmdHdr");' in content_rb2, content_rb2)
+
+    # ── RB8: 非空 Toolbar 挂载 (SetAccessNext) ──
+    r_rb8 = attach_command_to_toolbar(ctx, "SampleWorkbench", "SecondCmdHdr")
+    check("RB8: appending to non-empty toolbar succeeds", r_rb8.get("status") in ("success", "pending"), str(r_rb8))
+    cs_rb8 = r_rb8.get("changeset", {})
+    ChangeSet.from_dict(cs_rb8).apply(workspace_root=rb_ws)
+
+    content_rb8 = addin_cpp.read_text(encoding="utf-8")
+    check("RB8: non-empty toolbar uses SetAccessNext linking to predecessor",
+          "SetAccessNext(pFirstCmdStr, pSecondCmdStr);" in content_rb8, content_rb8)
+    check("RB8: original SetAccessChild is preserved intact",
+          "SetAccessChild(pSingleTlb, pFirstCmdStr);" in content_rb8, content_rb8)
+
+    # ── RB3: 1 Toolbar 显式选择 ──
+    r_rb3 = attach_command_to_toolbar(ctx, "SampleWorkbench", "ThirdCmdHdr", toolbar_id="SingleTlb")
+    check("RB3: explicit toolbar_id matching the 1 toolbar succeeds",
+          r_rb3.get("status") in ("success", "pending"), str(r_rb3))
+    cs_rb3 = r_rb3.get("changeset", {})
+    ChangeSet.from_dict(cs_rb3).apply(workspace_root=rb_ws)
+
+    content_rb3 = addin_cpp.read_text(encoding="utf-8")
+    check("RB3: third command linked via SetAccessNext",
+          "SetAccessNext(pSecondCmdStr, pThirdCmdStr);" in content_rb3, content_rb3)
+
+    # ── RB6: 无效 toolbar_id ──
+    r_rb6 = attach_command_to_toolbar(ctx, "SampleWorkbench", "InvalidTlbCmdHdr", toolbar_id="NonExistentTlb")
+    check("RB6: returns error when toolbar_id does not exist", r_rb6.get("status") == "error", str(r_rb6))
+    check("RB6: error message indicates missing toolbar and lists available",
+          "NonExistentTlb" in r_rb6.get("message", "") and "SingleTlb" in r_rb6.get("message", ""),
+          r_rb6.get("message", ""))
+    check("RB6: changeset is None on invalid toolbar_id", r_rb6.get("changeset") is None, str(r_rb6))
+
+    # ── RB10: MountKey 幂等零变更 ──
+    r_rb10 = attach_command_to_toolbar(ctx, "SampleWorkbench", "SecondCmdHdr", toolbar_id="SingleTlb")
+    check("RB10: already mounted command returns pending", r_rb10.get("status") in ("success", "pending"), str(r_rb10))
+    cs_rb10 = r_rb10.get("changeset", {})
+    check("RB10: created dict is empty on idempotent mount", cs_rb10.get("created") == {}, str(cs_rb10))
+    check("RB10: modified dict is empty on idempotent mount", cs_rb10.get("modified") == {}, str(cs_rb10))
+    check("RB10: metadata flags is_idempotent=True",
+          cs_rb10.get("metadata", {}).get("is_idempotent") is True, str(cs_rb10))
+
+    # ── RB4 & RB5: 多 Toolbar 场景 (无 ID 拒绝猜测 & 显式选择) ──
+    addin_multi = (
+        addin_header +
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pTlb1, FirstTlb);\n'
+        '    AddToolbarView(pTlb1, 1, Right);\n'
+        '    NewAccess(CATCmdStarter, pS1, S1);\n'
+        '    SetAccessCommand(pS1, "Cmd1Hdr");\n'
+        '    SetAccessChild(pTlb1, pS1);\n\n'
+        '    NewAccess(CATCmdContainer, pTlb2, SecondTlb);\n'
+        '    AddToolbarView(pTlb2, 1, Bottom);\n'
+        '    NewAccess(CATCmdStarter, pS2, S2);\n'
+        '    SetAccessCommand(pS2, "OtherCmdHdr");\n'
+        '    SetAccessChild(pTlb2, pS2);\n\n'
+        '    return pTlb1;\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_multi, encoding="utf-8")
+
+    r_rb4 = attach_command_to_toolbar(ctx, "SampleWorkbench", "MultiTestCmdHdr")
+    check("RB4: >1 toolbar without toolbar_id returns error", r_rb4.get("status") == "error", str(r_rb4))
+    check("RB4: error message lists both available toolbars",
+          "FirstTlb" in r_rb4.get("message", "") and "SecondTlb" in r_rb4.get("message", ""),
+          r_rb4.get("message", ""))
+    check("RB4: changeset is None on ambiguity error", r_rb4.get("changeset") is None, str(r_rb4))
+
+    r_rb5 = attach_command_to_toolbar(ctx, "SampleWorkbench", "MultiTestCmdHdr", toolbar_id="SecondTlb")
+    check("RB5: explicit selection among multiple toolbars succeeds",
+          r_rb5.get("status") in ("success", "pending"), str(r_rb5))
+    cs_rb5 = r_rb5.get("changeset", {})
+    ChangeSet.from_dict(cs_rb5).apply(workspace_root=rb_ws)
+
+    content_rb5 = addin_cpp.read_text(encoding="utf-8")
+    check("RB5: attaches to specified SecondTlb",
+          "SetAccessNext(pS2, pMultiTestCmdStr);" in content_rb5, content_rb5)
+
+    # ── RB9: 多 Toolbar 链表隔离性 ──
+    check("RB9: FirstTlb starter pS1 has no SetAccessNext",
+          "SetAccessNext(pS1," not in content_rb5, content_rb5)
+    check("RB9: FirstTlb remains isolated and unchanged",
+          "SetAccessChild(pTlb1, pS1);" in content_rb5, content_rb5)
+
+    # ── RB11: 跨 Toolbar 复用同一 Header (在不同 Toolbar 独立挂载) ──
+    # Cmd1Hdr is in FirstTlb; attach it now to SecondTlb
+    r_rb11 = attach_command_to_toolbar(ctx, "SampleWorkbench", "Cmd1Hdr", toolbar_id="SecondTlb")
+    check("RB11: mounting same HeaderID to different toolbar succeeds",
+          r_rb11.get("status") in ("success", "pending"), str(r_rb11))
+    cs_rb11 = r_rb11.get("changeset", {})
+    check("RB11: not idempotent across different toolbars (produces mutation)",
+          cs_rb11.get("modified") != {}, str(cs_rb11))
+    ChangeSet.from_dict(cs_rb11).apply(workspace_root=rb_ws)
+
+    content_rb11 = addin_cpp.read_text(encoding="utf-8")
+    check("RB11: SecondTlb now links Cmd1 starter at the end of its chain",
+          'SetAccessCommand(pCmd1Str, "Cmd1Hdr");' in content_rb11 and
+          "SetAccessNext(pMultiTestCmdStr, pCmd1Str);" in content_rb11,
+          content_rb11)
+    check("RB11: FirstTlb original mount of Cmd1Hdr untouched",
+          'SetAccessCommand(pS1, "Cmd1Hdr");' in content_rb11 and
+          "SetAccessChild(pTlb1, pS1);" in content_rb11,
+          content_rb11)
+
+    # ── RB12: Starter 变量名冲突去重 ──
+    # pS1 is already in the file. S1Hdr sanitizes to token S1, base_var pS1Str.
+    # But let's check with an existing token: add NewAccess(CATCmdStarter, pDedupStr, ...)
+    addin_dedup = (
+        addin_header +
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pTlb1, FirstTlb);\n'
+        '    AddToolbarView(pTlb1, 1, Right);\n'
+        '    NewAccess(CATCmdStarter, pDedupStr, DedupStr);\n'
+        '    SetAccessCommand(pDedupStr, "OldHdr");\n'
+        '    SetAccessChild(pTlb1, pDedupStr);\n'
+        '    return pTlb1;\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_dedup, encoding="utf-8")
+    r_rb12 = attach_command_to_toolbar(ctx, "SampleWorkbench", "DedupHdr", toolbar_id="FirstTlb")
+    check("RB12: mounting header with colliding var name succeeds",
+          r_rb12.get("status") in ("success", "pending"), str(r_rb12))
+    cs_rb12 = r_rb12.get("changeset", {})
+    mod_rb12 = cs_rb12.get("modified", {})
+    content_rb12 = list(mod_rb12.values())[0]
+    check("RB12: colliding starter var renamed with suffix _2",
+          "pDedupStr_2" in content_rb12 and "DedupStr_2" in content_rb12,
+          content_rb12)
+    check("RB12: renamed starter linked via SetAccessNext",
+          "SetAccessNext(pDedupStr, pDedupStr_2);" in content_rb12,
+          content_rb12)
+
+    # ── RB14: 事务门禁零变更 (Pre-validation Gate) ──
+    caller_cs = ChangeSet(action="caller_test", description="caller owned CS")
+    r_rb14 = attach_command_to_toolbar(ctx, "SampleWorkbench", "GateCmdHdr", toolbar_id="BadTlb", cs=caller_cs)
+    check("RB14: gate failure returns error", r_rb14.get("status") == "error", str(r_rb14))
+    check("RB14: changeset is None in result", r_rb14.get("changeset") is None, str(r_rb14))
+    check("RB14: caller ChangeSet created is completely empty", caller_cs.created == {}, str(caller_cs.created))
+    check("RB14: caller ChangeSet modified is completely empty", caller_cs.modified == {}, str(caller_cs.modified))
+
+    # ── RB15: 异常链表拓扑拦截 (Fork, Cycle, Multiple SetAccessChild) ──
+    # 15a: Multiple SetAccessChild
+    addin_cpp.write_text(
+        addin_header +
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pTlb, BadTlb);\n'
+        '    AddToolbarView(pTlb, 1, Right);\n'
+        '    NewAccess(CATCmdStarter, pS1, S1);\n'
+        '    NewAccess(CATCmdStarter, pS2, S2);\n'
+        '    SetAccessChild(pTlb, pS1);\n'
+        '    SetAccessChild(pTlb, pS2);\n'
+        '    return pTlb;\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    r_rb15a = attach_command_to_toolbar(ctx, "SampleWorkbench", "CmdHdr")
+    check("RB15a: multiple SetAccessChild rejected as error", r_rb15a.get("status") == "error", str(r_rb15a))
+    check("RB15a: error reports multiple SetAccessChild", "multiple setaccesschild" in r_rb15a.get("message", "").lower(), r_rb15a.get("message", ""))
+    check("RB15a: changeset is None", r_rb15a.get("changeset") is None, str(r_rb15a))
+
+    # 15b: Fork/branching in chain
+    addin_cpp.write_text(
+        addin_header +
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pTlb, BadTlb);\n'
+        '    AddToolbarView(pTlb, 1, Right);\n'
+        '    NewAccess(CATCmdStarter, pS1, S1);\n'
+        '    NewAccess(CATCmdStarter, pS2, S2);\n'
+        '    NewAccess(CATCmdStarter, pS3, S3);\n'
+        '    SetAccessChild(pTlb, pS1);\n'
+        '    SetAccessNext(pS1, pS2);\n'
+        '    SetAccessNext(pS1, pS3);\n'
+        '    return pTlb;\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    r_rb15b = attach_command_to_toolbar(ctx, "SampleWorkbench", "CmdHdr")
+    check("RB15b: forking/branching chain rejected as error", r_rb15b.get("status") == "error", str(r_rb15b))
+    check("RB15b: error reports branching/fork", "fork" in r_rb15b.get("message", "").lower() or "branching" in r_rb15b.get("message", "").lower(), r_rb15b.get("message", ""))
+    check("RB15b: changeset is None", r_rb15b.get("changeset") is None, str(r_rb15b))
+
+    # 15c: Cycle in chain
+    addin_cpp.write_text(
+        addin_header +
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pTlb, BadTlb);\n'
+        '    AddToolbarView(pTlb, 1, Right);\n'
+        '    NewAccess(CATCmdStarter, pS1, S1);\n'
+        '    NewAccess(CATCmdStarter, pS2, S2);\n'
+        '    SetAccessChild(pTlb, pS1);\n'
+        '    SetAccessNext(pS1, pS2);\n'
+        '    SetAccessNext(pS2, pS1);\n'
+        '    return pTlb;\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    r_rb15c = attach_command_to_toolbar(ctx, "SampleWorkbench", "CmdHdr")
+    check("RB15c: cycle in chain rejected as error", r_rb15c.get("status") == "error", str(r_rb15c))
+    check("RB15c: error reports cycle", "cycle" in r_rb15c.get("message", "").lower(), r_rb15c.get("message", ""))
+    check("RB15c: changeset is None", r_rb15c.get("changeset") is None, str(r_rb15c))
+
+    # ── RB16: 语句残缺 / 缺失 CreateToolbars() ──
+    # 16a: Incomplete statement
+    addin_cpp.write_text(
+        addin_header +
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pTlb, BadTlb);\n'
+        '    AddToolbarView(pTlb, 1, Right);\n'
+        '    NewAccess(CATCmdStarter, pS1, S1);\n'
+        '    SetAccessChild(pTlb, pS1);\n'
+        '    SetAccessNext(pS1);\n'
+        '    return pTlb;\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    r_rb16a = attach_command_to_toolbar(ctx, "SampleWorkbench", "CmdHdr")
+    check("RB16a: incomplete statement rejected as error", r_rb16a.get("status") == "error", str(r_rb16a))
+    check("RB16a: error reports incomplete statement", "incomplete" in r_rb16a.get("message", "").lower(), r_rb16a.get("message", ""))
+    check("RB16a: changeset is None", r_rb16a.get("changeset") is None, str(r_rb16a))
+
+    # 16b: Missing CreateToolbars()
+    addin_cpp.write_text(
+        addin_header +
+        '// CreateToolbars() omitted\n',
+        encoding="utf-8",
+    )
+    r_rb16b = attach_command_to_toolbar(ctx, "SampleWorkbench", "CmdHdr")
+    check("RB16b: missing CreateToolbars rejected as error", r_rb16b.get("status") == "error", str(r_rb16b))
+    check("RB16b: error indicates CreateToolbars not located", "createtoolbars" in r_rb16b.get("message", "").lower(), r_rb16b.get("message", ""))
+    check("RB16b: changeset is None", r_rb16b.get("changeset") is None, str(r_rb16b))
+
+finally:
+    shutil.rmtree(rb_ws, ignore_errors=True)
+
 print(f"\nProduction regressions: {passed}/{total}")
 if failures:
     print("Failures:")
