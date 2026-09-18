@@ -10,376 +10,57 @@
 
 ## [未发布]
 
-### 🧹 W-2-B Workbench 物理原子删除与 ChangeSet 事务对称执行 (2026-09-18, CLOSED)
+### 🛡️ W-2 Workbench 复合生命周期运维、逆向删除安全与拓扑解耦 (2026-09-18, CLOSED)
 
-- **物理原子删除与 ChangeSet 事务执行闭环**：
-  - 新增 `delete_workbench()` 物理删除执行器，严格消费经校验的 `WorkbenchDeletePlan`（schema 2.0）；
-  - 全流程纳入 ChangeSet 统一事务管理，支持物理落地前的内存暂存与零物理变更（DW11）；
-  - 支持物理删除执行 `apply()`（DW12）及异常逆序完全对称回滚 `rollback()`（DW13）；
-  - 明确事务边界：ChangeSet 回滚保障受控文件系统事务（新建、删除与修改文件的原始字节级还原），不宣称 CATIA 运行时进程状态或已加载 DLL 内存模块的自动回滚。
-
-- **三项前置审计加固与健壮性提升（W-2-A 升级）**：
-  - **移除模块盲目回退**：彻底删除 Gate 1 中 `target_mod = target_fw.modules[0]` 的危险回退，宿主模块必须通过所属工作台关系、跨平台路径 `relative_to` 归属或 DICO 权威映射唯一定位；无法定位时严格报告 `host module unresolved`，绝不盲目归属；
-  - **DICO 规范化唯一匹配**：在 `verify_workbench_delete_plan()` 引入规范化 token 匹配与 `expected_occurrences == 1` 约束，重算剔除目标行后的内容与 `estimated_new_content` 实施完全一致性校验；
-  - **DW3 真实集成测试**：将 DW3 升级为动态篡改工作台 `addin_source` 指向模块外部文件，真实调用 `inspect_delete_workbench()` 验证 Gate 2 边界防御硬拦截；
-  - **DW7 外部引用语义修正**：将静态分析定位到的外部引用定性为 `KNOWN_STATIC_REFERENCES_DETECTED` 与 `EXTERNAL_REFERENCE_COVERAGE_INCOMPLETE`，保持所有权严格为 `UNKNOWN`、动作严格为 `DETACH_ONLY`。
-
-- **5 大执行期安全门禁**：
-  - **Gate 1（Plan 身份与目标绑定）**：校验 Plan 的 schema 版本（`2.0`）、工作台名称、宿主模块与所属 Framework，杜绝串供执行；
-  - **Gate 2（防篡改预检与原始字节一致性）**：物理执行前调用 `verify_workbench_delete_plan()` 校验所有涉及文件的原始字节 SHA-256、长度与 DICO 规范化匹配；遇文件并发篡改立即硬拦截，调用方 ChangeSet 零污染（DW16）；
-  - **Gate 3（调用方 ChangeSet 交叉冲突隔离）**：检查待删文件是否已被调用方标记为 `created`、`modified` 或 `deleted`，发现冲突立即终止并保护现场（DW17）；
-  - **Gate 4（精确 Patch 与专属文件删除暂存）**：DICO 行精确移除暂存为 `modified`，专属 Addin 源码、头文件与资源文件加入 `deleted` 并由 ChangeSet 自动捕获原始 raw_bytes 备份；
-  - **Gate 5（共享资源与命令源码物理豁免）**：`preserved_resources`（如被引用的图标）与挂载命令源码（`*.cpp/.h`）严格排除于待删列表，物理执行前后保持 100% 字节不变（DW14、DW15）。
-
-- **故障注入与容灾验证**：
-  - DW18 注入物理执行期故障（补丁目标文件不存在），验证 ChangeSet 在物理操作失败时自动逆序回滚，已删除/已修改文件 100% 恢复原始字节，零磁盘残留。
-
-- **生产回归验证**：
-  - 新增 DW11～DW18 共 8 组生产回归用例：
-    - DW11: Pending 内存暂存与零物理变更；
-    - DW12: `apply()` 物理落地与 DICO 精确更新；
-    - DW13: `rollback()` 对称字节级还原；
-    - DW14: 共享图标跨生命周期豁免；
-    - DW15: 挂载命令源码跨生命周期豁免；
-    - DW16: 并发篡改导致 Plan 校验失败时硬拦截；
-    - DW17: 调用方 ChangeSet 冲突隔离；
-    - DW18: 执行期故障注入与现场完整复原。
-  - 生产回归测试套件规模提升至 **750/750 全量通过**。
-
-- **收口判定**：
-  - **W-2-A**: CLOSED（只读审计与不可变 Plan 门禁）
-  - **W-2-B**: CLOSED（物理原子删除与 ChangeSet 事务执行闭环）
-  - **W-2 整体**: CLOSED（Workbench 逆向删除安全与拓扑解耦能力完成闭环）
-
-### 🛡️ W-2-A Workbench 只读安全审计与不可变 Plan 门禁 (2026-09-18, CLOSED)
-
-- **只读安全审计与不可变 Plan 架构**：
+- **W-2-A 只读安全审计与不可变 Plan 门禁**：
   - 新增 `inspect_delete_workbench()` 与 `verify_workbench_delete_plan()`，遵循“先审计、再规划、零副作用”契约；
   - 组装不可变 `WorkbenchDeletePlan`（schema 2.0），内含 `workbench_identity`、`file_deletions`、`patches`、`preserved_resources`、`command_relations`、`source_snapshots`（原始字节 SHA-256 与字节长度）及 `dependency_evidence`；
-  - 审计全过程不修改磁盘文件、不创建/删除目录、不修改调用方 ChangeSet。
-
-- **7 大只读安全门禁**：
-  - **Gate 1（工作台发现与身份解析）**：精确识别目标工作台与 Addin 类（`{workbench}Addin`），工作台不存在或模块/框架身份不匹配立即报错（DW1、DW2）；
-  - **Gate 2（宿主模块根目录边界防御）**：通过 `relative_to` 实施严格路径归属与穿越防护，杜绝路径逃逸（DW3）；
-  - **Gate 3（DICO 映射精确匹配与唯一性）**：扫描 Framework 下非隐藏 `.dico` 字典，严格定位 `{addin_class} CATIAfrGeneralWksAddin {module_lib}` 映射行；条目缺失拒绝，多重模糊匹配硬拦截（DW4、DW5）；
-  - **Gate 4（专属 UI 资源与共享图标冲突检测）**：自动收集工作台专属 Addin 源码与 NLS/RSC 资源；若工作台图标（`I_{workbench}.bmp`）在其他组件的 `.CATRsc` 中被引用，自动标为 `preserve`，绝不加入待删列表（DW6）；
-  - **Gate 5（挂载命令提取与所有权严格隔离）**：解析 `CreateCommands()` 作用域内 Header 注册，严格界定“挂载关系不等于所有权”，所有挂载命令所有权一律定性为 `UNKNOWN`，动作严格为 `DETACH_ONLY`（DW7）；当传入 `cascade_commands=True` 时因外部引用无法证伪直接进入 `BLOCKED`，禁止级联误删命令源码（DW8）；
-  - **Gate 6（模块依赖保守边界）**：保留 `Imakefile.mk` / `IdentityCard.xml` 依赖，不盲目自动裁剪模块级依赖，保护宿主模块内共存或未来组件；
-  - **Gate 7（不可变 Plan 组装与防篡改失效保护）**：记录源文件与字典的原始字节快照，执行前重新校验字节一致性，文件篡改时计划自动失效（DW9）；执行期对磁盘与调用方 ChangeSet 零污染（DW10）。
-
-- **生产回归验证**：
-  - 新增 DW1～DW10 共 10 组生产回归用例：
-    - DW1: 工作台不存在时拒绝；
-    - DW2: 模块/框架身份不匹配时拒绝；
-    - DW3: 宿主模块目录边界防御（`relative_to` 抛出 `ValueError`）；
-    - DW4: DICO 映射缺失时拒绝；
-    - DW5: DICO 多重模糊匹配时拒绝；
-    - DW6: 共享图标自动标记 `preserve`，排除于待删列表并发出警告；
-    - DW7: 挂载命令所有权定性为 `UNKNOWN`，动作严格限定为 `DETACH_ONLY`，识别跨工作台引用；
-    - DW8: 显式请求级联删除命令时硬阻断（`status: "blocked"`）；
-    - DW9: 源文件或 DICO 篡改后计划自动失效；
-    - DW10: 只读审计对磁盘与调用方 ChangeSet 零副作用。
-  - 生产回归测试套件规模提升至 **711/711 全量通过**。
-
-- **收口判定**：
-  - **W-2-A**: CLOSED
-
-### 🚀 W-1 Workbench 全生命周期生成与 B28 Runtime 闭环实证 (2026-09-18)
-
-- **层次 1（真实构建实证）**：
-  - 在隔离工程（`_tmp_wb_gui_test`）执行真实 B28 构建链（`tck_init.bat → tck_profile.bat V5_6R2018_B28 → mkinit.bat → mkmk -a`）；
-  - 进程返回码严格为 `0`，编译耗时 14.7s，0 errors，0 warnings。
-- **层次 2（物理产物审计）**：
-  - 物理核实构建生成产物：64 位 PE DLL（`WbGuiMod.dll`，18,432 字节，SHA-256 `79d4d3...`）、DICO 字典映射条目（`WbGuiWbAddin CATIAfrGeneralWksAddin libWbGuiMod`）、NLS 多语言文本（Title/Help）、RSC 图标引用及 22x22 官方画板 BMP 图标（`I_WbGuiWb.bmp`，1,606 字节，SHA-256 `ff5dc4...`）；
-  - 机器可读审计数据固化于 `.agents/skills/catia-caa-dev/docs/validation/W1-C-build-artifacts-audit.json`，与 Level 3 保持同一测试批次完全自洽。
-- **层次 3（真实真机进程加载与 GUI 界面渲染全闭环实证）**：
-  - **Runtime 引导与进程拉起**：通过 `start_catia_runtime` 挂载包含自定义工作台 Runtime View 的启动链，成功唤醒真实的 CATIA V5-6R2018 (B28) `CNEXT.exe` 进程（真实 PID：82588）；
-  - **进程模块动态加载证据**：通过 Windows 进程模块枚举与 `tasklist` 验证，确认 `WbGuiMod.dll` 已被 PID 82588 进程动态加载至内存空间；
-  - **Addin 接口执行物理标记证据**：在从零生成的 `WbGuiWbAddin.cpp` 之 `CreateToolbars()` 入口中注入物理探针，CATIA ApplicationFrame 初始化期间成功触发该接口，向磁盘写入物理证据标记文件 `wb_gui_executed.marker`，读取确证内容为 `W1_C_WORKBENCH_GUI_LOADED_BY_CNEXT_PID_82588`（进程 PID 完全吻合）；
-  - **真实 GUI 界面渲染实证与高清截图固化**：
-    - **顶级 GUI 窗口识别与唤醒**：在 ApplicationFrame 与图形引擎完成初始化后，精确捕获到顶级主窗口 `HWND 1051266`，类名为官方 MFC MDI 主文档类 `CATDlgDocument [ l_CATDlgMfcDocumentMDI ]`，窗口标题为 `CATIA V5`，尺寸为 `2576x1408`；
-    - **窗口置顶激活与界面渲染实证**：通过 Win32 API 将 CATIA 主窗口前置最大化并完成桌面重绘，成功渲染 CATIA V5 标准通用工作间主界面（包含 Start / File / Edit / View / Insert / Tools / Window / Help 完整菜单栏，以及通用工具栏停靠区域）；
-    - **物理截图固化与像素级确证**：通过 `ImageGrab` 捕获 2560x1440 桌面全屏物理截图（`W1-C-gui-screenshot.png`，143,795 字节，SHA-256 `e9dbaa...`），以及 2000x220 标题栏/菜单栏/工具栏停靠区特写截图（`W1-C-gui-toolbar-closeup.png`，22,328 字节，SHA-256 `9d77b3...`），验证像素全范围分布非黑屏非纯色；
-    - **证据边界严格说明**：特写截图验证了主窗口顶层与工具栏停靠区域正常呈现；但对自定义工具栏（`WbGuiWbTlb`）及按钮图标的子像素匹配属于控件级交互，当前审计客观区分“主窗口级渲染确证”与“控件级精确定位”，保持事实与证据严格对齐。
-  - **优雅停机与现场恢复**：调用 `stop_catia(force=False)` 优雅终止 CNEXT 进程，清理 CATTemp 会话与临时测试工程，保持零残留；
-  - 详细运行时实证日志固化于 `.agents/skills/catia-caa-dev/docs/validation/W1-C-level3-runtime-audit.json`。
-- **字典同步幽灵覆盖 Bug 根因修复**：
-  - 修复 `build.py` 中 `_copy_dictionaries_to_runtime` 使用宽泛 `rglob("CNext/code/dictionary/*.dico")` 误读 `.caa_backups` 隐藏备份目录并用历史旧字典覆盖 Runtime View 目标文件的系统级隐患，强制实施 `not any(part.startswith(".") for part in dico.parts)` 路径过滤；
-  - 新增 WB27 生产回归用例锁定该安全契约，防止有效字典被隐藏备份篡改。
-- **收口判定**：
-  - **W-1-A**: CLOSED
-  - **W-1-B**: CLOSED（基于当前开发端测试证据）
-  - **W-1-C**:
-    - **Level 1（构建实证）**: VERIFIED（B28 `mkmk -a` 返回码 0，耗时 14.7s）
-    - **Level 2（产物审计）**: VERIFIED（`WbGuiMod.dll`、DICO、NLS、RSC、22×22 BMP 产物与哈希自洽）
-    - **Level 3（运行时基础链路）**: VERIFIED
-      - CNEXT 进程启动: 有开发机审计证据（PID 82588）
-      - DLL 动态加载: 有开发机审计证据（`WbGuiMod.dll`）
-      - Addin marker 执行: 有开发机审计证据（`wb_gui_executed.marker`）
-      - CATIA 主窗口渲染: 有开发机审计证据（HWND 1051266，2560x1440 与 2000x220 截图固化）
-      - 自定义工具栏控件识别: PENDING（待后续专项 UI 探针）
-      - 自定义图标实际渲染: PENDING（待后续专项模板匹配）
-      - 按钮交互功能: NOT IN SCOPE / NOT VERIFIED
-  - 生产回归测试：开发机报告 678/678 PASS 全量通过（尚不能仅凭 GitHub 提交独立重放确认）。
-
-### 🏗️ W-1-C Workbench 资源装配、构建前置审计与安全加固 (2026-09-18, CLOSED)
-
-- **工作台官方图标规范与 UI 资源装配**：
-  - 在 `inspect_create_workbench()` 与 `create_workbench()` 中扩展 `generate_icon` 选项，解决工作台/工具栏在运行时图标悬空（dangling icon reference）隐患；
-  - 自动规划标准 22x22 BMP 官方画板工作台图标（`I_{workbench_name}.bmp`），通过 `icon_provider` 与 base64 编码整合进不可变 Plan (`file_creations`)；
-  - `ChangeSet` 支持包含二进制工作台图标的原子暂存与物理落地；
-  - **方案 A 严格拦截同名图标冲突**：在 `inspect_create_workbench` 与 `create_workbench` 执行期 Gate 3 中，针对同名图标实施硬拦截，防止物理落地静默覆盖旧图标及后续回滚导致误删已有文件，已有图标保持物理字节完全不变。
-
-- **构建命令流前置审计与 Runtime View 事务边界确证**：
-  - **构建命令链与依赖审计**：验证从零生成的工作台模块可生成有效编译命令链（`tck_init`、`tck_profile`、`mkinit`、`mkmk`），确认 `IdentityCard.xml`（`ApplicationFrame`、`System`）与 `Imakefile.mk`（`CATApplicationFrame`、`JS0GROUP`）编译前置依赖配置闭环；
-  - **Runtime View 事务边界**：确证 `copy_icons_to_runtime` 向 `win_b64` 派生目录同步的图标属于构建级可重建派生产物，独立于源码级 ChangeSet 事务回滚范围；
-  - **环境与架构探测**：完成本地 `CATIA V5-6R2018 (B28)` 安装路径与 `win_b64` 目标编译架构的静态前置探测。
-  - **闭环状态说明**：当前 W-1 阶段状态为 W-1-A CLOSED、W-1-B CLOSED、W-1-C IMPLEMENTED / VALIDATION INCOMPLETE。真实 `mkmk` 物理编译生成 DLL 及 CATIA B28 真实进程动态加载验证作为后续真机闭环项独立核验，暂不提前列入已关闭（CLOSED）范围。
-
-- **回归验证与实证**：
-  - 扩展 WB19～WB26 生产回归用例：
-    - WB19: `generate_icon=True` 时成功规划与暂存工作台 22x22 官方 BMP 图标；
-    - WB20: `apply()` 物理落地后验证生成图标为标准 22x22 尺寸；
-    - WB21: 验证工作台编译命令链生成与编译前置依赖配置（`ApplicationFrame` / `CATApplicationFrame`）；
-    - WB22: 验证工作台图标向 `win_b64` Runtime View 的物理同步与字节一致性；
-    - WB23: 包含二进制图标的对称物理回滚验证（新建图标干净删除、文本原始字节复原）；
-    - WB24: CATIA B28 安装环境与 win_b64 架构配置静态探测；
-    - WB25: 方案 A 严格拦截已有同名图标（检验审计门禁与执行门禁拦截，且已有文件物理字节不变）；
-    - WB26: Runtime View 事务边界确证（win_b64 派生缓存独立于 ChangeSet 回滚）；
-    - WB27: 运行时字典同步排除 `.caa_backups` 等隐藏备份，防止有效条目被旧备份静默覆盖。
-  - 生产回归套件规模从 648/648 提升至 **678/678 全量通过**。
-
-### 🏗️ W-1-B Workbench 物理原子执行与 ChangeSet 双向事务保证 (2026-09-18)
-
-- **物理原子执行与安全门禁**：
-  - 重构 `create_workbench()` 为基于不可变 Plan (schema 2.0) 的物理原子执行引擎。
-  - 落地 5 大执行期安全门禁：
-    - Gate 1 (Plan 架构与身份绑定)：严格校验 `plan_schema_version == "2.0"` 以及 `workbench_identity`（工作台名、目标 Framework、宿主 Module 归属与存在性）；
-    - Gate 2 (宿主目录边界防御)：待创建与待打补丁文件通过 `relative_to(fw_root)` 实施路径约束，防止目录穿越与逃逸；
-    - Gate 3 (磁盘突现文件硬拦截)：物理执行前探测磁盘状态，若生成目标文件在审计后意外出现在磁盘，立即硬拦截，避免盲目覆盖；
-    - Gate 4 (调用者 ChangeSet 冲突隔离)：在传入外部 `cs` 时，自动排查 `created` / `modified` / `deleted` 集合冲突，保持复合编排拓扑隔离；
-    - Gate 5 (物理原始字节防篡改)：基于 `source_snapshot` 原始字节 SHA-256 哈希与字节长度，强校验 `IdentityCard.xml`、`Imakefile.mk`、`TestFW.dico` 等目标修改项，遇并发修改立即阻断。
-
-- **双向事务与对称回滚保证**：
-  - 严格保持两阶段事务：`create_workbench()` 返回 `status: "pending"`，所有变更先在内存暂存为 ChangeSet；
-  - 物理落地由 `ChangeSet.apply()` 负责执行，`rollback()` 支持 100% 对称物理还原（已创文件删除、修改文件原始字节复原）；
-  - 外部 ChangeSet 编排兼容：支持将工作台创建原子编排到宿主流程，支持元数据合并。
-
-- **回归验证与实证**：
-  - 扩展 WB9～WB18 生产回归用例：
-    - WB9: Pending 状态纯内存暂存与零物理变更；
-    - WB10: `apply()` 端到端物理落地与语法/格式校验；
-    - WB11: 工作区分析器 `WorkspaceAnalyzer` 发现与元数据绑定闭环；
-    - WB12: 并发修改防篡改硬拦截；
-    - WB13: Plan 身份篡改、版本异常与突现文件硬拦截；
-    - WB14: `rollback()` 物理双向对称还原（已创建文件删除、原文件 100% 原始字节恢复）；
-    - WB15: 外部 ChangeSet 编排兼容与元数据合并；
-    - WB16: 回滚后工作区环境洁净再预检验证；
-    - WB17: 中途写入失败自动恢复与原子性回滚保证；
-    - WB18: 外部 ChangeSet 冲突隔离。
-  - 生产回归套件规模从 604/604 跃升至 **648/648 全量通过**。
-
-- **Git 提交基线**：
-  - `5ecd33b` — `Implement W-1-B workbench create execution and tests`
-
-### 🏗️ W-1-A Workbench 只读审计与不可变 Plan 门禁 (2026-09-18)
-
-- **只读审计门禁**：
-  - 新增 `inspect_create_workbench()`，实现 7 类只读安全门禁：
-    - Gate 1: C++ 标识符与全工作区同名冲突硬拦截（含已有 Workbench / Addin 类名判定）；
-    - Gate 2: 宿主模块存在性与 `BUILT_OBJECT_TYPE == 'SHARED LIBRARY'` 类型校验，拟建文件磁盘冲突拦截；
-    - Gate 3: `IdentityCard.xml` 严格 XML 强语法解析、命名空间（`xmlns`）兼容处理与 `System` / `ApplicationFrame` 依赖审计及补丁规划；
-    - Gate 4: `Imakefile.mk` 的 `LINK_WITH` 词元级审计（`JS0GROUP`、`CATApplicationFrame`），按行规划安全注入；
-    - Gate 5: Dictionary 同名映射冲突检测与标准条目规划（`{Workbench}Addin CATIAfrGeneralWksAddin lib{ModuleBareName}`）；
-    - Gate 6: NLS/RSC 资源与符合 B28 生产模式的 Addin C++ 源码规划（`CATImplementClass(..., DataExtension, CATBaseUnknown, ...)` + `TIE_CATIAfrGeneralWksAddin` + `CreateCommands/CreateToolbars`）；
-    - Gate 7: 确定性装配并输出规范的不可变 `WorkbenchCreatePlan` (schema 2.0)。
-  - 审计阶段不创建文件、不写入磁盘、不修改调用方 ChangeSet，保持零磁盘副作用与零状态变更。
-
-- **不可变 Plan 结构契约**：
-  - Plan 包含 `workbench_identity`、`file_creations`、`patches`、`source_snapshots` 与 `dependencies_audit`。
-  - 文件快照采用物理原始字节 `read_bytes()` 计算 SHA-256 与字节长度。
-  - `IdentityCard.xml` 与 `Imakefile.mk` 修改仅以 patch 计划形式输出，严格保留原文件换行格式。
-
-- **回归验证与实证**：
-  - 新增 WB1～WB8 回归用例（涵盖标识符冲突、模块类型门禁、XML 语法与命名空间解析、补丁合并、只读无副作用及 ChangeSet 零污染）。
-  - 生产回归套件规模达 604/604 全量通过。
-
-- **Git 提交基线**：
-  - `755b996` — `Implement W-1-A workbench create inspection gates`
-
-### 🚀 Command 运行时闭环与生命周期重构 (2026-09-18, R-2-C / R-3-A / R-3-B / R-4-A / R-4-B 与 B28 真机实证)
-
-- **4 参数 Header 跨模块解耦注册 (R-2-C)**：
-  - **能力与机制**：重构 `add_command_to_workbench`，以 `(HeaderClassName, HeaderID)` 为唯一身份，采用 4 参数 `CATCommandHeader` 注册机制（`new HeaderClass("HeaderID", "LoadName", "ClassName", (void *)NULL)`）；解除 Workbench DLL 对 Command DLL 的编译期静态符号依赖，避免因直接静态链接导致工作台启动时被级联加载；引入词法预检门禁 `inspect_workbench_registration`，确保多 HeaderClass、缺少 `CreateCommands` 或 Payload 冲突等异常在 ChangeSet 创建前被硬拦截，避免进入下游变更阶段。
-  - **验证结论**：验证 4 参数 Header 架构可避免 Workbench DLL 对 Command DLL 的静态链接依赖，并在 B28 Runtime 中实现按需动态加载。S1～S10 回归全量通过。
-- **Header 资源原子绑定 (R-3-A)**：
-  - **能力与机制**：绑定以 `(HeaderClassName, HeaderID)` 为唯一键，自动化同步 `CATNls`、`CATRsc` 与图标文件；实施严格的冲突判定规则（同 Key 同 Value 幂等 no-op，同 Key 异 Value 抛出 `ValueError` 硬拦截），并在 Staged ChangeSet 与 Disk 状态间建立零重复写入与事务保护，前置校验无副作用。
-  - **验证结论**：完成 RA1～RA10 回归覆盖，解决历史命令生成与宿主资源脱节问题，确保 Header 拥有完整的多语言文本与工具栏图标。
-- **显式工具栏挂载 (R-3-B)**：
-  - **能力与机制**：将工具栏挂载由隐式修改重构为显式独立 Action `attach_command_to_toolbar` 与只读拓扑分析门禁 `inspect_toolbar_mount`；支持单链拓扑追踪（首节点 `SetAccessChild`，后续尾节点 `SetAccessNext`），排除 Menubar 误识别，并支持跨 Toolbar 隔离与标识符安全清洗重命名。
-  - **验证结论**：落地 RB1～RB16（共 54 项拓扑断言）全量回归，确保工具栏修改具备确定性源码边界与零污染幂等保护。
-- **CATIA V5-6R2018 (B28) 真机 Runtime 闭环实证**：
-  - **实证证据链**：基于真实工程通过 `create_command` → `add_command_to_workbench` → `attach_command_to_toolbar` → `mkmk -a` 生成双按钮工具栏与独立命令 DLL。
-  - **运行时表现**：启动 CATIA 进程后，工具栏正确渲染双按钮，启动后进程模块快照未发现目标命令 DLL；触发 Header 后目标 DLL 出现在模块快照中，验证该命令路径的按需动态加载；目标 DLL 成功调用工厂宏实例化并执行 `Activate()`，弹出模态通知框并生成物理验证标记，全链路闭环通过。
-- **Command 级联安全删除与链缝合 (R-4-A)**：
-  - **能力与机制**：引入只读拓扑分析门禁 `inspect_delete_command` 与原子删除操作 `delete_command`，将变更作用域严格限定在 `CreateCommands()` 与 `CreateToolbars()` 函数边界内，防止越界修改；实现 4 种 Starter 拓扑缝合模式（`remove_only_child` 容器保留、`new_child` 次节点晋升 Child、`relink_next` 中间跳跃缝合、`remove_tail` 尾节点截断）；在 `Imakefile.mk` 源码清理中引入基于词元边界的精确匹配，完整保留 CRLF、制表符缩进与多行续行符（`\`）；orphan 资源采用“只审计元数据、不直接物理删除”策略，避免误删共享资产；在变更执行前执行括号平衡与语法完整性校验，遇到语法破损或冲突即刻实施门禁拦截。
-  - **验证结论**：落地 DA1～DA25 生产回归用例覆盖（含作用域限定、词元边界匹配、CRLF/续行链保真、单/多工具栏缝合、事务门禁零变更与对称 rollback 验证）。
-- **Command 安全重命名与防并发篡改 (R-4-B)**：
-  - **能力与机制**：引入只读审计门禁 `inspect_rename_command` 与原子重命名操作 `rename_command`；执行前记录目标源文件的 SHA-256 哈希与长度快照，在物理执行前校验磁盘文件一致性，遇并发篡改立即硬拦截并保持零变更；采用稳定 HeaderID 策略（严格保持 HeaderID、工具栏 Starter 引用与 NLS/RSC Key 稳定），仅更新 4 参数 Header 注册的第三参数 `ClassName`；对 C++ 类声明、类作用域、构造/析构函数声明及定义、`CATCreateClass` 工厂宏和 `#include` 实现精确替换，隔离字符串字面量、注释和前缀相似符号；`Imakefile.mk` 实现词元级无缝更新；ChangeSet 原生支持双向对称 `rollback()`，支持 staged 混合编排与多工作台显式隔离。
-  - **深度加固与安全闭环**：
-    - **Plan 强身份绑定与版本门禁**：引入 `plan_schema_version: "2.0"` 显式版本契约；增加 `command_identity`（`old_name`、`new_name`、`module`、`framework`、`workbench_name`）与调用参数强校验；实施目标模块路径越界防护，校验待处理文件经过 `resolve()` 后必须位于模块目录内；校验文件重命名变换与 Header 更新的 C++ 类名严格对齐。
-    - **物理原始字节级 Hash 与明确解码**：`source_snapshot` 统一基于物理 `read_bytes()` 计算 SHA-256 与字节长度，记录检测编码（UTF-8 / GBK），对不可解码文件前置拒绝；防并发检测使用实际物理字节比对，单字节或空白篡改均可被拦截。
-    - **CreateCommands 作用域三路分流与跨函数隔离**：显式指定工作台提取失败直接抛错；自动搜索模式下对包含目标命令线索的损坏工作台实施硬拦截，对无关损坏工作台安全跳过；修复作用域提取正则在参数列表未闭合时跨多行吞噬后续函数括号的潜在隐患（限制在 `[^)\n;]*` 且签名与 `{` 间仅限空白）。
-    - **ChangeSet 交叉冲突检测与物理字节无损回滚**：`merge_changesets` 增加 `created ↔ deleted`、`modified ↔ deleted`、`deleted ↔ deleted` 结构化冲突硬拦截；`ChangeSet` 备份记录 `(text, raw_bytes)`，回滚优先 `write_bytes(raw)`，验证 GBK / CRLF 文件字节级还原。
-  - **验证结论**：RN1～RN26 全量回归覆盖，生产回归套件规模达 553/553 全量通过。
-
-### 🔧 Build / 检索 (2026-09-11)
-
-- **修复 mkmk 中文错误 GBK 乱码 + 连锁错误归并**：`build.py` 原以 UTF-8 读 `cmd` 重定向日志，MSVC 中文错误变 ``；现按 GBK/系统代码页解码。连锁错误（首个编译错误后的 `make-ERROR`/`syst-ERROR`）不再计入 `error_count`，只报根因。
-- **Slim CLI build 输出 + C4819 噪音隔离**：JSON `output` 默认截断（信 `status`/`errors[file,line,code,message]`）；C4819 源码页警告隔离为 quarantine，不再混入每次编译结果。
-- **修复 workspace 自动检测 + 回归测试误写真实配置**：`_auto_detect()` 不再被全量回归直跑（改临时 config 隔离）；`env.py` workspace 猜测增加验证。
-- **Usecase 索引 schema 3——官方构建/资源证据**：`build_usecase_index.py` 从只扫 `.cpp` 扩展到 Imakefile（566, `libs`）/ LocalInterfaces（774, `interfaces`）/ CATNls（273, `keys`）/ CATRsc（61, `keys`），新增 `resources`/`by_kind` 区。`.cpp` 四区与改前字节级一致。
-- **Catalog 教学示例召回 + frontmatter keywords 回退**：新增 `example`/`tutorial` 类目解析（此前零覆盖）；`index.yaml` 无 keywords 的条目回退读 `.md` frontmatter（缺失回退，不 merge）；无关键词条目 69 → 22（余 22 为 framework 自动发现条目，设计如此）。教程表加关键词列，别名表加「教程/示例/命令/开发」。`_CACHE_VERSION` 3→4。
-- **SKILL.md 语义阅读地图**：frontmatter 后加章节级阅读地图，Agent 按需定位不再顺序读 1800 行。
-
-### 🔧 Kernel / 响应链路 (2026-08-28, 架构审查深度修复)
-
-- **修复 `add_command_to_workbench` 静默空转**：旧锚点 `"void AddinName::CreateCommands()"` 是模板占位符字面量，渲染后的 addin 文件里是真实类名（`void MyWbAddin::CreateCommands()`），锚点永不匹配 → ChangeSet 无任何修改 → `create_executable_command(add_to_workbench=...)` 的工作台注册静默失效（按钮不出现但 metadata 谎报已注册）。现改用正则匹配任意类名的真实签名，命令头注册代码正确插入 `CreateCommands()` 内。已在临时工作区端到端验证。
-- **修复 `"dev"` 子串误路由**：`_handle_build_run` 的 `"dev" in request` 会劫持任何含 dev 子串的请求（`develop a dialog`、`DeviceCmd`）进 mkmk 构建 + CATIA 启动，意图检测根本不执行。改 `\bdev\b` 词边界匹配，`dev`/`run dev`/`build and run` 仍正常路由。
-- **修复 token_optimizer 丢弃 AI 必需字段**：`needs_clarification` 的 `questions`、模块不存在的 `available_modules`、apply 后的 `rollback_id`、验证失败的 `verification_errors`、知识注入 `knowledge_content`（kernel 设计的「质量均衡主杠杆」，之前读盘后直接进垃圾桶）全部被白名单剥离。新增 `_PASSTHROUGH_KEYS` 透传；`knowledge_refs` 裁剪为 id+file；`changeset` 压缩为文件清单（去全文，保留 preview 工作流）；澄清/模块纠错/preview 工作流在 MCP 上从不可用变可用，消除 1-2 次额外往返。
-- **修复 ActionContext 缓存被 `refresh()` 架空 + `_max_file_mtime` 首建语义 bug**：每个 action 入口的 `ctx.refresh()` 无条件置空快照，一次 develop 请求重复全扫 3-5 次（子步骤间 ChangeSet 只在 apply 时落盘，中间无任何磁盘变化）。`refresh()` 改为缓存感知（未失效则复用快照并仍记 history）；`_max_file_mtime` 拆双语义（基线模式取真 max / staleness 探测可提前退出——旧提前退出在首次构建时以 0 为参照，返回首文件 mtime，快照基线恒偏旧）；walk 剪枝 `win_b64/.caa_backups/.git/__pycache__/.pytest_cache`（analyzer 不可见目录）。同请求扫描 3-5 次 → 1 次。
-- **修复 catalog 缓存 sig 感知不到 framework md 内容编辑**：目录 mtime 只反映增删/重命名，编辑已有文件的 keywords 后 pickle 继续用旧关键词。sig 加入全部 framework md 的最新 mtime（~148 次 stat，~1ms/进程）。
-- **修复 method_index pickle 命中路径跳过版本偏斜检查**：CATIA 升级但未重建 caadoc_index.json 时，pickle 命中 → B28 方法表继续服务 B30 安装且无告警。pickle 现内嵌构建时 meta，`--no-headers` 降级告警与版本偏斜告警在两条加载路径都执行。
-- **kernel_log.jsonl 大小轮转**：超 5MB 重命名为 `.jsonl.1`（保留一代），防无界增长（已达 2MB+ 且无消费方清理）。
-
-### 🧹 死代码清理 (2026-08-28)
-
-- **删除 meta_model 三个死实体**：`FeatureModel`/`FactoryModel`/`ExtensionModel`（~146 行）全仓零引用（`create_feature` 已降级、`create_extension` 走组合实现）；修正腐化的文件头 TOC（行号全错，10 实体→8 实体+Resource）。
-- **删除 analyzer 丢弃式 `Resource` 实例化**（构造后立即丢弃，纯浪费）；移除随之未使用的 `Resource` import。
-- **删除 `intents/services.expose_service` 不可达实现**（blocked return 后 ~50 行，git 历史可查）；签名保留，`intents/__init__` 导出与 kernel 调用不变。
-
-### 🔧 Build / Runtime View (2026-08-26)
-
-- **修复模块级 / `.edu` 路径被当成工作区根**：`_resolve_workspace_root` 现同时处理 `.m`（祖父）和 `.edu`（父）。`run_gate` 按入参范围验模块（`.m` 只验自己，不再从模块目录 `rglob` 空转 PASS）。`sync_runtime_view` / `create_runtime_view` / `_copy_dictionaries_to_runtime` / `copy_icons_to_runtime` / Logger+Cache / `validate_workspace` 入口对齐，中文 NLS 与门禁在模块级 build 下不再漏。
-
-### 🔧 Kernel (2026-08-24)
-
-- **修复 `cade create framework` 撞已有 `CATIAV5Level.lvl`**：`.lvl` 是工作区级文件。`create_framework()` 以前只要模板存在就 `add_create_file`，同一 workspace 再建第二个 framework、或盘上已有 mkGetPreq / RADE 写过的 `.lvl`，ChangeSet 会以 `Created file already exists` 拒绝。现改为缺文件才创建，已有则跳过且不覆盖。不改 `_pre_validate_files` 的 create-or-fail 契约，也不在此处调 `mkGetPreq`。
-- **修复 `cade create framework/module/workbench/interface/dialog` CLI 空转**：`_execute_develop_plan()` 以前只真正执行 Command / Feature / Extension，其余 Intent 全部落 `else` 只打印 `Plan would execute`。现补五条精确 dispatch，走现有 Action + ChangeSet apply。`CreateCommandWithDialog` 仍走 Command 分支。
-- **修复 `cade create dialog` 误路由**：`_detect_intent_type()` 以前把裸 `dialog`/`对话框` 映射成 `CreateCommandWithDialog`，CLI `create dialog X` 会生成命令而不是单独对话框。现改为 `CreateDialog`；`with dialog` / `带对话框` 仍走 `CreateCommandWithDialog`。不用 `"Dialog" in intent_type` 做 CreateDialog 分支。
-- **模板路径大小写**：SKILL.md 文件树原先写成 `templates/Module/` 等 PascalCase，磁盘目录是全小写。Zed `list_directory` 按字面路径会看成空目录。已改文档、补 `templates/README.md`，`ChangeSet.add_create_file` 缺模板时抛出真实路径并提示小写目录。
-
-### 🧹 清理 (2026-08-18, 旧方案残渣)
-
-- **删除 Primitive 体系最后残渣**：`tests/update_golden_icons.py`（v4.0 起为 exit(1) 占位 stub）+ `tests/golden/`（29 张 Primitive 黄金样本，无测试引用，git 历史可查）。同步修正 `ARCHITECTURE.md`（测试计数 44→43；删除 Primitive 时代「图标分类统计」整节，替换为现行四层架构表）与 ADR §8（废弃→删除）。**Badge 路径保留**——它是未来新命令的现役兑底（ADR 规则 6：官方底图原样引用强制角标），非旧方案。
-
-### 🎨 图标 (2026-08-18, 官方语义学沉淀 + 储备语素)
-
-- **B28 官方图标语义学入库**：新增 `knowledge/ui/official_icon_semantics.md`（catalog `ui.official_icon_semantics`）。实测驱动：扫 3077 个 CATRsc 得引用频次（Top：I_Update 40 / I_Open 39 / I_Line 38 / I_Plane 37 / I_Point 35），40 个高频图标逐像素分析。核心结论：颜色即语义域（实体黄=材料、青=几何辅助、红=作用位置、蓝=参考副本、墨蓝=结构色非语义）；构图即操作（凸/凹=加/减材料——Pad/Pocket 为对偶反义词图标、虚线副本=偏移/阵列、双主体对称=镜像）；三视觉家族（建模命令 bg(192)/系统命令 bg(191)/文档 bg(180)）；fg 密度分层（实体 55~75% / 复合 35~50% / 线框 5~25%）。规范修正：「单主体」→「单一语义单元」（官方 Mirror/Copy 即双主体）。
-- **`icon_design_lib.py` 追加储备语素**（已定义不接线，未经 gate E）：`red_marker()`/`dashed_copy()`/`boss()`/`notch()`/`ctrl_point()`/`cycle_arrows()` + 语义色常量 `RED_MARK(155,0,0)`/`REF_BLUE(10,0,255)`/`DEPTH_GRAY(75,75,75)`（全部官方采样值）。既有 4 个 `I_CADE*` 设计源重建逐像素不变（git diff 为空）。规范 §2.1 同步引用。`test_icons.py` 96/96。
-
-### 🎨 图标 (2026-08-17, S6 Official 语义索引 + Batch-2)
-
-- **Official Base 覆盖扩展：新增 22 条经验证别名（Batch-2）**。先用 `tmp/icon_official_index.py`（只读离线）扫 3077 个 CATRsc 建全量语义索引：3790 个被命令引用的 stem（区别于 9832 原始文件），3651 个有 CATNls 标题（96.3%）。**方法论修正：按 CATNls 标题词边界匹配，不按文件名子串**——文件名搜不到 `pan→I_Translate`（标题即 "Pan"）、`loft→I_ICMLoftLT`（标题 "Loft"），标题搜索一击命中。新增别名：通用 13 条（`material/pan/loft/search/revolve/boolean/arc/curvature/drill/transform/statistic/configure/table`）+ 域特定 9 条按最大包含纳入（`spring/boss/gear/axis/annotation/distance/setting/mill/symmetry`）。**DENY 重审**：`properties/loft/axis/boss` 翻出 DENY 进 ALIAS，`tool/mode/assemble/reference` 维持 DENY。`OBJECT_VOCAB` 122 词口径覆盖率 36% → 53%（27 ALIAS + 38 HIGH）。红线：动词 `analyze/check/verify`、语义错配 `cog→CoG`/`step→SnapSteps` 拒入。`test_icons.py` 96/96、`test_master.py --quick` 41/41。
-
-### 🎨 图标 (2026-08-17)
-
-- **Official-Only：删除全部 71 个 Primitive**。图标系统改为纯官方图标驱动：`analyze_command()` 输出官方 stem（不再是 Primitive 名称），`resolve_official_icon()` 未命中时用官方兜底图 `I_P3DefaultIcon`（不再 Primitive fallback）。新增 3 条经验证的语义等价别名：`rename→I_RenameFamily`、`bom→I_DNBBOMtoXML`、`color→I_AutomaticColorProperty`（通过 B28 msgcatalog CATRsc→CATNls 交叉验证）。`DOMAIN_MAP`/`COLOR_MAP`/`ACCENT_MAP`/`_render_icon`/`_apply_checker`/`_rasterize_catia` 全部删除，改为 `OBJECT_VOCAB` frozenset。保留 23 个 badge 字形 + `_compose_official` + `_render_placeholder`（CATIA 未安装时的灰色占位符）。`CACHE_VER` v12 → v13。`update_golden_icons.py` 废弃。测试 65/65 通过。
-
-### 🎨 图标 (2026-08-15)
-
-- **裁掉 56 个无引用装饰图案**：`PATTERN_NAMES` 127 → 71。只删 dispatch 表里不被 `DOMAIN_MAP` / `VERB_MAP` / golden / fallback `diamond` 引用的装饰图案（`flame`/`sun`/`warning` 等）；`heart`/`star` 因 golden 保留。`CACHE_VER` v11 → v12。语义层未改。
-
-### 🎨 图标 (2026-08-14)
-
-- **Official Base + Overlay 上线**：`get_icon()` 在本机 B28 `normal/` 做有限精确候选 `exists()`（不扫 9832、不模糊、不入库）。命中且语义可接受则用官方 BMP 当底再叠现有 Badge（含 CREATE 的 `+`）；未命中 / DENY / 弱对象+修饰词 / 未安装 → Primitive。别名只覆盖命名陷阱（`sketch→I_Sketcher`、`remove→I_RemoveBody`、circular/rectangular pattern）。`analyze_command()` 语义不变。`CACHE_VER` v10 → v11。四个生产命令仍走 Primitive。
-
-### 📖 文档 (2026-08-14)
-
-- **冻结 Icon Provider 架构基线**：新增 `docs/architecture/ADR-Icon-Provider-Freeze.md`。S1–S4 只读审计后确认：默认仍是 Primitive + 现有 Badge；Official Base 为运行时检索 + Overlay（不建库、不扫全库、不模糊匹配）。当前 Primitive 计数为 71。
-
-### 🛠 工具 (2026-07-31)
-
-- **哈希桶只增不减的结构性修复**：`skills/utils.py` 的 `Logger`/`Cache` 按 workspace 路径 MD5 分桶（`logs/<hash>/`、`cache/<hash>/`），但只写不删——每个测试临时目录、每个已删除的旧 workspace 都留下永久桶（2026-07-31 手工清理出 662 个）。新增 `gc_stale_buckets()`：在 workspace-scoped `Logger`/`Cache` 初始化时对兄弟桶做保留期 GC，删除最新文件超过 30 天的桶（死 workspace 的桶永不再被触碰，自然老化；活跃桶每次构建都会刷新 mtime）。安全约束：仅匹配 8 位 hex 目录（`cache/` 根的索引/遥测文件不受影响）、每天最多扫描一次（`.gc_marker` 节流）、全程 try/except（GC 失败不会打断构建）。`tests/test_production_regressions.py` 新增 5 条断言覆盖：删旧桶/保留活桶/不碰非桶文件/24h 节流/异常不抛出。
-
-### 🧭 检索架构 (2026-07-31)
-
-- **修复 CatalogIndex 未收录 148 个 Framework 导航文件**：`catalog/index.yaml` 里 `knowledge/frameworks/*.md` 长期只以一行文件计数（`| 149 | 自动扫描 |`）出现，从未被解析成可检索条目，导致 CatalogIndex 实际只覆盖 91/239（约 38%）的知识文件，SKILL.md 却指示 AI 优先查这些文件定位 Framework——查不到只能靠 AI 现场猜测。修复：`CatalogIndex` 新增 `_scan_frameworks()`，从每个文件统一的 frontmatter（`title`/`keywords`）自动生成 `category="framework"` 条目，无需在 `index.yaml` 手写 148 行。条目数 91 → 239。
-- **缓存签名升级**：`CatalogIndex` 的缓存失效信号从单一 `index.yaml` mtime 改为 `(index.yaml mtime, knowledge/frameworks/ 目录 mtime)` 元组，防止新增/删除 framework 文件后读到脏缓存。磁盘缓存 payload 结构变化，`_CACHE_VERSION` 2 → 3（旧 pickle 自动作废重建）。
-- **新增覆盖率回归测试**：`tests/test_retrieval_benchmark.py` `[5]` 断言 `knowledge/`、`patterns/`、`playbooks/`、`capabilities/` 下所有 `.md` 文件都能在 `CatalogIndex.entries` 中找到对应条目，防止同类“索引只算数量、不建条目”的缺口再次悄悄出现。
-- **修复 UseCaseIndex 文件名冲突导致的证据串味 bug**：CAADoc 里 1233 个官方样例 `.cpp` 文件只有 1214 个唯一文件名（如 9 个不同模块各自有一份 `main.cpp`），旧版 builder 用裸文件名（stem）做 dict key，导致 19 个文件被静默覆盖丢失，更严重的是 `by_interface`/`by_method`/`by_symbol` 反查结果会指向“最后写入的那个同名文件”——已验证案例：查 `by_method["Release"]` 命中 `main`，但 `examples["main"]["file"]` 解析到的是从不调用 `Release()` 的 `CAARuleBaseProtection.m/main.cpp`，真正调用者是另一个同名文件。修复：`tools/build_usecase_index.py` 仅对真正冲突的 11 个文件名（30 个文件）生成 `"stem (module.m)"` 消歧 key，其余 1203 个不冲突的文件保持原样，不影响现有按裸文件名查询的调用方。索引条目数 1214 → 1233（19 个曾丢失的文件补回）。新增回归测试 `tests/test_usecase_index.py` Case 4，断言索引条目数与磁盘文件数一致、冲突文件名可区分。
-- **CAA 文档索引瘦身（schema 2）：** `cache/caadoc_index.json` 38MB → 16MB。根因是 builder 把 6+2 个纯派生反查表（`types_by_name`/`headers_by_name`/`enums_by_name`/`methods_by_name`/`header_methods_by_name`/`implements_by_*`/`sdk_implements_by_*`）连同绝对路径一起落盘——派生视图本可从原始事实 O(n) 重建，绝对路径则把同一 `C:\Program Files\...` 前缀重复存储 7 万+ 次。修复遵循「持久化事实，内存算视图」：`tools/build_caadoc_index.py` 只落盘 5 个原始 key（`types`/`dico_entries`/`sdk_dic_entries`/`header_classes`/`header_enums`），所有 `file` 字段改存 `CATIA_INSTALL` 相对路径（meta 里 `path_base` 声明一次），派生 map 由新 `ensure_views()` 在缓存加载后幂等重建，显示点用 `_abs()` 拼回绝对路径。`meta` 升级：`schema_version: 2`、`path_base`、`source_version`（构建时 CATIA 版本如 B28）、`scan_headers`。`skills/method_index.py` 新增降级校验：`scan_headers=false` 或 `source_version` 与当前环境 `CATIA_VERSION` 不符时 warning 提示重建（不再静默失明）。`--query`/`--search`/`--check-file`/`--repl` 全路径冒烟通过，回归 `tests/test_code_verifier.py` `[16c]`（pickle↔JSON 一致性）不变。
-
-
-### 🧭 检索架构 (2026-07-27)
-
-- **新增 Retrieval 统一门面**：`skills/retrieval.py`，所有知识检索必须走 `get_retrieval()`，禁止直接 `XxxIndex.load()`。
-- **新增检索架构契约**：`docs/architecture/retrieval.md` v1，固化四索引模型、权威来源、Decision Rules、禁止事项。
-- **修复 catalog 磁盘缓存**：`_load_disk_cache` 是 `@classmethod` 却引用 `self._CACHE_VERSION`，NameError 被 `except` 吞掉，导致缓存从未生效。修复后冷启动 1.4ms → 0.35ms。
-- **MethodIndex 磁盘缓存**：38MB `caadoc_index.json` 每次全量 `json.loads`（~300ms），改为 pickle 缓存（523KB，~5ms），mtime + 版本号双失效。
-- **HeaderMap 进程缓存**：补齐四个索引统一的生命周期，消除"哪个 load() 有缓存"的猜测空间。
-- **新增 `Retrieval.health()`**：`python skills/retrieval.py` 输出四索引 JSON 健康报告，供 Agent 诊断。
-- **新增检索基准测试**：`tests/test_retrieval_benchmark.py`（第 41 套件），作为缓存回归防线。
-- **能力治理**：`skills/capabilities.yaml` 声明层 + `expose_service` router 隔离 + `specification.py` 移入 `experimental/`。
-
-### 🔧 模板与生成器 (2026-07-23)
-
-- **对话框 NLS 模式对齐生产实证**：改用 `CATMsgCatalog::BuildMessage(catalog, key, NULL, 0, fallback)` + 英文 fallback 保底，替代之前推的零代码控制路径。fallback 编译进二进制，catalog 缺失/条目缺失时界面仍可读；catalog 改用 framework 共享名（`msgcatalog/<Framework>.CATNls`），多对话框/命令的消息合并进同一文件；key 用语义名（`类名.控件名`），不与控件对象名耦合。
-- **中文 catalog 必须 GBK 编码**：B28 官方 `Simplified_Chinese/*.CATNls` 实测为 GBK，CADE 此前按 UTF-8 写入会被 CATIA 读成乱码。`changeset.py` 现在对 `Simplified_Chinese/` 路径自动用 GBK 落盘（`errors="replace"` 防 emoji 崩溃）。⚠️ 中文 catalog 内容不能含 emoji（GBK 无法编码），3 个中文 CATNls 模板已移除 `⚠️` 符号。
-- **对话框布局知识库对齐生产实证**：
-  - 新增「顶层 attachment 布局」模式（`SetHorizontalAttachment` + `CATDlgWndAutoResize`）——生产项目（CAAAutoRenameDlg）验证的多区域垂直堆叠方案，优于顶层 GridLayout
-  - 新增「动态显隐面板」模式：`ResetAttachment()` 从布局摘除（不占空间、窗口自动收缩），而不是只 `SetVisibility()`（会在 GridLayout 里留空白）
-  - 修正 `SetGridConstraints` 认知：5 参重载 `(row, col, rspan, cspan, anchor)` 真实存在（CATDialog.h L606），生产项目常用；此前知识库误称只有单参版
-  - 清掉一批虚构 API：链式 `SetRow/SetColumn`、两参 `SetGridConstraints(pFrame, gc)`、`CATDlgFraGroupFrame`/`CATDlgFraSunkenFrame`、`CATDlgMultiEditor`、`CATDlgProgressBar`、Combo `AddItem`、Tab `AttachTab`
-  - 控件宽度统一用 `SetVisibleTextWidth(n)`（可见字符数），不硬编码像素
-- **禁止复制旧骨架**：`create_command`/`create_dialog` 等生成的骨架文件头部加注释，明确「新建工具请调 develop() 重新生成，不要复制本文件改名」，避免 AI 做新工具时复制上一个工具的骨架而继承历史 bug、错过模板更新。
-- **新增 NLS 规范检查工具**：`tools/check_nls_conventions.py`，扫描工作区里的 NLS 用法是否符合新规范（硬编码 SetTitle、零代码路径残留等）。
-
-### 📖 文档 (2026-07-23)
-
-- README 增加「升级已有项目」说明：不要整体删除重拷 `.agents`（会清掉项目专用 debug_tools 脚本和 cache/logs 运行数据），给出选择性同步的 PowerShell 脚本（跳过 `debug_tools/`、`cache/`、`logs/`）。
-
-### 🛠 工具 (2026-07-20 第三批)
-
-- `tools/build_caadoc_index.py` 新增第四个数据源：扫描发布产品的组件字典 `<arch>/code/dictionary/*.dic`（例如 `win_b64/code/dictionary`，注意与 CAADoc 自带的 `**/*.dico` 教学样例字典区分）。这是真实发布产品在构建时生成的“组件→接口” TIE 实现字典，规模远大于 CAADoc 教学字典（约 885 个文件/7.3 万条，对比 44 个文件/414 条），是“组件 X 是否真实实现接口 Y”问题的真正 ground truth。`--query`/`--search` 现在会将发布字典的命中结果与 CAADoc 教学 `.dico` 分开标注展示（分别标 "CAADoc tutorials" 与 "ground truth"）。
-- **用这个新数据源解开了上一批留下的未解决问题**：`CATITPSFactoryElementary` 的真实获取方式。发布字典显示 `CATTPSSet` 组件同时实现了 `CATITPSFactoryElementary`、`CATITPSCaptureFactory`、`CATITPSViewFactory` 三个工厂接口，证实三者获取方式完全一致：均需对 `CATITPSSet` 实例做 `QueryInterface`（而不是通过 `CATTPSInstantiateComponent` + 枚举值获取，那是 `CATITPSFactoryAdvanced`/`CATITPSFactoryTTRS` 的获取方式，两者不同）。
-
-### 🛠 工具 (2026-07-20 第二批)
-
-- `tools/build_caadoc_index.py` 新增 SDK 头文件扫描与交叉核实能力。因为 CAADoc 的 refman `.htm` 页面其实是从同一套 CATIA 安装里的 SDK 头文件（`<Framework>/PublicInterfaces/*.h`）自动生成的文档子集，并且存在生成缺失，所以头文件比 refman htm 更权威。新工具能力：
-  - 扫描 CATIA 安装目录下所有 `*/PublicInterfaces/*.h`（约 5614 个文件），提取接口纯虚方法列表以及枚举定义（含行内 `// CATIXxx` 注释），得到 3974 个 SDK header classes 与 822 个 SDK header enums
-  - `--query <name>`：对比 refman 方法列表与 SDK 头文件方法列表，不一致时打印 `*** SDK/refman mismatch ***` 提示；命中枚举时展示完整枚举值列表+注释
-  - `--search <pattern>`：新增 "SDK header enum value matches" 板块，可子串搜索枚举值名/注释内容
-  - 新增 `--no-headers` 参数，跳过头文件扫描，仅做 refman+dico 更快
-  - 全量扫描（refman+dico+headers）耗时约 3.5 秒，缓存命中仍约 0.3 秒
-- **本次改造发现的两个真实文档错误**（已验证，待修复 `capabilities/annotation.md`）：
-  - `CATITPSSet` 并不实现 `CreateCapture()`。真实接口是独立的 `CATITPSCaptureFactory::CreateCapture(CATITPSCapture**)`，需对 `CATITPSSet` 实例做 `QueryInterface` 才能获取（refman 原始 htm 确认该接口页面未发生 Public/Protected/Private 视图分裂，排除了索引工具漏抓的可能性）
-  - `annotation.md` 引用的枚举值 `DfTPS_ItfTPSFactoryElementary` 在真实 `CATTPSComponent` 枚举（46 个值，由 `CATTPSInstantiateComponent.h` 确认）中不存在。`CATITPSFactoryElementary` 接口本身是真实的（14 个方法，refman 与 SDK 头文件一致），其真实获取方式后来由发布字典扫描（见上方“第三批”条目）确认
-
-### 🐛 Bug 修复 (2026-07-20)
-
-- 修复 `tools/scan_frameworks.py`：扫描 CAADoc `refman/*.htm` 时未排除 `visidx.txt.htm`（全局 API 索引页，非某个 framework 的说明页），导致生成了一个虚假的 "visidx.txt" framework 条目，其 5 个 "关键词" 实为从索引正文里随机抓取的、分属 `CATAnalysisInterfaces`/`CATAnalysisResources`/`VPMInterfaces` 三个不同 framework 的接口名，与 "visidx.txt" 本身无关。已删除 `knowledge/frameworks/visidx.txt.md`，framework 导航文件总数由 149 修正为 148（与 CAADoc `refman/` 目录下真实的 148 个 framework `.htm` 页面一一对应），并同步更新 SKILL.md/README.md/CHANGELOG.md/ARCHITECTURE.md 中的计数。
-- 核实 `knowledge/frameworks/*.md`（148 个）其余文件：均由脚本从 CAADoc 官方 `.htm` 文件名及正文中的真实接口名（含编号后缀，如 `CATIUdfFeature_28696`）自动抓取生成，抽样交叉核对 CAADoc 目录确认无虚构内容。
-
-### 🛠 工具 (2026-07-20)
-
-- 新增 `tools/build_caadoc_index.py` —— CAADoc 本地索引构建与核实工具。解析 `Doc/generated/refman/**/*.htm`（6234 个类型的签名，含去重、HTML 实体解码修复）与 `**/*.dico`（414 条接口↔实现组件映射），支持：
-  - `--query <name>`：精确/大小写不敏感查询类型签名，含反向方法名查询（"哪些接口有该方法"）
-  - `--search <pattern>`：类型名/方法签名/.dico 组件名的子串搜索，用于"不确定确切名字，想探索候选"场景
-  - `--repl`：交互模式，命令 `q <name>`/`s <pattern>`，避免连续查询反复启动进程
-  - 默认优先加载 `cache/caadoc_index.json`（未提交，见 .gitignore），命中缓存约 0.3 秒；仅 `--write`/`--rebuild` 时才重新全量扫描（约 2 秒）
-  - 用于核实 `playbooks/`/`patterns/`/`knowledge/` 中疑似虚构的 API 签名/接口名/框架名，替代手动打开 CAADoc 页面或全量 `grep`
-- 已用该工具复核：`CATIProduct`（21 个去重方法）、`CATIVisPropertiesAbstract`（6 个方法）、`SetColor` 反查（13 个真实声明类型，`CATIVisProperties` 本身不在其中）、`TPSFactory` 子串搜索（CAADoc 仅有 3 个专用工厂接口，无统一 `CATITPSFactory`）
-- 在 `SKILL.md`（"给 AI 的提示"表格 + tools/ 目录清单）与 `knowledge/README.md`（CAADoc → CADE 知识沉淀流程新增 Step 0）中接入该工具的使用指引
-
-### 📝 知识沉淀 (2026-07-19)
-
-- 新增 knowledge/failure_patterns/fp_dialog_null_parent.md — 来源: 实机调试 + CAADoc/CAADialogEngine.edu/CAADegGeoCommands.m
-- 新增 knowledge/failure_patterns/fp_toolbar_setaccesschild_overwrite.md — 来源: 实机调试 + CAADoc/CAAApplicationFrame.edu/CAAAfrGeometryWshop.m
-- 新增 knowledge/failure_patterns/fp_dialog_cancel_not_desactivate.md — 来源: 实机调试 + CAADoc/CAADialogEngine.edu/CAADegGeoCommands.m
-- 更新 knowledge/ui/dialog_patterns.md：AI 生成规则补充 Cancel/Desactivate 都需隐藏 Dialog、禁止在其中直接 delete、父窗口禁止传 NULL
-- 更新 knowledge/ui/toolbar.md：补充多命令挂同一工具栏的 SetAccessNext 链接示例与排查清单条目
-- 更新 knowledge/infrastructure/lifecycle_patterns.md：Cancel() 章节补充“对话框关闭走 Cancel 而非 Desactivate”提示
+  - 落地 7 大只读安全门禁：Gate 1 身份解析（彻底移除模块盲目回退，严格依模型或 DICO 映射确定宿主模块）、Gate 2 宿主目录边界防御（`relative_to` 抛出 `ValueError` 杜绝路径逃逸）、Gate 3 DICO 精确唯一匹配（规范化 token 比对，强制 `expected_occurrences == 1`）、Gate 4 共享资源冲突检测（被引用的图标自动标记 `preserve`）、Gate 5 挂载命令所有权严格隔离（所有权定性为 `UNKNOWN`，动作严格限定为 `DETACH_ONLY`；显式请求级联删除时硬阻断 `status: "blocked"`）、Gate 6 模块依赖保守边界（保留 `Imakefile.mk` / `IdentityCard.xml` 依赖）、Gate 7 不可变 Plan 组装与防篡改失效保护；
+  - 覆盖 DW1～DW10 生产回归用例，审计阶段对磁盘与调用方 ChangeSet 保持零副作用。
+
+- **W-2-B 物理原子删除与 ChangeSet 事务执行**：
+  - 新增 `delete_workbench()` 物理删除执行器，严格消费经校验的 `WorkbenchDeletePlan`（schema 2.0）；
+  - 落地 5 大执行期门禁：Gate 1 Plan 身份绑定、Gate 2 防篡改预检（源文件与 DICO 变更立即拦截，外部 ChangeSet 保持零污染）、Gate 3 调用方冲突排查（`created` / `modified` / `deleted` 集合互斥阻断）、Gate 4 事务暂存与原始 `raw_bytes` 备份（DICO 移除暂存为 `modified`，专属文件加入 `deleted`）、Gate 5 共享资源与命令源码物理豁免（共享图标与命令源码物理执行前后保持 100% 字节不变）；
+  - 覆盖 DW11～DW18 生产回归用例：Pending 内存暂存（DW11）、物理落地（DW12）、对称回滚（DW13）、共享图标豁免（DW14）、命令源码豁免（DW15）、防并发篡改（DW16）、ChangeSet 冲突隔离（DW17）、执行期故障注入与现场完整复原（DW18）；
+  - 明确事务边界：ChangeSet 回滚保障受控文件系统事务（新建、删除与修改文件的原始字节级还原），不宣称 CATIA 运行时进程状态或已加载 DLL 内存模块的自动回滚；
+  - 生产回归测试套件规模达 **750/750 全量通过**。
+
+### 🏗️ W-1 Workbench 从零全生命周期生成与 B28 Runtime 闭环 (2026-09-18, CLOSED)
+
+- **不可变 Plan 审计与两阶段事务原子执行**：
+  - **只读审计 (W-1-A)**：`inspect_create_workbench()` 实施 7 类安全门禁（C++ 标识符冲突、`SHARED LIBRARY` 类型、`IdentityCard.xml` XML/命名空间强解析与依赖规划、`Imakefile.mk` 词元级审计、DICO 映射唯一性、NLS/RSC 资源规划、不可变 `WorkbenchCreatePlan` schema 2.0 组装），覆盖 WB1～WB8 回归；
+  - **物理原子执行 (W-1-B)**：`create_workbench()` 实施 5 大执行门禁（Plan 身份绑定、宿主目录边界防御、磁盘突现文件硬拦截、ChangeSet 冲突隔离、物理原始字节防篡改），支持内存暂存、原子落地与对称物理还原（`rollback()` 100% 原始字节恢复），覆盖 WB9～WB18 回归；
+  - **官方 22×22 BMP 图标装配 (W-1-C)**：自动规划 22x22 官方画板工作台图标（`I_{workbench}.bmp`），方案 A 严格拦截已有同名图标，确证 Runtime View 为构建级派生产物，覆盖 WB19～WB26 回归。
+- **CATIA V5-6R2018 (B28) 三层真机闭环实证**：
+  - **Level 1（构建实证）**: 在隔离工程（`_tmp_wb_gui_test`）真实执行完整 B28 构建链（`tck_init → tck_profile V5_6R2018_B28 → mkinit → mkmk -a`），进程返回码严格为 `0`，耗时 14.7s，0 errors，0 warnings；
+  - **Level 2（产物审计）**: 物理核实 64 位 PE DLL（`WbGuiMod.dll`，18,432 字节）、DICO 映射、NLS/RSC 文本及 22×22 BMP 图标，留痕于 `docs/validation/W1-C-build-artifacts-audit.json`；
+  - **Level 3（运行时基础链路实证）**: 通过 `start_catia_runtime` 拉起真实 B28 `CNEXT.exe`（PID 82588），验证 `WbGuiMod.dll` 动态加载，Addin `CreateToolbars()` 入口成功触发物理探针标记 `wb_gui_executed.marker`；捕获主窗口 `HWND 1051266`（类名 `CATDlgDocument [ l_CATDlgMfcDocumentMDI ]`，尺寸 2576x1408）并固化全屏及工具栏停靠区特写截图；客观区分“主窗口级渲染确证”与“子控件级精确定位”证据边界，留痕于 `docs/validation/W1-C-level3-runtime-audit.json`；
+  - **字典同步缺陷根因修复**：修复 `build.py` 字典同步误读 `.caa_backups` 隐藏备份的隐患（强制非隐藏路径过滤），新增 WB27 回归锁定。
+
+### 🚀 Command 运行时闭环与生命周期重构 (2026-09-18, R-2-C ~ R-4-B, CLOSED)
+
+- **4 参数 Header 跨模块解耦注册 (R-2-C)**：采用 `new HeaderClass("HeaderID", "LoadName", "ClassName", (void *)NULL)`，彻底解除 Workbench DLL 对 Command DLL 的编译期静态符号依赖，实现按需动态加载，覆盖 S1～S10 回归；
+- **Header 资源原子绑定 (R-3-A)**：以 `(HeaderClassName, HeaderID)` 自动化同步 `CATNls`、`CATRsc` 与图标文件，同 Key 异值硬拦截，覆盖 RA1～RA10 回归；
+- **显式工具栏挂载 (R-3-B)**：`attach_command_to_toolbar` 实施单链拓扑追踪（首节点 `SetAccessChild`，后继节点 `SetAccessNext`），排除 Menubar 误识别，覆盖 RB1～RB16 回归；
+- **B28 真机按需动态加载实证**：实证启动后 Command DLL 未载入，点击按钮触发 Header 后目标 DLL 动态加载并执行 `Activate()`，全闭环通过；
+- **Command 级联安全删除与链缝合 (R-4-A)**：严格限定在 `CreateCommands()` 与 `CreateToolbars()` 作用域内，支持 4 种 Starter 拓扑缝合模式；`Imakefile.mk` 基于词元边界精确剔除并保真换行/续行链，orphan 资源只巡检不误删，覆盖 DA1～DA25 回归；
+- **Command 安全重命名与防并发篡改 (R-4-B)**：基于原始字节快照实施防篡改门禁，严格稳定 HeaderID，精确替换 C++ 类/宏/作用域与 Imakefile 词元；支持三路作用域分流与 ChangeSet 字节级无损回滚，覆盖 RN1～RN26 回归。
+
+### ⚙️ 架构演进与系统加固 (2026-07 ~ 2026-09)
+
+- **检索架构与知识基线**：
+  - 统一知识检索门面 `Retrieval`（`skills/retrieval.py`），固化四索引统一生命周期管理与双层缓存（内存/磁盘）；
+  - `CatalogIndex` 自动扫描解析 148 个 Framework 导航文件，知识条目覆盖率由 38% 提升至 100%；
+  - `UseCaseIndex` 消除 11 个重名样例文件导致的证据串味缺陷（采用 `stem (module.m)` 消歧键，条目数 1214 → 1233 完整覆盖）；
+  - `caadoc_index.json` schema 2 瘦身优化（38MB → 16MB），采用“持久化核心事实 + 内存幂等算视图”策略。
+- **官方图标体系收口 (Official-Only)**：
+  - 彻底清理淘汰 71 个旧 Primitive 图标系统，全面转入官方图标运行时检索与语义映射体系；
+  - 沉淀 B28 官方图标语义学（`knowledge/ui/official_icon_semantics.md`）：提炼颜色语义域（实体黄/青辅助/红作用/蓝副本）与构图操作原语（凸凹加减材料/虚线偏移/对偶反义）；
+  - 扩展 22 条经验证官方图标语义别名，严格基于 CATNls 标题词边界精确匹配（覆盖率提升至 53%）。
+- **Kernel 与运行时环境加固**：
+  - **响应链路与路由修复**：修复 `add_command_to_workbench` 类名正则匹配；修复 `\bdev\b` 词边界路由防止子串误劫持；修复 `token_optimizer` 关键字段透传（保留澄清问答、模块建议与回滚 ID）；
+  - **构建与环境修复**：MSVC 中文编译日志自动采用 GBK 解码消除乱码；C4819 代码页警告实施隔离；修复跨模块路径解析；
+  - **资源与垃圾回收**：工作区哈希桶引入保留期自动 GC（`gc_stale_buckets()`，老化超过 30 天自动清理），防止 `logs/` 与 `cache/` 无界膨胀。
 
 ---
 
@@ -1314,41 +995,6 @@ Phase 1 实现了核心的依赖图管理系统和增强查询功能。
 ### 🚀 生产就绪
 
 该版本已通过所有验收标准，可用于生产环境。
-
----
-
-## [未发布]
-
-### 计划中的功能 (v1.1.0)
-
-#### 新增
-- GUI 工具支持
-- 更多模板类型（CATlet、Notification 等）
-- 增强的错误诊断
-- 性能优化（缓存机制）
-
-#### 改进
-- 更详细的日志输出
-- 更友好的错误消息
-- 更快的工作区分析
-
-#### 文档
-- 视频教程
-- 交互式指南
-- 更多示例
-
-### 计划中的功能 (v1.2.0)
-
-#### 新增
-- CI/CD 集成
-- 团队协作功能
-- 代码质量分析
-- 自动化测试生成
-
-#### 改进
-- 智能代码补全
-- 自动依赖解析
-- 增量编译支持
 
 ---
 
