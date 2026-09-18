@@ -3651,7 +3651,7 @@ try:
     check("WB27: runtime dictionary retains valid content without stale backup override", "RealValidAddin" in rv_dico_content and "STALE_BACKUP" not in rv_dico_content, rv_dico_content)
 
     # ── W-2-A: Workbench Delete Inspection & Deterministic Plan (inspect_delete_workbench) ──
-    from actions import inspect_delete_workbench, verify_workbench_delete_plan
+    from actions import inspect_delete_workbench, verify_workbench_delete_plan, delete_workbench
 
     # 为 DW1～DW10 构造受控的标准待删除工作台 DelWb
     del_wb_h = mod_shared / "LocalInterfaces" / "DelWbAddin.h"
@@ -3726,14 +3726,21 @@ try:
     check("DW2: reject module mismatch", r_dw2.get("status") == "error", str(r_dw2))
     check("DW2: error specifies wrong module", "not 'WrongMod.m'" in r_dw2.get("error", ""), str(r_dw2))
 
-    # ── DW3: 宿主模块文件边界防御 ──
-    # 模拟越界路径情况 (验证 relative_to 防御)
-    try:
-        (wb_ws / "EscapeFile.cpp").resolve().relative_to(mod_shared.resolve())
-        dw3_escaped = True
-    except ValueError:
-        dw3_escaped = False
-    check("DW3: path traversal relative_to raises ValueError", not dw3_escaped)
+    # ── DW3: 宿主模块文件边界防御 (真实调用 Gate 2) ──
+    wb_target_obj = None
+    for f in ctx_wb.snapshot.frameworks:
+        for w in f.workbenches:
+            if w.name.lower() == "delwb":
+                wb_target_obj = w
+                break
+    check("DW3: target workbench object found", wb_target_obj is not None)
+    orig_addin_source = wb_target_obj.addin_source
+    wb_target_obj.addin_source = wb_ws / "EscapeFile.cpp"
+    r_dw3 = inspect_delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu")
+    check("DW3: path traversal rejected with error", r_dw3.get("status") == "error", str(r_dw3))
+    check("DW3: error message identifies path traversal", "traversal" in r_dw3.get("error", "").lower() or "out-of-boundary" in r_dw3.get("error", "").lower(), str(r_dw3.get("error")))
+    check("DW3: plan is None on traversal rejection", r_dw3.get("plan") is None)
+    wb_target_obj.addin_source = orig_addin_source
 
     # ── DW4: DICO 映射不存在时拒绝 ──
     dico_backup_dw = dico_file.read_text(encoding="utf-8")
@@ -3775,7 +3782,7 @@ try:
     shared_cmd_rel = next((c for c in cmd_rels_7 if c.get("header_id") == "SharedCmd1Hdr"), None)
     check("DW7: shared command identified", shared_cmd_rel is not None, str(cmd_rels_7))
     if shared_cmd_rel:
-        check("DW7: external_references is PROVEN_SHARED", shared_cmd_rel.get("external_references") == "PROVEN_SHARED")
+        check("DW7: external_references is KNOWN_STATIC_REFERENCES_DETECTED", shared_cmd_rel.get("external_references") == "KNOWN_STATIC_REFERENCES_DETECTED")
         check("DW7: recommended_action is DETACH_ONLY", shared_cmd_rel.get("recommended_action") == "DETACH_ONLY")
         check("DW7: ownership is UNKNOWN", shared_cmd_rel.get("ownership") == "UNKNOWN")
     # 验证独占/未证实命令同样保持 DETACH_ONLY 与 UNKNOWN 所有权
@@ -3784,6 +3791,7 @@ try:
     if excl_cmd_rel:
         check("DW7: exclusive recommended_action is also DETACH_ONLY", excl_cmd_rel.get("recommended_action") == "DETACH_ONLY")
         check("DW7: exclusive ownership is UNKNOWN", excl_cmd_rel.get("ownership") == "UNKNOWN")
+        check("DW7: exclusive external_references is EXTERNAL_REFERENCE_COVERAGE_INCOMPLETE", excl_cmd_rel.get("external_references") == "EXTERNAL_REFERENCE_COVERAGE_INCOMPLETE")
 
     # ── DW8: 外部引用不确定时进入 BLOCKED (禁止级联删除命令) ──
     r_dw8 = inspect_delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu", cascade_commands=True)
@@ -3816,6 +3824,116 @@ try:
     check("DW10: addin header untouched on disk", del_wb_h.read_bytes() == addin_h_before_b)
     check("DW10: addin cpp untouched on disk", del_wb_cpp.read_bytes() == addin_cpp_before_b)
     check("DW10: dico untouched on disk", dico_file.read_bytes() == dico_before_b)
+
+    # ══════════════════════════════════════════════════════════════════
+    # W-2-B: Workbench Physical Atomic Deletion & ChangeSet Transaction
+    # DW11 (Pending 内存暂存与零物理变更): delete_workbench returns pending, 0 files deleted/modified
+    # DW12 (apply() 物理落地与 DICO 精确更新): Addin files deleted, DICO target line removed, OtherWb line untouched
+    # DW13 (rollback() 100% 对称字节还原): Deleted files & modified DICO restored with 100% exact byte match
+    # DW14 (共享资源豁免保护): Preserved resources (I_DelWb.bmp) remain untouched across apply()
+    # DW15 (挂载命令源码豁免保护): Command source files remain 100% untouched across apply()
+    # DW16 (并发篡改与 Plan 失效拦截): Plan with modified file fails Gate 2 with caller CS untouched
+    # DW17 (调用方 ChangeSet 冲突隔离): Existing conflict in created/modified rejected before execution
+    # DW18 (执行期故障注入与现场复原): Mid-flight error during apply triggers rollback restoring all files
+    # ══════════════════════════════════════════════════════════════════
+
+    # ── DW11: Pending 内存暂存与零物理变更 ──
+    r_dw11 = delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu")
+    check("DW11: status is pending", r_dw11.get("status") == "pending", str(r_dw11))
+    cs_dw11 = r_dw11.get("changeset")
+    check("DW11: changeset returned", cs_dw11 is not None)
+    check("DW11: staged deleted count", len(cs_dw11.deleted) >= 5, str(cs_dw11.deleted))
+    check("DW11: staged modified count (dico)", len(cs_dw11.modified) == 1, str(cs_dw11.modified))
+    # 验证物理文件此时仍然完好无损（纯内存暂存）
+    check("DW11: addin header still on disk", del_wb_h.is_file())
+    check("DW11: addin source still on disk", del_wb_cpp.is_file())
+    check("DW11: dico file still has original content", dico_file.read_text(encoding="utf-8") == dico_backup_dw)
+
+    # ── DW12: apply() 物理落地与 DICO 精确更新 ──
+    apply_res_12 = cs_dw11.apply(workspace_root=wb_ws)
+    check("DW12: apply status is applied", apply_res_12.get("status") == "applied", str(apply_res_12))
+    check("DW12: addin header deleted on disk", not del_wb_h.exists())
+    check("DW12: addin cpp deleted on disk", not del_wb_cpp.exists())
+    check("DW12: nls deleted on disk", not del_wb_nls.exists())
+    check("DW12: nls_zh deleted on disk", not del_wb_nls_zh.exists())
+    check("DW12: rsc deleted on disk", not del_wb_rsc.exists())
+    dico_after_12 = dico_file.read_text(encoding="utf-8")
+    check("DW12: DelWbAddin removed from dico", "DelWbAddin" not in dico_after_12)
+    check("DW12: OtherWbAddin preserved in dico", "OtherWbAddin" in dico_after_12)
+
+    # ── DW13: rollback() 100% 对称字节还原 ──
+    rb_res_13 = cs_dw11.rollback()
+    check("DW13: rollback status is rolled_back", rb_res_13.get("status") == "rolled_back", str(rb_res_13))
+    check("DW13: addin header restored with exact bytes", del_wb_h.is_file() and del_wb_h.read_bytes() == addin_h_before_b)
+    check("DW13: addin cpp restored with exact bytes", del_wb_cpp.is_file() and del_wb_cpp.read_bytes() == addin_cpp_before_b)
+    check("DW13: dico restored with exact bytes", dico_file.read_bytes() == dico_before_b)
+
+    # ── DW14: 共享资源豁免保护 ──
+    # 模拟共享图标 (在 OtherComponent.CATRsc 引用)
+    shared_rsc_file = fw_dir / "CNext" / "resources" / "msgcatalog" / "OtherComponent.CATRsc"
+    shared_rsc_file.write_text('OtherComponent.Icon.Normal = "I_DelWb";\n', encoding="utf-8")
+    del_wb_bmp_before_b = del_wb_bmp.read_bytes()
+
+    r_dw14 = delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu")
+    cs_dw14 = r_dw14.get("changeset")
+    check("DW14: shared icon NOT in deleted list", not any(del_wb_bmp.resolve() == p.resolve() for p in cs_dw14.deleted))
+    cs_dw14.apply(workspace_root=wb_ws)
+    check("DW14: shared icon still exists after apply", del_wb_bmp.is_file())
+    check("DW14: shared icon byte unchanged", del_wb_bmp.read_bytes() == del_wb_bmp_before_b)
+    cs_dw14.rollback()
+    shared_rsc_file.unlink()
+
+    # ── DW15: 挂载命令源码豁免保护 ──
+    # 创建模拟的命令文件
+    cmd_h = mod_shared / "LocalInterfaces" / "SharedCmd1.h"
+    cmd_cpp = mod_shared / "src" / "SharedCmd1.cpp"
+    cmd_h.write_text("#ifndef SharedCmd1_H\n#define SharedCmd1_H\n#endif\n", encoding="utf-8")
+    cmd_cpp.write_text('#include "SharedCmd1.h"\n', encoding="utf-8")
+    cmd_h_b = cmd_h.read_bytes()
+    cmd_cpp_b = cmd_cpp.read_bytes()
+
+    r_dw15 = delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu")
+    cs_dw15 = r_dw15.get("changeset")
+    check("DW15: command header not in deleted list", not any(cmd_h.resolve() == p.resolve() for p in cs_dw15.deleted))
+    check("DW15: command cpp not in deleted list", not any(cmd_cpp.resolve() == p.resolve() for p in cs_dw15.deleted))
+    cs_dw15.apply(workspace_root=wb_ws)
+    check("DW15: command header untouched on disk", cmd_h.read_bytes() == cmd_h_b)
+    check("DW15: command cpp untouched on disk", cmd_cpp.read_bytes() == cmd_cpp_b)
+    cs_dw15.rollback()
+    cmd_h.unlink()
+    cmd_cpp.unlink()
+
+    # ── DW16: 并发篡改与 Plan 失效拦截 ──
+    r_plan16 = inspect_delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu")
+    plan16 = r_plan16.get("plan")
+    # 篡改源文件
+    del_wb_h.write_text("// tampered content\n", encoding="utf-8")
+    caller_cs_16 = ChangeSet(action="caller_16", description="test tampering")
+    r_dw16 = delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu", plan=plan16, cs=caller_cs_16)
+    check("DW16: tampered plan rejected", r_dw16.get("status") == "error", str(r_dw16))
+    check("DW16: error indicates verification failure", "verification failed" in r_dw16.get("message", "").lower(), r_dw16.get("message"))
+    check("DW16: caller CS remains empty on rejection", len(caller_cs_16.deleted) == 0 and len(caller_cs_16.modified) == 0)
+    del_wb_h.write_bytes(addin_h_before_b)
+
+    # ── DW17: 调用方 ChangeSet 冲突隔离 ──
+    caller_cs_17 = ChangeSet(action="caller_17", description="test conflict isolation")
+    # 外部 CS 已经 staged 了对待删文件的修改或创建
+    caller_cs_17.add_modify(del_wb_cpp, "// external modification")
+    r_dw17 = delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu", cs=caller_cs_17)
+    check("DW17: ChangeSet conflict rejected", r_dw17.get("status") == "error", str(r_dw17))
+    check("DW17: error specifies conflict", "conflict" in r_dw17.get("message", "").lower(), r_dw17.get("message"))
+
+    # ── DW18: 执行期故障注入与现场复原 ──
+    r_dw18 = delete_workbench(ctx_wb, "DelWb", framework="TestFW.edu")
+    cs_dw18 = r_dw18.get("changeset")
+    # 注入一个不存在或非法的 patch 来触发 apply 内部异常
+    cs_dw18.add_patch(Patch(file=wb_ws / "NonExistentPath" / "BadFile.txt", operation="insert_after", target="NONE", content="FAIL"))
+    apply_res_18 = cs_dw18.apply(workspace_root=wb_ws)
+    check("DW18: apply fails on injected fault", apply_res_18.get("status") in ("failed", "rejected"), str(apply_res_18))
+    # 验证现场文件被完整回滚复原
+    check("DW18: addin header still on disk after failure rollback", del_wb_h.read_bytes() == addin_h_before_b)
+    check("DW18: addin cpp still on disk after failure rollback", del_wb_cpp.read_bytes() == addin_cpp_before_b)
+    check("DW18: dico still on disk after failure rollback", dico_file.read_bytes() == dico_before_b)
 
 finally:
     shutil.rmtree(wb_ws, ignore_errors=True)

@@ -4273,7 +4273,9 @@ def verify_workbench_delete_plan(plan: Dict[str, Any]) -> Tuple[bool, Optional[s
     Verifies:
       - plan_schema_version is '2.0' and plan_type is 'delete_workbench'
       - All source_snapshots match current physical byte hashes and lengths
-      - All patches match target line exactly without divergence
+      - All patches match target line exactly with normalized token verification,
+        single-occurrence guarantee (expected_occurrences == 1), and estimated_new_content
+        recalculation without divergence
     """
     if not isinstance(plan, dict):
         return False, "Plan is not a dictionary"
@@ -4301,8 +4303,31 @@ def verify_workbench_delete_plan(plan: Dict[str, Any]) -> Tuple[bool, Optional[s
             return False, f"Patch target file does not exist: {p}"
         text = p.read_text(encoding=patch.get("encoding", "utf-8"), errors="replace")
         target_line = patch.get("target_line", "")
-        if target_line and target_line not in text:
+        if not target_line or target_line not in text:
             return False, f"Target line to patch no longer exists in {p}: {target_line}"
+
+        # Strict DICO entry validation
+        if patch.get("kind") == "dico_entry_removal":
+            expected_occ = patch.get("expected_occurrences", 1)
+            target_tokens = tuple(target_line.split())
+
+            matching_lines = []
+            new_lines = []
+            for line in text.splitlines(keepends=True):
+                if tuple(line.split()) == target_tokens:
+                    matching_lines.append(line)
+                else:
+                    new_lines.append(line)
+
+            if len(matching_lines) == 0:
+                return False, f"Target dictionary entry no longer matches in {p}: {target_line}"
+            if len(matching_lines) != expected_occ:
+                return False, f"Ambiguous dictionary entry: found {len(matching_lines)} matching occurrences in {p} (expected exactly {expected_occ})"
+
+            recomputed_content = "".join(new_lines)
+            expected_content = patch.get("estimated_new_content")
+            if expected_content is not None and recomputed_content != expected_content:
+                return False, f"Recomputed dictionary patch content diverges from plan in {p}"
 
     return True, None
 
@@ -4358,13 +4383,57 @@ def inspect_delete_workbench(
 
     target_mod = getattr(target_wb, "module", None)
     if not target_mod and target_fw:
-        if target_wb.addin_source and target_wb.addin_source.exists():
+        for m in target_fw.modules:
+            if hasattr(m, "workbenches") and target_wb in m.workbenches:
+                target_mod = m
+                break
+    if not target_mod and target_fw:
+        wb_src = target_wb.path
+        if wb_src and wb_src.exists():
             for m in target_fw.modules:
-                if str(target_wb.addin_source).startswith(str(m.path)):
+                try:
+                    wb_src.resolve().relative_to(m.path.resolve())
                     target_mod = m
                     break
-        if not target_mod and target_fw.modules:
-            target_mod = target_fw.modules[0]
+                except ValueError:
+                    pass
+    if not target_mod and target_fw:
+        wb_src = target_wb.addin_source
+        if wb_src and wb_src.exists():
+            for m in target_fw.modules:
+                try:
+                    wb_src.resolve().relative_to(m.path.resolve())
+                    target_mod = m
+                    break
+                except ValueError:
+                    pass
+    if not target_mod and target_fw:
+        dico_dir = target_fw.path / "CNext" / "code" / "dictionary"
+        if dico_dir.exists():
+            for df in dico_dir.glob("*.dico"):
+                try:
+                    for line in df.read_text(encoding="utf-8", errors="replace").splitlines():
+                        parts = line.strip().split()
+                        if len(parts) >= 3 and parts[0].lower() == f"{target_wb.name.lower()}addin":
+                            lib_name = parts[2]
+                            if lib_name.startswith("lib"):
+                                lib_name = lib_name[3:]
+                            for m in target_fw.modules:
+                                if m.name.lower() in (f"{lib_name.lower()}.m", lib_name.lower()):
+                                    target_mod = m
+                                    break
+                        if target_mod:
+                            break
+                except Exception:
+                    pass
+                if target_mod:
+                    break
+    if not target_mod and target_fw and module:
+        expected_mod_cand = module if module.endswith(".m") else f"{module}.m"
+        for m in target_fw.modules:
+            if m.name == expected_mod_cand:
+                target_mod = m
+                break
 
     if module:
         expected_mod = module if module.endswith(".m") else f"{module}.m"
@@ -4378,7 +4447,7 @@ def inspect_delete_workbench(
     if not target_mod:
         return {
             "status": "error",
-            "error": f"Cannot determine host module for workbench '{workbench_name}'",
+            "error": f"Cannot determine host module for workbench '{workbench_name}': host module unresolved",
             "plan": None,
         }
 
@@ -4556,7 +4625,7 @@ def inspect_delete_workbench(
                     "command_class": cmd_cls or "",
                     "workbench_relation": "mounted",
                     "ownership": "UNKNOWN",
-                    "external_references": "PROVEN_SHARED" if is_shared_cmd else "NOT_FULLY_PROVEN",
+                    "external_references": "KNOWN_STATIC_REFERENCES_DETECTED" if is_shared_cmd else "EXTERNAL_REFERENCE_COVERAGE_INCOMPLETE",
                     "sharing_workbenches": ext_referrers,
                     "recommended_action": "DETACH_ONLY"
                 }
@@ -4641,6 +4710,149 @@ def inspect_delete_workbench(
         "status": "ok",
         "error": None,
         "plan": plan
+    }
+
+
+def delete_workbench(
+    ctx: ActionContext,
+    name: str,
+    *,
+    framework: Optional[str] = None,
+    module: Optional[str] = None,
+    plan: Optional[Dict[str, Any]] = None,
+    cs: Optional[ChangeSet] = None,
+) -> Dict[str, Any]:
+    """Execute atomic physical deletion of a workbench within ChangeSet transaction (W-2-B).
+
+    Enforces 5 execution-time gates:
+      Gate 1: Plan identity binding and schema 2.0 verification
+      Gate 2: Concurrency & tampering defense via verify_workbench_delete_plan
+      Gate 3: Calling ChangeSet conflict isolation (created/modified/deleted)
+      Gate 4: ChangeSet transaction staging (deletions with raw-byte backup, dico entry removal)
+      Gate 5: Preserved resources & command source code 100% immunity
+
+    Args:
+        ctx: ActionContext with active workspace snapshot
+        name: Workbench name to delete
+        framework: Optional framework name filter
+        module: Optional module name filter
+        plan: Optional pre-computed immutable WorkbenchDeletePlan (schema 2.0)
+        cs: Optional existing ChangeSet to participate in composite transaction
+
+    Returns:
+        Dict with status 'pending' (staged in ChangeSet) or 'error'
+    """
+    if plan is None:
+        inspect_res = inspect_delete_workbench(
+            ctx, name, framework=framework, module=module, cs=cs
+        )
+        if inspect_res.get("status") != "ok":
+            return {
+                "status": "error",
+                "message": f"Pre-validation failed: {inspect_res.get('error')}",
+                "changeset": None,
+                "error": inspect_res.get("error"),
+            }
+        plan = inspect_res.get("plan")
+
+    if not isinstance(plan, dict):
+        return {
+            "status": "error",
+            "message": "Invalid plan: plan must be a dictionary",
+            "changeset": None,
+        }
+
+    # ── Gate 1: Plan identity binding ──
+    ident = plan.get("workbench_identity", {})
+    if ident.get("name", "").lower() != name.lower():
+        return {
+            "status": "error",
+            "message": f"Plan identity mismatch: plan is for '{ident.get('name')}', requested '{name}'",
+            "changeset": None,
+        }
+    if framework and ident.get("framework") not in (framework, f"{framework}.edu"):
+        return {
+            "status": "error",
+            "message": f"Plan framework mismatch: expected '{framework}', got '{ident.get('framework')}'",
+            "changeset": None,
+        }
+    if module:
+        expected_mod = module if module.endswith(".m") else f"{module}.m"
+        if ident.get("module") != expected_mod:
+            return {
+                "status": "error",
+                "message": f"Plan module mismatch: expected '{expected_mod}', got '{ident.get('module')}'",
+                "changeset": None,
+            }
+
+    # ── Gate 2: Concurrency & tampering defense ──
+    is_valid, verify_err = verify_workbench_delete_plan(plan)
+    if not is_valid:
+        return {
+            "status": "error",
+            "message": f"Plan verification failed: {verify_err}",
+            "changeset": None,
+        }
+
+    # ── Gate 3: Calling ChangeSet conflict isolation ──
+    master_cs = cs if cs is not None else ChangeSet(
+        action="delete_workbench",
+        description=f"Delete workbench '{name}'"
+    )
+
+    if cs is not None:
+        conflicts = []
+        for del_item in plan.get("file_deletions", []):
+            dp = del_item["path"]
+            if dp in master_cs.created:
+                conflicts.append(f"Cannot delete file already staged for creation: {dp}")
+            if dp in master_cs.modified:
+                conflicts.append(f"Cannot delete file already staged for modification: {dp}")
+            if Path(dp) in master_cs.deleted:
+                conflicts.append(f"File already staged for deletion: {dp}")
+
+        for patch in plan.get("patches", []):
+            pp = patch["path"]
+            if Path(pp) in master_cs.deleted:
+                conflicts.append(f"Cannot patch file already staged for deletion: {pp}")
+
+        if conflicts:
+            return {
+                "status": "error",
+                "message": f"ChangeSet conflict detected: {'; '.join(conflicts)}",
+                "changeset": None,
+            }
+
+    # ── Gate 4: ChangeSet transaction staging ──
+    # Apply patches (DICO modification)
+    for patch in plan.get("patches", []):
+        patch_path = Path(patch["path"])
+        new_content = patch.get("estimated_new_content")
+        if new_content is not None:
+            master_cs.add_modify(patch_path, new_content)
+
+    # Stage file deletions
+    preserved_paths = {Path(r["path"]).resolve() for r in plan.get("preserved_resources", [])}
+    for del_item in plan.get("file_deletions", []):
+        del_p = Path(del_item["path"])
+        # Gate 5: Ensure preserved resources are never queued for deletion
+        if del_p.resolve() in preserved_paths:
+            continue
+        master_cs.add_delete(del_p)
+
+    for w in plan.get("warnings", []):
+        master_cs.add_warning(w)
+
+    master_cs.merge_metadata(
+        workbench_delete_plan=plan,
+        deleted_workbench=name,
+    )
+
+    return {
+        "status": "pending",
+        "message": f"Workbench '{name}' deletion prepared ({len(plan.get('file_deletions', []))} files to delete, {len(plan.get('patches', []))} patches)",
+        "changeset": master_cs,
+        "plan": plan,
     }
 
 

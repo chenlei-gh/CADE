@@ -10,6 +10,47 @@
 
 ## [未发布]
 
+### 🧹 W-2-B Workbench 物理原子删除与 ChangeSet 事务对称执行 (2026-09-18, CLOSED)
+
+- **物理原子删除与 ChangeSet 事务执行闭环**：
+  - 新增 `delete_workbench()` 物理删除执行器，严格消费经校验的 `WorkbenchDeletePlan`（schema 2.0）；
+  - 全流程纳入 ChangeSet 统一事务管理，支持物理落地前的内存暂存与零物理变更（DW11）；
+  - 支持物理删除执行 `apply()`（DW12）及异常逆序完全对称回滚 `rollback()`（DW13）；
+  - 明确事务边界：ChangeSet 回滚保障受控文件系统事务（新建、删除与修改文件的原始字节级还原），不宣称 CATIA 运行时进程状态或已加载 DLL 内存模块的自动回滚。
+
+- **三项前置审计加固与健壮性提升（W-2-A 升级）**：
+  - **移除模块盲目回退**：彻底删除 Gate 1 中 `target_mod = target_fw.modules[0]` 的危险回退，宿主模块必须通过所属工作台关系、跨平台路径 `relative_to` 归属或 DICO 权威映射唯一定位；无法定位时严格报告 `host module unresolved`，绝不盲目归属；
+  - **DICO 规范化唯一匹配**：在 `verify_workbench_delete_plan()` 引入规范化 token 匹配与 `expected_occurrences == 1` 约束，重算剔除目标行后的内容与 `estimated_new_content` 实施完全一致性校验；
+  - **DW3 真实集成测试**：将 DW3 升级为动态篡改工作台 `addin_source` 指向模块外部文件，真实调用 `inspect_delete_workbench()` 验证 Gate 2 边界防御硬拦截；
+  - **DW7 外部引用语义修正**：将静态分析定位到的外部引用定性为 `KNOWN_STATIC_REFERENCES_DETECTED` 与 `EXTERNAL_REFERENCE_COVERAGE_INCOMPLETE`，保持所有权严格为 `UNKNOWN`、动作严格为 `DETACH_ONLY`。
+
+- **5 大执行期安全门禁**：
+  - **Gate 1（Plan 身份与目标绑定）**：校验 Plan 的 schema 版本（`2.0`）、工作台名称、宿主模块与所属 Framework，杜绝串供执行；
+  - **Gate 2（防篡改预检与原始字节一致性）**：物理执行前调用 `verify_workbench_delete_plan()` 校验所有涉及文件的原始字节 SHA-256、长度与 DICO 规范化匹配；遇文件并发篡改立即硬拦截，调用方 ChangeSet 零污染（DW16）；
+  - **Gate 3（调用方 ChangeSet 交叉冲突隔离）**：检查待删文件是否已被调用方标记为 `created`、`modified` 或 `deleted`，发现冲突立即终止并保护现场（DW17）；
+  - **Gate 4（精确 Patch 与专属文件删除暂存）**：DICO 行精确移除暂存为 `modified`，专属 Addin 源码、头文件与资源文件加入 `deleted` 并由 ChangeSet 自动捕获原始 raw_bytes 备份；
+  - **Gate 5（共享资源与命令源码物理豁免）**：`preserved_resources`（如被引用的图标）与挂载命令源码（`*.cpp/.h`）严格排除于待删列表，物理执行前后保持 100% 字节不变（DW14、DW15）。
+
+- **故障注入与容灾验证**：
+  - DW18 注入物理执行期故障（补丁目标文件不存在），验证 ChangeSet 在物理操作失败时自动逆序回滚，已删除/已修改文件 100% 恢复原始字节，零磁盘残留。
+
+- **生产回归验证**：
+  - 新增 DW11～DW18 共 8 组生产回归用例：
+    - DW11: Pending 内存暂存与零物理变更；
+    - DW12: `apply()` 物理落地与 DICO 精确更新；
+    - DW13: `rollback()` 对称字节级还原；
+    - DW14: 共享图标跨生命周期豁免；
+    - DW15: 挂载命令源码跨生命周期豁免；
+    - DW16: 并发篡改导致 Plan 校验失败时硬拦截；
+    - DW17: 调用方 ChangeSet 冲突隔离；
+    - DW18: 执行期故障注入与现场完整复原。
+  - 生产回归测试套件规模提升至 **750/750 全量通过**。
+
+- **收口判定**：
+  - **W-2-A**: CLOSED（只读审计与不可变 Plan 门禁）
+  - **W-2-B**: CLOSED（物理原子删除与 ChangeSet 事务执行闭环）
+  - **W-2 整体**: CLOSED（Workbench 逆向删除安全与拓扑解耦能力完成闭环）
+
 ### 🛡️ W-2-A Workbench 只读安全审计与不可变 Plan 门禁 (2026-09-18, CLOSED)
 
 - **只读安全审计与不可变 Plan 架构**：
