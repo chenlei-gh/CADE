@@ -2324,7 +2324,22 @@ def inspect_delete_command(
         if content is None:
             continue
 
+        masked_content = _mask_comments_and_strings(content)
+        cc_defs = list(re.finditer(r"void\s+(?:\w+::)?CreateCommands\s*\([^)]*\)", masked_content))
+        if len(cc_defs) > 1:
+            return {
+                "status": "error",
+                "error": f"Multiple CreateCommands() definitions found in {addin_source}; cannot disambiguate target scope",
+                "plan": None,
+            }
+
         scope_cc = _extract_create_commands_scope(content)
+        if len(cc_defs) == 1 and not scope_cc:
+            return {
+                "status": "error",
+                "error": f"Cannot reliably extract CreateCommands() scope in {addin_source}: unbalanced braces or malformed function definition",
+                "plan": None,
+            }
         if not scope_cc:
             continue
         cc_body, cc_start_idx, cc_end_idx = scope_cc
@@ -2402,7 +2417,32 @@ def inspect_delete_command(
 
     # 2. Inspect toolbar starter mountings in CreateToolbars()
     toolbar_splices = []
+    masked_content = _mask_comments_and_strings(content)
+    tb_defs = list(re.finditer(r"CATCmdContainer\s*\*\s*(?:\w+::)?CreateToolbars\s*\([^)]*\)", masked_content))
+    if len(tb_defs) > 1:
+        return {
+            "status": "error",
+            "error": f"Multiple CreateToolbars() definitions found in {addin_source}; cannot disambiguate target scope",
+            "plan": None,
+        }
+
     scope_tb = _extract_create_toolbars_scope(content)
+    if len(tb_defs) == 1 and not scope_tb:
+        return {
+            "status": "error",
+            "error": f"Cannot reliably extract CreateToolbars() scope in {addin_source}: unbalanced braces or malformed function definition",
+            "plan": None,
+        }
+
+    stripped_full = strip_c_comments(content)
+    has_header_in_file = bool(re.search(r'\bSetAccessCommand\s*\(\s*\w+\s*,\s*"' + re.escape(matched_hdr_id) + r'"\s*\)', stripped_full))
+    if has_header_in_file and not scope_tb:
+        return {
+            "status": "error",
+            "error": f"Header '{matched_hdr_id}' is referenced by toolbar starter, but CreateToolbars() scope cannot be found or extracted in {addin_source}",
+            "plan": None,
+        }
+
     if scope_tb:
         tb_body, tb_start_idx, tb_end_idx = scope_tb
         toolbars = _discover_toolbars(tb_body)
@@ -2634,63 +2674,101 @@ def _remove_statement_line(
 def _clean_imakefile_content(
     content: str, name: str, class_name: Optional[str] = None
 ) -> str:
-    """Clean references to a command from Imakefile.mk using exact token boundaries.
+    """Clean references to a command from Imakefile.mk using exact token boundaries (R-4-A).
 
-    Distinguishes DiskCmd.cpp from DiskCmdHelper.cpp via token/word boundary matching,
-    preventing unintended substring deletions.
+    Preserves byte-fidelity (CRLF/LF line endings, indentation, tabs, and alignment).
+    Protects LINK_WITH, BUILT_OBJECT_TYPE, and comment lines.
+    Maintains Makefile continuation chain syntax (trailing backslashes) cleanly.
     """
     targets = set()
     if name:
         targets.add(name)
     if class_name:
         targets.add(class_name)
+    if not targets:
+        return content
 
-    token_patterns = [
-        re.compile(
-            r'(?:^|(?<=[\s=:]))(?:[a-zA-Z0-9_]+[/\\])?' + re.escape(t) + r'(?:\.(?:cpp|cxx|c|h|obj|o))?(?=$|[\s/\\=:#,])',
-            re.IGNORECASE,
-        )
-        for t in targets
-    ]
+    raw_lines = content.splitlines(keepends=True)
+    out_lines = []
 
-    new_lines = []
-    for line in content.splitlines():
+    for idx, line in enumerate(raw_lines):
         line_strip = line.strip()
-        # Protect framework linkage, object type directives, and comments
         if line_strip.startswith(("LINK_WITH", "BUILT_OBJECT_TYPE", "#")):
-            new_lines.append(line)
+            out_lines.append(line)
             continue
 
-        modified_line = line
+        if line.endswith("\r\n"):
+            nl = "\r\n"
+            body = line[:-2]
+        elif line.endswith("\n"):
+            nl = "\n"
+            body = line[:-1]
+        else:
+            nl = ""
+            body = line
+
         has_match = False
-        for pat in token_patterns:
-            if pat.search(modified_line):
+        new_body = body
+
+        for t in targets:
+            p = re.compile(
+                r'(?P<prefix>(?:^|(?<=[\s=:,]))(?:[a-zA-Z0-9_]+[/\\])?)'
+                + re.escape(t)
+                + r'(?:\.(?:cpp|cxx|c|h|obj|o))?(?P<suffix>(?=[\s/\\=:,#]|$))',
+                re.IGNORECASE,
+            )
+            while True:
+                m = p.search(new_body)
+                if not m:
+                    break
                 has_match = True
-                modified_line = pat.sub("", modified_line)
+                s, e = m.start(), m.end()
+                before = new_body[:s]
+                after = new_body[e:]
+                if before.endswith((" ", "\t")) and after.startswith((" ", "\t")):
+                    new_body = before + after.lstrip(" \t")
+                elif before.endswith(("=", "+=", ":=")):
+                    new_body = before + " " + after.lstrip(" \t")
+                else:
+                    new_body = before + after
 
         if not has_match:
-            new_lines.append(line)
+            out_lines.append(line)
             continue
 
-        # If line had a match, check if anything meaningful remains
-        rem = modified_line.strip().rstrip("\\").strip()
-        rem_core = re.sub(r'^[A-Za-z0-9_]+\s*(?:\+=|=)\s*', '', rem).strip()
-        if rem_core == "":
-            continue
-        else:
-            if line.rstrip().endswith("\\") and not rem.endswith("\\"):
-                tokens = rem.split()
-                indent = line[:len(line) - len(line.lstrip())]
-                new_lines.append(f"{indent}{' '.join(tokens)} \\")
+        is_assign = bool(re.search(r'^[A-Za-z0-9_]+\s*(?:\+=|:=|=)', new_body.strip()))
+        rem_core = new_body.strip().rstrip("\\").strip()
+        if is_assign:
+            if new_body.rstrip().endswith("\\"):
+                head = new_body.rstrip()[:-1].rstrip()
+                out_lines.append(f"{head} \\{nl}")
             else:
-                tokens = rem.split()
-                indent = line[:len(line) - len(line.lstrip())]
-                new_lines.append(f"{indent}{' '.join(tokens)}")
+                out_lines.append(new_body + nl)
+        else:
+            if rem_core:
+                out_lines.append(new_body + nl)
+            else:
+                had_backslash = body.rstrip().endswith("\\")
+                if not had_backslash:
+                    for p_idx in range(len(out_lines) - 1, -1, -1):
+                        prev = out_lines[p_idx]
+                        if prev.strip():
+                            if prev.endswith("\r\n"):
+                                p_nl = "\r\n"
+                                p_body = prev[:-2]
+                            elif prev.endswith("\n"):
+                                p_nl = "\n"
+                                p_body = prev[:-1]
+                            else:
+                                p_nl = ""
+                                p_body = prev
+                            r_body = p_body.rstrip()
+                            if r_body.endswith("\\"):
+                                p_body = r_body[:-1].rstrip()
+                                out_lines[p_idx] = p_body + p_nl
+                            break
 
-    new_content = "\n".join(new_lines)
-    if content.endswith("\n") and not new_content.endswith("\n") and new_content:
-        new_content += "\n"
-    return new_content
+    return "".join(out_lines)
 
 
 def delete_command(
@@ -2754,6 +2832,28 @@ def delete_command(
 
     cascade_entities = ctx.snapshot.find_cascade_delete(cmd) if cmd else []
 
+    # Pre-validate Addin source scopes before staging mutations
+    addin_source_str = plan["addin_source"]
+    addin_source = Path(addin_source_str)
+    if addin_source_str in master_cs.modified:
+        content = master_cs.modified[addin_source_str]
+    elif addin_source_str in master_cs.created:
+        content = master_cs.created[addin_source_str]
+    else:
+        content = addin_source.read_text(encoding="utf-8", errors="replace")
+
+    header_stmt = plan.get("header_statement")
+    if header_stmt:
+        cc_scope = _extract_create_commands_scope(content)
+        if not cc_scope:
+            return _error(f"Cannot reliably extract CreateCommands() scope in {addin_source}")
+
+    toolbar_splices = plan.get("toolbar_splices", [])
+    if toolbar_splices:
+        tb_scope = _extract_create_toolbars_scope(content)
+        if not tb_scope:
+            return _error(f"Cannot reliably extract CreateToolbars() scope in {addin_source}")
+
     # 1. Delete implementation files
     for f_str in plan.get("command_files", []):
         f = Path(f_str)
@@ -2781,34 +2881,25 @@ def delete_command(
                     master_cs.add_modify(imk_p, new_imk)
 
     # 3. Update Addin source (Header registration + Toolbar splices)
-    addin_source_str = plan["addin_source"]
-    addin_source = Path(addin_source_str)
-    if addin_source_str in master_cs.modified:
-        content = master_cs.modified[addin_source_str]
-    elif addin_source_str in master_cs.created:
-        content = master_cs.created[addin_source_str]
-    else:
-        content = addin_source.read_text(encoding="utf-8", errors="replace")
-
     # 3a. Remove Header registration from CreateCommands() scope
-    header_stmt = plan.get("header_statement")
     if header_stmt:
         cc_scope = _extract_create_commands_scope(content)
-        if cc_scope:
-            content = _remove_statement_line(
-                content, header_stmt, search_start=cc_scope[1], search_end=cc_scope[2]
-            )
-        else:
-            content = _remove_statement_line(content, header_stmt)
+        if not cc_scope:
+            return _error(f"Cannot reliably extract CreateCommands() scope in {addin_source}")
+        content = _remove_statement_line(
+            content, header_stmt, search_start=cc_scope[1], search_end=cc_scope[2]
+        )
 
     # 3b. Execute toolbar splices strictly within CreateToolbars() scope
-    for splice in plan.get("toolbar_splices", []):
+    for splice in toolbar_splices:
         mode = splice.get("splice_mode")
         stmts_to_remove = splice.get("statements_to_remove", [])
         stmts_to_add = splice.get("statements_to_add", [])
 
         tb_scope = _extract_create_toolbars_scope(content)
-        tb_start, tb_end = (tb_scope[1], tb_scope[2]) if tb_scope else (0, len(content))
+        if not tb_scope:
+            return _error(f"CreateToolbars() scope lost while splicing toolbar in {addin_source}")
+        tb_start, tb_end = tb_scope[1], tb_scope[2]
 
         if mode == "remove_only_child" or mode == "remove_tail":
             for stmt in stmts_to_remove:
@@ -2816,8 +2907,9 @@ def delete_command(
                     content, stmt, search_start=tb_start, search_end=tb_end
                 )
                 tb_scope = _extract_create_toolbars_scope(content)
-                if tb_scope:
-                    tb_start, tb_end = tb_scope[1], tb_scope[2]
+                if not tb_scope:
+                    return _error(f"CreateToolbars() scope lost while splicing toolbar in {addin_source}")
+                tb_start, tb_end = tb_scope[1], tb_scope[2]
         elif mode == "new_child":
             child_stmt = next((s for s in stmts_to_remove if s.strip().startswith("SetAccessChild")), None)
             new_child_stmt = stmts_to_add[0] if stmts_to_add else None
@@ -2826,16 +2918,18 @@ def delete_command(
                     content, child_stmt, replace_with=new_child_stmt, search_start=tb_start, search_end=tb_end
                 )
                 tb_scope = _extract_create_toolbars_scope(content)
-                if tb_scope:
-                    tb_start, tb_end = tb_scope[1], tb_scope[2]
+                if not tb_scope:
+                    return _error(f"CreateToolbars() scope lost while splicing toolbar in {addin_source}")
+                tb_start, tb_end = tb_scope[1], tb_scope[2]
             for stmt in stmts_to_remove:
                 if stmt != child_stmt:
                     content = _remove_statement_line(
                         content, stmt, search_start=tb_start, search_end=tb_end
                     )
                     tb_scope = _extract_create_toolbars_scope(content)
-                    if tb_scope:
-                        tb_start, tb_end = tb_scope[1], tb_scope[2]
+                    if not tb_scope:
+                        return _error(f"CreateToolbars() scope lost while splicing toolbar in {addin_source}")
+                    tb_start, tb_end = tb_scope[1], tb_scope[2]
         elif mode == "relink_next":
             prev_var = splice.get("prev_starter_var")
             tgt_starter = splice.get("starter_var")
@@ -2849,16 +2943,18 @@ def delete_command(
                     content, prev_next_stmt, replace_with=new_next_stmt, search_start=tb_start, search_end=tb_end
                 )
                 tb_scope = _extract_create_toolbars_scope(content)
-                if tb_scope:
-                    tb_start, tb_end = tb_scope[1], tb_scope[2]
+                if not tb_scope:
+                    return _error(f"CreateToolbars() scope lost while splicing toolbar in {addin_source}")
+                tb_start, tb_end = tb_scope[1], tb_scope[2]
             for stmt in stmts_to_remove:
                 if stmt != prev_next_stmt:
                     content = _remove_statement_line(
                         content, stmt, search_start=tb_start, search_end=tb_end
                     )
                     tb_scope = _extract_create_toolbars_scope(content)
-                    if tb_scope:
-                        tb_start, tb_end = tb_scope[1], tb_scope[2]
+                    if not tb_scope:
+                        return _error(f"CreateToolbars() scope lost while splicing toolbar in {addin_source}")
+                    tb_start, tb_end = tb_scope[1], tb_scope[2]
 
     if addin_source_str in master_cs.created:
         master_cs.created[addin_source_str] = content

@@ -2540,6 +2540,90 @@ try:
     check("DA22: LINK_WITH directives intact", "LINK_WITH=JS0GROUP JS0CORBA" in imk_post_da22, imk_post_da22)
     check("DA22: BUILT_OBJECT_TYPE intact", "BUILT_OBJECT_TYPE=SHARED LIBRARY" in imk_post_da22, imk_post_da22)
 
+    # ── DA23: CRLF 保真 + 制表符 + 多行续行链精确剔除 (Imakefile Fidelity) ──
+    imk_da23 = (
+        "BUILT_OBJECT_TYPE=SHARED LIBRARY\r\n"
+        "LINK_WITH=JS0GROUP JS0CORBA\r\n\r\n"
+        "SOURCES = A.cpp \\\r\n"
+        "\tDiskCmd.cpp \\\r\n"
+        "\tDiskCmdHelper.cpp \\\r\n"
+        "\tTail.cpp\r\n"
+    )
+    (mod_dir / "Imakefile.mk").write_bytes(imk_da23.encode("utf-8"))
+    addin_cpp.write_text(addin_da2, encoding="utf-8")
+    (src_dir / "DiskCmd.cpp").write_text("CATStateCommand BuildGraph DiskCmd\n", encoding="utf-8")
+    (mod_dir / "LocalInterfaces" / "DiskCmd.h").write_text("// DiskCmd header\n", encoding="utf-8")
+    r_da23 = delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    cs_da23 = ChangeSet.from_dict(r_da23.get("changeset", {}))
+    apply_da23 = cs_da23.apply(workspace_root=da_ws)
+    check("DA23: changeset apply succeeds", apply_da23.get("status") == "applied", str(apply_da23))
+    imk_bytes_post_da23 = (mod_dir / "Imakefile.mk").read_bytes()
+    imk_post_da23 = imk_bytes_post_da23.decode("utf-8")
+    # Verify CRLF preservation
+    check("DA23: CRLF line endings preserved", b"\r\n" in imk_bytes_post_da23 and imk_post_da23.count("\r\n") == 6, imk_post_da23)
+    check("DA23: DiskCmd.cpp cleanly removed", "DiskCmd.cpp" not in imk_post_da23, imk_post_da23)
+    check("DA23: DiskCmdHelper.cpp preserved", "DiskCmdHelper.cpp" in imk_post_da23, imk_post_da23)
+    check("DA23: tabs on remaining lines preserved", "\tDiskCmdHelper.cpp \\\r\n" in imk_post_da23, repr(imk_post_da23))
+    check("DA23: continuation chain syntax valid", "SOURCES = A.cpp \\\r\n\tDiskCmdHelper.cpp \\\r\n\tTail.cpp" in imk_post_da23, repr(imk_post_da23))
+
+    # ── DA24: 损坏的 CreateCommands 作用域硬拦截与 ChangeSet 零变更 (Scope Gate) ──
+    addin_da24 = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    // Missing closing brace - broken syntax\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+    )
+    addin_cpp.write_text(addin_da24, encoding="utf-8")
+    (src_dir / "DiskCmd.cpp").write_text("CATStateCommand BuildGraph DiskCmd\n", encoding="utf-8")
+    (mod_dir / "LocalInterfaces" / "DiskCmd.h").write_text("// DiskCmd header\n", encoding="utf-8")
+    caller_cs_da24 = ChangeSet(action="caller_test", description="caller test")
+    r_da24_inspect = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench", cs=caller_cs_da24)
+    check("DA24: inspect fails on unbalanced CreateCommands", r_da24_inspect.get("status") == "error", str(r_da24_inspect))
+    check("DA24: error indicates scope extraction failure", "reliably extract" in r_da24_inspect.get("error", "").lower() or "unbalanced" in r_da24_inspect.get("error", "").lower(), r_da24_inspect.get("error", ""))
+    check("DA24: caller ChangeSet created remains empty", caller_cs_da24.created == {})
+    check("DA24: caller ChangeSet modified remains empty", caller_cs_da24.modified == {})
+    check("DA24: caller ChangeSet deleted remains empty", caller_cs_da24.deleted == [])
+
+    r_da24_exec = delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA24: delete_command returns structured error", r_da24_exec.get("status") == "error", str(r_da24_exec))
+    check("DA24: delete_command produces no changeset", r_da24_exec.get("changeset") is None)
+    check("DA24: disk file DiskCmd.cpp was not deleted", (src_dir / "DiskCmd.cpp").exists())
+
+    # ── DA25: 损坏的 CreateToolbars / 多重定义硬拦截 (Toolbar Scope Gate) ──
+    # Scenario A: Broken CreateToolbars scope when Header is referenced
+    addin_da25_broken_tb = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'CATCmdContainer *SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    // Missing balanced braces\n'
+        '    NewAccess(CATCmdContainer, pSampleTlb, SampleTlb);\n'
+        '    SetAccessCommand(pDiskCmdStr, "DiskCmdHdr");\n'
+    )
+    addin_cpp.write_text(addin_da25_broken_tb, encoding="utf-8")
+    r_da25_inspect_tb = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA25: broken CreateToolbars rejected as error", r_da25_inspect_tb.get("status") == "error", str(r_da25_inspect_tb))
+    check("DA25: error mentions CreateToolbars scope", "createtoolbars" in r_da25_inspect_tb.get("error", "").lower(), r_da25_inspect_tb.get("error", ""))
+
+    # Scenario B: Multiple CreateCommands definitions rejected
+    addin_da25_multi_cc = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::CreateCommands(int overload) {\n'
+        '    // Overload definition\n'
+        '}\n\n'
+        'CATCmdContainer *SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    return NULL;\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_da25_multi_cc, encoding="utf-8")
+    r_da25_inspect_multi = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA25: multiple CreateCommands rejected as error", r_da25_inspect_multi.get("status") == "error", str(r_da25_inspect_multi))
+    check("DA25: error mentions multiple definitions", "multiple" in r_da25_inspect_multi.get("error", "").lower(), r_da25_inspect_multi.get("error", ""))
+
     # ══════════════════════════════════════════════════════════════════
     # R-4-B Phase 1: Command Rename Pre-validation & Semantic Contract (inspect_rename_command)
     # RN1  (标准合法命令重命名): Plan structure complete; HeaderID stable; source_snapshot hashes present
