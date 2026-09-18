@@ -1094,9 +1094,10 @@ def create_workbench(
             return _error(f"Plan patch path outside target framework directory: {p}")
 
     # 3. Post-plan newly discovered file collision checks (disk state)
+    # Strictly enforce Scheme A: no blind overwrite on ANY creation target, including binary icons.
     for fc in plan.get("file_creations", []):
         p = Path(fc["path"])
-        if fc.get("kind") != "icon_binary" and p.exists():
+        if p.exists():
             return _error(f"Target creation file already exists on disk: {p}")
 
     # 4. Caller ChangeSet conflict detection
@@ -3913,6 +3914,21 @@ def inspect_create_workbench(
             return {
                 "status": "error",
                 "error": f"Target file already exists in staged ChangeSet: {target_file}",
+                "plan": None,
+            }
+
+    if generate_icon:
+        target_icon = fw.path / "CNext" / "resources" / "graphic" / "icons" / "normal" / f"I_{workbench_name}.bmp"
+        if target_icon.exists():
+            return {
+                "status": "error",
+                "error": f"Target icon already exists on disk: {target_icon}",
+                "plan": None,
+            }
+        if cs is not None and (str(target_icon) in cs.created or str(target_icon) in cs.modified):
+            return {
+                "status": "error",
+                "error": f"Target icon already exists in staged ChangeSet: {target_icon}",
                 "plan": None,
             }
 

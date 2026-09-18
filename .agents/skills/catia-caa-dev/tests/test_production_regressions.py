@@ -3543,7 +3543,7 @@ try:
     w, h = struct.unpack("<ii", bmp_bytes[18:26])
     check("WB20: icon dimensions are 22x22", w == 22 and h == 22, f"w={w}, h={h}")
 
-    # ── WB21: 工作台编译指令流与环境依赖闭环 ──
+    # ── WB21: 工作台编译命令链生成与依赖配置校验（构建准备前置审计） ──
     from env import CAAEnvironment
     test_env = CAAEnvironment()
     test_env.initialize()
@@ -3564,7 +3564,7 @@ try:
     check("WB21: Imakefile contains CATApplicationFrame", "CATApplicationFrame" in imake_now)
     check("WB21: IdentityCard contains ApplicationFrame", "ApplicationFrame" in ic_now)
 
-    # ── WB22: 运行时资源视图同步与图标映射闭环 ──
+    # ── WB22: 运行时资源视图同步（独立派生产物复制测试） ──
     from icon_provider import copy_icons_to_runtime
     runtime_icon_dir = wb_ws / "win_b64" / "resources" / "graphic" / "icons" / "normal"
     copy_icons_to_runtime(wb_ws)
@@ -3583,11 +3583,54 @@ try:
     check("WB23: Imakefile.mk restored 100%", imake_shared.read_bytes() == imake_bytes_initial)
     check("WB23: IdentityCard.xml restored 100%", ic_xml.read_bytes() == ic_bytes_initial)
 
-    # ── WB24: CATIA V5-6R2018 (B28) 真实环境探测与工作台契约验证 ──
+    # ── WB24: CATIA B28 安装环境与 win_b64 架构配置静态探测 ──
     has_b28 = bool(test_env.config.get("CATIA_INSTALL"))
-    check("WB24: B28 environment detected", has_b28, str(test_env.config.get("CATIA_INSTALL")))
+    check("WB24: B28 installation detected", has_b28, str(test_env.config.get("CATIA_INSTALL")))
     arch = test_env.get_architecture() if hasattr(test_env, "get_architecture") else "win_b64"
     check("WB24: architecture is win_b64", arch == "win_b64", arch)
+
+    # ── WB25: 方案 A 严格拦截已有同名图标（防止静默覆盖与回滚误删） ──
+    icons_normal_dir = fw_dir / "CNext" / "resources" / "graphic" / "icons" / "normal"
+    icons_normal_dir.mkdir(parents=True, exist_ok=True)
+    existing_icon_path = icons_normal_dir / "I_ExistingIconWb.bmp"
+    orig_icon_payload = b"BM_FAKE_EXISTING_BMP_DATA_123456789"
+    existing_icon_path.write_bytes(orig_icon_payload)
+
+    ctx_wb.refresh(force=True)
+    r_inspect_coll = inspect_create_workbench(
+        ctx_wb, "ExistingIconWb", framework="TestFW.edu", module="SharedMod.m", generate_icon=True
+    )
+    check("WB25: inspect rejects existing icon collision", r_inspect_coll.get("status") == "error", str(r_inspect_coll))
+    err_coll = r_inspect_coll.get("error") or ""
+    check("WB25: inspect error mentions icon already exists", "already exists on disk" in err_coll.lower(), err_coll)
+
+    # 构造跳过 inspect 直接调用 create_workbench 场景，验证执行期 Gate 3 仍然硬拦截
+    mock_plan_coll = {
+        "plan_schema_version": "2.0",
+        "workbench_identity": {
+            "name": "ExistingIconWb",
+            "addin_class": "ExistingIconWbAddin",
+            "framework": "TestFW.edu",
+            "module": "SharedMod.m",
+            "module_bare_name": "SharedMod",
+        },
+        "file_creations": [
+            {"path": str(existing_icon_path), "kind": "icon_binary", "content": "[BINARY]", "binary_b64": "QUJD"},
+        ],
+        "patches": [],
+        "source_snapshots": [],
+        "dependencies_audit": {},
+    }
+    r_create_coll = create_workbench(
+        ctx_wb, "ExistingIconWb", framework="TestFW.edu", module="SharedMod.m", plan=mock_plan_coll
+    )
+    check("WB25: create Gate 3 rejects existing icon collision", r_create_coll.get("status") == "error", str(r_create_coll))
+    check("WB25: existing icon untouched on disk", existing_icon_path.read_bytes() == orig_icon_payload)
+    existing_icon_path.unlink()
+
+    # ── WB26: Runtime View 事务边界确证（派生缓存独立于 ChangeSet 回滚） ──
+    # 验证 synced_icon 存在于 win_b64，未被源码级 ChangeSet 误认并删除（符合派生可重建构建缓存定义）
+    check("WB26: win_b64 runtime artifact survives source rollback as derived cache", synced_icon.exists())
 
 finally:
     shutil.rmtree(wb_ws, ignore_errors=True)
