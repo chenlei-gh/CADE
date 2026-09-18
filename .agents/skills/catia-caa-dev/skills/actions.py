@@ -490,6 +490,7 @@ def create_command(
     tooltip: str = None,
     category: str = None,
     visibility: str = Visibility.ALWAYS,
+    load_name: Optional[str] = None,
     cs: ChangeSet = None,
 ) -> Dict:
     """
@@ -520,6 +521,7 @@ def create_command(
     )
     fw_name = mod.framework.name if mod.framework else "MyFramework"
     module_base = module.replace(".m", "")
+    resolved_load_name = load_name or module_base
 
     src = mod.src_dir or mod.path / "src"
     li = mod.path / "LocalInterfaces"
@@ -963,6 +965,8 @@ def create_command(
 
     cs.merge_metadata(
         command=name,
+        class_name=name,
+        load_name=resolved_load_name,
         module=module,
         addin=addin_name,
         is_stateful=is_stateful,
@@ -1150,21 +1154,69 @@ def create_component(
     return _result(cs)
 
 
-def add_command_to_workbench(
-    ctx: ActionContext, command_name: str, workbench_name: str,
-    *, cs: ChangeSet = None,
-) -> Dict:
-    """Register a command header in a workbench's Addin source file.
+def strip_c_comments_and_strings(code: str) -> str:
+    """Strip C/C++ comments (/* */ and //) and string/char literals from code."""
+    pattern = re.compile(
+        r'//[^\r\n]*'                       # line comment
+        r'|/\*[\s\S]*?\*/'                  # block comment
+        r'|"(?:\\.|[^"\\])*"'               # string literal
+        r"|'(?:\\.|[^'\\])*'",              # char literal
+        re.MULTILINE
+    )
+    def replacer(match):
+        s = match.group(0)
+        if s.startswith('//'):
+            return ''
+        elif s.startswith('/*'):
+            return '\n' * s.count('\n')
+        else:
+            return '""'
+    return pattern.sub(replacer, code)
 
-    Inserts the command header declaration include and instantiation in
-    the Addin's CreateCommands() method. Supports both existing commands
-    and commands queued in a caller-owned ChangeSet (`cs`).
+
+def strip_c_comments(code: str) -> str:
+    """Strip C/C++ comments (/* */ and //) from code, preserving string literals."""
+    pattern = re.compile(
+        r'//[^\r\n]*'                       # line comment
+        r'|/\*[\s\S]*?\*/'                  # block comment
+        r'|"(?:\\.|[^"\\])*"'               # string literal
+        r"|'(?:\\.|[^'\\])*'",              # char literal
+        re.MULTILINE
+    )
+    def replacer(match):
+        s = match.group(0)
+        if s.startswith('//'):
+            return ''
+        elif s.startswith('/*'):
+            return '\n' * s.count('\n')
+        else:
+            return s
+    return pattern.sub(replacer, code)
+
+
+def add_command_to_workbench(
+    ctx: ActionContext,
+    command_name: str,
+    workbench_name: str,
+    *,
+    load_name: Optional[str] = None,
+    cs: ChangeSet = None,
+) -> Dict:
+    """Register a 4-parameter command header in a workbench's Addin source file.
+
+    Inserts the 4-parameter command header registration in the Addin's
+    CreateCommands() method using the decoupled CATCommandHeader architecture.
+    Supports both existing commands and commands queued in a caller-owned
+    ChangeSet (`cs`).
 
     Note on scope:
       Implemented:
-        - Command header include and registration in Addin source
+        - 4-parameter command header registration in Addin CreateCommands()
+        - MacDeclareHeader reuse or deterministic derivation (AddinClassHeader)
+        - Lexical stripping of comments/strings for declaration & registration discovery
+        - Identity (HeaderClassName, HeaderID) and payload (LoadName, ClassName) conflict detection
         - Support for caller-owned ChangeSet (in-memory command and Addin)
-      Not implemented in this scope:
+      Not implemented in this scope (Slice 1):
         - Toolbar Starter creation and Access mounting (CreateToolbars)
         - Resource files generation (.CATNls / .CATRsc)
         - Cross-module LINK_WITH dependency updates
@@ -1175,28 +1227,32 @@ def add_command_to_workbench(
 
     cmd = next((c for c in cmds if c.name.lower() == command_name.lower()), None)
     cmd_in_cs = False
-    mod_name = "Unknown"
 
     if cmd:
-        mod_name = cmd.module.name if cmd.module else "Unknown"
+        pass
     elif cs is not None:
         meta_cmd = cs.metadata.get("command")
         if meta_cmd and meta_cmd.lower() == command_name.lower():
             cmd_in_cs = True
-            mod_name = cs.metadata.get("module") or "Unknown"
         else:
             for p_str in cs.created:
                 p = Path(p_str)
                 if p.stem.lower() == command_name.lower() and p.suffix.lower() in (".cpp", ".h"):
                     cmd_in_cs = True
-                    for parent in p.parents:
-                        if parent.name.endswith(".m"):
-                            mod_name = parent.name
-                            break
                     break
 
     if not cmd and not cmd_in_cs:
         return _error(f"Command not found: {command_name}")
+
+    target_load_name = load_name or (cs.metadata.get("load_name") if cs else None)
+    if not target_load_name:
+        return _error(
+            f"Cannot resolve load_name for command '{command_name}'. "
+            "load_name must be provided explicitly or stored in ChangeSet metadata."
+        )
+
+    target_class_name = (cs.metadata.get("class_name") if cs else None) or command_name
+    target_header_id = f"{command_name}Hdr"
 
     wb = next((w for w in wbs if w.name.lower() == workbench_name.lower()), None)
     if not wb:
@@ -1220,27 +1276,61 @@ def add_command_to_workbench(
 
     content = old_content
 
-    # 1. Ensure header include is present
-    header_name = f"{command_name}Header.h"
-    include_line = f'#include "{header_name}"'
-    if header_name not in content:
+    # Analyze MacDeclareHeader declarations via lexical stripping
+    stripped = strip_c_comments_and_strings(content)
+    declared_headers = re.findall(r"\bMacDeclareHeader\s*\(\s*(\w+)\s*\)", stripped)
+    if len(declared_headers) > 1:
+        return _error(
+            f"Workbench '{workbench_name}' Addin source contains multiple MacDeclareHeader declarations ({declared_headers}). Cannot infer HeaderClass."
+        )
+    elif len(declared_headers) == 1:
+        target_header_class = declared_headers[0]
+    else:
+        # 0 headers declared: derive from Addin class name
+        m_cls = re.search(r"void\s+(\w+)::CreateCommands\s*\(", content)
+        addin_cls = m_cls.group(1) if m_cls else f"{wb.name}Addin"
+        target_header_class = f"{addin_cls}Header"
+
+        header_decl = f"MacDeclareHeader({target_header_class});"
         matches = list(re.finditer(r'^[ \t]*#include\s+[<"][^>"]+[>"].*$', content, re.MULTILINE))
         if matches:
             last_match = matches[-1]
             pos = last_match.end()
-            content = content[:pos] + f"\n{include_line}" + content[pos:]
+            content = content[:pos] + f"\n\n{header_decl}" + content[pos:]
         else:
-            content = f"{include_line}\n" + content
+            content = f"{header_decl}\n\n" + content
 
-    # 2. Ensure command registration is present in CreateCommands()
-    clean_mod_name = mod_name.replace(".m", "") if mod_name != "Unknown" else "Unknown"
-    new_cmd = f'    new {command_name}Header("{command_name}", "{clean_mod_name}");'
-    if new_cmd not in content and f'"{command_name}"' not in content:
-        m = re.search(r"void\s+\w+::CreateCommands\s*\([^)]*\)\s*\{", content)
-        if m:
-            anchor = m.group(0)
-            insertion = anchor + f"\n    // Register {command_name}\n{new_cmd}"
-            content = content.replace(anchor, insertion, 1)
+    # Parse existing 4-parameter Header registrations inside CreateCommands()
+    stripped_for_reg = strip_c_comments(content)
+    m_cc = re.search(r"void\s+\w+::CreateCommands\s*\([^)]*\)\s*\{", stripped_for_reg)
+    if not m_cc:
+        return _error(f"Could not locate CreateCommands() in {addin_source}")
+
+    reg_pattern = re.compile(
+        r'new\s+(\w+)\s*\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*\(void\s*\*\)\s*NULL\s*\);?'
+    )
+    existing_regs = reg_pattern.findall(stripped_for_reg)
+
+    is_idempotent = False
+    for hdr_cls, hdr_id, ld_name, cls_name in existing_regs:
+        if (hdr_cls, hdr_id) == (target_header_class, target_header_id):
+            if (ld_name, cls_name) == (target_load_name, target_class_name):
+                is_idempotent = True
+                break
+            else:
+                return _error(
+                    f"Header registration conflict: ({target_header_class}, {target_header_id}) "
+                    f"is already registered with payload ({ld_name}, {cls_name}), "
+                    f"cannot register with ({target_load_name}, {target_class_name})"
+                )
+
+    if not is_idempotent:
+        m_real = re.search(r"void\s+\w+::CreateCommands\s*\([^)]*\)\s*\{", content)
+        if not m_real:
+            return _error(f"Could not locate CreateCommands() in {addin_source}")
+        anchor = m_real.group(0)
+        reg_statement = f'    new {target_header_class}("{target_header_id}", "{target_load_name}", "{target_class_name}", (void *)NULL);'
+        content = content.replace(anchor, anchor + f"\n{reg_statement}", 1)
 
     cs = cs if cs is not None else ChangeSet(
         action="add_command_to_workbench",
@@ -1253,7 +1343,14 @@ def add_command_to_workbench(
         else:
             cs.add_modify(addin_source, content)
 
-    cs.merge_metadata(command=command_name, workbench=workbench_name)
+    cs.merge_metadata(
+        command=command_name,
+        workbench=workbench_name,
+        header_class=target_header_class,
+        header_id=target_header_id,
+        load_name=target_load_name,
+        class_name=target_class_name,
+    )
     return _result(cs)
 
 

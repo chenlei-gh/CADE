@@ -1036,15 +1036,17 @@ try:
 finally:
     shutil.rmtree(merge_ws, ignore_errors=True)
 
-# ── add_command_to_workbench: discovery & ChangeSet contract (R-2 / A-1) ──
-# 1. Disk command found and injected into Addin source.
-# 2. In-memory command queued in cs.created / cs.metadata discovered correctly.
-# 3. In-memory Addin source in cs.modified used as base, not stale disk copy.
-# 4. Existing header include is not duplicated.
-# 5. Missing header include is cleanly inserted after last include.
-# 6. Missing Addin source returns explicit error, not empty pending.
-# 7. Repeated invocation is idempotent (no duplicate include or registration).
-# 8. Orchestrator create_executable_command propagates workbench errors.
+# ── add_command_to_workbench: decoupled 4-param Header & Pre-validation (R-2-C) ──
+# S1 (0 HeaderClass): Derives AddinClassHeader + injects MacDeclareHeader + 4-param registration
+# S2 (1 HeaderClass): Reuses existing HeaderClass, does not duplicate MacDeclareHeader
+# S3 (>1 HeaderClass): Multiple MacDeclareHeader declarations -> refuses to guess, zero mutations
+# S4 (完全重复注册): Same (HeaderClass, HeaderID, LoadName, ClassName) -> idempotent, no modifications
+# S5 (同 identity 异 payload): Same (HeaderClass, HeaderID) with different LoadName/ClassName -> conflict error
+# S6 (Metadata E2E): create_executable_command full flow carries load_name/class_name/module/command
+# S7 (Orchestrator Pre-validation): Pre-validation Gate fails before any mutation; ChangeSet is None / empty
+# S8 (External Header 隔离): Addin source contains NO #include "{Command}Header.h"
+# S9 (Lexical false-positive): Comments & string literals do not trigger false declarations or conflicts
+# S10 (created/modified/disk 三来源): Correctly reads from and writes to disk, cs.modified, and cs.created
 wb_ws = Path(tempfile.mkdtemp(prefix="cade_wb_test_"))
 try:
     fw_dir = wb_ws / "TestFW.edu"
@@ -1062,7 +1064,7 @@ try:
         "CATStateCommand BuildGraph\n", encoding="utf-8"
     )
 
-    # Workbench with Addin source
+    # Workbench with Addin source (0 headers declared)
     addin_cpp = src_dir / "SampleWorkbenchAddin.cpp"
     addin_initial = (
         '#include "SampleWorkbenchAddin.h"\n'
@@ -1077,88 +1079,211 @@ try:
 
     ctx = ActionContext(wb_ws)
 
-    # 1. Disk command discovery and injection
-    r1 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench")
-    check("add_command_to_workbench finds disk command",
+    # ── S1: 0 HeaderClass ──
+    r1 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", load_name="TestMod")
+    check("S1: add_command_to_workbench status is success/pending",
           r1.get("status") in ("success", "pending"), str(r1))
     cs1_mod = r1.get("changeset", {}).get("modified", {})
     new_addin_1 = cs1_mod.get(str(addin_cpp), "")
-    check("add_command_to_workbench injects include for disk command",
-          '#include "DiskCmdHeader.h"' in new_addin_1, new_addin_1)
-    check("add_command_to_workbench registers disk command",
-          'new DiskCmdHeader("DiskCmd", "TestMod");' in new_addin_1, new_addin_1)
+    check("S1: derives and injects MacDeclareHeader(SampleWorkbenchAddinHeader)",
+          "MacDeclareHeader(SampleWorkbenchAddinHeader);" in new_addin_1, new_addin_1)
+    check("S1: registers 4-param header in CreateCommands()",
+          'new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);' in new_addin_1, new_addin_1)
+    check("S1: declaration inserted below includes",
+          '#include <iostream>\n\nMacDeclareHeader(SampleWorkbenchAddinHeader);' in new_addin_1, new_addin_1)
 
-    # 2. In-memory command queued in ChangeSet (cs.created & cs.metadata)
-    cs_mem = ChangeSet(action="cmd", description="memory cmd")
-    mem_cmd_path = src_dir / "MemoryCmd.cpp"
-    cs_mem.add_create(mem_cmd_path, "CATStateCommand BuildGraph\n")
-    cs_mem.merge_metadata(command="MemoryCmd", module="TestMod.m")
-    r2 = add_command_to_workbench(ctx, "MemoryCmd", "SampleWorkbench", cs=cs_mem)
-    check("add_command_to_workbench finds in-memory command in ChangeSet",
-          r2.get("status") in ("success", "pending"), str(r2))
-    new_addin_2 = r2.get("changeset", {}).get("modified", {}).get(str(addin_cpp), "")
-    check("add_command_to_workbench registers in-memory command",
-          'new MemoryCmdHeader("MemoryCmd", "TestMod");' in new_addin_2, new_addin_2)
-
-    # 3. Addin source already in cs.modified is used as base
-    cs_chain = ChangeSet(action="chain", description="chain")
-    cs_chain.add_modify(addin_cpp, addin_initial + "\n// existing modification\n")
-    r3 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", cs=cs_chain)
-    new_addin_3 = r3.get("changeset", {}).get("modified", {}).get(str(addin_cpp), "")
-    check("add_command_to_workbench preserves prior cs.modified content",
-          "// existing modification" in new_addin_3, new_addin_3)
-
-    # 4. Existing include is not duplicated
-    addin_with_inc = (
+    # ── S2: 1 HeaderClass ──
+    addin_single_hdr = (
         '#include "SampleWorkbenchAddin.h"\n'
-        '#include "DiskCmdHeader.h"\n\n'
+        '#include "CATCommandHeader.h"\n\n'
         'CATIAfrGeneralWksAddin\n\n'
+        'MacDeclareHeader(CustomWksHeader);\n\n'
         'void SampleWorkbenchAddin::CreateCommands() {\n'
         '}\n\n'
         'void SampleWorkbenchAddin::CreateToolbars() {\n'
         '}\n'
     )
-    addin_cpp.write_text(addin_with_inc, encoding="utf-8")
+    addin_cpp.write_text(addin_single_hdr, encoding="utf-8")
     ctx.refresh(force=True)
-    r4 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench")
-    new_addin_4 = (r4.get("changeset") or {}).get("modified", {}).get(str(addin_cpp), "")
-    check("add_command_to_workbench does not duplicate existing include",
-          new_addin_4.count("DiskCmdHeader.h") == 1, new_addin_4)
+    r2 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", load_name="TestMod")
+    check("S2: status is success/pending", r2.get("status") in ("success", "pending"), str(r2))
+    new_addin_2 = r2.get("changeset", {}).get("modified", {}).get(str(addin_cpp), "")
+    check("S2: reuses existing CustomWksHeader in registration",
+          'new CustomWksHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);' in new_addin_2, new_addin_2)
+    check("S2: does not inject duplicate MacDeclareHeader",
+          new_addin_2.count("MacDeclareHeader") == 1, new_addin_2)
 
-    # 5. Missing include is cleanly inserted after last include
-    check("include cleanly inserted after last existing include",
-          '#include <iostream>\n#include "DiskCmdHeader.h"' in new_addin_1, new_addin_1)
-
-    # 6. Missing Addin source returns explicit error, not empty pending
-    bare_wb_cpp = src_dir / "BareWorkbench.cpp"
-    bare_wb_cpp.write_text("CATCmdWorkbench BareWorkbench;\n", encoding="utf-8")
+    # ── S3: >1 HeaderClass ──
+    addin_multi_hdr = (
+        '#include "SampleWorkbenchAddin.h"\n'
+        '#include "CATCommandHeader.h"\n\n'
+        'CATIAfrGeneralWksAddin\n\n'
+        'MacDeclareHeader(HeaderOne);\n'
+        'MacDeclareHeader(HeaderTwo);\n\n'
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::CreateToolbars() {\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_multi_hdr, encoding="utf-8")
     ctx.refresh(force=True)
-    r6 = add_command_to_workbench(ctx, "DiskCmd", "BareWorkbench")
-    check("missing Addin source returns error status",
-          r6.get("status") == "error", str(r6))
-    check("missing Addin source error message is informative",
-          "Addin source" in r6.get("message", ""), r6.get("message", ""))
+    r3 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", load_name="TestMod")
+    check("S3: multiple declarations return error", r3.get("status") == "error", str(r3))
+    check("S3: error message explains multiple declarations",
+          "multiple MacDeclareHeader" in r3.get("message", ""), r3.get("message", ""))
+    check("S3: no changeset modifications returned",
+          r3.get("changeset") is None, str(r3))
 
-    # 7. Repeated invocation is idempotent
-    addin_cpp.write_text(new_addin_1, encoding="utf-8")
+    # ── S4: 完全重复注册 (Idempotency) ──
+    addin_with_reg = (
+        '#include "SampleWorkbenchAddin.h"\n'
+        '#include "CATCommandHeader.h"\n\n'
+        'CATIAfrGeneralWksAddin\n\n'
+        'MacDeclareHeader(SampleWorkbenchAddinHeader);\n\n'
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::CreateToolbars() {\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_with_reg, encoding="utf-8")
     ctx.refresh(force=True)
-    r7 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench")
-    r7_modified = r7.get("changeset", {}).get("modified", {})
-    check("repeated invocation produces no additional modifications",
-          str(addin_cpp) not in r7_modified, str(r7_modified))
+    r4 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", load_name="TestMod")
+    check("S4: idempotent call succeeds/pending", r4.get("status") in ("success", "pending"), str(r4))
+    r4_mod = r4.get("changeset", {}).get("modified", {})
+    check("S4: identical registration produces no modifications",
+          str(addin_cpp) not in r4_mod, str(r4_mod))
 
-    # 8. Orchestrator create_executable_command propagates workbench errors
-    r8 = create_executable_command(
+    # ── S5: 同 identity 异 payload (Conflict) ──
+    # Case A: Different LoadName
+    r5a = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", load_name="DifferentMod")
+    check("S5a: different LoadName returns error", r5a.get("status") == "error", str(r5a))
+    check("S5a: error reports conflict", "conflict" in r5a.get("message", "").lower(), r5a.get("message", ""))
+
+    # Case B: Different ClassName
+    cs_diff_cls = ChangeSet(action="diff", description="diff")
+    cs_diff_cls.merge_metadata(class_name="DifferentClass", load_name="TestMod", command="DiskCmd")
+    r5b = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", cs=cs_diff_cls)
+    check("S5b: different ClassName returns error", r5b.get("status") == "error", str(r5b))
+    check("S5b: error reports conflict", "conflict" in r5b.get("message", "").lower(), r5b.get("message", ""))
+
+    # ── S6: Metadata E2E (create_executable_command) ──
+    addin_cpp.write_text(addin_single_hdr, encoding="utf-8")
+    ctx.refresh(force=True)
+    r6 = create_executable_command(
         ctx,
-        name="FailCmd",
+        name="E2ECmd",
+        module="TestMod.m",
+        framework="TestFW.edu",
+        add_to_workbench="SampleWorkbench",
+        load_name="CustomLoadName",
+    )
+    check("S6: create_executable_command returns pending", r6.get("status") == "pending", str(r6))
+    cs6 = r6.get("changeset", {})
+    meta6 = cs6.get("metadata", {})
+    check("S6: metadata contains command", meta6.get("command") == "E2ECmd", str(meta6))
+    check("S6: metadata contains class_name", meta6.get("class_name") == "E2ECmd", str(meta6))
+    check("S6: metadata contains load_name", meta6.get("load_name") == "CustomLoadName", str(meta6))
+    check("S6: metadata contains module", meta6.get("module") == "TestMod.m", str(meta6))
+    addin_6 = cs6.get("modified", {}).get(str(addin_cpp), "")
+    check("S6: 4-param header registration in Addin source",
+          'new CustomWksHeader("E2ECmdHdr", "CustomLoadName", "E2ECmd", (void *)NULL);' in addin_6, addin_6)
+
+    # ── S7: Orchestrator Pre-validation Gate (A-3 fix) ──
+    # Case A: Missing workbench
+    r7a = create_executable_command(
+        ctx,
+        name="GateFailCmdA",
         module="TestMod.m",
         framework="TestFW.edu",
         add_to_workbench="NonExistentWorkbench",
     )
-    check("create_executable_command propagates workbench error",
-          r8.get("status") == "error", str(r8))
-    check("propagated error mentions missing workbench",
-          "NonExistentWorkbench" in r8.get("message", ""), str(r8))
+    check("S7a: pre-validation fails for missing workbench", r7a.get("status") == "error", str(r7a))
+    check("S7a: changeset is None (zero mutation)", r7a.get("changeset") is None, str(r7a))
+
+    # Case B: Multi-header workbench fails at pre-validation gate
+    addin_cpp.write_text(addin_multi_hdr, encoding="utf-8")
+    ctx.refresh(force=True)
+    r7b = create_executable_command(
+        ctx,
+        name="GateFailCmdB",
+        module="TestMod.m",
+        framework="TestFW.edu",
+        add_to_workbench="SampleWorkbench",
+    )
+    check("S7b: pre-validation fails for multi-header workbench", r7b.get("status") == "error", str(r7b))
+    check("S7b: changeset is None (zero mutation)", r7b.get("changeset") is None, str(r7b))
+    check("S7b: no command files created on disk", not (src_dir / "GateFailCmdB.cpp").exists())
+
+    # ── S8: External Header 隔离 ──
+    check("S8: new_addin_1 has no DiskCmdHeader.h include",
+          '#include "DiskCmdHeader.h"' not in new_addin_1, new_addin_1)
+    check("S8: new_addin_2 has no DiskCmdHeader.h include",
+          '#include "DiskCmdHeader.h"' not in new_addin_2, new_addin_2)
+    check("S8: addin_6 has no E2ECmdHeader.h include",
+          '#include "E2ECmdHeader.h"' not in addin_6, addin_6)
+
+    # ── S9: Lexical false-positive ──
+    addin_lexical = (
+        '#include "SampleWorkbenchAddin.h"\n'
+        '#include <iostream>\n\n'
+        '// MacDeclareHeader(FakeCommentHeader);\n'
+        '/* MacDeclareHeader(FakeBlockCommentHeader);\n'
+        '   new SampleWorkbenchAddinHeader("DiskCmdHdr", "ConflictMod", "ConflictClass", (void *)NULL);\n'
+        '*/\n'
+        'const char* dummy = "MacDeclareHeader(FakeStringHeader)";\n\n'
+        'CATIAfrGeneralWksAddin\n\n'
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    // new SampleWorkbenchAddinHeader("DiskCmdHdr", "CommentMod", "CommentClass", (void *)NULL);\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::CreateToolbars() {\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_lexical, encoding="utf-8")
+    ctx.refresh(force=True)
+    r9 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", load_name="TestMod")
+    check("S9: status is success/pending despite comment traps",
+          r9.get("status") in ("success", "pending"), str(r9))
+    new_addin_9 = r9.get("changeset", {}).get("modified", {}).get(str(addin_cpp), "")
+    check("S9: ignores fake headers in comments and derives AddinClassHeader",
+          "MacDeclareHeader(SampleWorkbenchAddinHeader);" in new_addin_9, new_addin_9)
+    check("S9: injects 4-param registration without false conflict",
+          'new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);' in new_addin_9, new_addin_9)
+
+    # ── S10: created / modified / disk 三来源 ──
+    # 10a. cs.modified: Addin source in cs.modified is preserved and extended
+    cs_mod = ChangeSet(action="mod", description="mod")
+    cs_mod.add_modify(addin_cpp, addin_initial + "\n// pre-existing change in cs.modified\n")
+    r10a = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", load_name="TestMod", cs=cs_mod)
+    new_addin_10a = r10a.get("changeset", {}).get("modified", {}).get(str(addin_cpp), "")
+    check("S10a: preserves pre-existing change in cs.modified",
+          "// pre-existing change in cs.modified" in new_addin_10a, new_addin_10a)
+    check("S10a: registers command in cs.modified content",
+          'new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);' in new_addin_10a, new_addin_10a)
+
+    # 10b. cs.created: Addin source in cs.created is updated in cs.created, not moved to cs.modified
+    cs_created = ChangeSet(action="create", description="create")
+    fake_created_addin = src_dir / "NewWorkbenchAddin.cpp"
+    fake_created_content = (
+        '#include "NewWorkbenchAddin.h"\n\n'
+        'void NewWorkbenchAddin::CreateCommands() {\n'
+        '}\n'
+    )
+    cs_created.add_create(fake_created_addin, fake_created_content)
+    wb_obj = next((w for w in ctx.snapshot.get_all_workbenches() if w.name.lower() == "sampleworkbench"), None)
+    orig_addin_source = wb_obj.addin_source
+    wb_obj.addin_source = fake_created_addin
+    try:
+        r10b = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", load_name="TestMod", cs=cs_created)
+        check("S10b: updates cs.created[str(addin)]",
+              str(fake_created_addin) in cs_created.created, str(cs_created.created.keys()))
+        check("S10b: does not put created addin into cs.modified",
+              str(fake_created_addin) not in cs_created.modified, str(cs_created.modified.keys()))
+        check("S10b: created content has 4-param header registration",
+              'new NewWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);' in cs_created.created[str(fake_created_addin)],
+              cs_created.created[str(fake_created_addin)])
+    finally:
+        wb_obj.addin_source = orig_addin_source
 finally:
     shutil.rmtree(wb_ws, ignore_errors=True)
 
