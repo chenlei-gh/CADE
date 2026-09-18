@@ -28,13 +28,6 @@ capabilities:
       - generator.py
     note: 17 validated B28 templates; the production code-generation engine.
 
-  spec_generation:
-    status: experimental
-    implementation:
-      - experimental/specification.py
-    note: Spec-driven generation research. Not wired into the kernel pipeline.
-      Production generation uses changeset.render_template via intents/.
-
   create_feature:
     status: unavailable
     action: do_not_fix

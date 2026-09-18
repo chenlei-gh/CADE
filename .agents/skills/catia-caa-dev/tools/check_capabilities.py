@@ -753,7 +753,7 @@ def check(name, file_path, entry_src, test_src, doc_src,
         rel = rel[len("skills/"):]
     # Capability-name match is precise and applies to any declared status.
     # File fallback is ONLY safe for 'experimental' (a whole-file research
-    # module like specification.py); it must NOT be used for 'unavailable',
+    # module); it must NOT be used for 'unavailable',
     # which is a single-capability property. A file-level unavailable tag
     # could smear other active capabilities in the same file.
     declared = registry.get("by_name", {}).get(name)

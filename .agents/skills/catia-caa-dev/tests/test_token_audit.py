@@ -25,7 +25,7 @@ from intents import (
 )
 from diagnostics import diagnose_workspace
 from build import error_result
-from specification import CommandSpec, FeatureSpec
+from meta_model import Command, Dialog
 from token_optimizer import optimize
 
 ctx = ActionContext()
@@ -88,10 +88,10 @@ measure("diagnose_workspace", diagnose_workspace, ctx)
 print("  Errors:")
 measure("error_result     ", error_result, "Build failed: missing include", detail={"file": "MyCmd.cpp", "line": 42})
 
-# ═══ Specifications ═══════════════════════════════════════
-print("  Specs:")
-measure("CommandSpec.to_dict", lambda: CommandSpec(name="MyCmd", module="M.m", framework="Fw.edu").to_dict())
-measure("FeatureSpec.to_dict", lambda: FeatureSpec(name="MyFeat", module="M.m").to_dict())
+# ═══ Domain Entities ══════════════════════════════════════
+print("  Entities:")
+measure("Command.to_dict      ", lambda: Command(name="MyCmd", path=Path("MyCmd.cpp")).to_dict())
+measure("Dialog.to_dict       ", lambda: Dialog(name="MyDlg", path=Path("MyDlg.cpp")).to_dict())
 
 # ═══ Summary ═══════════════════════════════════════════════
 print("\n" + "=" * 80)

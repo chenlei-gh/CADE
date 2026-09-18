@@ -64,6 +64,14 @@
 - **Restore condition**: 若未来有真正的服务暴露需求，基于完备的 IDL/TIE 代码生成与
   Kernel Router 支持重新设计引入。
 
+### spec_generation
+- **Removed**: 架构减法退役（Phase 2 Specification 实验支线整链退役）。
+- **Reason**: 未接入 kernel 生产管线（原 `skills/experimental/specification.py` 与
+  `generator.generate_from_spec()` 构成未被生产使用的第二套实验生成链）。生产管线
+  统一采用 Requirement → Intent → Planner → ChangeSet/Writer → Verification 闭环。
+- **Restore condition**: 若未来确有 Spec 驱动的独立抽象需求，应先定义好与 Kernel 生产
+  管线的端到端集成契约后再行引入，不维护悬空实验链。
+
 ---
 
 ## Unavailable（有意关闭，非 bug）

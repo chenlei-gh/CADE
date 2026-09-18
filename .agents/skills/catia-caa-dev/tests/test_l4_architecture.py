@@ -6,7 +6,7 @@ Verify that the architecture constraints are never violated:
   - AI never calls Generator directly
   - Development never writes files directly (must go through ChangeSet)
   - Generator never accesses Workspace
-  - Intent → Specification → Generator chain is preserved
+  - Intent → Planner/Actions → ChangeSet chain is preserved
   - ChangeSet is the only file writer
 """
 
@@ -16,7 +16,6 @@ from pathlib import Path
 
 SKILL = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL / "skills"))
-sys.path.insert(0, str(SKILL / "skills" / "experimental"))
 
 total = passed = 0
 
@@ -114,29 +113,33 @@ ck(
 )
 
 # ═══════════════════════════════════════════════════════════════════
-# 4. Specification independence
+# 4. MetaModel domain independence
 # ═══════════════════════════════════════════════════════════════════
 
-print("\n[4] Specification is independent of AI and Generator")
+print("\n[4] MetaModel is independent of AI, Generator and Actions")
 
-import specification as spec_mod
+import meta_model as mm_mod
 
-spec_src = inspect.getsource(spec_mod)
+mm_src = inspect.getsource(mm_mod)
 ck(
-    "4.1 spec does not import intents",
-    "import intents" not in spec_src and "from intents" not in spec_src,
+    "4.1 meta_model does not import intents",
+    "import intents" not in mm_src and "from intents" not in mm_src,
 )
 ck(
-    "4.2 spec does not import generator",
-    "import generator" not in spec_src and "from generator" not in spec_src,
+    "4.2 meta_model does not import generator",
+    "import generator" not in mm_src and "from generator" not in mm_src,
 )
 ck(
-    "4.3 spec does not import actions",
-    "import actions" not in spec_src and "from actions" not in spec_src,
+    "4.3 meta_model does not import actions",
+    "import actions" not in mm_src and "from actions" not in mm_src,
 )
 ck(
-    "4.4 spec is pure dataclass",
-    "from dataclasses" in spec_src or "@dataclass" in spec_src,
+    "4.4 meta_model is pure dataclass/domain model",
+    "from dataclasses" in mm_src or "@dataclass" in mm_src,
+)
+ck(
+    "4.5 meta_model does not import analyzer",
+    "import analyzer" not in mm_src and "from analyzer" not in mm_src,
 )
 
 # ═══════════════════════════════════════════════════════════════════
@@ -163,8 +166,8 @@ ck(
     "import actions" not in gen_src and "from actions" not in gen_src,
 )
 ck(
-    "5.4 specification.py does not import intents",
-    "import intents" not in spec_src and "from intents" not in spec_src,
+    "5.4 meta_model.py does not import intents",
+    "import intents" not in mm_src and "from intents" not in mm_src,
 )
 ck(
     "5.5 changeset.py is independent",

@@ -81,8 +81,7 @@ MCP 只暴露 3 个工具：`develop` / `analyze` / `repair`。其余 CLI/Python
 └─────────────────────────────────────────────┘
 ```
 
-生产生成路径：`Intent → intents/ → changeset → build_gate`。  
-`experimental/specification.py` **未接入 kernel**，不要当成生产模块。
+生产生成路径：`Intent → intents/ → changeset → build_gate`。
 
 ---
 
@@ -151,12 +150,6 @@ MCP 只暴露 3 个工具：`develop` / `analyze` / `repair`。其余 CLI/Python
 | `verifier.py` | 静态 + mkmk 验证 | 719 |
 | `refactor.py` | 重命名/移动 | 608 |
 | `ui_lint.py` | UI 失效模式静态检查 | 346 |
-
-### 非生产
-
-| 模块 | 状态 | 行数 |
-|------|------|------|
-| `experimental/specification.py` | `lifecycle.yaml`: experimental；未接入 kernel | 435 |
 
 `tools/` 是维护/辅助脚本（CAADoc 索引、capability 对账、环境安装），**不属于 Kernel 运行链**。
 

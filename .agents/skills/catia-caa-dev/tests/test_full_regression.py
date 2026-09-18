@@ -11,9 +11,8 @@ Also runs all existing test suites as subprocesses at the end.
 Sections:
   1.  File Structure & Module Imports (25 tests)
   2.  Rich Domain Model — 8 entities (20 tests)
-  3.  Specification Layer — all spec classes (12 tests)
-  4.  Diagnostics & FixPlan (8 tests)
-  5.  Refactor Engine (6 tests)
+  3.  Diagnostics & FixPlan (8 tests)
+  4.  Refactor Engine (6 tests)
   6.  Intent Layer APIs — 7 APIs (7 tests)
   7.  Action Layer APIs — 8 APIs (8 tests)
   8.  Build & Run Commands (12 tests)
@@ -187,20 +186,6 @@ MODULES = {
         "cleanup_old_backups",
     ],
     "backup": ["BackupManager", "rollback_operation", "list_rollback_points"],
-    "specification": [
-        "Spec",
-        "CommandSpec",
-        "DialogSpec",
-        "InterfaceSpec",
-        "ComponentSpec",
-        "FeatureSpec",
-        "ExtensionSpec",
-        "WorkbenchSpec",
-        "MethodSpec",
-        "AttributeSpec",
-        "DataMemberSpec",
-        "spec_from_dict",
-    ],
     "diagnostics": [
         "DiagnosticsEngine",
         "FixPlan",
@@ -367,78 +352,11 @@ if mm:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# SECTION 3: Specification Layer (12 tests)
+# SECTION 3: Diagnostics & FixPlan (8 tests)
 # ═══════════════════════════════════════════════════════════════════
 
 print("\n" + "=" * 70)
-print("  SECTION 3: Specification Layer (specification.py)")
-print("=" * 70)
-
-spec_mod, _ = safe_import("specification")
-if spec_mod:
-    # Base Spec
-    base = spec_mod.Spec(name="Test")
-    check("3.1 Spec.validate ok", base.validate()["status"] == "ok")
-    check("3.2 Spec.to_dict type", base.to_dict()["type"] == "Spec")
-
-    # DialogSpec
-    ds = spec_mod.DialogSpec(name="MyDlg", layout="vertical", modal=True)
-    check("3.3 DialogSpec.validate ok", ds.validate()["status"] == "ok")
-    ds_bad = spec_mod.DialogSpec(name="MyDlg", layout="bad_layout")
-    check("3.4 DialogSpec.validate bad layout", ds_bad.validate()["status"] == "error")
-
-    # CommandSpec
-    cs = spec_mod.CommandSpec(name="MyCmd", module="Mod.m", stateful=True, tooltip="Hi")
-    cs.dialog = ds
-    check("3.5 CommandSpec.validate ok", cs.validate()["status"] == "ok")
-    cs_no_mod = spec_mod.CommandSpec(name="MyCmd")
-    check(
-        "3.6 CommandSpec.validate no module", cs_no_mod.validate()["status"] == "error"
-    )
-
-    # MethodSpec
-    ms = spec_mod.MethodSpec(name="DoSomething", params=["a"], return_type="HRESULT")
-    check("3.7 MethodSpec.name", ms.name == "DoSomething")
-
-    # InterfaceSpec
-    ispec = spec_mod.InterfaceSpec(name="IMyIface", module="Mod.m", methods=[ms])
-    check("3.8 InterfaceSpec.validate ok", ispec.validate()["status"] == "ok")
-
-    # ComponentSpec
-    comp_spec = spec_mod.ComponentSpec(name="MyComp", implements=["IMyIface"])
-    check("3.9 ComponentSpec.validate", comp_spec.validate()["status"] == "ok")
-
-    # AttributeSpec
-    attr = spec_mod.AttributeSpec(name="Length", type="CATLength", default="10mm")
-    check("3.10 AttributeSpec.name", attr.name == "Length")
-
-    # FeatureSpec
-    fs = spec_mod.FeatureSpec(name="MyFeat", module="Mod.m", attributes=[attr])
-    check("3.11 FeatureSpec.validate", fs.validate()["status"] == "ok")
-
-    # DataMemberSpec & ExtensionSpec
-    dm = spec_mod.DataMemberSpec(name="_val", type="double")
-    es = spec_mod.ExtensionSpec(
-        name="MyExt", target_object="CATPart", data_members=[dm]
-    )
-    check("3.12 ExtensionSpec.validate", es.validate()["status"] == "ok")
-
-    # WorkbenchSpec
-    ws_spec = spec_mod.WorkbenchSpec(name="MyWB", module="Mod.m", commands=["Cmd1"])
-    check("3.13 WorkbenchSpec.validate", ws_spec.validate()["status"] == "ok")
-
-    # spec_from_dict
-    d = cs.to_dict()
-    restored = spec_mod.spec_from_dict(d)
-    check("3.14 spec_from_dict roundtrip", restored.name == "MyCmd")
-
-
-# ═══════════════════════════════════════════════════════════════════
-# SECTION 4: Diagnostics & FixPlan (8 tests)
-# ═══════════════════════════════════════════════════════════════════
-
-print("\n" + "=" * 70)
-print("  SECTION 4: Diagnostics & FixPlan (diagnostics.py)")
+print("  SECTION 3: Diagnostics & FixPlan (diagnostics.py)")
 print("=" * 70)
 
 diag_mod, _ = safe_import("diagnostics")
@@ -688,8 +606,8 @@ if gen_mod:
         f"{len(templates)} types",
     )
     check(
-        "9.12 TemplateGenerator.generate_from_spec callable",
-        callable(gen.generate_from_spec),
+        "9.12 TemplateGenerator.generate callable",
+        callable(gen.generate),
     )
 
 
@@ -1158,18 +1076,6 @@ if mm and ref_mod:
     )
     check("19.6 move_command chain", isinstance(r, dict))
 
-# 19.7 Specification -> Generator chain
-if spec_mod and gen_mod:
-    try:
-        gen = gen_mod.TemplateGenerator()
-        ispec = spec_mod.InterfaceSpec(name="IChainTest", module="Mod.m")
-        _spec_root = Path(tempfile.mkdtemp(prefix="cade_spec_"))
-        r = gen.generate_from_spec(ispec, _spec_root)
-        check("19.7 Spec -> Generator chain", isinstance(r, dict), r.get("status", "?"))
-        shutil.rmtree(_spec_root, ignore_errors=True)
-    except Exception as e:
-        check("19.7 Spec -> Generator chain", False, str(e)[:60])
-
 
 # 19.8 Version Strategy → Rules
 if vs_mod:
@@ -1203,7 +1109,6 @@ EXISTING_SUITES = [
     "test_phase2_intents.py",
     "test_phase3_rollback.py",
     "test_phase4_enhanced.py",
-    "test_specification.py",
     "test_diagnostics.py",
     "test_fixplan_executor.py",
     "test_refactor.py",
@@ -1232,7 +1137,6 @@ SUITE_MARKERS = {
     "test_phase2_intents.py": "Intent Layer implementation verified",
     "test_phase3_rollback.py": "Rollback system verified",
     "test_phase4_enhanced.py": "Phase 4 enhancements verified",
-    "test_specification.py": "100%",
     "test_diagnostics.py": "100%",
     "test_fixplan_executor.py": "100%",
     "test_refactor.py": "100%",

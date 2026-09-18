@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（8 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（32K+14P+13Capability+14Playbook+148Framework+6Philosophy+14Failure+3DecisionTree），官方图标运行时引用+语义解析+HD PNG、75模板(16类型)、43测试套件、cade dev一键闭环。"
+description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（8 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（32K+14P+13Capability+14Playbook+148Framework+6Philosophy+14Failure+3DecisionTree），官方图标运行时引用+语义解析+HD PNG、75模板(16类型)、42测试套件、cade dev一键闭环。"
 triggers:
   - CAA component
   - CATIA component
@@ -104,9 +104,6 @@ triggers:
   - 启动CATIA
   - 停止CATIA
   - 运行宏
-  - Specification
-  - CommandSpec
-  - FeatureSpec
   - generate code
   - generator
   - 代码生成
@@ -261,7 +258,7 @@ triggers:
 
 **版本**: 3.2.1
 **状态**: ✅ 活跃开发  
-**测试**: 43 套件（快速模式执行 42 套，跳过 1 套 CATIA 生命周期测试）
+**测试**: 42 套件（快速模式执行 41 套，跳过 1 套 CATIA 生命周期测试）
 
 这是一个**智能的 CAA 开发引擎（Development Kernel）**，将模糊的开发需求，经过需求分析、规划、知识推理和验证，稳定地转化为可执行实现。
 
@@ -333,7 +330,7 @@ AI 只知道 3 个 Mode:
 6. **代码验证** — 生成后自动静态检查（宏/头文件/命名规范），无需 mkmk
 7. **自动修复** — Repair Loop：诊断→修复→验证，最多 3 次重试
 8. **高性能** — 模板生成约50ms，比 RADE 工具快 100 倍
-9. **完整测试** — 43 套件，快速模式执行 42 套
+9. **完整测试** — 42 套件，快速模式执行 41 套
 10. **依赖图管理** — 完整的实体关系图和 Mermaid 可视化
 11. **知识体系** — Capability→Playbook→Knowledge→Philosophy→Framework→CAADoc + Failure Patterns + Decision Trees
 
@@ -555,7 +552,6 @@ result = delete_command(
 - **IDLInterface** - IDL 接口
 ### 对象建模
 - **Feature** - 特征
-- **Specification** - 规格对象
 
 ### 扩展
 - **Extension** - 数据扩展
@@ -694,10 +690,6 @@ Agent 诊断：`python skills/retrieval.py` 输出五索引健康报告。
 
 ### 架构层次
 
-> ⚠️ **EXPERIMENTAL**: Development Engine (Intent → Spec → Generator) 和 Specification 层
-> 目前 **未接入 kernel 生产路径**。当前生产管线为 Intent → intents/ → changeset → build_gate。
-> 以下架构图描述的是目标架构，不是当前运行路径。
-
 ```
 AI / CLI / MCP
      │
@@ -705,37 +697,34 @@ AI / CLI / MCP
 API Layer (intents.py + actions.py)
      │
      ▼
-Development Engine (Intent → Spec → Generator)  ← EXPERIMENTAL / 未接入 kernel
+Kernel Pipeline (Requirement → Intent → Planner)
      │
      ▼
-Validation + Specification                      ← EXPERIMENTAL / 未接入 kernel
+Generator (generator.py + templates/)
      │
      ▼
-Generator (generator.py + templates/)            ← EXPERIMENTAL / 未接入 kernel
+ChangeSet & Writer (changeset.py)
      │
      ▼
-Writer (changeset.py)
-     │
-     ▼
-Workspace Repository (analyzer.py + meta_model.py)
-     │
-     ▼
-Semantic Analyzer + Diagnostics
+Verification & Build Gate (verifier.py + build_gate.py)
      │
      ▼
 Build Engine (build.py) + Runtime Engine (run.py)
+     │
+     ▼
+Repair Loop (repair.py) / Rollback (backup.py)
 ```
 
 ### 10 条设计原则
 
 1. **Everything is Object** — 每个 CAA 实体都是 Rich Domain Object，知道自己的一切
 2. **Everything is Semantic** — 不解析字符串，理解 CAA 语义
-3. **AI Never Touch Files** — AI 只产生 Spec，Generator + Writer 负责文件
-4. **Development First** — 面向 CAA 开发生命周期，不是面向代码生成
-5. **Generator Is Backend** — Generator 不知道 AI 的存在，只接收 Spec
-6. **Validation Before Generation** — Specification.validate() 在生成前校验
+3. **AI Never Touch Files** — AI 产生 Intent/Plan，Generator + ChangeSet 负责受控修改
+4. **Development First** — 面向 CAA 开发生命周期，不是面向孤立代码生成
+5. **Generator Is Backend** — Generator 专注模板与骨架生成，不直接越权操作文件
+6. **Verification Before Build** — 代码静态检查与规则校验在编译前执行
 7. **Repository Is Single Source** — Workspace 状态统一管理和查询
-8. **Specification Is Contract** — Intent 和 Generator 的唯一接口
+8. **ChangeSet Is Contract** — 所有文件写操作全部纳入原子事务管理
 9. **Diagnostics Before Fix** — 问题诊断输出结构化 FixPlan，不输出字符串
 10. **Safe Modification** — 预览→确认→备份→应用→可回滚
 
@@ -974,40 +963,6 @@ result = create_extension(
     implements=["CATIMyExt"]
 )
 # 自动创建：Extension、DataExtension 声明、TIE、Dictionary
-```
-
-### Specification 层 (P1 新增)
-
-> ⚠️ **EXPERIMENTAL** — 未接入 kernel 生产路径。当前生产管线为 Intent → intents/ → changeset → build_gate。
-> 此层为 Spec-driven generation 研究方向保留，不作为生产 API 使用。
-
-Specification 是 Intent 和 Generator 之间的契约层：
-
-```python
-from specification import (
-    CommandSpec, DialogSpec, InterfaceSpec, ComponentSpec,
-    FeatureSpec, ExtensionSpec, WorkbenchSpec,
-    MethodSpec, AttributeSpec, DataMemberSpec,
-)
-
-# 构建 Spec
-spec = CommandSpec(
-    name="MyCmd", module="MyModule.m",
-    stateful=True, tooltip="My Command",
-    dialog=DialogSpec(name="MyCmdDlg", layout="vertical"),
-    workbench="MyWorkbench",
-)
-
-# 校验
-result = spec.validate()
-if result["status"] != "ok":
-    print(f"Validation failed: {result['message']}")
-
-# 序列化/反序列化
-d = spec.to_dict()          # → JSON-safe dict
-restored = spec_from_dict(d) # → CommandSpec
-
-# Generator 只接收 Spec，不知道 AI 的存在
 ```
 
 ### Diagnostics + FixPlan（新增）
@@ -1278,7 +1233,7 @@ python tests/test_full_integration.py
 python tests/test_full_regression.py --quick
 ```
 
-**Master quick**: 43 套中执行 42 套，跳过 1 套 CATIA 生命周期测试（套件数以 `tests/test_master.py` 的 `SUITES` 为准）
+**Master quick**: 42 套中执行 41 套，跳过 1 套 CATIA 生命周期测试（套件数以 `tests/test_master.py` 的 `SUITES` 为准）
 ```bash
 python tests/test_master.py --quick
 ```
@@ -1330,8 +1285,6 @@ python tests/test_master.py --quick
 │   │   ├── objects.py                # 对象意图
 │   │   └── helpers.py                # 辅助函数
 │   ├── actions.py                    # Development Engine
-│   ├── experimental/                 # 研究实验区（非生产路径）
-│   │   └── specification.py          # Spec 层 (8 种 Spec, EXPERIMENTAL)
 │   ├── diagnostics.py                # Diagnostics + FixPlan
 │   ├── refactor.py                   # 安全重构
 │   ├── generator.py                  # 代码生成器
@@ -1487,7 +1440,7 @@ python tests/test_master.py --quick
 │   │   └── AI_WORKFLOW_EXAMPLES.md
 │   └── README.md                     # 文档索引
 │
-├── tests/                            # 套件数以 test_master.py 的 SUITES 为准（当前 43；磁盘 test_*.py 另有 runner）
+├── tests/                            # 套件数以 test_master.py 的 SUITES 为准（当前 42；磁盘 test_*.py 另有 runner）
 │   ├── test_master.py                # 主运行器 / SUITES 权威清单
 │   └── README.md                     # 测试索引（勿把文件个数当套件数）
 │
@@ -1752,7 +1705,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 ### 部署前检查清单
 
 - [ ] 已阅读并接受上方「非阻塞残余风险」的使用规程（尤其：生成代码后必须在真实工作区跑一次 Build）
-- [ ] 已跑通 `python tests/test_master.py --quick`，确认本机 quick 模式通过（当前 43 套中执行 42 套，跳过 Int-1；套件数以 `SUITES` 为准）
+- [ ] 已跑通 `python tests/test_master.py --quick`，确认本机 quick 模式通过（当前 42 套中执行 41 套，跳过 Int-1；套件数以 `SUITES` 为准）
 - [ ] 已确认目标 CATIA 版本 ≥ R19（工具在 B28 上做过实机验证；跨版本首次使用建议先在测试工作区跑一次 `develop()`/`repair()` 全流程）
 - [ ] 团队已知晓 `KNOWLEDGE_AUDIT_STATUS.md` 中「未核实清单」范围，涉及这些 API 时纳入代码审查重点
 - [ ] 首次在新工作区使用时，先用小范围改动验证 ChangeSet 应用 + Build 闭环，再扩大到完整开发任务
@@ -1780,7 +1733,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 ### 已验证范围
 
-- **测试套件**: 43 套；快速模式执行 42 套，跳过 1 套 CATIA 生命周期测试。
+- **测试套件**: 42 套；快速模式执行 41 套，跳过 1 套 CATIA 生命周期测试。
 - **Full Integration**: 49/49 通过。
 - **Full Regression quick**: 394/398；4 项 quarantine 不计作通过。
 - **真实 mkmk Build（Tier B，非 quick 模式）**: 对 `TTEST` 工作区执行 `incremental_build()`，0 error，DLL 校验通过且已刷新（`Int-1 Build & Run` 套件，约 33s）。
@@ -1822,4 +1775,4 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 **最后更新**: 2026-08-28  
 **维护者**: Kiro AI Agent  
 **状态**: ✅ 活跃开发（已通过 P0-P2 安全审计）  
-**测试**: 43 套件可用
+**测试**: 42 套件可用

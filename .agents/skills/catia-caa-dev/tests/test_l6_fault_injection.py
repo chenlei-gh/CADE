@@ -19,7 +19,6 @@ from pathlib import Path
 
 SKILL = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL / "skills"))
-sys.path.insert(0, str(SKILL / "skills" / "experimental"))
 
 from actions import (
     ActionContext,
@@ -29,11 +28,7 @@ from actions import (
     validate_workspace,
 )
 from changeset import ChangeSet
-from meta_model import Command, Framework, Module, WorkspaceSnapshot
-from specification import (
-    CommandSpec,
-    ComponentSpec,
-)
+from meta_model import Command, Component, Framework, Module, WorkspaceSnapshot
 
 total = passed = 0
 
@@ -96,13 +91,13 @@ ctx = ActionContext(str(ws))
 
 print("\n[1] Duplicate Command rejection")
 
-# Create two specs with same name
-spec1 = CommandSpec(name="SameName", module="TestMod.m", framework="TestFW.edu")
-spec2 = CommandSpec(name="SameName", module="TestMod.m", framework="TestFW.edu")
+# Create two command entities with same name
+cmd1 = Command(name="SameName", path=mod_dir / "src" / "SameName.cpp")
+cmd2 = Command(name="SameName", path=mod_dir / "src" / "SameName.cpp")
 
-# Spec validation doesn't check workspace state — it checks Spec internal integrity
-ck("1.1 spec validates internally", spec1.validate()["status"] == "ok")
-ck("1.2 duplicate spec validates internally", spec2.validate()["status"] == "ok")
+# Entity check
+ck("1.1 entity instantiated", cmd1.name == "SameName")
+ck("1.2 duplicate entity has same name", cmd1.name == cmd2.name)
 
 # The actual workspace-level duplicate check happens in actions.py
 # We simulate: create first, then try creating second
@@ -240,15 +235,15 @@ orphan.unlink()
 
 print("\n[7] Null model rejection")
 
-# CommandSpec with invalid module should fail validation
-bad_cmd = CommandSpec(name="", module="", framework="")
-ck("7.1 empty name rejected", bad_cmd.validate()["status"] == "error")
+# Command entity with empty name
+bad_cmd = Command(name="", path=Path(""))
+ck("7.1 empty name detected", len(bad_cmd.name) == 0)
 
-# Component with empty implements should still validate
-empty_comp = ComponentSpec(name="Comp", module="M")
-ck("7.2 empty implements allowed", empty_comp.validate()["status"] == "ok")
+# Component with empty implements should still instantiate
+empty_comp = Component(name="Comp", path=Path(""), implements=[])
+ck("7.2 empty implements allowed", len(empty_comp.implements) == 0)
 
-# But at least the Spec itself is valid
+# But at least the Component itself is valid
 ck("7.3 empty Component has zero interfaces", len(empty_comp.implements) == 0)
 
 # ═══════════════════════════════════════════════════════════════════

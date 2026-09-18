@@ -325,10 +325,9 @@ from intents import (
     create_extension,
     create_feature,
 )
-from meta_model import WorkspaceSnapshot
+from meta_model import Command, Dialog, WorkspaceSnapshot
 from refactor import move_command, rename_command
 from run import check_catia_running as run_check_catia
-from specification import CommandSpec, FeatureSpec
 
 
 def ck(label, ok, detail=""):
@@ -386,14 +385,14 @@ r = create_extension(
 )
 ck("extension create response", r["status"] in ("pending", "error"))
 
-# 7.4 Specification
-print("\n  [7.4] Specification")
-cs = CommandSpec(name="AIRspCmd2", module="TestModule.m", framework="TestFw.edu")
-ck("CommandSpec created", cs is not None)
-ck("CommandSpec validate", isinstance(cs.validate(), dict))
+# 7.4 Domain Entity Modeling
+print("\n  [7.4] Domain Entity Modeling")
+cs = Command(name="AIRspCmd2", path=Path("AIRspCmd2.cpp"))
+ck("Command entity created", cs is not None)
+ck("Command entity to_dict", isinstance(cs.to_dict(), dict))
 
-fs = FeatureSpec(name="AIRspFeat2", module="TestModule.m")
-ck("FeatureSpec created", fs is not None)
+dlg = Dialog(name="AIRspDlg2", path=Path("AIRspDlg2.cpp"))
+ck("Dialog entity created", dlg is not None)
 
 # 7.5 Diagnostics
 print("\n  [7.5] Diagnostics")

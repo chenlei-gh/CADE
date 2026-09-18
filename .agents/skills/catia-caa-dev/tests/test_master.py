@@ -31,11 +31,10 @@ SUITES = {
     "L2-2 Intent Layer": "test_phase2_intents.py",
     "L2-3 Rollback": "test_phase3_rollback.py",
     "L2-4 Enhanced Intents": "test_phase4_enhanced.py",
-    "L2-5 Specification": "test_specification.py",
-    "L2-6 Diagnostics": "test_diagnostics.py",
-    "L2-7 FixPlan Executor": "test_fixplan_executor.py",
-    "L2-8 Refactor": "test_refactor.py",
-    "L2-9 Production Regressions": "test_production_regressions.py",
+    "L2-5 Diagnostics": "test_diagnostics.py",
+    "L2-6 FixPlan Executor": "test_fixplan_executor.py",
+    "L2-7 Refactor": "test_refactor.py",
+    "L2-8 Production Regressions": "test_production_regressions.py",
     # ── L3: End-to-End ──
     "L3-1 E2E Integration": "test_e2e_integration.py",
     # ── L4: Architecture ──
@@ -92,7 +91,6 @@ VERIFY_STRINGS = {
     "test_phase2_intents.py": "Intent Layer implementation verified",
     "test_phase3_rollback.py": "Rollback system verified",
     "test_phase4_enhanced.py": "Phase 4 enhancements verified",
-    "test_specification.py": "100%",
     "test_diagnostics.py": "100%",
     "test_fixplan_executor.py": "100%",
     "test_refactor.py": "100%",

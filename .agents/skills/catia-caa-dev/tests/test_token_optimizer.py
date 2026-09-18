@@ -264,7 +264,7 @@ try:
     )
     from diagnostics import diagnose_workspace
     from build import error_result as build_err
-    from specification import CommandSpec, FeatureSpec
+    from meta_model import Command, Dialog
     import json as _json
 
     actx = ActionContext()
@@ -312,9 +312,9 @@ try:
     measure("build_error      ", build_err, "Build failed: missing include",
             detail={"file": "MyCmd.cpp", "line": 42})
 
-    # Specs
-    measure("CommandSpec      ", lambda: CommandSpec(name="MyCmd", module="M.m", framework="Fw.edu").to_dict())
-    measure("FeatureSpec      ", lambda: FeatureSpec(name="MyFeat", module="M.m").to_dict())
+    # Domain Entities
+    measure("CommandEntity    ", lambda: Command(name="MyCmd", path=Path("MyCmd.cpp")).to_dict())
+    measure("DialogEntity     ", lambda: Dialog(name="MyDlg", path=Path("MyDlg.cpp")).to_dict())
 
 except ImportError as e:
     check("API measurement skipped", True, f"import error: {e}"[:80])

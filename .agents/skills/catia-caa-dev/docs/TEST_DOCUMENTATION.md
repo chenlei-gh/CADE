@@ -63,11 +63,10 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件。
 | L2-2 Intent Layer | `test_phase2_intents.py` | 意图→计划转换 |
 | L2-3 Rollback | `test_phase3_rollback.py` | 快照、回滚、备份管理 |
 | L2-4 Enhanced Intents | `test_phase4_enhanced.py` | Feature、Extension、智能推荐 |
-| L2-5 Specification | `test_specification.py` | 8 种 Spec 类型校验 |
-| L2-6 Diagnostics | `test_diagnostics.py` | 诊断引擎、FixPlan 生成 |
-| L2-7 FixPlan Executor | `test_fixplan_executor.py` | 自动修复执行 |
-| L2-8 Refactor | `test_refactor.py` | 重命名、移动、引用更新 |
-| L2-9 Production Regressions | `test_production_regressions.py` | 生产回归 |
+| L2-5 Diagnostics | `test_diagnostics.py` | 诊断引擎、FixPlan 生成 |
+| L2-6 FixPlan Executor | `test_fixplan_executor.py` | 自动修复执行 |
+| L2-7 Refactor | `test_refactor.py` | 重命名、移动、引用更新 |
+| L2-8 Production Regressions | `test_production_regressions.py` | 生产回归 |
 
 ### L3 — 端到端
 

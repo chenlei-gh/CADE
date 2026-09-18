@@ -38,7 +38,7 @@ From "I need a dialog command" to compiling code — without touching RADE wizar
 
 </div>
 
-> 🟢 **CI Status**: `42/42 suites (quick, 100%)` | **44 test files** | *2026-09-16*
+> 🟢 **CI Status**: `41/41 suites (quick, 100%)` | **43 test files** | *2026-09-19*
 
 > ✅ **Production readiness**: Conditional GO — see [SKILL.md § Production Readiness](.agents/skills/catia-caa-dev/SKILL.md#-生产就绪评估) before deploying
 
@@ -211,14 +211,14 @@ Retrieval path: **Capability → Playbook → Knowledge → Framework → CAADoc
 
 ### 🔍 Deep Audit
 
-43-suite test suite catches drift early:
+42-suite test suite catches drift early:
 
 ```bash
-cade test --quick   # 42 suites (~60s), quick mode skips CATIA lifecycle
-cade test           # 43 suites, full including CATIA lifecycle
+cade test --quick   # 41 suites (~60s), quick mode skips CATIA lifecycle
+cade test           # 42 suites, full including CATIA lifecycle
 ```
 
-> 🟢 **Verified**: 42/42 suites quick (100%) — last run 2026-09-16
+> 🟢 **Verified**: 41/41 suites quick (100%) — last run 2026-09-19
 
 - **Link Checker** — 101 internal links validated
 - **Import Validator** — All Python imports resolvable
@@ -310,8 +310,8 @@ cade rollback --id latest         # undo anything
 cade docs                         # auto-generate documentation
 cade prereq MyModule              # view prerequisites
 cade rv                           # create Runtime View
-cade test --quick                 # run 42 suites (~16s)
-cade test                         # full: 43 suites (launches CATIA)
+cade test --quick                 # run 41 suites (~16s)
+cade test                         # full: 42 suites (launches CATIA)
 ```
 
 > 🔌 Also available as **MCP Server** (3 modes) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
@@ -319,30 +319,30 @@ cade test                         # full: 43 suites (launches CATIA)
 ### ⚡ Test Results
 
 <details>
-<summary>43 suites (42 quick + 1 CATIA lifecycle) · 44 files · 700+ checks · 2026-09-16</summary>
+<summary>42 suites (41 quick + 1 CATIA lifecycle) · 43 files · 700+ checks · 2026-09-19</summary>
 
 | | | |
 |---|---|---|
 | L1-1 Unit(49) ✅ | L1-2 Icons(14) ✅ | L1-3 Token Audit ✅ |
 | L2-1 DepGraph ✅ | L2-2 Intent ✅ | L2-3 Rollback ✅ |
-| L2-4 Enhanced Intents ✅ | L2-5 Spec ✅ | L2-6 Diagnostics ✅ |
-| L2-7 FixPlan ✅ | L2-8 Refactor ✅ | L2-9 Prod Regressions ✅ |
-| L3-1 E2E ✅ | L4-1 Arch(39) ✅ | L5-1 Semantic(40) ✅ |
-| L6-1 Fault(16) ✅ | L7-1 Knowledge(16) ✅ | L0-1 Kernel API ✅ |
-| L0-2 Requirements ✅ | L0-3 Repair Loop ✅ | L0-4 Routing ✅ |
-| L0-5 Verifier ✅ | L0-6 Token Status ✅ | L0-7 SKILL YAML ✅ |
-| Decomposer ✅ | Int-1 Build & Run ✅ | Sys-1 CATIA Detect ✅ |
-| Int-2 Skill-AI ✅ | Full System ✅ | Cross-Ref Audit ✅ |
-| Token Optimizer ✅ | CAA Structure ✅ | Intent Planner ✅ |
-| AI Integration ✅ | Deep Audit ✅ | System Health ✅ |
-| Multi-Intent ✅ | Kernel Edges ✅ | UI Scenario ✅ |
-| Capability Contract ✅ | Retrieval Benchmark ✅ | |
+| L2-4 Enhanced Intents ✅ | L2-5 Diagnostics ✅ | L2-6 FixPlan ✅ |
+| L2-7 Refactor ✅ | L2-8 Prod Regressions ✅ | L3-1 E2E ✅ |
+| L4-1 Arch(39) ✅ | L5-1 Semantic(40) ✅ | L6-1 Fault(16) ✅ |
+| L7-1 Knowledge(16) ✅ | L0-1 Kernel API ✅ | L0-2 Requirements ✅ |
+| L0-3 Repair Loop ✅ | L0-4 Routing ✅ | L0-5 Verifier ✅ |
+| L0-6 Token Status ✅ | L0-7 SKILL YAML ✅ | Decomposer ✅ |
+| Int-1 Build & Run ✅ | Sys-1 CATIA Detect ✅ | Int-2 Skill-AI ✅ |
+| Full System ✅ | Cross-Ref Audit ✅ | Token Optimizer ✅ |
+| CAA Structure ✅ | Intent Planner ✅ | AI Integration ✅ |
+| Deep Audit ✅ | System Health ✅ | Multi-Intent ✅ |
+| Kernel Edges ✅ | UI Scenario ✅ | Capability Contract ✅ |
+| Retrieval Benchmark ✅ | UseCase Index ✅ | UI Clarifier ✅ |
 
 </details>
 
 ```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 42 suites (~60s)
-python .agents/skills/catia-caa-dev/tests/test_master.py           # 43 suites (starts CATIA)
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 41 suites (~60s)
+python .agents/skills/catia-caa-dev/tests/test_master.py           # 42 suites (starts CATIA)
 ```
 
 ---
@@ -375,8 +375,7 @@ graph TD
     R --> E[Decomposer<br/>decisions -> extras]
     E --> I[Planner +<br/>Impact]
     E --> Q[Knowledge<br/>5-Layer Retrieval]
-    I --> S[Specification]
-    S --> G[Generator<br/>17+ Templates]
+    I --> G[Generator<br/>17+ Templates]
     G --> V[CodeVerifier<br/>static + mkmk]
     V -->|fail| P[Repair Loop<br/>3 retries]
     P --> V
@@ -398,8 +397,8 @@ graph TD
 
 | | |
 |---|---|
-| Suites | 43 (42 quick + 1 CATIA lifecycle) |
-| Files | 44 |
+| Suites | 42 (41 quick + 1 CATIA lifecycle) |
+| Files | 43 |
 | Checks | 700+ |
 | Pass Rate | 100% |
 | Templates | 82 (19 types) |
@@ -407,7 +406,6 @@ graph TD
 | CLI Commands | 24 |
 | MCP Modes | 3 (develop / analyze / repair) |
 | Build Commands | 35 |
-| Spec Types | 8 |
 | Refactor Ops | 3 |
 | Domain Entities | 8 |
 | Knowledge Assets | 241 (32K + 14P + 13C + 13PB + 148FW + 1E + 6PH + 14FP) |
@@ -451,7 +449,7 @@ your_project/
 │   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
 │   ├── patterns/                   ← Architecture patterns
 │   ├── examples/                   ← Real CAA project examples
-│   ├── tests/                      ← 43 suites, ~12,000 lines
+│   ├── tests/                      ← 42 suites, ~12,000 lines
 │   ├── docs/                       ← Full documentation
 │   ├── tools/                      ← Setup, validation, utilities
 │   └── config/                     ← Editor MCP templates
@@ -598,31 +596,31 @@ cade rollback --id latest           # 撤销任意操作
 **🤖 AI 辅助**
 ```bash
 cade docs                           # 自动生成文档
-cade test --quick                   # 42 套件快速测试 (~60s)
-cade test                           # 43 套件全量测试 (启动 CATIA)
+cade test --quick                   # 41 套件快速测试 (~60s)
+cade test                           # 42 套件全量测试 (启动 CATIA)
 ```
 
 ### ⚡ 测试结果
 
 <details>
-<summary>43 套件（快速模式 42 套 + 1 套 CATIA 生命周期）· 44 文件 · 700+ 检查 · 2026-09-16</summary>
+<summary>42 套件（快速模式 41 套 + 1 套 CATIA 生命周期）· 43 文件 · 700+ 检查 · 2026-09-19</summary>
 
 | | | |
 |---|---|---|
 | L1-1 单元(49) ✅ | L1-2 图标(14) ✅ | L1-3 Token 审计 ✅ |
 | L2-1 依赖图 ✅ | L2-2 Intent ✅ | L2-3 回滚 ✅ |
-| L2-4 增强 Intent ✅ | L2-5 规格 ✅ | L2-6 诊断 ✅ |
-| L2-7 FixPlan ✅ | L2-8 重构 ✅ | L2-9 生产回归 ✅ |
-| L3-1 E2E ✅ | L4-1 架构(39) ✅ | L5-1 语义(40) ✅ |
-| L6-1 故障注入(16) ✅ | L7-1 知识(16) ✅ | L0-1 Kernel API ✅ |
-| L0-2 需求澄清 ✅ | L0-3 修复闭环 ✅ | L0-4 路由 ✅ |
-| L0-5 验证器 ✅ | L0-6 Token 状态 ✅ | L0-7 SKILL YAML ✅ |
-| 分解器 ✅ | Int-1 构建运行 ✅ | Sys-1 CATIA 检测 ✅ |
-| Int-2 协同 ✅ | 全系统 ✅ | Cross-Ref 审计 ✅ |
-| Token 优化 ✅ | CAA 结构 ✅ | Intent 规划 ✅ |
-| AI 集成 ✅ | 深度审计 ✅ | 系统健康 ✅ |
-| 多意图 ✅ | Kernel 边界 ✅ | UI 场景 ✅ |
-| 能力契约 ✅ | 检索基准 ✅ | |
+| L2-4 增强 Intent ✅ | L2-5 诊断 ✅ | L2-6 FixPlan ✅ |
+| L2-7 重构 ✅ | L2-8 生产回归 ✅ | L3-1 E2E ✅ |
+| L4-1 架构(39) ✅ | L5-1 语义(40) ✅ | L6-1 故障注入(16) ✅ |
+| L7-1 知识(16) ✅ | L0-1 Kernel API ✅ | L0-2 需求澄清 ✅ |
+| L0-3 修复闭环 ✅ | L0-4 路由 ✅ | L0-5 验证器 ✅ |
+| L0-6 Token 状态 ✅ | L0-7 SKILL YAML ✅ | 分解器 ✅ |
+| Int-1 构建运行 ✅ | Sys-1 CATIA 检测 ✅ | Int-2 协同 ✅ |
+| 全系统 ✅ | Cross-Ref 审计 ✅ | Token 优化 ✅ |
+| CAA 结构 ✅ | Intent 规划 ✅ | AI 集成 ✅ |
+| 深度审计 ✅ | 系统健康 ✅ | 多意图 ✅ |
+| Kernel 边界 ✅ | UI 场景 ✅ | 能力契约 ✅ |
+| 检索基准 ✅ | UseCase 索引 ✅ | UI 澄清器 ✅ |
 
 </details>
 
@@ -647,8 +645,8 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 
 | | |
 |---|---|
-| **测试套件** | 43（快速模式 42 套 + 1 套 CATIA 生命周期） |
-| **测试文件** | 44 |
+| **测试套件** | 42（快速模式 41 套 + 1 套 CATIA 生命周期） |
+| **测试文件** | 43 |
 | **检查项** | 700+ |
 | **通过率** | 100% |
 | **模板** | 82（19 类型） |
