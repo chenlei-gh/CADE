@@ -1736,6 +1736,60 @@ def _mask_comments_and_strings(code: str) -> str:
     return pattern.sub(replacer, code)
 
 
+def _mask_comments_only(code: str) -> str:
+    """Mask C/C++ comments with spaces, preserving string literals, exact length and newlines."""
+    pattern = re.compile(
+        r'//[^\r\n]*'
+        r'|/\*[\s\S]*?\*/',
+        re.MULTILINE,
+    )
+
+    def replacer(match):
+        s = match.group(0)
+        return re.sub(r'[^\r\n]', ' ', s)
+
+    return pattern.sub(replacer, code)
+
+
+def _extract_create_commands_scope(text: str) -> Optional[Tuple[str, int, int]]:
+    """Extract body and character boundaries of CreateCommands() method.
+
+    Returns (body, body_start_idx, body_end_idx) where:
+      - body_start_idx is the index right after the opening '{'
+      - body_end_idx is the index of the closing '}'
+      - body is text[body_start_idx:body_end_idx]
+    Returns None if CreateCommands() or its balanced braces cannot be found.
+    """
+    masked = _mask_comments_and_strings(text)
+    m = re.search(r"void\s+(?:\w+::)?CreateCommands\s*\([^)]*\)", masked)
+    if not m:
+        return None
+
+    open_brace_idx = masked.find('{', m.end())
+    if open_brace_idx == -1:
+        return None
+
+    depth = 0
+    end_brace_idx = -1
+    for i in range(open_brace_idx, len(masked)):
+        ch = masked[i]
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                end_brace_idx = i
+                break
+
+    if depth != 0 or end_brace_idx == -1:
+        return None
+
+    body_start_idx = open_brace_idx + 1
+    body_end_idx = end_brace_idx
+    body = text[body_start_idx:body_end_idx]
+    return body, body_start_idx, body_end_idx
+
+
 def _extract_create_toolbars_scope(text: str) -> Optional[Tuple[str, int, int]]:
     """Extract body and character boundaries of CreateToolbars() method.
 
@@ -1878,26 +1932,31 @@ def _trace_starter_chain(
 
     # 5. Next links
     next_links = re.findall(r'\bSetAccessNext\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)', stripped)
-    next_map: Dict[str, str] = {}
-    prev_map: Dict[str, str] = {}
+    outgoing: Dict[str, List[str]] = {}
+    incoming: Dict[str, List[str]] = {}
     for prev_var, next_var in next_links:
-        if prev_var in next_map:
-            raise ValueError(f"Fork/branching detected in toolbar chain: starter '{prev_var}' has multiple SetAccessNext calls")
-        if next_var in prev_map:
-            raise ValueError(f"Multiple predecessors point to starter '{next_var}' via SetAccessNext")
-        if next_var not in declared_starters:
-            raise ValueError(f"Starter '{next_var}' in SetAccessNext is not declared via NewAccess(CATCmdStarter, ...)")
-        next_map[prev_var] = next_var
-        prev_map[next_var] = prev_var
+        outgoing.setdefault(prev_var, []).append(next_var)
+        incoming.setdefault(next_var, []).append(prev_var)
 
-    # 6. Trace chain
+    # 6. Trace chain for this specific toolbar starting from first_starter
     chain = [first_starter]
     seen = {first_starter}
     curr = first_starter
-    while curr in next_map:
-        nxt = next_map[curr]
+    while True:
+        next_vars = outgoing.get(curr, [])
+        if len(next_vars) > 1:
+            raise ValueError(f"Fork/branching detected in toolbar chain: starter '{curr}' has multiple SetAccessNext calls")
+        if len(next_vars) == 0:
+            break
+
+        nxt = next_vars[0]
         if nxt in seen:
             raise ValueError(f"Cycle detected in toolbar chain involving starter '{nxt}'")
+        if len(incoming.get(nxt, [])) > 1:
+            raise ValueError(f"Multiple predecessors point to starter '{nxt}' via SetAccessNext")
+        if nxt not in declared_starters:
+            raise ValueError(f"Starter '{nxt}' in SetAccessNext is not declared via NewAccess(CATCmdStarter, ...)")
+
         chain.append(nxt)
         seen.add(nxt)
         curr = nxt
@@ -2182,6 +2241,333 @@ def attach_command_to_toolbar(
 # ══════════════════════════════════════════════════════════════════
 #  DELETE ACTIONS (reversible)
 # ══════════════════════════════════════════════════════════════════
+
+
+def inspect_delete_command(
+    ctx: ActionContext,
+    name: str,
+    *,
+    module: Optional[str] = None,
+    workbench_name: Optional[str] = None,
+    cs: Optional[ChangeSet] = None,
+) -> Dict[str, Any]:
+    """Inspect workspace to compute a deterministic CommandDeletePlan (R-4-A).
+
+    Pure read-only pre-validation:
+      - Validates command entity and identity (DA1)
+      - Locates workbench Addin source (explicit or discovered)
+      - Validates unique 4-parameter header registration in CreateCommands() (DA1, DA8, DA9)
+      - Traces only target toolbars mounting target HeaderID (DA10)
+      - Detects duplicate MountKey in target toolbar (DA13)
+      - Determines toolbar starter splicing plan & mode (DA2~DA6: remove_only_child, new_child, relink_next, remove_tail)
+      - Detects multi-toolbar mounts (DA7)
+      - Identifies command files and orphan resources (without deleting)
+      - Preserves ChangeSet zero-mutation on any failure (DA11)
+    """
+    ctx.refresh()
+    mod = ctx.snapshot.get_module(module) if module else None
+    cmd = None
+    if mod:
+        cmd = next((c for c in mod.commands if c.name.lower() == name.lower()), None)
+    if not cmd:
+        all_cmds = ctx.snapshot.get_all_commands()
+        cmd = next((c for c in all_cmds if c.name.lower() == name.lower()), None)
+    if not cmd:
+        return {"status": "error", "error": f"Command not found: {name}", "plan": None}
+
+    wbs = ctx.snapshot.get_all_workbenches()
+    if workbench_name:
+        wb = next((w for w in wbs if w.name.lower() == workbench_name.lower()), None)
+        if not wb:
+            return {"status": "error", "error": f"Workbench not found: {workbench_name}", "plan": None}
+        target_wbs = [wb]
+    else:
+        if len(wbs) == 0:
+            return {"status": "error", "error": "No workbenches found in workspace", "plan": None}
+        target_wbs = wbs
+
+    target_class_name = getattr(cmd, "class_name", None) or cmd.name
+    expected_load_name = cmd.module.bare_name if cmd.module else (cmd.module.name if cmd.module else None)
+
+    # 1. Search for 4-param header registration across candidate workbenches
+    candidate_matches = []
+    reg_pattern = re.compile(
+        r'new\s+(\w+)\s*\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*(?:\(void\s*\*\)\s*)?NULL\s*\)\s*;?'
+    )
+
+    for candidate_wb in target_wbs:
+        addin_source = candidate_wb.addin_source or candidate_wb.addin_source_path()
+        if not addin_source:
+            continue
+        addin_str = str(addin_source)
+        content = None
+        if cs is not None and addin_str in cs.modified:
+            content = cs.modified[addin_str]
+        elif cs is not None and addin_str in cs.created:
+            content = cs.created[addin_str]
+        elif addin_source.exists():
+            content = addin_source.read_text(encoding="utf-8", errors="replace")
+        if content is None:
+            continue
+
+        scope_cc = _extract_create_commands_scope(content)
+        if not scope_cc:
+            continue
+        cc_body, cc_start_idx, cc_end_idx = scope_cc
+
+        masked_cc = _mask_comments_only(cc_body)
+        for m in reg_pattern.finditer(masked_cc):
+            h_cls, h_id, l_name, c_name = m.groups()
+            if c_name == target_class_name:
+                candidate_matches.append((
+                    candidate_wb,
+                    addin_source,
+                    content,
+                    h_cls,
+                    h_id,
+                    l_name,
+                    c_name,
+                    m,
+                    cc_start_idx,
+                ))
+
+    # DA8: Header registration not found
+    if len(candidate_matches) == 0:
+        if workbench_name:
+            wb_addin = target_wbs[0].addin_source or target_wbs[0].addin_source_path()
+            return {
+                "status": "error",
+                "error": f"Header registration for command '{name}' (class '{target_class_name}') not found in {wb_addin}",
+                "plan": None,
+            }
+        return {
+            "status": "error",
+            "error": f"Header registration for command '{name}' (class '{target_class_name}') not found in any workbench",
+            "plan": None,
+        }
+
+    # DA9: Duplicate header registration
+    if len(candidate_matches) > 1:
+        wbs_in_matches = {m[0].name for m in candidate_matches}
+        if len(wbs_in_matches) == 1:
+            return {
+                "status": "error",
+                "error": f"Duplicate header registration found for command '{name}' in {candidate_matches[0][1]}",
+                "plan": None,
+            }
+        return {
+            "status": "error",
+            "error": f"Multiple workbenches ({list(wbs_in_matches)}) contain registration for command '{name}'. Please specify workbench_name explicitly.",
+            "plan": None,
+        }
+
+    (
+        wb,
+        addin_source,
+        content,
+        matched_hdr_cls,
+        matched_hdr_id,
+        matched_ld_name,
+        matched_cls_name,
+        m_reg,
+        cc_start_idx,
+    ) = candidate_matches[0]
+
+    # DA1 Tightened identity: verify load_name consistency if known
+    if expected_load_name and matched_ld_name.lower() != expected_load_name.lower():
+        return {
+            "status": "error",
+            "error": (
+                f"Header registration load_name conflict for command '{name}': "
+                f"found '{matched_ld_name}', expected '{expected_load_name}'"
+            ),
+            "plan": None,
+        }
+
+    header_statement = content[cc_start_idx + m_reg.start():cc_start_idx + m_reg.end()]
+
+    # 2. Inspect toolbar starter mountings in CreateToolbars()
+    toolbar_splices = []
+    scope_tb = _extract_create_toolbars_scope(content)
+    if scope_tb:
+        tb_body, tb_start_idx, tb_end_idx = scope_tb
+        toolbars = _discover_toolbars(tb_body)
+        stripped_tb = strip_c_comments(tb_body)
+
+        cmd_links = re.findall(r'\bSetAccessCommand\s*\(\s*(\w+)\s*,\s*"([^"]+)"\s*\)', stripped_tb)
+        matching_starters = [s for s, hdr in cmd_links if hdr == matched_hdr_id]
+
+        if matching_starters:
+            children = re.findall(r'\bSetAccessChild\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)', stripped_tb)
+            child_map = {starter: tlb_v for tlb_v, starter in children}
+
+            next_links = re.findall(r'\bSetAccessNext\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)', stripped_tb)
+            prev_map = {nxt: prv for prv, nxt in next_links}
+
+            target_tlb_vars = set()
+            for s_var in matching_starters:
+                curr = s_var
+                seen_back = {curr}
+                while curr in prev_map:
+                    curr = prev_map[curr]
+                    if curr in seen_back:
+                        break
+                    seen_back.add(curr)
+                if curr in child_map:
+                    target_tlb_vars.add(child_map[curr])
+
+            target_toolbars = [t for t in toolbars if t["var"] in target_tlb_vars]
+
+            # DA10: Trace and validate ONLY target toolbars
+            for tlb in target_toolbars:
+                tlb_var = tlb["var"]
+                tlb_id = tlb["id"]
+                try:
+                    chain_info = _trace_starter_chain(tb_body, tlb_var, matched_hdr_id)
+                except ValueError as e:
+                    return {"status": "error", "error": str(e), "plan": None}
+
+                chain = chain_info["chain"]
+                starter_headers = chain_info["starter_headers"]
+                starters_for_hdr = [s for s in chain if starter_headers.get(s) == matched_hdr_id]
+
+                # DA13: Duplicate mount in the same toolbar
+                if len(starters_for_hdr) > 1:
+                    return {
+                        "status": "error",
+                        "error": f"Duplicate mount of HeaderID '{matched_hdr_id}' in toolbar '{tlb_id}' ({tlb_var})",
+                        "plan": None,
+                    }
+
+                if len(starters_for_hdr) == 1:
+                    tgt_starter = starters_for_hdr[0]
+                    n = len(chain)
+                    idx = chain.index(tgt_starter)
+
+                    # Determine splicing mode (DA3)
+                    if n == 1:
+                        splice_mode = "remove_only_child"
+                        prev_var = None
+                        next_var = None
+                    elif idx == 0:
+                        splice_mode = "new_child"
+                        prev_var = None
+                        next_var = chain[1]
+                    elif idx == n - 1:
+                        splice_mode = "remove_tail"
+                        prev_var = chain[idx - 1]
+                        next_var = None
+                    else:
+                        splice_mode = "relink_next"
+                        prev_var = chain[idx - 1]
+                        next_var = chain[idx + 1]
+
+                    stmts_to_remove = []
+                    stmts_to_add = []
+
+                    m_new = re.search(r'\bNewAccess\s*\(\s*CATCmdStarter\s*,\s*' + re.escape(tgt_starter) + r'\s*,[^;]*\);', tb_body)
+                    if m_new:
+                        stmts_to_remove.append(m_new.group(0))
+
+                    m_cmd = re.search(r'\bSetAccessCommand\s*\(\s*' + re.escape(tgt_starter) + r'\s*,\s*"[^"]*"\s*\);', tb_body)
+                    if m_cmd:
+                        stmts_to_remove.append(m_cmd.group(0))
+
+                    if splice_mode == "remove_only_child":
+                        m_child = re.search(r'\bSetAccessChild\s*\(\s*' + re.escape(tlb_var) + r'\s*,\s*' + re.escape(tgt_starter) + r'\s*\);', tb_body)
+                        if m_child:
+                            stmts_to_remove.append(m_child.group(0))
+                    elif splice_mode == "new_child":
+                        m_child = re.search(r'\bSetAccessChild\s*\(\s*' + re.escape(tlb_var) + r'\s*,\s*' + re.escape(tgt_starter) + r'\s*\);', tb_body)
+                        if m_child:
+                            stmts_to_remove.append(m_child.group(0))
+                        m_next = re.search(r'\bSetAccessNext\s*\(\s*' + re.escape(tgt_starter) + r'\s*,\s*' + re.escape(next_var) + r'\s*\);', tb_body)
+                        if m_next:
+                            stmts_to_remove.append(m_next.group(0))
+                        stmts_to_add.append(f"SetAccessChild({tlb_var}, {next_var});")
+                    elif splice_mode == "relink_next":
+                        m_prev_next = re.search(r'\bSetAccessNext\s*\(\s*' + re.escape(prev_var) + r'\s*,\s*' + re.escape(tgt_starter) + r'\s*\);', tb_body)
+                        if m_prev_next:
+                            stmts_to_remove.append(m_prev_next.group(0))
+                        m_next = re.search(r'\bSetAccessNext\s*\(\s*' + re.escape(tgt_starter) + r'\s*,\s*' + re.escape(next_var) + r'\s*\);', tb_body)
+                        if m_next:
+                            stmts_to_remove.append(m_next.group(0))
+                        stmts_to_add.append(f"SetAccessNext({prev_var}, {next_var});")
+                    elif splice_mode == "remove_tail":
+                        m_prev_next = re.search(r'\bSetAccessNext\s*\(\s*' + re.escape(prev_var) + r'\s*,\s*' + re.escape(tgt_starter) + r'\s*\);', tb_body)
+                        if m_prev_next:
+                            stmts_to_remove.append(m_prev_next.group(0))
+
+                    toolbar_splices.append({
+                        "toolbar_id": tlb_id,
+                        "toolbar_var": tlb_var,
+                        "starter_var": tgt_starter,
+                        "splice_mode": splice_mode,
+                        "prev_starter_var": prev_var,
+                        "next_starter_var": next_var,
+                        "statements_to_remove": stmts_to_remove,
+                        "statements_to_add": stmts_to_add,
+                    })
+
+    # 3. Command files & orphan resources
+    cmd_files = [f for f in cmd.all_files if f.exists()]
+    if cmd.dialog:
+        cmd_files.extend([f for f in cmd.dialog.all_files if f.exists()])
+    imakefile_path = cmd.module.imakefile_path() if (cmd.module and cmd.module.imakefile_path().exists()) else None
+
+    orphan_resources = []
+    fw = getattr(wb, "framework", None)
+    if not fw and hasattr(wb, "framework_name") and wb.framework_name:
+        fw = ctx.snapshot.get_framework(wb.framework_name)
+    if not fw and cmd.module and hasattr(cmd.module, "framework"):
+        fw = cmd.module.framework
+
+    if fw:
+        nls_path = fw.cnext_dir() / "resources" / "msgcatalog" / f"{matched_hdr_cls}.CATNls"
+        if nls_path.exists():
+            nls_text = nls_path.read_text(encoding="utf-8", errors="replace")
+            if f"{matched_hdr_cls}.{matched_hdr_id}" in nls_text or matched_hdr_id in nls_text:
+                orphan_resources.append({
+                    "type": "nls",
+                    "path": str(nls_path),
+                    "key_prefix": f"{matched_hdr_cls}.{matched_hdr_id}",
+                })
+        rsc_path = fw.cnext_dir() / "resources" / "msgcatalog" / f"{matched_hdr_cls}.CATRsc"
+        if rsc_path.exists():
+            rsc_text = rsc_path.read_text(encoding="utf-8", errors="replace")
+            if f"{matched_hdr_cls}.{matched_hdr_id}" in rsc_text or matched_hdr_id in rsc_text:
+                orphan_resources.append({
+                    "type": "rsc",
+                    "path": str(rsc_path),
+                    "key_prefix": f"{matched_hdr_cls}.{matched_hdr_id}",
+                })
+        icon_name = getattr(cmd, "icon", None) or name
+        icon_path = fw.cnext_dir() / "resources" / "graphic" / "icons" / "normal" / f"I_{icon_name}.bmp"
+        if icon_path.exists():
+            orphan_resources.append({
+                "type": "icon",
+                "path": str(icon_path),
+            })
+
+    plan = {
+        "command_name": name,
+        "class_name": matched_cls_name,
+        "header_class": matched_hdr_cls,
+        "header_id": matched_hdr_id,
+        "load_name": matched_ld_name,
+        "workbench_name": wb.name,
+        "addin_source": str(addin_source),
+        "header_statement": header_statement,
+        "toolbar_splices": toolbar_splices,
+        "command_files": [str(f) for f in cmd_files],
+        "imakefile_path": str(imakefile_path) if imakefile_path else None,
+        "orphan_resources": orphan_resources,
+    }
+    return {
+        "status": "ok",
+        "error": None,
+        "plan": plan,
+    }
 
 
 def delete_command(

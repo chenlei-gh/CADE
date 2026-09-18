@@ -1908,6 +1908,394 @@ try:
 finally:
     shutil.rmtree(rb_ws, ignore_errors=True)
 
+# ── R-4-A: Command Cascade Delete & Toolbar Chain Splicing (inspect_delete_command) ──
+# DA1  (Command 唯一身份识别与无挂载检测): Resolves 4-param header registration; 0 toolbar splices
+# DA2  (单 Toolbar 单 Starter): splice_mode == "remove_only_child"
+# DA3  (首节点拆除拓扑缝合): splice_mode == "new_child", SetAccessChild re-targeted to successor
+# DA4  (中间节点拆除拓扑缝合): splice_mode == "relink_next", predecessor SetAccessNext linked to successor
+# DA5  (尾节点拆除拓扑缝合): splice_mode == "remove_tail", predecessor SetAccessNext removed
+# DA6  (空 Toolbar 容器与视图保留): Container NewAccess and AddToolbarView preserved in plan
+# DA7  (跨 Toolbar 多重挂载独立缝合): Same HeaderID mounted in two toolbars yields two independent splices
+# DA8  (Header 注册缺失硬拦截): Missing header registration returns error, plan is None
+# DA9  (Header 重复注册冲突拦截): Duplicate header registration returns error, plan is None
+# DA10 (目标 Toolbar 异常链拦截与非目标隔离): Malformed non-target toolbar ignored; malformed target toolbar rejected
+# DA11 (事务门禁零变更): inspect_delete_command leaves caller ChangeSet untouched under error
+# DA12 (非目标指令与资源隔离): Header and starter of unrelated commands untouched in plan
+# DA13 (同一 Toolbar 重复 MountKey 拦截): Duplicate mount of same Header in same toolbar rejected as error
+da_ws = Path(tempfile.mkdtemp(prefix="cade_da_test_"))
+try:
+    from actions import inspect_delete_command
+
+    fw_dir = da_ws / "TestFW.edu"
+    (fw_dir / "IdentityCard").mkdir(parents=True)
+    (fw_dir / "IdentityCard" / "IdentityCard.h").write_text("// ic", encoding="utf-8")
+    (fw_dir / "Imakefile.mk").write_text("", encoding="utf-8")
+
+    mod_dir = fw_dir / "TestMod.m"
+    src_dir = mod_dir / "src"
+    src_dir.mkdir(parents=True)
+    (mod_dir / "LocalInterfaces").mkdir(parents=True)
+    (mod_dir / "Imakefile.mk").write_text("BUILT_OBJECT_TYPE=SHARED LIBRARY\nLINK_WITH=TestMod", encoding="utf-8")
+
+    # Command implementation files
+    (src_dir / "DiskCmd.cpp").write_text("CATStateCommand BuildGraph DiskCmd\n", encoding="utf-8")
+    (mod_dir / "LocalInterfaces" / "DiskCmd.h").write_text("// DiskCmd header\n", encoding="utf-8")
+    (src_dir / "OtherCmd.cpp").write_text("CATStateCommand BuildGraph OtherCmd\n", encoding="utf-8")
+    (mod_dir / "LocalInterfaces" / "OtherCmd.h").write_text("// OtherCmd header\n", encoding="utf-8")
+
+    addin_cpp = src_dir / "SampleWorkbenchAddin.cpp"
+    ctx = ActionContext(da_ws)
+    ctx.refresh(force=True)
+
+    addin_base_header = (
+        '#include "SampleWorkbenchAddin.h"\n'
+        '#include <iostream>\n\n'
+        'CATIAfrGeneralWksAddin\n\n'
+        'MacDeclareHeader(SampleWorkbenchAddinHeader);\n\n'
+    )
+
+    # ── DA1: Command 唯一身份识别与无挂载检测 ──
+    addin_da1 = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::CreateToolbars() {\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_da1, encoding="utf-8")
+    r_da1 = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA1: inspection succeeds for single unmounted command", r_da1.get("status") == "ok", str(r_da1))
+    p_da1 = r_da1.get("plan", {})
+    check("DA1: plan command_name matches", p_da1.get("command_name") == "DiskCmd", str(p_da1))
+    check("DA1: plan class_name matches", p_da1.get("class_name") == "DiskCmd", str(p_da1))
+    check("DA1: plan header_class matches", p_da1.get("header_class") == "SampleWorkbenchAddinHeader", str(p_da1))
+    check("DA1: plan header_id matches", p_da1.get("header_id") == "DiskCmdHdr", str(p_da1))
+    check("DA1: plan load_name matches", p_da1.get("load_name") == "TestMod", str(p_da1))
+    check("DA1: plan toolbar_splices is empty", p_da1.get("toolbar_splices") == [], str(p_da1))
+    check("DA1: plan command_files contains DiskCmd.cpp and DiskCmd.h",
+          any("DiskCmd.cpp" in f for f in p_da1.get("command_files", [])) and
+          any("DiskCmd.h" in f for f in p_da1.get("command_files", [])),
+          str(p_da1.get("command_files")))
+
+    # ── DA2: 单 Toolbar 单 Starter (Mode 1: remove_only_child) ──
+    addin_da2 = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pSingleTlb, SingleTlb);\n'
+        '    AddToolbarView(pSingleTlb, 1, Top);\n'
+        '    NewAccess(CATCmdStarter, pDiskCmdStr, DiskCmdStr);\n'
+        '    SetAccessCommand(pDiskCmdStr, "DiskCmdHdr");\n'
+        '    SetAccessChild(pSingleTlb, pDiskCmdStr);\n'
+        '    return pSingleTlb;\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_da2, encoding="utf-8")
+    r_da2 = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA2: inspection succeeds for single starter toolbar", r_da2.get("status") == "ok", str(r_da2))
+    p_da2 = r_da2.get("plan", {})
+    splices_da2 = p_da2.get("toolbar_splices", [])
+    check("DA2: exactly one toolbar splice", len(splices_da2) == 1, str(splices_da2))
+    s_da2 = splices_da2[0] if splices_da2 else {}
+    check("DA2: splice_mode is remove_only_child", s_da2.get("splice_mode") == "remove_only_child", str(s_da2))
+    check("DA2: starter_var is pDiskCmdStr", s_da2.get("starter_var") == "pDiskCmdStr", str(s_da2))
+    check("DA2: prev_starter_var is None", s_da2.get("prev_starter_var") is None, str(s_da2))
+    check("DA2: next_starter_var is None", s_da2.get("next_starter_var") is None, str(s_da2))
+    check("DA2: statements_to_add is empty", s_da2.get("statements_to_add") == [], str(s_da2))
+
+    # ── DA6: 空 Toolbar 容器与视图保留 ──
+    stmts_rem_da2 = s_da2.get("statements_to_remove", [])
+    check("DA6: CATCmdContainer not in statements_to_remove",
+          not any("CATCmdContainer" in stmt for stmt in stmts_rem_da2), str(stmts_rem_da2))
+    check("DA6: AddToolbarView not in statements_to_remove",
+          not any("AddToolbarView" in stmt for stmt in stmts_rem_da2), str(stmts_rem_da2))
+    check("DA6: SetAccessChild included in statements_to_remove",
+          any("SetAccessChild" in stmt for stmt in stmts_rem_da2), str(stmts_rem_da2))
+
+    # Multi-starter chain fixture: pS1 (DiskCmdHdr) -> pS2 (SecondCmdHdr) -> pS3 (ThirdCmdHdr)
+    multi_chain_toolbars = (
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pTlb, MultiTlb);\n'
+        '    AddToolbarView(pTlb, 1, Top);\n'
+        '    NewAccess(CATCmdStarter, pS1, S1Str);\n'
+        '    SetAccessCommand(pS1, "DiskCmdHdr");\n'
+        '    NewAccess(CATCmdStarter, pS2, S2Str);\n'
+        '    SetAccessCommand(pS2, "SecondCmdHdr");\n'
+        '    NewAccess(CATCmdStarter, pS3, S3Str);\n'
+        '    SetAccessCommand(pS3, "ThirdCmdHdr");\n'
+        '    SetAccessChild(pTlb, pS1);\n'
+        '    SetAccessNext(pS1, pS2);\n'
+        '    SetAccessNext(pS2, pS3);\n'
+        '    return pTlb;\n'
+        '}\n'
+    )
+
+    # ── DA3: 首节点拆除拓扑缝合 (Mode 2: new_child) ──
+    addin_da3 = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '    new SampleWorkbenchAddinHeader("SecondCmdHdr", "TestMod", "OtherCmd", (void *)NULL);\n'
+        '}\n\n' +
+        multi_chain_toolbars
+    )
+    addin_cpp.write_text(addin_da3, encoding="utf-8")
+    r_da3 = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA3: inspection succeeds for head starter", r_da3.get("status") == "ok", str(r_da3))
+    s_da3 = r_da3.get("plan", {}).get("toolbar_splices", [{}])[0]
+    check("DA3: splice_mode is new_child", s_da3.get("splice_mode") == "new_child", str(s_da3))
+    check("DA3: starter_var is pS1", s_da3.get("starter_var") == "pS1", str(s_da3))
+    check("DA3: prev_starter_var is None", s_da3.get("prev_starter_var") is None, str(s_da3))
+    check("DA3: next_starter_var is pS2", s_da3.get("next_starter_var") == "pS2", str(s_da3))
+    check("DA3: statements_to_add links pS2 as new child",
+          "SetAccessChild(pTlb, pS2);" in s_da3.get("statements_to_add", []), str(s_da3))
+
+    # ── DA4: 中间节点拆除拓扑缝合 (Mode 3: relink_next) ──
+    multi_chain_middle = multi_chain_toolbars.replace(
+        'SetAccessCommand(pS1, "DiskCmdHdr");\n    NewAccess(CATCmdStarter, pS2, S2Str);\n    SetAccessCommand(pS2, "SecondCmdHdr");',
+        'SetAccessCommand(pS1, "FirstCmdHdr");\n    NewAccess(CATCmdStarter, pS2, S2Str);\n    SetAccessCommand(pS2, "DiskCmdHdr");'
+    )
+    addin_da4 = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("FirstCmdHdr", "TestMod", "OtherCmd", (void *)NULL);\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n' +
+        multi_chain_middle
+    )
+    addin_cpp.write_text(addin_da4, encoding="utf-8")
+    r_da4 = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA4: inspection succeeds for middle starter", r_da4.get("status") == "ok", str(r_da4))
+    s_da4 = r_da4.get("plan", {}).get("toolbar_splices", [{}])[0]
+    check("DA4: splice_mode is relink_next", s_da4.get("splice_mode") == "relink_next", str(s_da4))
+    check("DA4: starter_var is pS2", s_da4.get("starter_var") == "pS2", str(s_da4))
+    check("DA4: prev_starter_var is pS1", s_da4.get("prev_starter_var") == "pS1", str(s_da4))
+    check("DA4: next_starter_var is pS3", s_da4.get("next_starter_var") == "pS3", str(s_da4))
+    check("DA4: statements_to_add links pS1 directly to pS3",
+          "SetAccessNext(pS1, pS3);" in s_da4.get("statements_to_add", []), str(s_da4))
+
+    # ── DA5: 尾节点拆除拓扑缝合 (Mode 4: remove_tail) ──
+    multi_chain_tail = multi_chain_toolbars.replace(
+        'SetAccessCommand(pS3, "ThirdCmdHdr");',
+        'SetAccessCommand(pS3, "DiskCmdHdr");'
+    ).replace(
+        'SetAccessCommand(pS1, "DiskCmdHdr");',
+        'SetAccessCommand(pS1, "FirstCmdHdr");'
+    )
+    addin_da5 = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("FirstCmdHdr", "TestMod", "OtherCmd", (void *)NULL);\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n' +
+        multi_chain_tail
+    )
+    addin_cpp.write_text(addin_da5, encoding="utf-8")
+    r_da5 = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA5: inspection succeeds for tail starter", r_da5.get("status") == "ok", str(r_da5))
+    s_da5 = r_da5.get("plan", {}).get("toolbar_splices", [{}])[0]
+    check("DA5: splice_mode is remove_tail", s_da5.get("splice_mode") == "remove_tail", str(s_da5))
+    check("DA5: starter_var is pS3", s_da5.get("starter_var") == "pS3", str(s_da5))
+    check("DA5: prev_starter_var is pS2", s_da5.get("prev_starter_var") == "pS2", str(s_da5))
+    check("DA5: next_starter_var is None", s_da5.get("next_starter_var") is None, str(s_da5))
+    check("DA5: statements_to_add is empty", s_da5.get("statements_to_add") == [], str(s_da5))
+
+    # ── DA7: 跨 Toolbar 多重挂载独立缝合 ──
+    two_toolbars_content = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pTlbA, ToolbarA);\n'
+        '    AddToolbarView(pTlbA, 1, Top);\n'
+        '    NewAccess(CATCmdStarter, pA1, A1Str);\n'
+        '    SetAccessCommand(pA1, "OtherHdrA");\n'
+        '    NewAccess(CATCmdStarter, pA2, A2Str);\n'
+        '    SetAccessCommand(pA2, "DiskCmdHdr");\n'
+        '    SetAccessChild(pTlbA, pA1);\n'
+        '    SetAccessNext(pA1, pA2);\n\n'
+        '    NewAccess(CATCmdContainer, pTlbB, ToolbarB);\n'
+        '    AddToolbarView(pTlbB, 1, Top);\n'
+        '    NewAccess(CATCmdStarter, pB1, B1Str);\n'
+        '    SetAccessCommand(pB1, "DiskCmdHdr");\n'
+        '    NewAccess(CATCmdStarter, pB2, B2Str);\n'
+        '    SetAccessCommand(pB2, "OtherHdrB");\n'
+        '    SetAccessChild(pTlbB, pB1);\n'
+        '    SetAccessNext(pB1, pB2);\n'
+        '    return pTlbA;\n'
+        '}\n'
+    )
+    addin_cpp.write_text(two_toolbars_content, encoding="utf-8")
+    r_da7 = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA7: inspection succeeds for multi-toolbar mounts", r_da7.get("status") == "ok", str(r_da7))
+    splices_da7 = r_da7.get("plan", {}).get("toolbar_splices", [])
+    check("DA7: exactly 2 splices generated", len(splices_da7) == 2, str(splices_da7))
+    s_a = next((s for s in splices_da7 if s.get("toolbar_id") == "ToolbarA"), {})
+    s_b = next((s for s in splices_da7 if s.get("toolbar_id") == "ToolbarB"), {})
+    check("DA7: ToolbarA splice is remove_tail", s_a.get("splice_mode") == "remove_tail" and s_a.get("starter_var") == "pA2", str(s_a))
+    check("DA7: ToolbarB splice is new_child", s_b.get("splice_mode") == "new_child" and s_b.get("starter_var") == "pB1", str(s_b))
+
+    # ── DA8: Header 注册缺失硬拦截 ──
+    addin_da8 = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    // DiskCmd registration missing entirely\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::CreateToolbars() {\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_da8, encoding="utf-8")
+    r_da8 = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA8: missing header registration rejected as error", r_da8.get("status") == "error", str(r_da8))
+    check("DA8: error indicates not found", "not found" in r_da8.get("error", "").lower(), r_da8.get("error", ""))
+    check("DA8: plan is None", r_da8.get("plan") is None, str(r_da8))
+
+    # ── DA9: Header 重复注册冲突拦截 ──
+    addin_da9 = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr2", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::CreateToolbars() {\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_da9, encoding="utf-8")
+    r_da9 = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA9: duplicate header registration rejected as error", r_da9.get("status") == "error", str(r_da9))
+    check("DA9: error indicates duplicate", "duplicate" in r_da9.get("error", "").lower(), r_da9.get("error", ""))
+    check("DA9: plan is None", r_da9.get("plan") is None, str(r_da9))
+
+    # ── DA10: 目标 Toolbar 异常链拦截与非目标隔离 ──
+    addin_da10_isolated = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pTlbA, ToolbarA);\n'
+        '    AddToolbarView(pTlbA, 1, Top);\n'
+        '    NewAccess(CATCmdStarter, pA1, A1Str);\n'
+        '    SetAccessCommand(pA1, "DiskCmdHdr");\n'
+        '    SetAccessChild(pTlbA, pA1);\n\n'
+        '    NewAccess(CATCmdContainer, pTlbC, ToolbarC);\n'
+        '    AddToolbarView(pTlbC, 1, Top);\n'
+        '    NewAccess(CATCmdStarter, pC1, C1Str);\n'
+        '    NewAccess(CATCmdStarter, pC2, C2Str);\n'
+        '    NewAccess(CATCmdStarter, pC3, C3Str);\n'
+        '    SetAccessChild(pTlbC, pC1);\n'
+        '    SetAccessNext(pC1, pC2);\n'
+        '    SetAccessNext(pC1, pC3);\n'
+        '    return pTlbA;\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_da10_isolated, encoding="utf-8")
+    r_da10_iso = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA10: non-target toolbar with malformed fork is ignored (inspection succeeds)",
+          r_da10_iso.get("status") == "ok", str(r_da10_iso))
+    check("DA10: plan contains only ToolbarA splice",
+          len(r_da10_iso.get("plan", {}).get("toolbar_splices", [])) == 1, str(r_da10_iso))
+
+    addin_da10_target_fail = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pTlbA, ToolbarA);\n'
+        '    AddToolbarView(pTlbA, 1, Top);\n'
+        '    NewAccess(CATCmdStarter, pA1, A1Str);\n'
+        '    NewAccess(CATCmdStarter, pA2, A2Str);\n'
+        '    NewAccess(CATCmdStarter, pA3, A3Str);\n'
+        '    SetAccessCommand(pA1, "DiskCmdHdr");\n'
+        '    SetAccessChild(pTlbA, pA1);\n'
+        '    SetAccessNext(pA1, pA2);\n'
+        '    SetAccessNext(pA1, pA3);\n'
+        '    return pTlbA;\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_da10_target_fail, encoding="utf-8")
+    r_da10_fail = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA10: malformed chain on target toolbar rejected as error",
+          r_da10_fail.get("status") == "error", str(r_da10_fail))
+    check("DA10: error message identifies fork/branching",
+          "fork" in r_da10_fail.get("error", "").lower() or "branching" in r_da10_fail.get("error", "").lower(),
+          r_da10_fail.get("error", ""))
+
+    # ── DA11: 事务门禁零变更 ──
+    caller_cs = ChangeSet(action="caller_audit", description="caller audit CS")
+    r_da11 = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench", cs=caller_cs)
+    check("DA11: inspect returns error on malformed target", r_da11.get("status") == "error", str(r_da11))
+    check("DA11: caller CS created is empty", caller_cs.created == {}, str(caller_cs.created))
+    check("DA11: caller CS modified is empty", caller_cs.modified == {}, str(caller_cs.modified))
+    check("DA11: caller CS deleted is empty", caller_cs.deleted == [], str(caller_cs.deleted))
+    check("DA11: caller CS warnings is empty", caller_cs.warnings == [], str(caller_cs.warnings))
+
+    # ── DA12: 非目标指令与资源隔离 ──
+    addin_da12 = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("OtherCmdHdr", "TestMod", "OtherCmd", (void *)NULL);\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pTlb, SingleTlb);\n'
+        '    AddToolbarView(pTlb, 1, Top);\n'
+        '    NewAccess(CATCmdStarter, pOtherStr, OtherStr);\n'
+        '    SetAccessCommand(pOtherStr, "OtherCmdHdr");\n'
+        '    NewAccess(CATCmdStarter, pDiskCmdStr, DiskCmdStr);\n'
+        '    SetAccessCommand(pDiskCmdStr, "DiskCmdHdr");\n'
+        '    SetAccessChild(pTlb, pOtherStr);\n'
+        '    SetAccessNext(pOtherStr, pDiskCmdStr);\n'
+        '    return pTlb;\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_da12, encoding="utf-8")
+    r_da12 = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA12: inspection succeeds alongside other commands", r_da12.get("status") == "ok", str(r_da12))
+    p_da12 = r_da12.get("plan", {})
+    check("DA12: plan header_statement contains DiskCmdHdr only",
+          "DiskCmdHdr" in p_da12.get("header_statement", "") and "OtherCmdHdr" not in p_da12.get("header_statement", ""),
+          p_da12.get("header_statement", ""))
+    s_da12 = p_da12.get("toolbar_splices", [{}])[0]
+    check("DA12: toolbar splice affects pDiskCmdStr only",
+          s_da12.get("starter_var") == "pDiskCmdStr" and s_da12.get("splice_mode") == "remove_tail",
+          str(s_da12))
+    check("DA12: statements_to_remove does not remove declaration or command of OtherCmd",
+          not any("NewAccess(CATCmdStarter, pOtherStr" in stmt or "OtherCmdHdr" in stmt for stmt in s_da12.get("statements_to_remove", [])),
+          str(s_da12.get("statements_to_remove")))
+
+    # ── DA13: 同一 Toolbar 重复 MountKey 拦截 ──
+    addin_da13 = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pTlb, SingleTlb);\n'
+        '    AddToolbarView(pTlb, 1, Top);\n'
+        '    NewAccess(CATCmdStarter, pS1, S1Str);\n'
+        '    SetAccessCommand(pS1, "DiskCmdHdr");\n'
+        '    NewAccess(CATCmdStarter, pS2, S2Str);\n'
+        '    SetAccessCommand(pS2, "DiskCmdHdr");\n'
+        '    SetAccessChild(pTlb, pS1);\n'
+        '    SetAccessNext(pS1, pS2);\n'
+        '    return pTlb;\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_da13, encoding="utf-8")
+    r_da13 = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA13: duplicate MountKey in same toolbar rejected as error", r_da13.get("status") == "error", str(r_da13))
+    check("DA13: error identifies duplicate mount", "duplicate mount" in r_da13.get("error", "").lower(), r_da13.get("error", ""))
+    check("DA13: plan is None", r_da13.get("plan") is None, str(r_da13))
+
+finally:
+    shutil.rmtree(da_ws, ignore_errors=True)
+
 print(f"\nProduction regressions: {passed}/{total}")
 if failures:
     print("Failures:")
