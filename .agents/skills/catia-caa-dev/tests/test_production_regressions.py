@@ -4347,6 +4347,122 @@ CATCmdContainer* DetachWbAddin::CreateToolbars()
     cs_dc16.rollback()
     check("DC16: idempotent rollback maintains exact bytes", detach_wb_cpp.read_bytes() == raw_bytes_before_16)
 
+    # ── DC17: 外部 ChangeSet 已有目标 Addin 的 modified 暂存时阻断 ──
+    cs_conflict3 = ChangeSet(action="test_conflict3", description="conflict cs modified")
+    cs_conflict3.modified[str(detach_wb_cpp)] = "dummy modified content"
+    r_conf_mod = detach_command(ctx_wb, "DetachWb", "CmdSingleHdr", cs=cs_conflict3)
+    check("DC17: reject detach on file staged for modification", r_conf_mod.get("status") == "error")
+    check("DC17: error identifies modification conflict", "staged for modification" in r_conf_mod.get("message", "").lower())
+    check("DC17: error code is CHANGESET_CONFLICT", r_conf_mod.get("error") == "CHANGESET_CONFLICT")
+
+    # ── DC18: 严格解码与破坏性编码阻断 ──
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    r_plan_dc18 = inspect_detach_command(ctx_wb, "DetachWb", "CmdSingleHdr")
+    check("DC18: inspect succeeds for valid template", r_plan_dc18.get("status") == "ok")
+    plan_dc18 = copy.deepcopy(r_plan_dc18.get("plan"))
+
+    # 在源文件中写入非 UTF-8 且非 GBK 的非法字节序列，同时保留 header_statement 便于通过 verify_workbench_detach_plan 的语句检查
+    bad_bytes = detach_cpp_template.encode("utf-8") + b"\n// invalid byte sequence: \xff\xfe\xfd\x80\n"
+    detach_wb_cpp.write_bytes(bad_bytes)
+    # 同步更新 plan 的 snapshot hash 与 digest，使 Gate 2 验签通过，专门测试 Gate 4 的严格解码门禁
+    plan_dc18["source_snapshots"][str(detach_wb_cpp)] = {
+        "sha256": hashlib.sha256(bad_bytes).hexdigest(),
+        "byte_length": len(bad_bytes),
+        "encoding": "utf-8",
+        "newline": "LF",
+    }
+    plan_dc18["plan_digest"] = compute_workbench_detach_plan_digest(plan_dc18)
+
+    r_dc18 = detach_command(ctx_wb, "DetachWb", "CmdSingleHdr", plan=plan_dc18)
+    check("DC18: corrupt encoding rejected by detach_command", r_dc18.get("status") == "error")
+    check("DC18: error code is SOURCE_ENCODING_ERROR", r_dc18.get("error") == "SOURCE_ENCODING_ERROR")
+    check("DC18: error message identifies strict encoding failure", "cannot be decoded with strict" in r_dc18.get("message", "").lower())
+
+    # ── DC19: 变换后置结构验证（Post-transformation Assertions）门禁 ──
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    r_plan_dc19 = inspect_detach_command(ctx_wb, "DetachWb", "CmdMidHdr")
+    plan_dc19 = copy.deepcopy(r_plan_dc19.get("plan"))
+
+    # Case 1: 模拟生成重复或未预期的拼接语句（向 statements_to_add 注入不会被添加的语句）
+    plan_dc19_bad_add = copy.deepcopy(plan_dc19)
+    plan_dc19_bad_add["toolbar_splices"][0]["statements_to_add"].append("SetAccessNext(pNonExistent, pGhost);")
+    plan_dc19_bad_add["plan_digest"] = compute_workbench_detach_plan_digest(plan_dc19_bad_add)
+
+    raw_before_dc19 = detach_wb_cpp.read_bytes()
+    r_dc19_add = detach_command(ctx_wb, "DetachWb", "CmdMidHdr", plan=plan_dc19_bad_add)
+    check("DC19: post-assertion catches missing added statement", r_dc19_add.get("status") == "error")
+    check("DC19: error code is POST_TRANSFORMATION_ASSERTION_FAILED", r_dc19_add.get("error") == "POST_TRANSFORMATION_ASSERTION_FAILED")
+    check("DC19: error details statement count mismatch", "appear exactly 1 time" in r_dc19_add.get("message", "").lower())
+    check("DC19: zero write on post-assertion failure", detach_wb_cpp.read_bytes() == raw_before_dc19)
+
+    # Case 2: 模拟未被完全移除的待删语句
+    plan_dc19_bad_rem = copy.deepcopy(plan_dc19)
+    # 注入一个存在于文件头部但在 CreateToolbars() 范围外无法被删除的语句
+    plan_dc19_bad_rem["toolbar_splices"][0]["statements_to_remove"].append('#include "CATCommandHeader.h"')
+    plan_dc19_bad_rem["plan_digest"] = compute_workbench_detach_plan_digest(plan_dc19_bad_rem)
+
+    r_dc19_rem = detach_command(ctx_wb, "DetachWb", "CmdMidHdr", plan=plan_dc19_bad_rem)
+    check("DC19: post-assertion catches unremoved statement", r_dc19_rem.get("status") == "error")
+    check("DC19: error code is POST_TRANSFORMATION_ASSERTION_FAILED", r_dc19_rem.get("error") == "POST_TRANSFORMATION_ASSERTION_FAILED")
+    check("DC19: error specifies statement still present", "statement to remove still present" in r_dc19_rem.get("message", "").lower())
+    check("DC19: zero write on statement still present", detach_wb_cpp.read_bytes() == raw_before_dc19)
+
+    # ── DC20: 复杂多工具栏与复合回滚序列验证 (往返/幂等/重放) ──
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    raw_bytes_orig_20 = detach_wb_cpp.read_bytes()
+    sha_orig_20 = hashlib.sha256(raw_bytes_orig_20).hexdigest()
+    dico_bytes_orig_20 = dico_file.read_bytes()
+    imake_bytes_orig_20 = (mod_shared / "Imakefile.mk").read_bytes()
+    
+    mock_cmd_cpp = mod_shared / "src" / "CmdHead.cpp"
+    mock_cmd_cpp.write_text('// CmdHead implementation\n#include "CATCommand.h"\n', encoding="utf-8")
+    mock_cmd_bytes_orig_20 = mock_cmd_cpp.read_bytes()
+
+    # 序列 1: detach → apply → rollback
+    r_seq1 = detach_command(ctx_wb, "DetachWb", "CmdHeadHdr")
+    cs_seq1 = r_seq1.get("changeset")
+    check("DC20: seq1 detach pending", r_seq1.get("status") == "pending")
+    res_apply1 = cs_seq1.apply()
+    check("DC20: seq1 apply succeeds", res_apply1.get("status") == "applied" and len(res_apply1.get("errors", [])) == 0)
+    check("DC20: seq1 disk modified", detach_wb_cpp.read_bytes() != raw_bytes_orig_20)
+    res_rb1 = cs_seq1.rollback()
+    check("DC20: seq1 rollback succeeds", res_rb1.get("status") == "rolled_back")
+    check("DC20: seq1 raw bytes restored", detach_wb_cpp.read_bytes() == raw_bytes_orig_20)
+    check("DC20: seq1 sha256 restored", hashlib.sha256(detach_wb_cpp.read_bytes()).hexdigest() == sha_orig_20)
+
+    # 序列 2: detach → apply → rollback → rollback (幂等回滚)
+    r_seq2 = detach_command(ctx_wb, "DetachWb", "CmdTailHdr")
+    cs_seq2 = r_seq2.get("changeset")
+    cs_seq2.apply()
+    check("DC20: seq2 disk modified", detach_wb_cpp.read_bytes() != raw_bytes_orig_20)
+    cs_seq2.rollback()
+    check("DC20: seq2 first rollback restored", detach_wb_cpp.read_bytes() == raw_bytes_orig_20)
+    res_rb2_dup = cs_seq2.rollback()
+    check("DC20: seq2 duplicate rollback status ok", res_rb2_dup.get("status") == "rolled_back")
+    check("DC20: seq2 duplicate rollback maintains exact bytes", detach_wb_cpp.read_bytes() == raw_bytes_orig_20)
+
+    # 序列 3: detach → apply → rollback → apply → rollback (重放与再次回滚)
+    r_seq3 = detach_command(ctx_wb, "DetachWb", "CmdMidHdr")
+    cs_seq3 = r_seq3.get("changeset")
+    cs_seq3.apply()
+    check("DC20: seq3 first apply modified", detach_wb_cpp.read_bytes() != raw_bytes_orig_20)
+    cs_seq3.rollback()
+    check("DC20: seq3 first rollback restored", detach_wb_cpp.read_bytes() == raw_bytes_orig_20)
+    cs_seq3.apply()
+    check("DC20: seq3 replay apply modified", detach_wb_cpp.read_bytes() != raw_bytes_orig_20)
+    cs_seq3.rollback()
+    check("DC20: seq3 replay rollback restored", detach_wb_cpp.read_bytes() == raw_bytes_orig_20)
+    check("DC20: seq3 final sha256 matches exactly", hashlib.sha256(detach_wb_cpp.read_bytes()).hexdigest() == sha_orig_20)
+
+    # 验证全部关联资源零污染
+    check("DC20: command source file 100% untouched", mock_cmd_cpp.read_bytes() == mock_cmd_bytes_orig_20)
+    check("DC20: dico file 100% untouched", dico_file.read_bytes() == dico_bytes_orig_20)
+    check("DC20: imakefile 100% untouched", (mod_shared / "Imakefile.mk").read_bytes() == imake_bytes_orig_20)
+    mock_cmd_cpp.unlink()
+
 finally:
     shutil.rmtree(wb_ws, ignore_errors=True)
 

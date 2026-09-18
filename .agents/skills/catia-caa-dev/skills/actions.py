@@ -5605,18 +5605,29 @@ def detach_command(
     if cs is not None:
         norm_addin = _norm_path_key(addin_path)
         norm_cs_created = {_norm_path_key(k) for k in master_cs.created}
+        norm_cs_modified = {_norm_path_key(k) for k in master_cs.modified}
         norm_cs_deleted = {_norm_path_key(p) for p in master_cs.deleted}
 
         if norm_addin in norm_cs_created:
             return {
                 "status": "error",
+                "error": "CHANGESET_CONFLICT",
                 "message": f"ChangeSet conflict detected: cannot detach command from file already staged for creation: {addin_path}",
+                "changeset": None,
+                "plan": plan,
+            }
+        if norm_addin in norm_cs_modified:
+            return {
+                "status": "error",
+                "error": "CHANGESET_CONFLICT",
+                "message": f"ChangeSet conflict detected: cannot detach command from file already staged for modification: {addin_path}",
                 "changeset": None,
                 "plan": plan,
             }
         if norm_addin in norm_cs_deleted:
             return {
                 "status": "error",
+                "error": "CHANGESET_CONFLICT",
                 "message": f"ChangeSet conflict detected: cannot detach command from file already staged for deletion: {addin_path}",
                 "changeset": None,
                 "plan": plan,
@@ -5634,10 +5645,23 @@ def detach_command(
         }
 
     enc = plan.get("source_snapshots", {}).get(addin_path_str, {}).get("encoding", "utf-8")
+    content = None
     try:
         content = raw_bytes.decode(enc)
     except UnicodeDecodeError:
-        content = raw_bytes.decode("utf-8", errors="replace")
+        if enc.lower() != "gbk":
+            try:
+                content = raw_bytes.decode("gbk")
+            except UnicodeDecodeError:
+                pass
+    if content is None:
+        return {
+            "status": "error",
+            "error": "SOURCE_ENCODING_ERROR",
+            "message": f"Source file cannot be decoded with strict {enc} or GBK: {addin_path}",
+            "changeset": None,
+            "plan": plan,
+        }
 
     # 4a. CreateCommands() scope: remove header registration
     cc_scope = _extract_create_commands_scope(content)
@@ -5770,6 +5794,58 @@ def detach_command(
                                 "plan": plan,
                             }
                         tb_start, tb_end = tb_scope[1], tb_scope[2]
+
+    # 4c. Post-transformation structural assertions
+    hdr_clean = hdr_stmt.strip() if hdr_stmt else ""
+    if hdr_clean and any(line.strip() == hdr_clean for line in content.splitlines()):
+        return {
+            "status": "error",
+            "error": "POST_TRANSFORMATION_ASSERTION_FAILED",
+            "message": f"Post-transformation assertion failed: header statement was not removed: {hdr_clean}",
+            "changeset": None,
+            "plan": plan,
+        }
+
+    for splice in splices:
+        for rem_stmt in splice.get("statements_to_remove", []):
+            rem_clean = rem_stmt.strip()
+            if rem_clean and any(line.strip() == rem_clean for line in content.splitlines()):
+                return {
+                    "status": "error",
+                    "error": "POST_TRANSFORMATION_ASSERTION_FAILED",
+                    "message": f"Post-transformation assertion failed: statement to remove still present: {rem_clean}",
+                    "changeset": None,
+                    "plan": plan,
+                }
+        for add_stmt in splice.get("statements_to_add", []):
+            add_clean = add_stmt.strip()
+            if add_clean:
+                occ = sum(1 for line in content.splitlines() if line.strip() == add_clean)
+                if occ != 1:
+                    return {
+                        "status": "error",
+                        "error": "POST_TRANSFORMATION_ASSERTION_FAILED",
+                        "message": f"Post-transformation assertion failed: expected statement '{add_clean}' to appear exactly 1 time, found {occ}",
+                        "changeset": None,
+                        "plan": plan,
+                    }
+
+    if not _extract_create_commands_scope(content):
+        return {
+            "status": "error",
+            "error": "POST_TRANSFORMATION_ASSERTION_FAILED",
+            "message": f"Post-transformation assertion failed: CreateCommands() scope corrupted after transformation in {addin_path}",
+            "changeset": None,
+            "plan": plan,
+        }
+    if splices and not _extract_create_toolbars_scope(content):
+        return {
+            "status": "error",
+            "error": "POST_TRANSFORMATION_ASSERTION_FAILED",
+            "message": f"Post-transformation assertion failed: CreateToolbars() scope corrupted after transformation in {addin_path}",
+            "changeset": None,
+            "plan": plan,
+        }
 
     # ── Gate 5: ChangeSet staging and symmetric rollback guarantee ──
     master_cs.add_modify(addin_path, content)
