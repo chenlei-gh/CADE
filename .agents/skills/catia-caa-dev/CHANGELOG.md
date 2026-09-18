@@ -29,7 +29,12 @@
   - **验证结论**：落地 DA1～DA25 生产回归用例覆盖（含作用域限定、词元边界匹配、CRLF/续行链保真、单/多工具栏缝合、事务门禁零变更与对称 rollback 验证）。
 - **Command 安全重命名与防并发篡改 (R-4-B)**：
   - **能力与机制**：引入只读审计门禁 `inspect_rename_command` 与原子重命名操作 `rename_command`；执行前记录目标源文件的 SHA-256 哈希与长度快照，在物理执行前校验磁盘文件一致性，遇并发篡改立即硬拦截并保持零变更；采用稳定 HeaderID 策略（严格保持 HeaderID、工具栏 Starter 引用与 NLS/RSC Key 稳定），仅更新 4 参数 Header 注册的第三参数 `ClassName`；对 C++ 类声明、类作用域、构造/析构函数声明及定义、`CATCreateClass` 工厂宏和 `#include` 实现精确替换，隔离字符串字面量、注释和前缀相似符号；`Imakefile.mk` 实现词元级无缝更新；ChangeSet 原生支持双向对称 `rollback()`，支持 staged 混合编排与多工作台显式隔离。
-  - **验证结论**：落地 RN1～RN20 生产回归用例覆盖（含合法重命名、命名冲突与非法标识符拦截、语义精确替换、HeaderID 稳定性、ChangeSet 事务故障恢复、SHA-256 并发篡改防御与多工作台隔离）。
+  - **深度加固与安全闭环**：
+    - **Plan 强身份绑定与版本门禁**：引入 `plan_schema_version: "2.0"` 显式版本契约；增加 `command_identity`（`old_name`、`new_name`、`module`、`framework`、`workbench_name`）与调用参数强校验；实施目标模块路径越界防护，校验待处理文件经过 `resolve()` 后必须位于模块目录内；校验文件重命名变换与 Header 更新的 C++ 类名严格对齐。
+    - **物理原始字节级 Hash 与明确解码**：`source_snapshot` 统一基于物理 `read_bytes()` 计算 SHA-256 与字节长度，记录检测编码（UTF-8 / GBK），对不可解码文件前置拒绝；防并发检测使用实际物理字节比对，单字节或空白篡改均可被拦截。
+    - **CreateCommands 作用域三路分流与跨函数隔离**：显式指定工作台提取失败直接抛错；自动搜索模式下对包含目标命令线索的损坏工作台实施硬拦截，对无关损坏工作台安全跳过；修复作用域提取正则在参数列表未闭合时跨多行吞噬后续函数括号的潜在隐患（限制在 `[^)\n;]*` 且签名与 `{` 间仅限空白）。
+    - **ChangeSet 交叉冲突检测与物理字节无损回滚**：`merge_changesets` 增加 `created ↔ deleted`、`modified ↔ deleted`、`deleted ↔ deleted` 结构化冲突硬拦截；`ChangeSet` 备份记录 `(text, raw_bytes)`，回滚优先 `write_bytes(raw)`，验证 GBK / CRLF 文件字节级还原。
+  - **验证结论**：RN1～RN26 全量回归覆盖，生产回归套件规模达 553/553 全量通过。
 
 ### 🔧 Build / 检索 (2026-09-11)
 

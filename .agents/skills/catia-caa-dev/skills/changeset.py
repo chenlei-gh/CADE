@@ -114,8 +114,10 @@ class ChangeSet:
     warnings: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-    _backups: Dict[str, str] = field(default_factory=dict, repr=False)
-    _deleted_backups: Dict[str, Tuple[str, bytes]] = field(
+    _backups: Dict[str, Tuple[Optional[str], Optional[bytes]]] = field(
+        default_factory=dict, repr=False
+    )
+    _deleted_backups: Dict[str, Tuple[Optional[str], Optional[bytes]]] = field(
         default_factory=dict, repr=False
     )  # path → (original_text, raw_bytes) for deleted files
     _binary: Dict[str, bytes] = field(default_factory=dict, repr=False)
@@ -459,13 +461,19 @@ class ChangeSet:
             except ImportError:
                 pass  # backup module not available, skip
 
-        # 1. Backup modified files
+        # 1. Backup modified files (record raw bytes for faithful physical restoration)
         for path_str in self.modified:
             p = Path(path_str)
             if p.exists():
-                self._backups[path_str] = p.read_text(
-                    encoding="utf-8", errors="replace"
-                )
+                try:
+                    raw = p.read_bytes()
+                except Exception:
+                    raw = None
+                try:
+                    text = p.read_text(encoding="utf-8", errors="replace")
+                except UnicodeDecodeError:
+                    text = None
+                self._backups[path_str] = (text, raw)
 
         # 2. Backup deleted files (P0-005 fix)
         for p in self.deleted:
@@ -553,19 +561,27 @@ class ChangeSet:
         for path_str in reversed(patched_paths):
             if path_str in self._backups:
                 try:
-                    Path(path_str).write_text(
-                        self._backups[path_str], encoding="utf-8", newline="\r\n"
-                    )
+                    val = self._backups[path_str]
+                    text, raw = val if isinstance(val, tuple) else (val, None)
+                    if raw is not None:
+                        Path(path_str).write_bytes(raw)
+                    elif text is not None:
+                        enc = _text_encoding_for(Path(path_str))
+                        Path(path_str).write_text(text, encoding=enc, newline="\r\n")
                 except Exception:
                     pass
 
-        # Restore modified files
+        # Restore modified files (prefer raw bytes to preserve encoding, CRLF, and BOM)
         for path_str in reversed(modified_paths):
             if path_str in self._backups:
                 try:
-                    Path(path_str).write_text(
-                        self._backups[path_str], encoding="utf-8", newline="\r\n"
-                    )
+                    val = self._backups[path_str]
+                    text, raw = val if isinstance(val, tuple) else (val, None)
+                    if raw is not None:
+                        Path(path_str).write_bytes(raw)
+                    elif text is not None:
+                        enc = _text_encoding_for(Path(path_str))
+                        Path(path_str).write_text(text, encoding=enc, newline="\r\n")
                 except Exception:
                     pass
 
@@ -605,10 +621,15 @@ class ChangeSet:
             "errors": [],
         }
 
-        # Restore modified files from backups
-        for path_str, original in self._backups.items():
+        # Restore modified files from backups (prefer raw bytes)
+        for path_str, backup_val in self._backups.items():
             try:
-                Path(path_str).write_text(original, encoding="utf-8", newline="\r\n")
+                text, raw = backup_val if isinstance(backup_val, tuple) else (backup_val, None)
+                if raw is not None:
+                    Path(path_str).write_bytes(raw)
+                elif text is not None:
+                    enc = _text_encoding_for(Path(path_str))
+                    Path(path_str).write_text(text, encoding=enc, newline="\r\n")
             except Exception as e:
                 result["errors"].append(f"Failed to restore {path_str}: {e}")
 
@@ -646,8 +667,12 @@ class ChangeSet:
         if not patch.file.exists():
             raise FileNotFoundError(f"Patch target not found: {patch.file}")
 
+        try:
+            raw = patch.file.read_bytes()
+        except Exception:
+            raw = None
         content = patch.file.read_text(encoding="utf-8", errors="replace")
-        self._backups[str(patch.file)] = content
+        self._backups[str(patch.file)] = (content, raw)
         lines = content.split("\n")
 
         if patch.operation == "insert_after":
@@ -804,12 +829,26 @@ def merge_changesets(*changesets: ChangeSet) -> ChangeSet:
     merged = ChangeSet(action="merged", description="Merged changeset")
     seen_created: set = set()
     seen_modified: set = set()
+    seen_deleted: set = set()
     conflicts: List[str] = []
 
     for cs in changesets:
+        # Detect deleted-path conflicts with previously seen paths
+        for p in cs.deleted:
+            p_str = str(p)
+            if p_str in seen_created:
+                conflicts.append(f"Conflict on {p_str}: created in one ChangeSet and deleted in another")
+            elif p_str in seen_modified:
+                conflicts.append(f"Conflict on {p_str}: modified in one ChangeSet and deleted in another")
+            elif p_str in seen_deleted:
+                conflicts.append(f"Conflict on {p_str}: duplicate deletion across ChangeSets")
+            seen_deleted.add(p_str)
+
         # Detect created-path conflicts
         for path_str, content in cs.created.items():
-            if path_str in seen_modified:
+            if path_str in seen_deleted:
+                conflicts.append(f"Conflict on {path_str}: deleted in one ChangeSet and created in another")
+            elif path_str in seen_modified:
                 conflicts.append(f"Created conflict on {path_str}")
             elif path_str in seen_created:
                 if merged.created.get(path_str) != content:
@@ -820,7 +859,9 @@ def merge_changesets(*changesets: ChangeSet) -> ChangeSet:
 
         # Detect modified-path conflicts
         for path_str, content in cs.modified.items():
-            if path_str in seen_created or path_str in seen_modified:
+            if path_str in seen_deleted:
+                conflicts.append(f"Conflict on {path_str}: deleted in one ChangeSet and modified in another")
+            elif path_str in seen_created or path_str in seen_modified:
                 if merged.modified.get(path_str) != content or path_str in seen_created:
                     conflicts.append(f"Modified conflict on {path_str}")
             else:

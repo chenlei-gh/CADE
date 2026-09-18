@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import copy
+import hashlib
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -2665,6 +2667,7 @@ try:
     diskcmd_cpp_code = (
         '#include "DiskCmd.h"\n'
         '#include "CATCreateExternalObject.h"\n\n'
+        '// CATStateCommand BuildGraph DiskCmd\n\n'
         'CATCreateClass(DiskCmd);\n\n'
         'DiskCmd::DiskCmd() : CATCommand(NULL, "DiskCmd") {\n'
         '    const char* keep_literal = "DiskCmd";\n'
@@ -3040,6 +3043,176 @@ try:
     check("RN20: invalid name rejected as error", failed_rename_res.get("status") == "error")
     check("RN20: existing created entries intact", str(extra_file) in mixed_cs.created)
     check("RN20: no corrupted state introduced", "123BadName" not in str(mixed_cs.created))
+
+    # ══════════════════════════════════════════════════════════════════
+    # R-4-B Hardening Phase: Plan Identity Binding, Physical Byte Hash & Scope Resilience
+    # RN21 (错误 Plan 串供与非法路径硬拦截)
+    # RN22 (原始物理字节级 Hash 防并发篡改与非 UTF-8 / GBK 编码校验)
+    # RN23 (显式指定工作台 CreateCommands 作用域损坏硬拦截)
+    # RN24 (含有目标命令线索的工作台损坏硬拦截 vs 无关工作台损坏安全隔离)
+    # RN25 (ChangeSet merge 删除交叉冲突硬拦截: created/modified/deleted ↔ deleted)
+    # RN26 (GBK modified 文件物理字节级无损回滚)
+    # ══════════════════════════════════════════════════════════════════
+
+    # ── RN21: 错误 Plan 串供与非法路径硬拦截 ──
+    ctx.refresh()
+    r_rn21_good = inspect_rename_command(ctx, "DiskCmd", "PlanSafeCmd", workbench_name="SampleWorkbench")
+    check("RN21: valid base plan generated", r_rn21_good.get("status") == "ok")
+    good_plan = copy.deepcopy(r_rn21_good.get("plan"))
+
+    # 21a: Plan schema version mismatch
+    bad_schema_plan = copy.deepcopy(good_plan)
+    bad_schema_plan["plan_schema_version"] = "1.0"
+    r_rn21a = rename_command(ctx, "DiskCmd", "PlanSafeCmd", workbench_name="SampleWorkbench", plan=bad_schema_plan)
+    check("RN21a: bad schema version rejected", r_rn21a.get("status") == "error" and "plan_schema_version" in r_rn21a.get("message", "").lower(), str(r_rn21a))
+
+    # 21b: Command identity mismatch (attempt to use plan for another command)
+    bad_id_plan = copy.deepcopy(good_plan)
+    bad_id_plan["command_identity"]["old_name"] = "DifferentCmd"
+    r_rn21b = rename_command(ctx, "DiskCmd", "PlanSafeCmd", workbench_name="SampleWorkbench", plan=bad_id_plan)
+    check("RN21b: identity old_name mismatch rejected", r_rn21b.get("status") == "error" and "mismatch" in r_rn21b.get("message", "").lower(), str(r_rn21b))
+
+    # 21c: Path traversal boundary violation (path outside target module)
+    bad_path_plan = copy.deepcopy(good_plan)
+    bad_path_plan["file_renames"][0]["old_path"] = str(da_ws / "OutsideSecret.h")
+    bad_path_plan["file_renames"][0]["new_path"] = str(da_ws / "OutsideSecretNew.h")
+    r_rn21c = rename_command(ctx, "DiskCmd", "PlanSafeCmd", workbench_name="SampleWorkbench", plan=bad_path_plan)
+    check("RN21c: outside path rejected", r_rn21c.get("status") == "error" and "outside" in r_rn21c.get("message", "").lower(), str(r_rn21c))
+
+    # 21d: File rename transformation mismatch
+    bad_trans_plan = copy.deepcopy(good_plan)
+    bad_trans_plan["file_renames"][0]["new_path"] = str(mod_dir / "LocalInterfaces" / "HackedCmd.h")
+    r_rn21d = rename_command(ctx, "DiskCmd", "PlanSafeCmd", workbench_name="SampleWorkbench", plan=bad_trans_plan)
+    check("RN21d: filename transformation mismatch rejected", r_rn21d.get("status") == "error" and "does not match" in r_rn21d.get("message", "").lower(), str(r_rn21d))
+
+    # 21e: Header update target class mismatch
+    bad_hdr_plan = copy.deepcopy(good_plan)
+    bad_hdr_plan["header_update"]["new_class_name"] = "DifferentClass"
+    r_rn21e = rename_command(ctx, "DiskCmd", "PlanSafeCmd", workbench_name="SampleWorkbench", plan=bad_hdr_plan)
+    check("RN21e: header update class mismatch rejected", r_rn21e.get("status") == "error" and "mismatch" in r_rn21e.get("message", "").lower(), str(r_rn21e))
+
+    # ── RN22: 原始物理字节级 Hash 防并发篡改与非 UTF-8 / GBK 编码校验 ──
+    # Create a command source file with GBK encoding & CRLF
+    gbk_comment_bytes = "// GBK 中文测试 注释\r\n".encode("gbk")
+    orig_cpp_bytes = old_cpp.read_bytes()
+    old_cpp.write_bytes(orig_cpp_bytes + gbk_comment_bytes)
+    ctx.refresh()
+
+    r_rn22_plan = inspect_rename_command(ctx, "DiskCmd", "GbkCmd", workbench_name="SampleWorkbench")
+    check("RN22: inspect succeeds on GBK source", r_rn22_plan.get("status") == "ok", str(r_rn22_plan))
+    p_rn22 = r_rn22_plan.get("plan", {})
+    cpp_rn22 = next(fr for fr in p_rn22.get("file_renames", []) if not fr.get("is_header"))
+    expected_gbk_hash = hashlib.sha256(old_cpp.read_bytes()).hexdigest()
+    check("RN22: source_snapshot hash matches raw bytes", cpp_rn22["source_snapshot"]["content_hash"] == expected_gbk_hash)
+
+    # Tamper with the raw bytes by appending a single byte
+    old_cpp.write_bytes(old_cpp.read_bytes() + b" ")
+    r_rn22_tamper = rename_command(ctx, "DiskCmd", "GbkCmd", workbench_name="SampleWorkbench", plan=p_rn22)
+    check("RN22: concurrent raw byte tampering detected and rejected", r_rn22_tamper.get("status") == "error" and "modified concurrently" in r_rn22_tamper.get("message", "").lower(), str(r_rn22_tamper))
+
+    # Restore original DiskCmd.cpp
+    old_cpp.write_bytes(orig_cpp_bytes)
+    ctx.refresh()
+
+    # ── RN23: 显式指定工作台 CreateCommands 作用域损坏硬拦截 ──
+    corrupt_addin_content = (
+        '#include "SampleWorkbenchAddin.h"\n'
+        'CATIAfrGeneralWksAddin\n'
+        'void SampleWorkbenchAddin::CreateCommands(\n'  # Syntax corruption: unclosed paren
+        '   new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+    )
+    addin_cpp.write_text(corrupt_addin_content, encoding="utf-8")
+    r_rn23 = inspect_rename_command(ctx, "DiskCmd", "NewDiskCmd", workbench_name="SampleWorkbench")
+    check("RN23: corrupted CreateCommands in specified workbench rejected", r_rn23.get("status") == "error", str(r_rn23))
+    check("RN23: error explicitly mentions CreateCommands scope extraction", "createcommands() scope" in r_rn23.get("error", "").lower(), str(r_rn23))
+    addin_cpp.write_text(addin_rn, encoding="utf-8")
+    ctx.refresh()
+
+    # ── RN24: 含有目标命令线索的工作台损坏硬拦截 vs 无关工作台损坏安全隔离 ──
+    # 24a: When workbench_name is None, if a corrupted workbench contains clue for DiskCmd -> hard error
+    corrupt_mod_dir = fw_dir / "CorruptMod.m"
+    corrupt_src_dir = corrupt_mod_dir / "src"
+    corrupt_src_dir.mkdir(parents=True, exist_ok=True)
+    corrupt_addin_cpp = corrupt_src_dir / "CorruptWorkbenchAddin.cpp"
+    # Corrupted CreateCommands but explicitly references DiskCmd
+    corrupt_addin_cpp.write_text(
+        '#include "CorruptWorkbenchAddin.h"\n\n'
+        'CATIAfrGeneralWksAddin\n\n'
+        '// Workbench references DiskCmd\n'
+        'void CorruptWorkbenchAddin::CreateCommands(\n'  # syntax broken: unclosed paren
+        '   new CorruptHeader("DiskCmdHdr", "CorruptMod", "DiskCmd", (void *)NULL);\n\n'
+        'void CorruptWorkbenchAddin::CreateToolbars() {}\n',
+        encoding="utf-8"
+    )
+    (corrupt_mod_dir / "Imakefile.mk").write_text("BUILT_OBJECT_TYPE=SHARED LIBRARY\nSOURCES = CorruptWorkbenchAddin.cpp\n", encoding="utf-8")
+    ctx.refresh(force=True)
+
+    r_rn24a = inspect_rename_command(ctx, "DiskCmd", "NewDiskCmd")
+    check("RN24a: corrupted workbench with target clue is rejected as error", r_rn24a.get("status") == "error", str(r_rn24a))
+    check("RN24a: error mentions references command but scope extraction failed", "references command 'diskcmd'" in r_rn24a.get("error", "").lower(), str(r_rn24a))
+
+    # 24b: Corrupted workbench is completely unrelated (does NOT reference DiskCmd) -> ignored, normal workbench matches!
+    corrupt_addin_cpp.write_text(
+        '#include "CorruptWorkbenchAddin.h"\n\n'
+        'CATIAfrGeneralWksAddin\n\n'
+        '// Workbench for UnrelatedFeature only\n'
+        'void CorruptWorkbenchAddin::CreateCommands(\n'  # syntax broken: unclosed paren
+        '   new UnrelatedHeader("UnrelatedHdr", "CorruptMod", "UnrelatedCmd", (void *)NULL);\n\n'
+        'void CorruptWorkbenchAddin::CreateToolbars() {}\n',
+        encoding="utf-8"
+    )
+    ctx.refresh(force=True)
+
+    r_rn24b = inspect_rename_command(ctx, "DiskCmd", "NewDiskCmd")
+    check("RN24b: unrelated corrupted workbench is safely isolated", r_rn24b.get("status") == "ok", str(r_rn24b))
+    check("RN24b: plan matches valid SampleWorkbench", r_rn24b.get("plan", {}).get("header_update", {}).get("workbench_name") == "SampleWorkbench")
+
+    # Cleanup corrupt module
+    shutil.rmtree(corrupt_mod_dir, ignore_errors=True)
+    ctx.refresh(force=True)
+
+    # ── RN25: ChangeSet merge 删除交叉冲突硬拦截 ──
+    cs_c = ChangeSet(action="create_f", description="create X")
+    cs_c.add_create(da_ws / "file_x.txt", "content x")
+
+    cs_d = ChangeSet(action="delete_f", description="delete X")
+    cs_d.add_delete(da_ws / "file_x.txt")
+
+    merged_cd = merge_changesets(cs_c, cs_d)
+    check("RN25a: created vs deleted conflict detected", any("created in one ChangeSet and deleted in another" in c for c in merged_cd.metadata.get("merge_conflicts", [])))
+
+    cs_m = ChangeSet(action="modify_f", description="modify Y")
+    cs_m.add_modify(da_ws / "file_y.txt", "modified y")
+
+    cs_dy = ChangeSet(action="delete_y", description="delete Y")
+    cs_dy.add_delete(da_ws / "file_y.txt")
+
+    merged_md = merge_changesets(cs_m, cs_dy)
+    check("RN25b: modified vs deleted conflict detected", any("modified in one ChangeSet and deleted in another" in c for c in merged_md.metadata.get("merge_conflicts", [])))
+
+    cs_d1 = ChangeSet(action="del_z1", description="delete Z 1")
+    cs_d1.add_delete(da_ws / "file_z.txt")
+    cs_d2 = ChangeSet(action="del_z2", description="delete Z 2")
+    cs_d2.add_delete(da_ws / "file_z.txt")
+
+    merged_dd = merge_changesets(cs_d1, cs_d2)
+    check("RN25c: duplicate deletion conflict detected", any("duplicate deletion across ChangeSets" in c for c in merged_dd.metadata.get("merge_conflicts", [])))
+
+    # ── RN26: GBK modified 文件物理字节级无损回滚 ──
+    gbk_test_file = mod_dir / "gbk_sample.txt"
+    gbk_orig_bytes = "第一行 GBK 中文内容\r\n第二行 特殊字符 § №\r\n".encode("gbk")
+    gbk_test_file.write_bytes(gbk_orig_bytes)
+
+    cs_gbk = ChangeSet(action="modify_gbk", description="test gbk modification rollback")
+    cs_gbk.add_modify(gbk_test_file, "New modified content")
+    res_apply_gbk = cs_gbk.apply(workspace_root=da_ws)
+    check("RN26: gbk modify apply succeeds", res_apply_gbk.get("status") == "applied")
+    check("RN26: gbk file modified", gbk_test_file.read_bytes() != gbk_orig_bytes)
+
+    res_rb_gbk = cs_gbk.rollback()
+    check("RN26: gbk modify rollback succeeds", res_rb_gbk.get("status") == "rolled_back")
+    check("RN26: gbk file restored bit-for-bit identical", gbk_test_file.read_bytes() == gbk_orig_bytes)
+    gbk_test_file.unlink(missing_ok=True)
 
 finally:
     shutil.rmtree(da_ws, ignore_errors=True)

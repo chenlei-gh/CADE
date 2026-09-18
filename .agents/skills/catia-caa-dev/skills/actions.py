@@ -1762,12 +1762,16 @@ def _extract_create_commands_scope(text: str) -> Optional[Tuple[str, int, int]]:
     Returns None if CreateCommands() or its balanced braces cannot be found.
     """
     masked = _mask_comments_and_strings(text)
-    m = re.search(r"void\s+(?:\w+::)?CreateCommands\s*\([^)]*\)", masked)
+    m = re.search(r"void\s+(?:\w+::)?CreateCommands\s*\([^)\n;]*\)", masked)
     if not m:
         return None
 
     open_brace_idx = masked.find('{', m.end())
     if open_brace_idx == -1:
+        return None
+
+    # Between signature end and opening brace, only whitespace is allowed
+    if masked[m.end():open_brace_idx].strip():
         return None
 
     depth = 0
@@ -1801,12 +1805,16 @@ def _extract_create_toolbars_scope(text: str) -> Optional[Tuple[str, int, int]]:
     Returns None if CreateToolbars() or its balanced braces cannot be found.
     """
     masked = _mask_comments_and_strings(text)
-    m = re.search(r"CATCmdContainer\s*\*\s*(?:\w+::)?CreateToolbars\s*\([^)]*\)", masked)
+    m = re.search(r"CATCmdContainer\s*\*\s*(?:\w+::)?CreateToolbars\s*\([^)\n;]*\)", masked)
     if not m:
         return None
 
     open_brace_idx = masked.find('{', m.end())
     if open_brace_idx == -1:
+        return None
+
+    # Between signature end and opening brace, only whitespace is allowed
+    if masked[m.end():open_brace_idx].strip():
         return None
 
     depth = 0
@@ -3084,6 +3092,66 @@ def _compute_cpp_rename_content(
     return res, replacements
 
 
+def _read_file_bytes_and_text(
+    p: Path, cs: Optional[ChangeSet] = None
+) -> Tuple[Optional[bytes], Optional[str], Optional[str]]:
+    """Read raw physical bytes, text content, and detected encoding staged-first.
+
+    Returns (raw_bytes, text_content, encoding) or (None, None, None) if file
+    does not exist or cannot be decoded with either UTF-8 or GBK.
+    """
+    p_str = str(p)
+    if cs is not None:
+        if p_str in cs.created:
+            text = cs.created[p_str]
+            enc = "utf-8"
+            if p.exists():
+                try:
+                    p.read_bytes().decode("utf-8")
+                except UnicodeDecodeError:
+                    try:
+                        p.read_bytes().decode("gbk")
+                        enc = "gbk"
+                    except UnicodeDecodeError:
+                        pass
+            return text.encode(enc), text, enc
+        if p_str in cs.modified:
+            text = cs.modified[p_str]
+            enc = "utf-8"
+            if p.exists():
+                try:
+                    p.read_bytes().decode("utf-8")
+                except UnicodeDecodeError:
+                    try:
+                        p.read_bytes().decode("gbk")
+                        enc = "gbk"
+                    except UnicodeDecodeError:
+                        pass
+            return text.encode(enc), text, enc
+
+    if not p.exists():
+        return None, None, None
+
+    try:
+        raw = p.read_bytes()
+    except Exception:
+        return None, None, None
+
+    try:
+        text = raw.decode("utf-8")
+        return raw, text, "utf-8"
+    except UnicodeDecodeError:
+        pass
+
+    try:
+        text = raw.decode("gbk")
+        return raw, text, "gbk"
+    except UnicodeDecodeError:
+        pass
+
+    return None, None, None
+
+
 def inspect_rename_command(
     ctx: ActionContext,
     old_name: str,
@@ -3154,23 +3222,16 @@ def inspect_rename_command(
         if cs is not None and (str(new_file) in cs.created or str(new_file) in cs.modified):
             return {"status": "error", "error": f"Target file already exists in staged ChangeSet: {new_file}", "plan": None}
 
-        # Read content (staged-first)
-        content = None
-        old_file_str = str(old_file)
-        if cs is not None and old_file_str in cs.created:
-            content = cs.created[old_file_str]
-        elif cs is not None and old_file_str in cs.modified:
-            content = cs.modified[old_file_str]
-        elif old_file.exists():
-            content = old_file.read_text(encoding="utf-8", errors="replace")
-
-        if content is None:
-            return {"status": "error", "error": f"Failed to read source file: {old_file}", "plan": None}
+        # Read content (staged-first with raw physical bytes)
+        raw_bytes, content, detected_enc = _read_file_bytes_and_text(old_file, cs=cs)
+        if raw_bytes is None or content is None:
+            return {"status": "error", "error": f"Failed to read or decode source file: {old_file}", "plan": None}
 
         source_snapshot = {
             "path": str(old_file),
-            "content_hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
-            "content_length": len(content),
+            "content_hash": hashlib.sha256(raw_bytes).hexdigest(),
+            "content_length": len(raw_bytes),
+            "encoding": detected_enc,
         }
 
         is_header = old_file.suffix.lower() in (".h", ".hpp", ".hxx")
@@ -3189,17 +3250,10 @@ def inspect_rename_command(
     imakefile_update = None
     if target_mod:
         imake_path = target_mod.imakefile_path()
-        if imake_path.exists():
-            imake_str = str(imake_path)
-            imake_content = None
-            if cs is not None and imake_str in cs.created:
-                imake_content = cs.created[imake_str]
-            elif cs is not None and imake_str in cs.modified:
-                imake_content = cs.modified[imake_str]
-            else:
-                imake_content = imake_path.read_text(encoding="utf-8", errors="replace")
-
-            if imake_content is not None:
+        imake_str = str(imake_path)
+        if imake_path.exists() or (cs is not None and (imake_str in cs.created or imake_str in cs.modified)):
+            raw_bytes, imake_content, detected_enc = _read_file_bytes_and_text(imake_path, cs=cs)
+            if imake_content is not None and raw_bytes is not None:
                 new_imake_content = _rename_imakefile_content(imake_content, old_name, new_name)
                 imakefile_update = {
                     "path": str(imake_path),
@@ -3207,8 +3261,9 @@ def inspect_rename_command(
                     "new_token": f"{new_name}.cpp",
                     "source_snapshot": {
                         "path": str(imake_path),
-                        "content_hash": hashlib.sha256(imake_content.encode("utf-8")).hexdigest(),
-                        "content_length": len(imake_content),
+                        "content_hash": hashlib.sha256(raw_bytes).hexdigest(),
+                        "content_length": len(raw_bytes),
+                        "encoding": detected_enc,
                     },
                     "new_content": new_imake_content,
                 }
@@ -3234,22 +3289,32 @@ def inspect_rename_command(
 
     candidate_matches = []
     for candidate_wb in target_wbs:
-        addin_source = candidate_wb.addin_source or candidate_wb.addin_source_path()
+        addin_source = (
+            candidate_wb.addin_source
+            or (candidate_wb.path if candidate_wb.path and candidate_wb.path.suffix.lower() == ".cpp" and candidate_wb.path.exists() else None)
+            or candidate_wb.addin_source_path()
+        )
         if not addin_source:
             continue
-        addin_str = str(addin_source)
-        content = None
-        if cs is not None and addin_str in cs.modified:
-            content = cs.modified[addin_str]
-        elif cs is not None and addin_str in cs.created:
-            content = cs.created[addin_str]
-        elif addin_source.exists():
-            content = addin_source.read_text(encoding="utf-8", errors="replace")
-        if content is None:
+        raw_bytes, content, detected_enc = _read_file_bytes_and_text(addin_source, cs=cs)
+        if content is None or raw_bytes is None:
             continue
 
         scope_cc = _extract_create_commands_scope(content)
         if not scope_cc:
+            if workbench_name:
+                return {
+                    "status": "error",
+                    "error": f"Failed to extract CreateCommands() scope from specified workbench '{workbench_name}': {addin_source}",
+                    "plan": None,
+                }
+            has_clue = (target_class_name in content) or (f'"{old_name}"' in content) or (old_name in content)
+            if has_clue:
+                return {
+                    "status": "error",
+                    "error": f"Workbench '{candidate_wb.name}' references command '{old_name}' but CreateCommands() scope extraction failed: {addin_source}",
+                    "plan": None,
+                }
             continue
         cc_body, cc_start_idx, cc_end_idx = scope_cc
 
@@ -3270,6 +3335,8 @@ def inspect_rename_command(
                 "scope_start": cc_start_idx,
                 "scope_end": cc_end_idx,
                 "addin_content": content,
+                "raw_bytes": raw_bytes,
+                "encoding": detected_enc,
             })
 
     if len(candidate_matches) == 0:
@@ -3294,6 +3361,8 @@ def inspect_rename_command(
     wb = match_info["workbench"]
     addin_source = match_info["addin_source"]
     addin_content = match_info["addin_content"]
+    addin_raw_bytes = match_info["raw_bytes"]
+    addin_enc = match_info["encoding"]
 
     # Construct new header statement: HeaderID, LoadName, NULL strictly preserved, only ClassName replaced
     new_stmt = f'new {matched_hdr_cls}("{matched_hdr_id}", "{matched_ld_name}", "{new_name}", (void *)NULL);'
@@ -3310,8 +3379,9 @@ def inspect_rename_command(
         "new_statement": new_stmt,
         "source_snapshot": {
             "path": str(addin_source),
-            "content_hash": hashlib.sha256(addin_content.encode("utf-8")).hexdigest(),
-            "content_length": len(addin_content),
+            "content_hash": hashlib.sha256(addin_raw_bytes).hexdigest(),
+            "content_length": len(addin_raw_bytes),
+            "encoding": addin_enc,
         },
     }
 
@@ -3374,11 +3444,13 @@ def inspect_rename_command(
     }
 
     plan = {
+        "plan_schema_version": "2.0",
         "command_identity": {
             "old_name": old_name,
             "new_name": new_name,
             "module": target_mod.name if target_mod else None,
             "framework": target_mod.framework.name if (target_mod and target_mod.framework) else None,
+            "workbench_name": wb.name if wb else workbench_name,
         },
         "file_renames": file_renames,
         "imakefile_updates": imakefile_update,
@@ -3432,65 +3504,91 @@ def rename_command(
             return _error(inspect_res.get("error") or f"Rename inspection failed for command '{old_name}'")
         plan = inspect_res["plan"]
 
-    # 1. Verify source snapshot hashes to prevent concurrent modification / tampering
+    # 1. Plan schema and identity binding validation
+    if plan.get("plan_schema_version") != "2.0":
+        return _error(f"Incompatible or missing plan_schema_version: expected '2.0', got '{plan.get('plan_schema_version')}'")
+
+    cid = plan.get("command_identity")
+    if not isinstance(cid, dict):
+        return _error("Plan missing or invalid command_identity")
+    if cid.get("old_name") != old_name or cid.get("new_name") != new_name:
+        return _error(
+            f"Plan command_identity mismatch: expected '{old_name}' -> '{new_name}', "
+            f"got '{cid.get('old_name')}' -> '{cid.get('new_name')}'"
+        )
+    if module and cid.get("module") != module:
+        return _error(f"Plan module mismatch: expected '{module}', got '{cid.get('module')}'")
+    if framework and cid.get("framework") != framework:
+        return _error(f"Plan framework mismatch: expected '{framework}', got '{cid.get('framework')}'")
+    if workbench_name and cid.get("workbench_name") and cid.get("workbench_name").lower() != workbench_name.lower():
+        return _error(f"Plan workbench_name mismatch: expected '{workbench_name}', got '{cid.get('workbench_name')}'")
+
+    # Path traversal and module scope boundary verification
+    mod_name = cid.get("module")
+    fw_name = cid.get("framework")
+    target_mod = ctx.snapshot.get_module(mod_name, fw_name) if mod_name else None
+    if target_mod and target_mod.path:
+        mod_root = target_mod.path.resolve()
+        for f_item in plan.get("file_renames", []):
+            old_p = Path(f_item["old_path"]).resolve()
+            new_p = Path(f_item["new_path"]).resolve()
+            try:
+                old_p.relative_to(mod_root)
+                new_p.relative_to(mod_root)
+            except ValueError:
+                return _error(f"Plan file path is outside target module directory: {old_p}")
+            expected_new_filename = old_p.name.replace(old_name, new_name, 1)
+            if new_p.name != expected_new_filename:
+                return _error(
+                    f"Plan file rename '{old_p.name}' -> '{new_p.name}' does not match expected '{expected_new_filename}'"
+                )
+
+    hdr_update = plan.get("header_update")
+    if hdr_update:
+        if hdr_update.get("new_class_name") != new_name:
+            return _error(f"Plan header_update new_class_name mismatch: expected '{new_name}', got '{hdr_update.get('new_class_name')}'")
+
+    # 2. Verify source snapshot physical byte hashes to prevent concurrent modification / tampering
     for f_item in plan.get("file_renames", []):
         old_f = Path(f_item["old_path"])
-        f_str = str(old_f)
-        current_content = None
-        if cs is not None and f_str in cs.created:
-            current_content = cs.created[f_str]
-        elif cs is not None and f_str in cs.modified:
-            current_content = cs.modified[f_str]
-        elif old_f.exists():
-            current_content = old_f.read_text(encoding="utf-8", errors="replace")
-
-        if current_content is None:
+        raw_bytes, current_content, enc = _read_file_bytes_and_text(old_f, cs=cs)
+        if raw_bytes is None:
             return _error(f"Source file not found during rename execution: {old_f}")
 
-        cur_hash = hashlib.sha256(current_content.encode("utf-8")).hexdigest()
+        cur_hash = hashlib.sha256(raw_bytes).hexdigest()
+        cur_len = len(raw_bytes)
         expected_hash = f_item["source_snapshot"]["content_hash"]
-        if cur_hash != expected_hash:
+        expected_len = f_item["source_snapshot"].get("content_length")
+        if cur_hash != expected_hash or (expected_len is not None and cur_len != expected_len):
             return _error(f"Source file has been modified concurrently: {old_f}")
 
     imk_update = plan.get("imakefile_updates")
     if imk_update:
         imk_f = Path(imk_update["path"])
-        imk_str = str(imk_f)
-        cur_imk = None
-        if cs is not None and imk_str in cs.created:
-            cur_imk = cs.created[imk_str]
-        elif cs is not None and imk_str in cs.modified:
-            cur_imk = cs.modified[imk_str]
-        elif imk_f.exists():
-            cur_imk = imk_f.read_text(encoding="utf-8", errors="replace")
-
-        if cur_imk is None:
+        raw_bytes, cur_imk, enc = _read_file_bytes_and_text(imk_f, cs=cs)
+        if raw_bytes is None:
             return _error(f"Imakefile not found during rename execution: {imk_f}")
 
-        cur_hash = hashlib.sha256(cur_imk.encode("utf-8")).hexdigest()
+        cur_hash = hashlib.sha256(raw_bytes).hexdigest()
+        cur_len = len(raw_bytes)
         expected_hash = imk_update["source_snapshot"]["content_hash"]
-        if cur_hash != expected_hash:
+        expected_len = imk_update["source_snapshot"].get("content_length")
+        if cur_hash != expected_hash or (expected_len is not None and cur_len != expected_len):
             return _error(f"Imakefile has been modified concurrently: {imk_f}")
 
-    hdr_update = plan.get("header_update")
     cur_addin = None
     cc_scope = None
     if hdr_update:
         addin_f = Path(hdr_update["addin_source"])
-        addin_str = str(addin_f)
-        if cs is not None and addin_str in cs.created:
-            cur_addin = cs.created[addin_str]
-        elif cs is not None and addin_str in cs.modified:
-            cur_addin = cs.modified[addin_str]
-        elif addin_f.exists():
-            cur_addin = addin_f.read_text(encoding="utf-8", errors="replace")
-
-        if cur_addin is None:
+        raw_bytes, cur_addin, enc = _read_file_bytes_and_text(addin_f, cs=cs)
+        if raw_bytes is None or cur_addin is None:
             return _error(f"Addin source file not found during rename execution: {addin_f}")
 
-        cur_hash = hashlib.sha256(cur_addin.encode("utf-8")).hexdigest()
+        cur_hash = hashlib.sha256(raw_bytes).hexdigest()
+        cur_len = len(raw_bytes)
         expected_hash = hdr_update["source_snapshot"]["content_hash"]
-        if cur_hash != expected_hash:
+        expected_len = hdr_update["source_snapshot"].get("content_length")
+        if cur_hash != expected_hash or (expected_len is not None and cur_len != expected_len):
             return _error(f"Addin source file has been modified concurrently: {addin_f}")
 
         cc_scope = _extract_create_commands_scope(cur_addin)
