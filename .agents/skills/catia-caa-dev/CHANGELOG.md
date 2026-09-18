@@ -10,20 +10,26 @@
 
 ## [未发布]
 
-### 🚀 Command / UI 运行时闭环 (2026-09-18, R-2-C / R-3-A / R-3-B 与 B28 真机实证)
+### 🚀 Command 运行时闭环与生命周期重构 (2026-09-18, R-2-C / R-3-A / R-3-B / R-4-A / R-4-B 与 B28 真机实证)
 
 - **4 参数 Header 跨模块解耦注册 (R-2-C)**：
-  - **能力与机制**：重构 `add_command_to_workbench`，以 `(HeaderClassName, HeaderID)` 为唯一身份，采用 4 参数 `CATCommandHeader` 注册机制；引入词法预检门禁 `inspect_workbench_registration`，确保多 HeaderClass、缺少 `CreateCommands` 或 Payload 冲突等异常在 ChangeSet 创建前被硬拦截，避免进入下游变更阶段。
+  - **能力与机制**：重构 `add_command_to_workbench`，以 `(HeaderClassName, HeaderID)` 为唯一身份，采用 4 参数 `CATCommandHeader` 注册机制（`new HeaderClass("HeaderID", "LoadName", "ClassName", (void *)NULL)`）；引入词法预检门禁 `inspect_workbench_registration`，确保多 HeaderClass、缺少 `CreateCommands` 或 Payload 冲突等异常在 ChangeSet 创建前被硬拦截，避免进入下游变更阶段。
   - **验证结论**：验证 4 参数 Header 架构可避免 Workbench DLL 对 Command DLL 的静态链接依赖，并在 B28 Runtime 中实现按需动态加载。S1～S10 回归全量通过。
 - **Header 资源原子绑定 (R-3-A)**：
-  - **能力与机制**：绑定以 `(HeaderClassName, HeaderID)` 为唯一键，自动化同步 `CATNls`、`CATRsc` 与图标文件；实施严格的冲突判定规则（同 Key 同 Value 幂等 no-op，同 Key 异 Value 抛出 `ValueError` 硬拦截），并在 Staged ChangeSet 与 Disk 状态间建立零重复写入与事务保护。
+  - **能力与机制**：绑定以 `(HeaderClassName, HeaderID)` 为唯一键，自动化同步 `CATNls`、`CATRsc` 与图标文件；实施严格的冲突判定规则（同 Key 同 Value 幂等 no-op，同 Key 异 Value 抛出 `ValueError` 硬拦截），并在 Staged ChangeSet 与 Disk 状态间建立零重复写入与事务保护，前置校验无副作用。
   - **验证结论**：完成 RA1～RA10 回归覆盖，解决历史命令生成与宿主资源脱节问题，确保 Header 拥有完整的多语言文本与工具栏图标。
 - **显式工具栏挂载 (R-3-B)**：
-  - **能力与机制**：从 `create_command` 彻底剥离隐式修改，新增独立的挂载 Action `attach_command_to_toolbar` 与只读拓扑分析门禁 `inspect_toolbar_mount`；支持单链拓扑追踪（首节点 `SetAccessChild`，后续尾节点 `SetAccessNext`），排除 Menubar 误识别，并支持跨 Toolbar 隔离与标识符安全清洗重命名。
+  - **能力与机制**：将工具栏挂载由隐式修改重构为显式独立 Action `attach_command_to_toolbar` 与只读拓扑分析门禁 `inspect_toolbar_mount`；支持单链拓扑追踪（首节点 `SetAccessChild`，后续尾节点 `SetAccessNext`），排除 Menubar 误识别，并支持跨 Toolbar 隔离与标识符安全清洗重命名。
   - **验证结论**：落地 RB1～RB16（共 54 项拓扑断言）全量回归，确保工具栏修改具备确定性源码边界与零污染幂等保护。
 - **CATIA V5-6R2018 (B28) 真机 Runtime 闭环实证**：
   - **实证证据链**：基于真实工程通过 `create_command` → `add_command_to_workbench` → `attach_command_to_toolbar` → `mkmk -a` 生成双按钮工具栏与独立命令 DLL。
   - **运行时表现**：启动 CATIA 进程后，工具栏正确渲染双按钮，启动后进程模块快照未发现目标命令 DLL；触发 Header 后目标 DLL 出现在模块快照中，验证该命令路径的按需动态加载；目标 DLL 成功调用工厂宏实例化并执行 `Activate()`，弹出模态通知框并生成物理验证标记，全链路闭环通过。
+- **Command 级联安全删除与链缝合 (R-4-A)**：
+  - **能力与机制**：引入只读拓扑分析门禁 `inspect_delete_command` 与原子删除操作 `delete_command`，将变更作用域严格限定在 `CreateCommands()` 与 `CreateToolbars()` 函数边界内，杜绝越界修改；实现 4 种 Starter 拓扑缝合模式（`remove_only_child` 容器保留、`new_child` 次节点晋升 Child、`relink_next` 中间跳跃缝合、`remove_tail` 尾节点截断）；在 `Imakefile.mk` 源码清理中引入基于词元边界的精确匹配，完整保留 CRLF、制表符缩进与多行续行符（`\`）；orphan 资源采用“只审计元数据、不直接物理删除”策略，避免误删共享资产；在变更执行前执行括号平衡与语法完整性校验，遇到语法破损或冲突即刻实施门禁拦截。
+  - **验证结论**：落地 DA1～DA25 生产回归用例覆盖（含作用域限定、词元边界匹配、CRLF/续行链保真、单/多工具栏缝合、事务门禁零变更与对称 rollback 验证）。
+- **Command 安全重命名与防并发篡改 (R-4-B)**：
+  - **能力与机制**：引入只读审计门禁 `inspect_rename_command` 与原子重命名操作 `rename_command`；执行前记录目标源文件的 SHA-256 哈希与长度快照，在物理执行前校验磁盘文件一致性，遇并发篡改立即硬拦截并保持零变更；采用稳定 HeaderID 策略（严格保持 HeaderID、工具栏 Starter 引用与 NLS/RSC Key 稳定），仅更新 4 参数 Header 注册的第三参数 `ClassName`；对 C++ 类声明、类作用域、构造/析构函数声明及定义、`CATCreateClass` 工厂宏和 `#include` 实现精确替换，隔离字符串字面量、注释和前缀相似符号；`Imakefile.mk` 实现词元级无缝更新；ChangeSet 原生支持双向对称 `rollback()`，支持 staged 混合编排与多工作台显式隔离。
+  - **验证结论**：落地 RN1～RN20 生产回归用例覆盖（含合法重命名、命名冲突与非法标识符拦截、语义精确替换、HeaderID 稳定性、ChangeSet 事务故障恢复、SHA-256 并发篡改防御与多工作台隔离）。
 
 ### 🔧 Build / 检索 (2026-09-11)
 
