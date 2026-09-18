@@ -1887,19 +1887,11 @@ def _trace_starter_chain(
     """
     stripped = strip_c_comments(body)
 
-    # 1. Incomplete statement syntax checks (RB16)
-    if re.search(r'\bSetAccessChild\s*\(\s*[^,)]+\s*\)', stripped):
+    # 1. Container-level syntax checks for tlb_var
+    if re.search(r'\bSetAccessChild\s*\(\s*' + re.escape(tlb_var) + r'\s*\)', stripped):
         raise ValueError("Incomplete SetAccessChild statement with missing arguments in CreateToolbars()")
-    if re.search(r'\bSetAccessNext\s*\(\s*[^,)]+\s*\)', stripped):
-        raise ValueError("Incomplete SetAccessNext statement with missing arguments in CreateToolbars()")
-    if re.search(r'\bSetAccessCommand\s*\(\s*[^,)]+\s*\)', stripped):
-        raise ValueError("Incomplete SetAccessCommand statement with missing arguments in CreateToolbars()")
-    if re.search(r'\bSetAccessChild\s*\(\s*[^,)]+,\s*[^,)]+,\s*[^)]+\)', stripped):
+    if re.search(r'\bSetAccessChild\s*\(\s*' + re.escape(tlb_var) + r'\s*,\s*[^,)]+,\s*[^)]+\)', stripped):
         raise ValueError("Malformed SetAccessChild statement with too many arguments in CreateToolbars()")
-    if re.search(r'\bSetAccessNext\s*\(\s*[^,)]+,\s*[^,)]+,\s*[^)]+\)', stripped):
-        raise ValueError("Malformed SetAccessNext statement with too many arguments in CreateToolbars()")
-    if re.search(r'\bSetAccessCommand\s*\(\s*[^,)]+,\s*[^,)]+,\s*[^)]+\)', stripped):
-        raise ValueError("Malformed SetAccessCommand statement with too many arguments in CreateToolbars()")
 
     # 2. Declared starters
     starters = re.findall(r'\bNewAccess\s*\(\s*CATCmdStarter\s*,\s*(\w+)\s*,\s*(\w+)\s*\)', stripped)
@@ -1938,6 +1930,24 @@ def _trace_starter_chain(
         outgoing.setdefault(prev_var, []).append(next_var)
         incoming.setdefault(next_var, []).append(prev_var)
 
+    # Check multiple predecessors on first_starter
+    if len(incoming.get(first_starter, [])) > 1:
+        raise ValueError(f"Multiple predecessors point to starter '{first_starter}' via SetAccessNext")
+
+    def _check_starter_syntax(s: str) -> None:
+        if re.search(r'\bSetAccessNext\s*\(\s*' + re.escape(s) + r'\s*\)', stripped):
+            raise ValueError("Incomplete SetAccessNext statement with missing arguments in CreateToolbars()")
+        if re.search(r'\bSetAccessNext\s*\(\s*' + re.escape(s) + r'\s*,\s*[^,)]+,\s*[^)]+\)', stripped) or \
+           re.search(r'\bSetAccessNext\s*\(\s*[^,)]+,\s*' + re.escape(s) + r'\s*,\s*[^)]+\)', stripped):
+            raise ValueError("Malformed SetAccessNext statement with too many arguments in CreateToolbars()")
+        if re.search(r'\bSetAccessCommand\s*\(\s*' + re.escape(s) + r'\s*\)', stripped):
+            raise ValueError("Incomplete SetAccessCommand statement with missing arguments in CreateToolbars()")
+        if re.search(r'\bSetAccessCommand\s*\(\s*' + re.escape(s) + r'\s*,\s*[^,)]+,\s*[^)]+\)', stripped):
+            raise ValueError("Malformed SetAccessCommand statement with too many arguments in CreateToolbars()")
+
+    # Check syntax on first_starter
+    _check_starter_syntax(first_starter)
+
     # 6. Trace chain for this specific toolbar starting from first_starter
     chain = [first_starter]
     seen = {first_starter}
@@ -1956,6 +1966,8 @@ def _trace_starter_chain(
             raise ValueError(f"Multiple predecessors point to starter '{nxt}' via SetAccessNext")
         if nxt not in declared_starters:
             raise ValueError(f"Starter '{nxt}' in SetAccessNext is not declared via NewAccess(CATCmdStarter, ...)")
+
+        _check_starter_syntax(nxt)
 
         chain.append(nxt)
         seen.add(nxt)
@@ -2408,7 +2420,7 @@ def inspect_delete_command(
             for s_var in matching_starters:
                 curr = s_var
                 seen_back = {curr}
-                while curr in prev_map:
+                while curr in prev_map and curr not in child_map:
                     curr = prev_map[curr]
                     if curr in seen_back:
                         break

@@ -2226,6 +2226,58 @@ try:
           "fork" in r_da10_fail.get("error", "").lower() or "branching" in r_da10_fail.get("error", "").lower(),
           r_da10_fail.get("error", ""))
 
+    # 10b: 非目标 Toolbar 包含残缺语法语句不污染目标 Toolbar
+    addin_da10b_syntax_iso = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pTlbA, ToolbarA);\n'
+        '    AddToolbarView(pTlbA, 1, Top);\n'
+        '    NewAccess(CATCmdStarter, pA1, A1Str);\n'
+        '    SetAccessCommand(pA1, "DiskCmdHdr");\n'
+        '    SetAccessChild(pTlbA, pA1);\n\n'
+        '    NewAccess(CATCmdContainer, pTlbC, ToolbarC);\n'
+        '    AddToolbarView(pTlbC, 1, Top);\n'
+        '    NewAccess(CATCmdStarter, pC1, C1Str);\n'
+        '    SetAccessChild(pTlbC, pC1);\n'
+        '    SetAccessNext(pC1);\n'  # Incomplete statement in non-target ToolbarC
+        '    return pTlbA;\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_da10b_syntax_iso, encoding="utf-8")
+    r_da10b = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA10b: non-target toolbar incomplete syntax does not pollute target toolbar",
+          r_da10b.get("status") == "ok", str(r_da10b))
+
+    # 10c: 目标 Toolbar 的 first_starter 存在多前驱汇聚必须被拦截
+    addin_da10c_first_starter_pred = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pTlbA, ToolbarA);\n'
+        '    AddToolbarView(pTlbA, 1, Top);\n'
+        '    NewAccess(CATCmdStarter, pA1, A1Str);\n'
+        '    NewAccess(CATCmdStarter, pX, XStr);\n'
+        '    NewAccess(CATCmdStarter, pY, YStr);\n'
+        '    SetAccessCommand(pA1, "DiskCmdHdr");\n'
+        '    SetAccessChild(pTlbA, pA1);\n'
+        '    SetAccessNext(pX, pA1);\n'
+        '    SetAccessNext(pY, pA1);\n'
+        '    return pTlbA;\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_da10c_first_starter_pred, encoding="utf-8")
+    r_da10c = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA10c: multiple predecessors to first_starter rejected as error",
+          r_da10c.get("status") == "error", str(r_da10c))
+    check("DA10c: error message identifies multiple predecessors to first_starter",
+          "multiple predecessors" in r_da10c.get("error", "").lower() and "pa1" in r_da10c.get("error", "").lower(),
+          r_da10c.get("error", ""))
+
     # ── DA11: 事务门禁零变更 ──
     caller_cs = ChangeSet(action="caller_audit", description="caller audit CS")
     r_da11 = inspect_delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench", cs=caller_cs)
