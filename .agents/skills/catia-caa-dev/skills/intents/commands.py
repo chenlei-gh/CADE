@@ -7,8 +7,13 @@ from __future__ import annotations
 import re
 from typing import Dict, Optional
 
-from actions import ActionContext, create_command, create_dialog, strip_c_comments_and_strings
-from actions import add_command_to_workbench as add_cmd_to_wb
+from actions import (
+    ActionContext,
+    create_command,
+    create_dialog,
+    inspect_workbench_registration,
+    add_command_to_workbench as add_cmd_to_wb,
+)
 from changeset import ChangeSet
 from meta_model import Visibility
 
@@ -47,34 +52,22 @@ def create_executable_command(
     if validation["status"] == "error":
         return validation
 
+    resolved_load_name = load_name or (module[:-2] if module.endswith(".m") else module)
+
     # Read-only Pre-validation Gate for Workbench integration (before any ChangeSet mutation)
     if add_to_workbench:
-        wb = next(
-            (w for w in ctx.snapshot.get_all_workbenches() if w.name.lower() == add_to_workbench.lower()),
-            None,
+        inspection = inspect_workbench_registration(
+            ctx,
+            workbench_name=add_to_workbench,
+            command_name=name,
+            load_name=resolved_load_name,
+            class_name=name,
+            cs=None,
         )
-        if not wb:
-            return {"status": "error", "message": f"Workbench not found: {add_to_workbench}", "changeset": None}
-        addin_source = wb.addin_source or wb.addin_source_path()
-        if not addin_source:
+        if inspection["status"] == "error":
             return {
                 "status": "error",
-                "message": f"Workbench '{add_to_workbench}' has no Addin source configured",
-                "changeset": None,
-            }
-        if not addin_source.exists():
-            return {
-                "status": "error",
-                "message": f"Workbench '{add_to_workbench}' Addin source not found: {addin_source}",
-                "changeset": None,
-            }
-        content = addin_source.read_text(encoding="utf-8", errors="replace")
-        stripped = strip_c_comments_and_strings(content)
-        hdrs = re.findall(r"\bMacDeclareHeader\s*\(\s*(\w+)\s*\)", stripped)
-        if len(hdrs) > 1:
-            return {
-                "status": "error",
-                "message": f"Workbench '{add_to_workbench}' Addin source contains multiple MacDeclareHeader declarations ({hdrs}). Cannot infer HeaderClass.",
+                "message": inspection["error"],
                 "changeset": None,
             }
 
@@ -82,8 +75,6 @@ def create_executable_command(
         dialog_name = f"{name}Dlg"
     if not tooltip:
         tooltip = generate_tooltip(name)
-
-    resolved_load_name = load_name or (module[:-2] if module.endswith(".m") else module)
 
     master_cs = ChangeSet(
         action="create_executable_command",

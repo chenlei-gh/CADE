@@ -1189,7 +1189,7 @@ try:
     check("S6: 4-param header registration in Addin source",
           'new CustomWksHeader("E2ECmdHdr", "CustomLoadName", "E2ECmd", (void *)NULL);' in addin_6, addin_6)
 
-    # ── S7: Orchestrator Pre-validation Gate (A-3 fix) ──
+    # ── S7: Orchestrator Pre-validation Gate (A-3 Closure) ──
     # Case A: Missing workbench
     r7a = create_executable_command(
         ctx,
@@ -1214,6 +1214,84 @@ try:
     check("S7b: pre-validation fails for multi-header workbench", r7b.get("status") == "error", str(r7b))
     check("S7b: changeset is None (zero mutation)", r7b.get("changeset") is None, str(r7b))
     check("S7b: no command files created on disk", not (src_dir / "GateFailCmdB.cpp").exists())
+
+    # Case C: Missing CreateCommands() method in Addin source
+    addin_missing_cc = (
+        '#include "SampleWorkbenchAddin.h"\n'
+        '#include "CATCommandHeader.h"\n\n'
+        '// CATCmdWorkbench\n'
+        'CATIAfrGeneralWksAddin\n\n'
+        'MacDeclareHeader(CustomWksHeader);\n\n'
+        'void SampleWorkbenchAddin::CreateToolbars() {\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_missing_cc, encoding="utf-8")
+    ctx.refresh(force=True)
+    r7c = create_executable_command(
+        ctx,
+        name="GateFailCmdC",
+        module="TestMod.m",
+        framework="TestFW.edu",
+        add_to_workbench="SampleWorkbench",
+    )
+    check("S7c: pre-validation fails for missing CreateCommands()", r7c.get("status") == "error", str(r7c))
+    check("S7c: error explains CreateCommands missing", "CreateCommands" in r7c.get("message", ""), r7c.get("message", ""))
+    check("S7c: changeset is None (zero mutation)", r7c.get("changeset") is None, str(r7c))
+    check("S7c: no command files created on disk", not (src_dir / "GateFailCmdC.cpp").exists())
+
+    # Case D: Registration payload conflict at pre-validation gate
+    addin_conflict = (
+        '#include "SampleWorkbenchAddin.h"\n'
+        '#include "CATCommandHeader.h"\n\n'
+        'CATIAfrGeneralWksAddin\n\n'
+        'MacDeclareHeader(CustomWksHeader);\n\n'
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new CustomWksHeader("GateFailCmdDHdr", "ExistingMod", "OtherClass", (void *)NULL);\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::CreateToolbars() {\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_conflict, encoding="utf-8")
+    ctx.refresh(force=True)
+    r7d = create_executable_command(
+        ctx,
+        name="GateFailCmdD",
+        module="TestMod.m",
+        framework="TestFW.edu",
+        add_to_workbench="SampleWorkbench",
+        load_name="TestMod",
+    )
+    check("S7d: pre-validation fails for payload conflict", r7d.get("status") == "error", str(r7d))
+    check("S7d: error mentions conflict", "conflict" in r7d.get("message", "").lower(), r7d.get("message", ""))
+    check("S7d: changeset is None (zero mutation)", r7d.get("changeset") is None, str(r7d))
+    check("S7d: no command files created on disk", not (src_dir / "GateFailCmdD.cpp").exists())
+
+    # Case E: Completely identical registration (idempotent) passes pre-validation gate
+    addin_idempotent = (
+        '#include "SampleWorkbenchAddin.h"\n'
+        '#include "CATCommandHeader.h"\n\n'
+        'CATIAfrGeneralWksAddin\n\n'
+        'MacDeclareHeader(CustomWksHeader);\n\n'
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new CustomWksHeader("GatePassCmdEHdr", "CustomLoadName", "GatePassCmdE", (void *)NULL);\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::CreateToolbars() {\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_idempotent, encoding="utf-8")
+    ctx.refresh(force=True)
+    r7e = create_executable_command(
+        ctx,
+        name="GatePassCmdE",
+        module="TestMod.m",
+        framework="TestFW.edu",
+        add_to_workbench="SampleWorkbench",
+        load_name="CustomLoadName",
+    )
+    check("S7e: pre-validation passes for idempotent registration", r7e.get("status") == "pending", str(r7e))
+    cs7e = r7e.get("changeset", {})
+    check("S7e: idempotent addin has no modification queued",
+          str(addin_cpp) not in cs7e.get("modified", {}), str(cs7e.get("modified", {})))
 
     # ── S8: External Header 隔离 ──
     check("S8: new_addin_1 has no DiskCmdHeader.h include",

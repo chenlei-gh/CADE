@@ -1194,6 +1194,116 @@ def strip_c_comments(code: str) -> str:
     return pattern.sub(replacer, code)
 
 
+def inspect_workbench_registration(
+    ctx: ActionContext,
+    workbench_name: str,
+    command_name: str,
+    load_name: Optional[str] = None,
+    class_name: Optional[str] = None,
+    cs: Optional[ChangeSet] = None,
+) -> Dict:
+    """Inspect workbench and addin source to validate 4-parameter header registration.
+
+    Read-only inspection: determines target header class, header ID, load name,
+    class name, and verifies whether registration is valid, conflicting, or idempotent.
+    Used both for pre-validation gates (before mutations) and inside add_command_to_workbench.
+    """
+    if not load_name:
+        return {
+            "status": "error",
+            "error": (
+                f"Cannot resolve load_name for command '{command_name}'. "
+                "load_name must be provided explicitly or stored in ChangeSet metadata."
+            ),
+        }
+
+    wbs = ctx.snapshot.get_all_workbenches()
+    wb = next((w for w in wbs if w.name.lower() == workbench_name.lower()), None)
+    if not wb:
+        return {"status": "error", "error": f"Workbench not found: {workbench_name}"}
+
+    addin_source = wb.addin_source or wb.addin_source_path()
+    if not addin_source:
+        return {"status": "error", "error": f"Workbench '{workbench_name}' has no Addin source configured"}
+
+    addin_str = str(addin_source)
+    old_content = None
+    if cs is not None and addin_str in cs.modified:
+        old_content = cs.modified[addin_str]
+    elif cs is not None and addin_str in cs.created:
+        old_content = cs.created[addin_str]
+    elif addin_source.exists():
+        old_content = addin_source.read_text(encoding="utf-8", errors="replace")
+
+    if old_content is None:
+        return {"status": "error", "error": f"Workbench '{workbench_name}' Addin source not found: {addin_source}"}
+
+    target_class_name = class_name or command_name
+    target_header_id = f"{command_name}Hdr"
+
+    # Analyze MacDeclareHeader declarations via lexical stripping
+    stripped = strip_c_comments_and_strings(old_content)
+    declared_headers = re.findall(r"\bMacDeclareHeader\s*\(\s*(\w+)\s*\)", stripped)
+    if len(declared_headers) > 1:
+        return {
+            "status": "error",
+            "error": (
+                f"Workbench '{workbench_name}' Addin source contains multiple "
+                f"MacDeclareHeader declarations ({declared_headers}). Cannot infer HeaderClass."
+            ),
+        }
+    elif len(declared_headers) == 1:
+        target_header_class = declared_headers[0]
+        needs_declare = False
+    else:
+        # 0 headers declared: derive from Addin class name
+        m_cls = re.search(r"void\s+(\w+)::CreateCommands\s*\(", old_content)
+        addin_cls = m_cls.group(1) if m_cls else f"{wb.name}Addin"
+        target_header_class = f"{addin_cls}Header"
+        needs_declare = True
+
+    # Parse existing 4-parameter Header registrations inside CreateCommands()
+    stripped_for_reg = strip_c_comments(old_content)
+    m_cc = re.search(r"void\s+\w+::CreateCommands\s*\([^)]*\)\s*\{", stripped_for_reg)
+    if not m_cc:
+        return {"status": "error", "error": f"Could not locate CreateCommands() in {addin_source}"}
+
+    reg_pattern = re.compile(
+        r'new\s+(\w+)\s*\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*\(void\s*\*\)\s*NULL\s*\);?'
+    )
+    existing_regs = reg_pattern.findall(stripped_for_reg)
+
+    is_idempotent = False
+    for hdr_cls, hdr_id, ld_name, cls_name in existing_regs:
+        if (hdr_cls, hdr_id) == (target_header_class, target_header_id):
+            if (ld_name, cls_name) == (load_name, target_class_name):
+                is_idempotent = True
+                break
+            else:
+                return {
+                    "status": "error",
+                    "error": (
+                        f"Header registration conflict: ({target_header_class}, {target_header_id}) "
+                        f"is already registered with payload ({ld_name}, {cls_name}), "
+                        f"cannot register with ({load_name}, {target_class_name})"
+                    ),
+                }
+
+    return {
+        "status": "ok",
+        "error": None,
+        "workbench": wb,
+        "addin_source": addin_source,
+        "addin_content": old_content,
+        "header_class": target_header_class,
+        "header_id": target_header_id,
+        "load_name": load_name,
+        "class_name": target_class_name,
+        "needs_declare": needs_declare,
+        "is_idempotent": is_idempotent,
+    }
+
+
 def add_command_to_workbench(
     ctx: ActionContext,
     command_name: str,
@@ -1223,7 +1333,6 @@ def add_command_to_workbench(
     """
     ctx.refresh()
     cmds = ctx.snapshot.get_all_commands()
-    wbs = ctx.snapshot.get_all_workbenches()
 
     cmd = next((c for c in cmds if c.name.lower() == command_name.lower()), None)
     cmd_in_cs = False
@@ -1245,86 +1354,37 @@ def add_command_to_workbench(
         return _error(f"Command not found: {command_name}")
 
     target_load_name = load_name or (cs.metadata.get("load_name") if cs else None)
-    if not target_load_name:
-        return _error(
-            f"Cannot resolve load_name for command '{command_name}'. "
-            "load_name must be provided explicitly or stored in ChangeSet metadata."
-        )
-
     target_class_name = (cs.metadata.get("class_name") if cs else None) or command_name
-    target_header_id = f"{command_name}Hdr"
 
-    wb = next((w for w in wbs if w.name.lower() == workbench_name.lower()), None)
-    if not wb:
-        return _error(f"Workbench not found: {workbench_name}")
+    inspection = inspect_workbench_registration(
+        ctx,
+        workbench_name=workbench_name,
+        command_name=command_name,
+        load_name=target_load_name,
+        class_name=target_class_name,
+        cs=cs,
+    )
+    if inspection["status"] == "error":
+        return _error(inspection["error"])
 
-    addin_source = wb.addin_source or wb.addin_source_path()
-    if not addin_source:
-        return _error(f"Workbench '{workbench_name}' has no Addin source configured")
-
+    target_header_class = inspection["header_class"]
+    target_header_id = inspection["header_id"]
+    addin_source = inspection["addin_source"]
     addin_str = str(addin_source)
-    old_content = None
-    if cs is not None and addin_str in cs.modified:
-        old_content = cs.modified[addin_str]
-    elif cs is not None and addin_str in cs.created:
-        old_content = cs.created[addin_str]
-    elif addin_source.exists():
-        old_content = addin_source.read_text(encoding="utf-8", errors="replace")
-
-    if old_content is None:
-        return _error(f"Workbench '{workbench_name}' Addin source not found: {addin_source}")
-
+    old_content = inspection["addin_content"]
     content = old_content
 
-    # Analyze MacDeclareHeader declarations via lexical stripping
-    stripped = strip_c_comments_and_strings(content)
-    declared_headers = re.findall(r"\bMacDeclareHeader\s*\(\s*(\w+)\s*\)", stripped)
-    if len(declared_headers) > 1:
-        return _error(
-            f"Workbench '{workbench_name}' Addin source contains multiple MacDeclareHeader declarations ({declared_headers}). Cannot infer HeaderClass."
-        )
-    elif len(declared_headers) == 1:
-        target_header_class = declared_headers[0]
-    else:
-        # 0 headers declared: derive from Addin class name
-        m_cls = re.search(r"void\s+(\w+)::CreateCommands\s*\(", content)
-        addin_cls = m_cls.group(1) if m_cls else f"{wb.name}Addin"
-        target_header_class = f"{addin_cls}Header"
-
-        header_decl = f"MacDeclareHeader({target_header_class});"
-        matches = list(re.finditer(r'^[ \t]*#include\s+[<"][^>"]+[>"].*$', content, re.MULTILINE))
-        if matches:
-            last_match = matches[-1]
-            pos = last_match.end()
-            content = content[:pos] + f"\n\n{header_decl}" + content[pos:]
-        else:
-            content = f"{header_decl}\n\n" + content
-
-    # Parse existing 4-parameter Header registrations inside CreateCommands()
-    stripped_for_reg = strip_c_comments(content)
-    m_cc = re.search(r"void\s+\w+::CreateCommands\s*\([^)]*\)\s*\{", stripped_for_reg)
-    if not m_cc:
-        return _error(f"Could not locate CreateCommands() in {addin_source}")
-
-    reg_pattern = re.compile(
-        r'new\s+(\w+)\s*\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*\(void\s*\*\)\s*NULL\s*\);?'
-    )
-    existing_regs = reg_pattern.findall(stripped_for_reg)
-
-    is_idempotent = False
-    for hdr_cls, hdr_id, ld_name, cls_name in existing_regs:
-        if (hdr_cls, hdr_id) == (target_header_class, target_header_id):
-            if (ld_name, cls_name) == (target_load_name, target_class_name):
-                is_idempotent = True
-                break
+    if not inspection["is_idempotent"]:
+        if inspection["needs_declare"]:
+            header_decl = f"MacDeclareHeader({target_header_class});"
+            matches = list(re.finditer(r'^[ \t]*#include\s+[<"][^>"]+[>"].*$', content, re.MULTILINE))
+            if matches:
+                last_match = matches[-1]
+                pos = last_match.end()
+                content = content[:pos] + f"\n\n{header_decl}" + content[pos:]
             else:
-                return _error(
-                    f"Header registration conflict: ({target_header_class}, {target_header_id}) "
-                    f"is already registered with payload ({ld_name}, {cls_name}), "
-                    f"cannot register with ({target_load_name}, {target_class_name})"
-                )
+                content = f"{header_decl}\n\n" + content
 
-    if not is_idempotent:
         m_real = re.search(r"void\s+\w+::CreateCommands\s*\([^)]*\)\s*\{", content)
         if not m_real:
             return _error(f"Could not locate CreateCommands() in {addin_source}")
