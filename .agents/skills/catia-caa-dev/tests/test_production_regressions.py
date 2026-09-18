@@ -3985,7 +3985,7 @@ try:
     check("DW22: dico still intact after repeated rollback", dico_file.read_bytes() == dico_before_b)
 
     # ── W-3-A: Workbench Command Detach Inspection & Deterministic Plan (inspect_detach_command) ──
-    from actions import inspect_detach_command, verify_workbench_detach_plan, compute_workbench_detach_plan_digest
+    from actions import inspect_detach_command, verify_workbench_detach_plan, compute_workbench_detach_plan_digest, detach_command
 
     # 构造标准 Detach 测试工作台 DetachWb
     detach_wb_dir = mod_shared / "LocalInterfaces"
@@ -4192,6 +4192,160 @@ CATCmdContainer* DetachWbAddin::CreateToolbars()
     check("DC8: caller ChangeSet modified is empty", len(cs_dc8.modified) == 0)
     check("DC8: caller ChangeSet deleted is empty", len(cs_dc8.deleted) == 0)
     check("DC8: caller ChangeSet patches is empty", len(cs_dc8.patches) == 0)
+
+    # ── DC9: Plan 身份绑定与参数一致性校验门禁 ──
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    r_plan_dc9 = inspect_detach_command(ctx_wb, "DetachWb", "CmdSingleHdr")
+    check("DC9: inspect succeeds", r_plan_dc9.get("status") == "ok")
+    plan_dc9 = r_plan_dc9.get("plan")
+
+    # 伪造 workbench_name
+    r_bad_wb = detach_command(ctx_wb, "DifferentWb", "CmdSingleHdr", plan=plan_dc9)
+    check("DC9: reject workbench name mismatch", r_bad_wb.get("status") == "error")
+    check("DC9: error specifies workbench mismatch", "identity mismatch" in r_bad_wb.get("message", "").lower())
+
+    # 伪造 header_id
+    r_bad_hdr = detach_command(ctx_wb, "DetachWb", "DifferentHdr", plan=plan_dc9)
+    check("DC9: reject header ID mismatch", r_bad_hdr.get("status") == "error")
+    check("DC9: error specifies command mismatch", "command mismatch" in r_bad_hdr.get("message", "").lower())
+
+    # 伪造 framework
+    r_bad_fw = detach_command(ctx_wb, "DetachWb", "CmdSingleHdr", framework="WrongFW", plan=plan_dc9)
+    check("DC9: reject framework mismatch", r_bad_fw.get("status") == "error")
+    check("DC9: error specifies framework mismatch", "framework mismatch" in r_bad_fw.get("message", "").lower())
+
+    # 伪造 module
+    r_bad_mod = detach_command(ctx_wb, "DetachWb", "CmdSingleHdr", module="WrongMod", plan=plan_dc9)
+    check("DC9: reject module mismatch", r_bad_mod.get("status") == "error")
+    check("DC9: error specifies module mismatch", "module mismatch" in r_bad_mod.get("message", "").lower())
+
+    # ── DC10: Plan 并发防篡改与验签门禁 ──
+    tampered_dc10 = dict(plan_dc9)
+    tampered_dc10["target_command"] = {"header_id": "TamperedHdr", "header_class": "TamperedCls"}
+    r_tamp = detach_command(ctx_wb, "DetachWb", "TamperedHdr", plan=tampered_dc10)
+    check("DC10: tampered plan rejected by detach_command", r_tamp.get("status") == "error")
+    check("DC10: error notes plan_digest mismatch", "integrity violation" in r_tamp.get("message", "").lower())
+
+    # 外部并发写修改磁盘文件
+    detach_wb_cpp.write_text(detach_cpp_template + "\n// concurrent edit", encoding="utf-8")
+    r_concurr = detach_command(ctx_wb, "DetachWb", "CmdSingleHdr", plan=plan_dc9)
+    check("DC10: concurrent file edit rejected", r_concurr.get("status") == "error")
+    check("DC10: error specifies content modified", "modified since plan generation" in r_concurr.get("message", "").lower())
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+
+    # ── DC11: 调用方 ChangeSet 事务冲突隔离门禁 ──
+    cs_conflict = ChangeSet(action="test_conflict", description="conflict cs")
+    cs_conflict.created[str(detach_wb_cpp)] = "dummy content"
+    r_conf_create = detach_command(ctx_wb, "DetachWb", "CmdSingleHdr", cs=cs_conflict)
+    check("DC11: reject detach on file staged for creation", r_conf_create.get("status") == "error")
+    check("DC11: error identifies creation conflict", "staged for creation" in r_conf_create.get("message", "").lower())
+
+    cs_conflict2 = ChangeSet(action="test_conflict2", description="conflict cs 2")
+    cs_conflict2.deleted.append(detach_wb_cpp)
+    r_conf_del = detach_command(ctx_wb, "DetachWb", "CmdSingleHdr", cs=cs_conflict2)
+    check("DC11: reject detach on file staged for deletion", r_conf_del.get("status") == "error")
+    check("DC11: error identifies deletion conflict", "staged for deletion" in r_conf_del.get("message", "").lower())
+
+    # ── DC12: remove_only_child 模式物理落地 ──
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    r_dc12 = detach_command(ctx_wb, "DetachWb", "CmdSingleHdr")
+    check("DC12: detach_command returns pending", r_dc12.get("status") == "pending")
+    cs_dc12 = r_dc12.get("changeset")
+    check("DC12: changeset is not None", cs_dc12 is not None)
+    check("DC12: modified contains addin cpp", str(detach_wb_cpp) in cs_dc12.modified)
+    check("DC12: preserved_commands has CmdSingleHdr", "CmdSingleHdr" in r_dc12.get("preserved_commands", []))
+
+    apply_res12 = cs_dc12.apply()
+    check("DC12: apply succeeds", apply_res12.get("status") == "applied" and len(apply_res12.get("errors", [])) == 0, str(apply_res12))
+
+    cpp_after_12 = detach_wb_cpp.read_text(encoding="utf-8")
+    check("DC12: header registration line removed", 'new DetachHeader("CmdSingleHdr"' not in cpp_after_12)
+    check("DC12: starter single NewAccess removed", "NewAccess(CATCmdStarter, pStarterSingle, SingleStarter);" not in cpp_after_12)
+    check("DC12: starter single SetAccessCommand removed", 'SetAccessCommand(pStarterSingle, "CmdSingleHdr");' not in cpp_after_12)
+    check("DC12: starter single SetAccessChild removed", "SetAccessChild(pTlbSingle, pStarterSingle);" not in cpp_after_12)
+    check("DC12: toolbar container pTlbSingle preserved", "NewAccess(CATCmdContainer, pTlbSingle, TlbSingle);" in cpp_after_12)
+    check("DC12: multi toolbar commands preserved", 'new DetachHeader("CmdHeadHdr"' in cpp_after_12)
+
+    # ── DC13: new_child 模式物理落地 (首节点接驳) ──
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    r_dc13 = detach_command(ctx_wb, "DetachWb", "CmdHeadHdr")
+    check("DC13: detach_command returns pending", r_dc13.get("status") == "pending")
+    cs_dc13 = r_dc13.get("changeset")
+    apply_res13 = cs_dc13.apply()
+    check("DC13: apply succeeds", apply_res13.get("status") == "applied" and len(apply_res13.get("errors", [])) == 0, str(apply_res13))
+
+    cpp_after_13 = detach_wb_cpp.read_text(encoding="utf-8")
+    check("DC13: head header registration removed", 'new DetachHeader("CmdHeadHdr"' not in cpp_after_13)
+    check("DC13: head starter NewAccess removed", "NewAccess(CATCmdStarter, pStarterHead, HeadStarter);" not in cpp_after_13)
+    check("DC13: old SetAccessChild(pTlbMulti, pStarterHead) removed", "SetAccessChild(pTlbMulti, pStarterHead);" not in cpp_after_13)
+    check("DC13: old SetAccessNext(pStarterHead, pStarterMid) removed", "SetAccessNext(pStarterHead, pStarterMid);" not in cpp_after_13)
+    check("DC13: new SetAccessChild(pTlbMulti, pStarterMid) spliced in", "SetAccessChild(pTlbMulti, pStarterMid);" in cpp_after_13)
+    check("DC13: tail starter link preserved", "SetAccessNext(pStarterMid, pStarterTail);" in cpp_after_13)
+
+    # ── DC14: relink_next 模式物理落地 (中间节点接驳) ──
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    r_dc14 = detach_command(ctx_wb, "DetachWb", "CmdMidHdr")
+    check("DC14: detach_command returns pending", r_dc14.get("status") == "pending")
+    cs_dc14 = r_dc14.get("changeset")
+    apply_res14 = cs_dc14.apply()
+    check("DC14: apply succeeds", apply_res14.get("status") == "applied" and len(apply_res14.get("errors", [])) == 0, str(apply_res14))
+
+    cpp_after_14 = detach_wb_cpp.read_text(encoding="utf-8")
+    check("DC14: mid header registration removed", 'new DetachHeader("CmdMidHdr"' not in cpp_after_14)
+    check("DC14: mid starter NewAccess removed", "NewAccess(CATCmdStarter, pStarterMid, MidStarter);" not in cpp_after_14)
+    check("DC14: old SetAccessNext(pStarterHead, pStarterMid) removed", "SetAccessNext(pStarterHead, pStarterMid);" not in cpp_after_14)
+    check("DC14: old SetAccessNext(pStarterMid, pStarterTail) removed", "SetAccessNext(pStarterMid, pStarterTail);" not in cpp_after_14)
+    check("DC14: new SetAccessNext(pStarterHead, pStarterTail) spliced in", "SetAccessNext(pStarterHead, pStarterTail);" in cpp_after_14)
+    check("DC14: head SetAccessChild preserved", "SetAccessChild(pTlbMulti, pStarterHead);" in cpp_after_14)
+
+    # ── DC15: remove_tail 模式物理落地 (尾节点解挂) ──
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    r_dc15 = detach_command(ctx_wb, "DetachWb", "CmdTailHdr")
+    check("DC15: detach_command returns pending", r_dc15.get("status") == "pending")
+    cs_dc15 = r_dc15.get("changeset")
+    apply_res15 = cs_dc15.apply()
+    check("DC15: apply succeeds", apply_res15.get("status") == "applied" and len(apply_res15.get("errors", [])) == 0, str(apply_res15))
+
+    cpp_after_15 = detach_wb_cpp.read_text(encoding="utf-8")
+    check("DC15: tail header registration removed", 'new DetachHeader("CmdTailHdr"' not in cpp_after_15)
+    check("DC15: tail starter NewAccess removed", "NewAccess(CATCmdStarter, pStarterTail, TailStarter);" not in cpp_after_15)
+    check("DC15: link to tail SetAccessNext(pStarterMid, pStarterTail) removed", "SetAccessNext(pStarterMid, pStarterTail);" not in cpp_after_15)
+    check("DC15: head to mid link preserved", "SetAccessNext(pStarterHead, pStarterMid);" in cpp_after_15)
+    check("DC15: head SetAccessChild preserved", "SetAccessChild(pTlbMulti, pStarterHead);" in cpp_after_15)
+
+    # ── DC16: 对称事务回滚与命令免疫保障 ──
+    detach_wb_cpp.write_text(detach_cpp_template, encoding="utf-8")
+    ctx_wb.refresh(force=True)
+    raw_bytes_before_16 = detach_wb_cpp.read_bytes()
+    sha_before_16 = hashlib.sha256(raw_bytes_before_16).hexdigest()
+    dico_bytes_before_16 = dico_file.read_bytes()
+    imake_bytes_before_16 = (mod_shared / "Imakefile.mk").read_bytes()
+
+    r_dc16 = detach_command(ctx_wb, "DetachWb", "CmdMidHdr")
+    cs_dc16 = r_dc16.get("changeset")
+    cs_dc16.apply()
+
+    check("DC16: file modified on disk after apply", detach_wb_cpp.read_bytes() != raw_bytes_before_16)
+
+    # 回滚
+    cs_dc16.rollback()
+    raw_bytes_after_rb = detach_wb_cpp.read_bytes()
+    sha_after_rb = hashlib.sha256(raw_bytes_after_rb).hexdigest()
+
+    check("DC16: physical bytes 100% restored after rollback", raw_bytes_after_rb == raw_bytes_before_16)
+    check("DC16: sha256 matches exactly after rollback", sha_after_rb == sha_before_16)
+    check("DC16: dico file 100% untouched", dico_file.read_bytes() == dico_bytes_before_16)
+    check("DC16: imakefile 100% untouched", (mod_shared / "Imakefile.mk").read_bytes() == imake_bytes_before_16)
+
+    # 幂等回滚
+    cs_dc16.rollback()
+    check("DC16: idempotent rollback maintains exact bytes", detach_wb_cpp.read_bytes() == raw_bytes_before_16)
 
 finally:
     shutil.rmtree(wb_ws, ignore_errors=True)

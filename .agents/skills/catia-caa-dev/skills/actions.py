@@ -5492,6 +5492,305 @@ def inspect_detach_command(
 
 
 # ══════════════════════════════════════════════════════════════════
+# W-3-B: Workbench Command Atomic Detach Execution & Rollback
+# ══════════════════════════════════════════════════════════════════
+
+def detach_command(
+    ctx: ActionContext,
+    workbench_name: str,
+    header_id: str,
+    *,
+    framework: Optional[str] = None,
+    module: Optional[str] = None,
+    plan: Optional[Dict[str, Any]] = None,
+    cs: Optional[ChangeSet] = None,
+) -> Dict[str, Any]:
+    """Execute atomic physical detachment of a command from a workbench within ChangeSet transaction (W-3-B).
+
+    Enforces 5 execution-time gates:
+      Gate 1: Plan identity binding and schema 2.0 verification
+      Gate 2: Concurrency & tampering defense via verify_workbench_detach_plan (plan_digest + raw byte snapshots)
+      Gate 3: Calling ChangeSet conflict isolation (prevents mutation of files staged for creation/deletion)
+      Gate 4: Scoped physical text transformation (removes header registration in CreateCommands(),
+              resplices starter chain in CreateToolbars() across 4 topology modes)
+      Gate 5: ChangeSet transaction staging with raw-byte backup and 100% symmetric rollback guarantee;
+              command source code (.h, .cpp, resources) 100% immune and preserved.
+    """
+    if plan is None:
+        inspect_res = inspect_detach_command(
+            ctx, workbench_name, header_id, framework=framework, module=module, cs=cs
+        )
+        if inspect_res.get("status") != "ok":
+            return {
+                "status": "error",
+                "message": f"Pre-validation failed: {inspect_res.get('error')}",
+                "changeset": None,
+                "error": inspect_res.get("error"),
+                "plan": None,
+            }
+        plan = inspect_res.get("plan")
+
+    if not isinstance(plan, dict):
+        return {
+            "status": "error",
+            "message": "Invalid plan: plan must be a dictionary",
+            "changeset": None,
+            "plan": None,
+        }
+
+    # ── Gate 1: Plan identity binding ──
+    wb_ident = plan.get("workbench_identity", {})
+    if wb_ident.get("name", "").lower() != workbench_name.lower():
+        return {
+            "status": "error",
+            "message": f"Plan identity mismatch: plan is for workbench '{wb_ident.get('name')}', requested '{workbench_name}'",
+            "changeset": None,
+            "plan": plan,
+        }
+
+    tgt_cmd = plan.get("target_command", {})
+    if tgt_cmd.get("header_id") != header_id:
+        return {
+            "status": "error",
+            "message": f"Plan command mismatch: plan is for header '{tgt_cmd.get('header_id')}', requested '{header_id}'",
+            "changeset": None,
+            "plan": plan,
+        }
+
+    if framework and wb_ident.get("framework") not in (framework, f"{framework}.edu"):
+        return {
+            "status": "error",
+            "message": f"Plan framework mismatch: expected '{framework}', got '{wb_ident.get('framework')}'",
+            "changeset": None,
+            "plan": plan,
+        }
+
+    if module:
+        expected_mod = module if module.endswith(".m") else f"{module}.m"
+        if wb_ident.get("module") != expected_mod:
+            return {
+                "status": "error",
+                "message": f"Plan module mismatch: expected '{expected_mod}', got '{wb_ident.get('module')}'",
+                "changeset": None,
+                "plan": plan,
+            }
+
+    # ── Gate 2: Concurrency & tampering defense ──
+    is_valid, verify_err = verify_workbench_detach_plan(plan)
+    if not is_valid:
+        return {
+            "status": "error",
+            "message": f"Plan verification failed: {verify_err}",
+            "changeset": None,
+            "plan": plan,
+        }
+
+    # ── Gate 3: Calling ChangeSet conflict isolation ──
+    reg_site = plan.get("registration_site", {})
+    addin_path_str = reg_site.get("file")
+    if not addin_path_str:
+        return {
+            "status": "error",
+            "message": "Plan missing registration_site.file",
+            "changeset": None,
+            "plan": plan,
+        }
+    addin_path = Path(addin_path_str)
+
+    master_cs = cs if cs is not None else ChangeSet(
+        action="detach_command",
+        description=f"Detach command '{header_id}' from workbench '{workbench_name}'"
+    )
+
+    if cs is not None:
+        norm_addin = _norm_path_key(addin_path)
+        norm_cs_created = {_norm_path_key(k) for k in master_cs.created}
+        norm_cs_deleted = {_norm_path_key(p) for p in master_cs.deleted}
+
+        if norm_addin in norm_cs_created:
+            return {
+                "status": "error",
+                "message": f"ChangeSet conflict detected: cannot detach command from file already staged for creation: {addin_path}",
+                "changeset": None,
+                "plan": plan,
+            }
+        if norm_addin in norm_cs_deleted:
+            return {
+                "status": "error",
+                "message": f"ChangeSet conflict detected: cannot detach command from file already staged for deletion: {addin_path}",
+                "changeset": None,
+                "plan": plan,
+            }
+
+    # ── Gate 4: Scoped physical text transformation ──
+    try:
+        raw_bytes = addin_path.read_bytes()
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to read addin source file {addin_path}: {e}",
+            "changeset": None,
+            "plan": plan,
+        }
+
+    enc = plan.get("source_snapshots", {}).get(addin_path_str, {}).get("encoding", "utf-8")
+    try:
+        content = raw_bytes.decode(enc)
+    except UnicodeDecodeError:
+        content = raw_bytes.decode("utf-8", errors="replace")
+
+    # 4a. CreateCommands() scope: remove header registration
+    cc_scope = _extract_create_commands_scope(content)
+    if not cc_scope:
+        return {
+            "status": "error",
+            "message": f"Cannot reliably extract CreateCommands() scope in {addin_path}",
+            "changeset": None,
+            "plan": plan,
+        }
+
+    hdr_stmt = reg_site.get("header_statement", "")
+    content = _remove_statement_line(
+        content, hdr_stmt, search_start=cc_scope[1], search_end=cc_scope[2]
+    )
+
+    hdr_cls = tgt_cmd.get("header_class")
+    mac_stmt = reg_site.get("mac_declare_statement")
+    if mac_stmt and hdr_cls:
+        stripped_remaining = strip_c_comments(content)
+        has_other_headers = bool(re.search(r'\bnew\s+' + re.escape(hdr_cls) + r'\s*\(', stripped_remaining))
+        if not has_other_headers:
+            content = _remove_statement_line(content, mac_stmt)
+
+    # 4b. CreateToolbars() scope: splice starter topology across 4 modes
+    splices = plan.get("toolbar_splices", [])
+    if splices:
+        tb_scope = _extract_create_toolbars_scope(content)
+        if not tb_scope:
+            return {
+                "status": "error",
+                "message": f"CreateToolbars() scope lost while splicing toolbar in {addin_path}",
+                "changeset": None,
+                "plan": plan,
+            }
+
+        for splice in splices:
+            mode = splice.get("splice_mode")
+            stmts_to_remove = splice.get("statements_to_remove", [])
+            stmts_to_add = splice.get("statements_to_add", [])
+
+            tb_scope = _extract_create_toolbars_scope(content)
+            if not tb_scope:
+                return {
+                    "status": "error",
+                    "message": f"CreateToolbars() scope lost while splicing toolbar in {addin_path}",
+                    "changeset": None,
+                    "plan": plan,
+                }
+            tb_start, tb_end = tb_scope[1], tb_scope[2]
+
+            if mode in ("remove_only_child", "remove_tail"):
+                for stmt in stmts_to_remove:
+                    content = _remove_statement_line(
+                        content, stmt, search_start=tb_start, search_end=tb_end
+                    )
+                    tb_scope = _extract_create_toolbars_scope(content)
+                    if not tb_scope:
+                        return {
+                            "status": "error",
+                            "message": f"CreateToolbars() scope lost while splicing toolbar in {addin_path}",
+                            "changeset": None,
+                            "plan": plan,
+                        }
+                    tb_start, tb_end = tb_scope[1], tb_scope[2]
+
+            elif mode == "new_child":
+                child_stmt = next((s for s in stmts_to_remove if s.strip().startswith("SetAccessChild")), None)
+                new_child_stmt = stmts_to_add[0] if stmts_to_add else None
+                if child_stmt and new_child_stmt:
+                    content = _remove_statement_line(
+                        content, child_stmt, replace_with=new_child_stmt, search_start=tb_start, search_end=tb_end
+                    )
+                    tb_scope = _extract_create_toolbars_scope(content)
+                    if not tb_scope:
+                        return {
+                            "status": "error",
+                            "message": f"CreateToolbars() scope lost while splicing toolbar in {addin_path}",
+                            "changeset": None,
+                            "plan": plan,
+                        }
+                    tb_start, tb_end = tb_scope[1], tb_scope[2]
+                for stmt in stmts_to_remove:
+                    if stmt != child_stmt:
+                        content = _remove_statement_line(
+                            content, stmt, search_start=tb_start, search_end=tb_end
+                        )
+                        tb_scope = _extract_create_toolbars_scope(content)
+                        if not tb_scope:
+                            return {
+                                "status": "error",
+                                "message": f"CreateToolbars() scope lost while splicing toolbar in {addin_path}",
+                                "changeset": None,
+                                "plan": plan,
+                            }
+                        tb_start, tb_end = tb_scope[1], tb_scope[2]
+
+            elif mode == "relink_next":
+                prev_var = splice.get("prev_starter") or splice.get("prev_starter_var")
+                tgt_starter = splice.get("starter_var")
+                prev_next_stmt = next(
+                    (s for s in stmts_to_remove if s.strip().startswith("SetAccessNext") and prev_var in s and tgt_starter in s),
+                    None,
+                )
+                new_next_stmt = stmts_to_add[0] if stmts_to_add else None
+                if prev_next_stmt and new_next_stmt:
+                    content = _remove_statement_line(
+                        content, prev_next_stmt, replace_with=new_next_stmt, search_start=tb_start, search_end=tb_end
+                    )
+                    tb_scope = _extract_create_toolbars_scope(content)
+                    if not tb_scope:
+                        return {
+                            "status": "error",
+                            "message": f"CreateToolbars() scope lost while splicing toolbar in {addin_path}",
+                            "changeset": None,
+                            "plan": plan,
+                        }
+                    tb_start, tb_end = tb_scope[1], tb_scope[2]
+                for stmt in stmts_to_remove:
+                    if stmt != prev_next_stmt:
+                        content = _remove_statement_line(
+                            content, stmt, search_start=tb_start, search_end=tb_end
+                        )
+                        tb_scope = _extract_create_toolbars_scope(content)
+                        if not tb_scope:
+                            return {
+                                "status": "error",
+                                "message": f"CreateToolbars() scope lost while splicing toolbar in {addin_path}",
+                                "changeset": None,
+                                "plan": plan,
+                            }
+                        tb_start, tb_end = tb_scope[1], tb_scope[2]
+
+    # ── Gate 5: ChangeSet staging and symmetric rollback guarantee ──
+    master_cs.add_modify(addin_path, content)
+    master_cs.merge_metadata(
+        workbench_detach_plan=plan,
+        detached_workbench=workbench_name,
+        detached_header_id=header_id,
+        topology_status=plan.get("topology_status"),
+    )
+
+    return {
+        "status": "pending",
+        "message": f"Command '{header_id}' detachment prepared for workbench '{workbench_name}' (topology: {plan.get('topology_status')})",
+        "changeset": master_cs,
+        "plan": plan,
+        "modified_files": [str(addin_path)],
+        "preserved_commands": [header_id],
+    }
+
+
+# ══════════════════════════════════════════════════════════════════
 #  ENHANCED QUERY ACTIONS (Phase 1)
 # ══════════════════════════════════════════════════════════════════
 
