@@ -72,10 +72,20 @@
   },
   "level3_runtime": {
     "audit_file": "W1-C-level3-runtime-audit.json",
-    "cnext_pid": 83920,
+    "cnext_pid": 82588,
     "dll_loaded": true,
     "probe_marker_verified": true,
-    "marker_content": "W1_C_WORKBENCH_ADDIN_LOADED_BY_CNEXT_PID_83920",
+    "marker_content": "W1_C_WORKBENCH_GUI_LOADED_BY_CNEXT_PID_82588",
+    "gui_window_verified": true,
+    "window_title": "CATIA V5",
+    "window_class": "CATDlgDocument [ l_CATDlgMfcDocumentMDI ]",
+    "window_hwnd": 1051266,
+    "gui_screenshot_file": "W1-C-gui-screenshot.png",
+    "gui_screenshot_dimensions": "2560x1440",
+    "gui_screenshot_sha256": "e9dbaa557c2697da227a3c3c644f262ab37360cc134a5de6141654843f99699b",
+    "gui_closeup_file": "W1-C-gui-toolbar-closeup.png",
+    "gui_closeup_dimensions": "2000x220",
+    "gui_closeup_sha256": "9d77b3679f7fe14fdc0cd77c68ed78763b7b98cc01d4562b4813d03e3b571701",
     "verdict": "PASS"
   },
   "overall_verdict": "CLOSED"

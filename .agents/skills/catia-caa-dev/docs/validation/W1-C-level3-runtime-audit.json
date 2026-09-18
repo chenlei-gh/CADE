@@ -1,59 +1,84 @@
 {
-  "task": "W-1-C Level 3 Runtime Validation",
-  "timestamp": "2026-09-18T16:14:56",
-  "workspace": "D:/Vault/FSWorkspaces/_tmp_wb_l3_test",
+  "task": "W-1-C Level 3 GUI & Runtime Validation",
+  "timestamp": "2026-09-18T17:03:56.559150",
+  "workspace": "D:\\Vault\\FSWorkspaces\\_tmp_wb_gui_test",
   "steps": {
     "framework_created": true,
     "workbench_created": true,
     "probe_injected": true,
-    "build_successful": true
+    "build_successful": true,
+    "gui_screenshot_captured": true
   },
   "overall_status": "CLOSED",
   "build": {
     "exit_code": 0,
-    "duration_seconds": 11.534866571426392,
+    "duration_seconds": 14.680738687515259,
     "dll": {
-      "path": "D:\\Vault\\FSWorkspaces\\_tmp_wb_l3_test\\win_b64\\code\\bin\\WbL3Mod.dll",
+      "path": "D:\\Vault\\FSWorkspaces\\_tmp_wb_gui_test\\win_b64\\code\\bin\\WbGuiMod.dll",
       "size": 18432,
-      "sha256": "9ba932c06155b1064eda886de88eabc0b706e99c0d653bd7908662816b9f52bb"
+      "sha256": "79d4d307f5bbcee15371090393233c90ebf0951d85ed5e1e4c3fbf0556a3dc5d"
     },
     "dico": {
-      "path": "D:\\Vault\\FSWorkspaces\\_tmp_wb_l3_test\\win_b64\\code\\dictionary\\WbL3FW.dico",
-      "content": "WbL3WbAddin  CATIAfrGeneralWksAddin  libWbL3Mod"
+      "path": "D:\\Vault\\FSWorkspaces\\_tmp_wb_gui_test\\win_b64\\code\\dictionary\\WbGuiFW.dico",
+      "content": "WbGuiWbAddin  CATIAfrGeneralWksAddin  libWbGuiMod"
     },
     "icon": {
-      "path": "D:\\Vault\\FSWorkspaces\\_tmp_wb_l3_test\\win_b64\\resources\\graphic\\icons\\normal\\I_WbL3Wb.bmp",
-      "width": 22,
-      "height": 22
-    },
-    "nls": {
-      "path": "D:\\Vault\\FSWorkspaces\\_tmp_wb_l3_test\\win_b64\\resources\\msgcatalog\\WbL3WbAddin.CATNls",
-      "exists": true
-    },
-    "rsc": {
-      "path": "D:\\Vault\\FSWorkspaces\\_tmp_wb_l3_test\\win_b64\\resources\\msgcatalog\\WbL3WbAddin.CATRsc",
-      "exists": true
+      "path": "D:\\Vault\\FSWorkspaces\\_tmp_wb_gui_test\\win_b64\\resources\\graphic\\icons\\normal\\I_WbGuiWb.bmp",
+      "size": 1606,
+      "sha256": "ff5dc41b7ce139c452fc876d713856b28c92f02c3f127cbe7be445104222f4cb"
     }
   },
   "start_response": {
     "status": "started",
     "message": "CATIA started successfully",
-    "pid": 83920,
-    "timestamp": "2026-09-18T16:15:21.114493",
+    "pid": 82588,
+    "timestamp": "2026-09-18T17:04:11.277078",
     "runtime_view_mounted": true
   },
   "runtime_evidence": {
-    "cnext_pid": 83920,
+    "cnext_pid": 82588,
     "marker_verified": true,
-    "marker_content": "W1_C_WORKBENCH_ADDIN_LOADED_BY_CNEXT_PID_83920",
+    "marker_content": "W1_C_WORKBENCH_GUI_LOADED_BY_CNEXT_PID_82588",
     "dll_loaded_in_proc": true,
-    "poll_duration": 7.0
+    "window_found": true,
+    "window_info": {
+      "hwnd": 1051266,
+      "pid": 82588,
+      "class": "CATDlgDocument [ l_CATDlgMfcDocumentMDI ]",
+      "title": "CATIA V5",
+      "rect": [
+        -8,
+        -8,
+        2568,
+        1400
+      ],
+      "width": 2576,
+      "height": 1408
+    }
+  },
+  "gui_evidence": {
+    "screenshot_path": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\docs\\validation\\W1-C-gui-screenshot.png",
+    "image_format": "PNG",
+    "dimensions": "2560x1440",
+    "file_size_bytes": 143795,
+    "sha256": "e9dbaa557c2697da227a3c3c644f262ab37360cc134a5de6141654843f99699b",
+    "pixel_extrema": [
+      0,
+      255
+    ],
+    "rendered_verified": true,
+    "window_title": "CATIA V5",
+    "hwnd": 1051266,
+    "closeup_screenshot_path": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\docs\\validation\\W1-C-gui-toolbar-closeup.png",
+    "closeup_dimensions": "2000x220",
+    "closeup_size_bytes": 22328,
+    "closeup_sha256": "9d77b3679f7fe14fdc0cd77c68ed78763b7b98cc01d4562b4813d03e3b571701"
   },
   "stop_response": {
     "status": "stopped",
     "message": "Stopped 1 process(es) [graceful+force]",
     "stopped": [
-      83920
+      82588
     ],
     "failed": []
   }
