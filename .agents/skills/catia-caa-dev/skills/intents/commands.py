@@ -12,6 +12,7 @@ from actions import (
     create_command,
     create_dialog,
     inspect_workbench_registration,
+    inspect_header_resources,
     add_command_to_workbench as add_cmd_to_wb,
 )
 from changeset import ChangeSet
@@ -71,6 +72,24 @@ def create_executable_command(
                 "changeset": None,
             }
 
+        rsc_inspection = inspect_header_resources(
+            ctx,
+            workbench_name=add_to_workbench,
+            header_class=inspection["header_class"],
+            header_id=inspection["header_id"],
+            command_name=name,
+            title=tooltip or name,
+            tooltip=tooltip or name,
+            icon=icon_style,
+            cs=None,
+        )
+        if rsc_inspection["status"] == "error":
+            return {
+                "status": "error",
+                "message": rsc_inspection["error"],
+                "changeset": None,
+            }
+
     if not dialog_name and with_dialog:
         dialog_name = f"{name}Dlg"
     if not tooltip:
@@ -118,6 +137,9 @@ def create_executable_command(
             name,
             add_to_workbench,
             load_name=resolved_load_name,
+            title=tooltip or name,
+            tooltip=tooltip or name,
+            icon=icon_style,
             cs=master_cs,
         )
         if wb_result.get("status") == "error":

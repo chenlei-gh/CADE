@@ -288,7 +288,93 @@ def _queue_nls(cs: ChangeSet, path: Path, content: str, source: str):
             continue  # identical comment already present
         new_lines.append(line)
 
-    if not new_lines:
+    has_new_data = False
+    for line in new_lines:
+        s = line.strip()
+        if not s or s.startswith("//"):
+            continue
+        has_new_data = True
+        break
+    if not has_new_data:
+        return
+    block = "\n".join(new_lines).strip()
+    merged = base.rstrip() + "\n" + block + "\n" if base.strip() else block + "\n"
+    write(path, merged)
+
+
+# RSC assignment lines look like `Key = "value";` or `Key = "I_foo";`.
+_RSC_ASSIGN_RE = re.compile(r"^[ \t]*([A-Za-z_][A-Za-z0-9_.]*)[ \t]*=")
+
+
+def _rsc_assignments(text: str) -> Dict[str, str]:
+    """Map exact RSC key -> raw value text for every assignment in `text`."""
+    found: Dict[str, str] = {}
+    for line in text.splitlines():
+        m = _RSC_ASSIGN_RE.match(line)
+        if m:
+            found.setdefault(
+                m.group(1), line[m.end():].strip().rstrip(";").strip()
+            )
+    return found
+
+
+def _queue_rsc(cs: ChangeSet, path: Path, content: str, source: str):
+    """Queue RSC `content` for `path`, merging key-values into ChangeSet.
+
+    Follows the same key-exact contract as _queue_nls, but strictly for
+    textual .CATRsc files (never handles .bmp binaries).
+    Per key:
+      - Same key + same value: idempotent no-op (skipped)
+      - Same key + different value: raises ValueError (hard error, never warning)
+    """
+    key = str(path)
+    if key in cs.created:
+        base, write = cs.created[key], cs.add_create
+    elif key in cs.modified:
+        base, write = cs.modified[key], cs.add_modify
+    elif path.exists():
+        base = path.read_text(encoding="utf-8", errors="replace")
+        write = cs.add_modify
+    else:
+        base, write = "", cs.add_create
+
+    existing = _rsc_assignments(base)
+    base_lines = set(base.splitlines())
+    seen_in_block: Dict[str, str] = {}
+    new_lines = []
+    for line in content.splitlines():
+        m = _RSC_ASSIGN_RE.match(line)
+        if m:
+            name = m.group(1)
+            value = line[m.end():].strip().rstrip(";").strip()
+            if name in seen_in_block:
+                if seen_in_block[name] != value:
+                    raise ValueError(
+                        f"CATRsc key conflict in '{source}' for {path.name}: "
+                        f"'{name}' assigned multiple different values in the same block"
+                    )
+                continue
+            seen_in_block[name] = value
+            if name in existing:
+                if existing[name] != value:
+                    raise ValueError(
+                        f"CATRsc key conflict in {path.name}: '{name}' is already assigned as "
+                        f"{existing[name]!r}, cannot assign as {value!r} from '{source}'"
+                    )
+                continue
+            existing[name] = value
+        elif line.strip().startswith("//") and line in base_lines:
+            continue
+        new_lines.append(line)
+
+    has_new_data = False
+    for line in new_lines:
+        s = line.strip()
+        if not s or s.startswith("//"):
+            continue
+        has_new_data = True
+        break
+    if not has_new_data:
         return
     block = "\n".join(new_lines).strip()
     merged = base.rstrip() + "\n" + block + "\n" if base.strip() else block + "\n"
@@ -1304,32 +1390,282 @@ def inspect_workbench_registration(
     }
 
 
+def resolve_resource_host(workbench: Any) -> Optional[Path]:
+    """Resolve the resource host framework directory for a workbench.
+
+    Strict explicit host resolution: only accepts workbench.framework.path.
+    If workbench has no framework or no framework path, returns None.
+    Never guesses or climbs directory hierarchies looking for .edu/IdentityCard.
+    """
+    if not workbench:
+        return None
+    fw = getattr(workbench, "framework", None)
+    if not fw:
+        return None
+    fw_path = getattr(fw, "path", None)
+    if not fw_path:
+        return None
+    return Path(fw_path)
+
+
+def _resolve_icon_bytes(icon_name: str, hint: Optional[str] = None) -> Optional[bytes]:
+    """Try to resolve icon bytes using icon_provider."""
+    try:
+        from icon_provider import get_icon
+        ico_path = get_icon(icon_name, hint=hint)
+        if ico_path and ico_path.exists():
+            return ico_path.read_bytes()
+    except Exception:
+        pass
+    return None
+
+
+def _queue_icon_binary(
+    cs: ChangeSet,
+    fw_path: Path,
+    icon_ref: str,
+    target_path: Optional[Path] = None,
+    icon_bytes: Optional[bytes] = None,
+    source: str = "workbench",
+) -> None:
+    """Queue icon binary into ChangeSet if available and not already identical."""
+    if target_path is None:
+        target_path = fw_path / "CNext" / "resources" / "graphic" / "icons" / "normal" / f"{icon_ref}.bmp"
+    if icon_bytes is None:
+        icon_base = icon_ref[2:] if icon_ref.startswith("I_") else icon_ref
+        icon_bytes = _resolve_icon_bytes(icon_base)
+    if icon_bytes is None:
+        return
+
+    key = str(target_path)
+    existing_bytes = None
+    if key in cs._binary:
+        existing_bytes = cs._binary[key]
+    elif target_path.exists():
+        existing_bytes = target_path.read_bytes()
+
+    if existing_bytes is not None:
+        if existing_bytes != icon_bytes:
+            raise ValueError(
+                f"Icon binary conflict for {target_path.name}: "
+                f"target file already exists with different content from '{source}'"
+            )
+        return  # identical bytes -> idempotent no-op
+
+    cs.add_create_binary(target_path, icon_bytes)
+
+
+def inspect_header_resources(
+    ctx: ActionContext,
+    workbench_name: str,
+    header_class: str,
+    header_id: str,
+    command_name: str,
+    *,
+    title: Optional[str] = None,
+    tooltip: Optional[str] = None,
+    icon: Optional[str] = None,
+    icon_bytes: Optional[bytes] = None,
+    cs: Optional[ChangeSet] = None,
+) -> Dict:
+    """Read-only inspection of workbench header resources (CATNls, CATRsc, Icon).
+
+    Validates that:
+      - The workbench has a valid explicit resource host framework (workbench.framework.path)
+      - NLS keys do not conflict with existing definitions (same key + different value)
+      - RSC keys do not conflict with existing definitions (same key + different value)
+      - Icon binary does not conflict with existing file on disk / staged in CS
+    Returns {"status": "ok", ...} or {"status": "error", "error": "..."}.
+    """
+    wbs = ctx.snapshot.get_all_workbenches()
+    wb = next((w for w in wbs if w.name.lower() == workbench_name.lower()), None)
+    if not wb:
+        return {"status": "error", "error": f"Workbench not found: {workbench_name}"}
+
+    fw_path = resolve_resource_host(wb)
+    if not fw_path:
+        return {
+            "status": "error",
+            "error": (
+                f"Cannot resolve resource host for workbench '{workbench_name}': "
+                "workbench has no framework or framework path configured."
+            ),
+        }
+
+    target_title = (title or tooltip or command_name).replace('"', '\\"')
+    target_tooltip = (tooltip or title or command_name).replace('"', '\\"')
+    raw_icon = icon or command_name.lower()
+    icon_ref = raw_icon if raw_icon.startswith("I_") else f"I_{raw_icon}"
+    icon_ref = icon_ref.replace('"', '')
+    icon_base_name = icon_ref[2:]
+
+    msg_dir = fw_path / "CNext" / "resources" / "msgcatalog"
+    nls_file = msg_dir / f"{header_class}.CATNls"
+    nls_file_zh = msg_dir / "Simplified_Chinese" / f"{header_class}.CATNls"
+    rsc_file = msg_dir / f"{header_class}.CATRsc"
+    icon_dir = fw_path / "CNext" / "resources" / "graphic" / "icons" / "normal"
+    icon_file = icon_dir / f"{icon_ref}.bmp"
+
+    nls_entries = {
+        f"{header_class}.{header_id}.Title": f'"{target_title}"',
+        f"{header_class}.{header_id}.ShortHelp": f'"{target_tooltip}"',
+        f"{header_class}.{header_id}.Help": f'"{target_tooltip}"',
+        f"{header_class}.{header_id}.LongHelp": f'"{target_tooltip}"',
+    }
+    rsc_entries = {
+        f"{header_class}.{header_id}.Icon.Normal": f'"{icon_ref}"',
+    }
+
+    def _inspect_file_keys(file_path: Path, entries: Dict[str, str], is_gbk: bool, is_rsc: bool) -> Optional[str]:
+        key = str(file_path)
+        base = None
+        if cs is not None and key in cs.modified:
+            base = cs.modified[key]
+        elif cs is not None and key in cs.created:
+            base = cs.created[key]
+        elif file_path.exists():
+            enc = "gbk" if is_gbk else "utf-8"
+            base = file_path.read_text(encoding=enc, errors="replace")
+
+        if not base:
+            return None
+
+        assignments = _rsc_assignments(base) if is_rsc else _nls_assignments(base)
+        for k, v in entries.items():
+            if k in assignments:
+                if assignments[k] != v:
+                    file_type = "CATRsc" if is_rsc else "CATNls"
+                    verb = "assigned as" if is_rsc else "defined as"
+                    target_verb = "assign as" if is_rsc else "set to"
+                    return (
+                        f"{file_type} key conflict in {file_path.name}: '{k}' is already "
+                        f"{verb} {assignments[k]!r}, cannot {target_verb} {v!r}"
+                    )
+        return None
+
+    # Check NLS conflict (English)
+    err_nls = _inspect_file_keys(nls_file, nls_entries, is_gbk=False, is_rsc=False)
+    if err_nls:
+        return {"status": "error", "error": err_nls}
+
+    # Check NLS conflict (Simplified_Chinese)
+    err_nls_zh = _inspect_file_keys(nls_file_zh, nls_entries, is_gbk=True, is_rsc=False)
+    if err_nls_zh:
+        return {"status": "error", "error": err_nls_zh}
+
+    # Check RSC conflict
+    err_rsc = _inspect_file_keys(rsc_file, rsc_entries, is_gbk=False, is_rsc=True)
+    if err_rsc:
+        return {"status": "error", "error": err_rsc}
+
+    # Check icon binary conflict
+    target_icon_bytes = icon_bytes if icon_bytes is not None else _resolve_icon_bytes(icon_base_name)
+    if target_icon_bytes is not None:
+        key = str(icon_file)
+        existing_bytes = None
+        if cs is not None and key in cs._binary:
+            existing_bytes = cs._binary[key]
+        elif icon_file.exists():
+            existing_bytes = icon_file.read_bytes()
+
+        if existing_bytes is not None and existing_bytes != target_icon_bytes:
+            return {
+                "status": "error",
+                "error": (
+                    f"Icon binary conflict for {icon_file.name}: "
+                    "target file already exists with different content"
+                ),
+            }
+
+    return {
+        "status": "ok",
+        "error": None,
+        "workbench": wb,
+        "resource_host": fw_path,
+        "header_class": header_class,
+        "header_id": header_id,
+        "command_name": command_name,
+        "title": target_title,
+        "tooltip": target_tooltip,
+        "icon_ref": icon_ref,
+        "icon_base_name": icon_base_name,
+        "icon_bytes": target_icon_bytes,
+        "nls_file": nls_file,
+        "nls_file_zh": nls_file_zh,
+        "rsc_file": rsc_file,
+        "icon_file": icon_file,
+    }
+
+
+def queue_header_resources(
+    cs: ChangeSet,
+    inspection: Dict,
+    source: str = "workbench",
+) -> None:
+    """Queue header resources into ChangeSet based on inspection result."""
+    hdr_cls = inspection["header_class"]
+    hdr_id = inspection["header_id"]
+    title = inspection["title"]
+    tooltip = inspection["tooltip"]
+    icon_ref = inspection["icon_ref"]
+
+    # 1. English CATNls
+    nls_content = (
+        f"\n// Command Header: {hdr_cls}.{hdr_id}\n"
+        f'{hdr_cls}.{hdr_id}.Title     = "{title}";\n'
+        f'{hdr_cls}.{hdr_id}.ShortHelp = "{tooltip}";\n'
+        f'{hdr_cls}.{hdr_id}.Help      = "{tooltip}";\n'
+        f'{hdr_cls}.{hdr_id}.LongHelp  = "{tooltip}";\n'
+    )
+    _queue_nls(cs, inspection["nls_file"], nls_content, source)
+
+    # 2. Chinese CATNls (Simplified_Chinese)
+    nls_content_zh = (
+        f"\n// 命令头: {hdr_cls}.{hdr_id}\n"
+        f'{hdr_cls}.{hdr_id}.Title     = "{title}";\n'
+        f'{hdr_cls}.{hdr_id}.ShortHelp = "{tooltip}";\n'
+        f'{hdr_cls}.{hdr_id}.Help      = "{tooltip}";\n'
+        f'{hdr_cls}.{hdr_id}.LongHelp  = "{tooltip}";\n'
+    )
+    _queue_nls(cs, inspection["nls_file_zh"], nls_content_zh, source)
+
+    # 3. CATRsc
+    rsc_content = (
+        f"\n// Command Header Icon: {hdr_cls}.{hdr_id}\n"
+        f'{hdr_cls}.{hdr_id}.Icon.Normal = "{icon_ref}";\n'
+    )
+    _queue_rsc(cs, inspection["rsc_file"], rsc_content, source)
+
+    # 4. Icon Binary
+    _queue_icon_binary(
+        cs,
+        fw_path=inspection["resource_host"],
+        icon_ref=icon_ref,
+        target_path=inspection["icon_file"],
+        icon_bytes=inspection.get("icon_bytes"),
+        source=source,
+    )
+
+
 def add_command_to_workbench(
     ctx: ActionContext,
     command_name: str,
     workbench_name: str,
     *,
     load_name: Optional[str] = None,
+    title: Optional[str] = None,
+    tooltip: Optional[str] = None,
+    icon: Optional[str] = None,
+    icon_bytes: Optional[bytes] = None,
     cs: ChangeSet = None,
 ) -> Dict:
-    """Register a 4-parameter command header in a workbench's Addin source file.
+    """Register a 4-parameter command header in a workbench's Addin source file
+    and queue corresponding workbench header resources (.CATNls, .CATRsc, icon).
 
     Inserts the 4-parameter command header registration in the Addin's
     CreateCommands() method using the decoupled CATCommandHeader architecture.
     Supports both existing commands and commands queued in a caller-owned
     ChangeSet (`cs`).
-
-    Note on scope:
-      Implemented:
-        - 4-parameter command header registration in Addin CreateCommands()
-        - MacDeclareHeader reuse or deterministic derivation (AddinClassHeader)
-        - Lexical stripping of comments/strings for declaration & registration discovery
-        - Identity (HeaderClassName, HeaderID) and payload (LoadName, ClassName) conflict detection
-        - Support for caller-owned ChangeSet (in-memory command and Addin)
-      Not implemented in this scope (Slice 1):
-        - Toolbar Starter creation and Access mounting (CreateToolbars)
-        - Resource files generation (.CATNls / .CATRsc)
-        - Cross-module LINK_WITH dependency updates
     """
     ctx.refresh()
     cmds = ctx.snapshot.get_all_commands()
@@ -1369,6 +1705,22 @@ def add_command_to_workbench(
 
     target_header_class = inspection["header_class"]
     target_header_id = inspection["header_id"]
+
+    rsc_inspection = inspect_header_resources(
+        ctx,
+        workbench_name=workbench_name,
+        header_class=target_header_class,
+        header_id=target_header_id,
+        command_name=command_name,
+        title=title,
+        tooltip=tooltip,
+        icon=icon,
+        icon_bytes=icon_bytes,
+        cs=cs,
+    )
+    if rsc_inspection["status"] == "error":
+        return _error(rsc_inspection["error"])
+
     addin_source = inspection["addin_source"]
     addin_str = str(addin_source)
     old_content = inspection["addin_content"]
@@ -1402,6 +1754,9 @@ def add_command_to_workbench(
             cs.created[addin_str] = content
         else:
             cs.add_modify(addin_source, content)
+
+    # Queue resources (CATNls, CATRsc, Icon binary)
+    queue_header_resources(cs, rsc_inspection, source=f"workbench:{workbench_name}")
 
     cs.merge_metadata(
         command=command_name,

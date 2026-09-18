@@ -1365,6 +1365,222 @@ try:
 finally:
     shutil.rmtree(wb_ws, ignore_errors=True)
 
+# ── R-3-A: Resource Binding (.CATNls, .CATRsc, Icon Binary, Pre-validation Gate) ──
+# RA1 (无既有 CATNls/CATRsc): Creates {HeaderClass}.CATNls & {HeaderClass}.CATRsc & Simplified_Chinese
+# RA2 (磁盘已有相同配置): Disk-state idempotency: ChangeSet does not re-add or modify identical resources
+# RA3 (CATNls 同 key 异值冲突): Gate & add_command_to_workbench return conflict error
+# RA4 (CATRsc 同 key 异值冲突): Gate & add_command_to_workbench return conflict error
+# RA5 (已有其他 Header 资源): Appends new header resources while preserving existing entries
+# RA6 (中文 NLS 编码与目录): Simplified_Chinese/{HeaderClass}.CATNls generated and readable as GBK
+# RA7 (Resource Host 不存在): Pre-validation Gate catches missing host before CS creation (A-3 zero mutation)
+# RA8 (端到端编排调用): create_executable_command full flow produces C++, Header reg, NLS, RSC
+# RA9 (同一 ChangeSet 连续两次 queue): Staged-state idempotency: duplicate queueing produces no extra lines
+# RA10 (图标文件内容冲突): Target icon exists with different bytes -> hard conflict error
+ra_ws = Path(tempfile.mkdtemp(prefix="cade_ra_test_"))
+try:
+    fw_dir = ra_ws / "TestFW.edu"
+    (fw_dir / "IdentityCard").mkdir(parents=True)
+    (fw_dir / "IdentityCard" / "IdentityCard.h").write_text("// ic", encoding="utf-8")
+    (fw_dir / "Imakefile.mk").write_text("", encoding="utf-8")
+
+    mod_dir = fw_dir / "TestMod.m"
+    src_dir = mod_dir / "src"
+    src_dir.mkdir(parents=True)
+    (mod_dir / "Imakefile.mk").write_text("BUILT_OBJECT_TYPE=SHARED LIBRARY", encoding="utf-8")
+
+    (src_dir / "DiskCmd.cpp").write_text("CATStateCommand BuildGraph\n", encoding="utf-8")
+
+    addin_cpp = src_dir / "SampleWorkbenchAddin.cpp"
+    addin_initial = (
+        '#include "SampleWorkbenchAddin.h"\n'
+        '#include <iostream>\n\n'
+        'CATIAfrGeneralWksAddin\n\n'
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::CreateToolbars() {\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_initial, encoding="utf-8")
+
+    ctx = ActionContext(ra_ws)
+
+    # ── RA1: 无既有 CATNls / CATRsc ──
+    r_ra1 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", load_name="TestMod")
+    check("RA1: add_command_to_workbench status is success/pending",
+          r_ra1.get("status") in ("success", "pending"), str(r_ra1))
+    cs_ra1 = r_ra1.get("changeset", {})
+    created_ra1 = cs_ra1.get("created", {})
+
+    nls_path_ra1 = fw_dir / "CNext" / "resources" / "msgcatalog" / "SampleWorkbenchAddinHeader.CATNls"
+    rsc_path_ra1 = fw_dir / "CNext" / "resources" / "msgcatalog" / "SampleWorkbenchAddinHeader.CATRsc"
+    zh_nls_path_ra1 = fw_dir / "CNext" / "resources" / "msgcatalog" / "Simplified_Chinese" / "SampleWorkbenchAddinHeader.CATNls"
+
+    check("RA1: creates English CATNls in ChangeSet", str(nls_path_ra1) in created_ra1, str(created_ra1.keys()))
+    check("RA1: creates CATRsc in ChangeSet", str(rsc_path_ra1) in created_ra1, str(created_ra1.keys()))
+    check("RA1: creates Simplified_Chinese CATNls in ChangeSet", str(zh_nls_path_ra1) in created_ra1, str(created_ra1.keys()))
+
+    nls_content_ra1 = created_ra1.get(str(nls_path_ra1), "")
+    check("RA1: English CATNls has HeaderClass.HeaderID.Title",
+          'SampleWorkbenchAddinHeader.DiskCmdHdr.Title     = "DiskCmd";' in nls_content_ra1, nls_content_ra1)
+    check("RA1: English CATNls has HeaderClass.HeaderID.ShortHelp",
+          'SampleWorkbenchAddinHeader.DiskCmdHdr.ShortHelp = "DiskCmd";' in nls_content_ra1, nls_content_ra1)
+
+    rsc_content_ra1 = created_ra1.get(str(rsc_path_ra1), "")
+    check("RA1: CATRsc has HeaderClass.HeaderID.Icon.Normal",
+          'SampleWorkbenchAddinHeader.DiskCmdHdr.Icon.Normal = "I_diskcmd";' in rsc_content_ra1, rsc_content_ra1)
+
+    # ── RA2: 磁盘已有完全相同资源 (磁盘态幂等) ──
+    ChangeSet.from_dict(cs_ra1).apply(workspace_root=ra_ws)
+    ctx.refresh(force=True)
+
+    r_ra2 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", load_name="TestMod")
+    check("RA2: status is success/pending", r_ra2.get("status") in ("success", "pending"), str(r_ra2))
+    cs_ra2 = r_ra2.get("changeset", {})
+    created_ra2 = cs_ra2.get("created", {})
+    modified_ra2 = cs_ra2.get("modified", {})
+
+    check("RA2: NLS not re-created", str(nls_path_ra1) not in created_ra2, str(created_ra2.keys()))
+    check("RA2: RSC not re-created", str(rsc_path_ra1) not in created_ra2, str(created_ra2.keys()))
+    check("RA2: NLS not modified on disk-state match", str(nls_path_ra1) not in modified_ra2, str(modified_ra2.keys()))
+    check("RA2: RSC not modified on disk-state match", str(rsc_path_ra1) not in modified_ra2, str(modified_ra2.keys()))
+
+    # ── RA3: CATNls 同 key 异值冲突 ──
+    r_ra3 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", load_name="TestMod", title="ConflictingTitle")
+    check("RA3: returns error on NLS value conflict", r_ra3.get("status") == "error", str(r_ra3))
+    check("RA3: error reports conflict", "conflict" in r_ra3.get("message", "").lower(), r_ra3.get("message", ""))
+
+    # ── RA4: CATRsc 同 key 异值冲突 ──
+    r_ra4 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", load_name="TestMod", icon="ConflictingIcon")
+    check("RA4: returns error on RSC value conflict", r_ra4.get("status") == "error", str(r_ra4))
+    check("RA4: error reports conflict", "conflict" in r_ra4.get("message", "").lower(), r_ra4.get("message", ""))
+
+    # ── RA5: 工作台已有其他 Header 资源 ──
+    existing_nls_with_other = (
+        nls_path_ra1.read_text(encoding="utf-8")
+        + '\nSampleWorkbenchAddinHeader.OtherCmdHdr.Title     = "Other Title";\n'
+    )
+    nls_path_ra1.write_text(existing_nls_with_other, encoding="utf-8")
+
+    (src_dir / "NewCmd.cpp").write_text("CATStateCommand BuildGraph\n", encoding="utf-8")
+    ctx.refresh(force=True)
+    r_ra5 = add_command_to_workbench(ctx, "NewCmd", "SampleWorkbench", load_name="TestMod")
+    check("RA5: status is success/pending", r_ra5.get("status") in ("success", "pending"), str(r_ra5))
+    cs_ra5 = r_ra5.get("changeset", {})
+    mod_ra5 = cs_ra5.get("modified", {})
+    check("RA5: NLS is in modified", str(nls_path_ra1) in mod_ra5, str(mod_ra5.keys()))
+    new_nls_content_5 = mod_ra5.get(str(nls_path_ra1), "")
+    check("RA5: preserves existing OtherCmdHdr", "OtherCmdHdr" in new_nls_content_5, new_nls_content_5)
+    check("RA5: appends NewCmdHdr", "NewCmdHdr" in new_nls_content_5, new_nls_content_5)
+
+    # ── RA6: 中文 NLS 编码与目录 ──
+    check("RA6: Simplified_Chinese directory exists", zh_nls_path_ra1.parent.exists(), str(zh_nls_path_ra1.parent))
+    check("RA6: Simplified_Chinese file exists on disk", zh_nls_path_ra1.exists(), str(zh_nls_path_ra1))
+    zh_bytes = zh_nls_path_ra1.read_bytes()
+    zh_text = zh_bytes.decode("gbk")
+    check("RA6: file is valid GBK and contains Chinese comments/entries", "命令头" in zh_text, zh_text)
+
+    # ── RA7: Resource Host 不存在 (Pre-validation Gate & 零污染) ──
+    from meta_model import Workbench
+    wb_nohost = Workbench(path=addin_cpp, name="NoHostWorkbench", framework=None, addin_source=addin_cpp)
+    ctx.snapshot.frameworks[0].workbenches.append(wb_nohost)
+    try:
+        r_ra7 = create_executable_command(
+            ctx,
+            name="NoHostCmd",
+            module="TestMod.m",
+            framework="TestFW.edu",
+            add_to_workbench="NoHostWorkbench",
+        )
+        check("RA7: pre-validation gate fails when workbench has no framework",
+              r_ra7.get("status") == "error", str(r_ra7))
+        check("RA7: error explains missing framework",
+              "framework" in r_ra7.get("message", "").lower(), r_ra7.get("message", ""))
+        check("RA7: changeset is None (zero mutation)", r_ra7.get("changeset") is None, str(r_ra7))
+        check("RA7: no command source created on disk", not (src_dir / "NoHostCmd.cpp").exists())
+    finally:
+        ctx.snapshot.frameworks[0].workbenches.remove(wb_nohost)
+
+    # ── RA8: 端到端编排调用 (create_executable_command) ──
+    r_ra8 = create_executable_command(
+        ctx,
+        name="E2EResCmd",
+        module="TestMod.m",
+        framework="TestFW.edu",
+        add_to_workbench="SampleWorkbench",
+        tooltip="Execute E2E Command",
+        icon_style="geo",
+    )
+    check("RA8: create_executable_command returns pending", r_ra8.get("status") == "pending", str(r_ra8))
+    cs_ra8 = r_ra8.get("changeset", {})
+    created_ra8 = cs_ra8.get("created", {})
+    mod_ra8 = cs_ra8.get("modified", {})
+
+    cmd_cpp_ra8 = src_dir / "E2EResCmd.cpp"
+    check("RA8: creates command source file", str(cmd_cpp_ra8) in created_ra8, str(created_ra8.keys()))
+
+    addin_ra8 = mod_ra8.get(str(addin_cpp), "")
+    check("RA8: registers 4-param header in Addin source",
+          'new SampleWorkbenchAddinHeader("E2EResCmdHdr", "TestMod", "E2EResCmd", (void *)NULL);' in addin_ra8, addin_ra8)
+
+    nls_ra8 = mod_ra8.get(str(nls_path_ra1), created_ra8.get(str(nls_path_ra1), ""))
+    check("RA8: workbench NLS has E2EResCmd entries", "E2EResCmdHdr.Title" in nls_ra8, nls_ra8)
+    rsc_ra8 = mod_ra8.get(str(rsc_path_ra1), created_ra8.get(str(rsc_path_ra1), ""))
+    check("RA8: workbench RSC has E2EResCmd icon entry", "E2EResCmdHdr.Icon.Normal" in rsc_ra8, rsc_ra8)
+
+    # ── RA9: 同一 ChangeSet 连续两次 queue (内存态幂等) ──
+    from actions import inspect_header_resources, queue_header_resources
+    cs_ra9 = ChangeSet(action="ra9", description="ra9")
+    insp_ra9 = inspect_header_resources(
+        ctx,
+        workbench_name="SampleWorkbench",
+        header_class="SampleWorkbenchAddinHeader",
+        header_id="StagedIdempotentCmdHdr",
+        command_name="StagedCmd",
+        title="Staged Title",
+        tooltip="Staged Tooltip",
+        icon="staged_icon",
+        cs=cs_ra9,
+    )
+    check("RA9: inspection status ok", insp_ra9.get("status") == "ok", str(insp_ra9))
+    queue_header_resources(cs_ra9, insp_ra9, source="test_ra9")
+    nls_key_ra9 = str(insp_ra9["nls_file"])
+    rsc_key_ra9 = str(insp_ra9["rsc_file"])
+
+    first_nls = cs_ra9.created.get(nls_key_ra9, cs_ra9.modified.get(nls_key_ra9, ""))
+    first_rsc = cs_ra9.created.get(rsc_key_ra9, cs_ra9.modified.get(rsc_key_ra9, ""))
+
+    # Second queue call on the exact same ChangeSet
+    queue_header_resources(cs_ra9, insp_ra9, source="test_ra9")
+    second_nls = cs_ra9.created.get(nls_key_ra9, cs_ra9.modified.get(nls_key_ra9, ""))
+    second_rsc = cs_ra9.created.get(rsc_key_ra9, cs_ra9.modified.get(rsc_key_ra9, ""))
+
+    check("RA9: NLS staged content identical after second queue (no duplicated lines)",
+          first_nls == second_nls, f"First:\n{first_nls}\nSecond:\n{second_nls}")
+    check("RA9: RSC staged content identical after second queue (no duplicated lines)",
+          first_rsc == second_rsc, f"First:\n{first_rsc}\nSecond:\n{second_rsc}")
+
+    # ── RA10: 图标文件内容冲突 ──
+    (src_dir / "IconConflictCmd.cpp").write_text("CATStateCommand BuildGraph\n", encoding="utf-8")
+    ctx.refresh(force=True)
+    icon_dir_ra = fw_dir / "CNext" / "resources" / "graphic" / "icons" / "normal"
+    icon_dir_ra.mkdir(parents=True, exist_ok=True)
+    conflict_icon_file = icon_dir_ra / "I_conflict_icon.bmp"
+    conflict_icon_file.write_bytes(b"BYTE_ORIGINAL_ON_DISK")
+
+    r_ra10 = add_command_to_workbench(
+        ctx,
+        "IconConflictCmd",
+        "SampleWorkbench",
+        load_name="TestMod",
+        icon="conflict_icon",
+        icon_bytes=b"BYTE_DIFFERENT_INCOMING",
+    )
+    check("RA10: returns error on icon binary conflict", r_ra10.get("status") == "error", str(r_ra10))
+    check("RA10: error message reports binary conflict",
+          "Icon binary conflict" in r_ra10.get("message", ""), r_ra10.get("message", ""))
+finally:
+    shutil.rmtree(ra_ws, ignore_errors=True)
+
 print(f"\nProduction regressions: {passed}/{total}")
 if failures:
     print("Failures:")
