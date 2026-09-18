@@ -48,10 +48,8 @@ ROUTES = {
     "create_executable_command": (KernelMode.DEVELOP, "create command TestCmd in TestModule"),
     "create_feature":          (KernelMode.DEVELOP, "create feature TestFeat in TestModule"),
     "create_extension":        (KernelMode.DEVELOP, "create extension TestExt in TestModule"),
-    "expose_service":          (KernelMode.DEVELOP, "expose service from TestComp"),
     # Diagnostics → analyze/repair
     "diagnose_workspace":      (KernelMode.ANALYZE, "diagnose the workspace"),
-    "suggest_next":            (KernelMode.ANALYZE, "suggest next action"),
     # Intent → develop/analyze
     "plan_intent":             (KernelMode.DEVELOP, "plan CreateCommand MyPlan MyMod"),
     "analyze_impact":          (KernelMode.ANALYZE, "analyze impact of renaming MyCmd"),

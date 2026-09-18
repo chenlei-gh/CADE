@@ -60,7 +60,6 @@ Usage:
   cade plan <type> <name> <module> [--fw framework]
                                    # Generate development plan
   cade impact <entity> <type> <op>  # Analyze change impact
-  cade optimize [plans...]          # Recommend best plan
 """
 
 from __future__ import annotations
@@ -166,10 +165,6 @@ def main():
         cmd_rollback(args)
     elif cmd == "snapshot":
         cmd_snapshot(args)
-    elif cmd == "expose":
-        cmd_expose(args)
-    elif cmd == "suggest":
-        cmd_suggest(args)
     elif cmd == "plan":
         cmd_plan(args)
     elif cmd == "impact":
@@ -512,32 +507,6 @@ def cmd_rollback(args):
     else:
         result = _kernel("repair", "list rollback points")
         _print_kernel(result)
-
-
-def cmd_expose(args):
-    """expose_service capability boundary — router-level interception.
-
-    Do NOT route into develop(): that would make the agent read this as
-    'execution failed' and trigger a repair loop.  Instead report the
-    capability's declared state directly: it exists but is not enabled in
-    this build.  This is a design state, not a runtime failure."""
-    _print_kernel({
-        "status": "blocked",
-        "reason": "experimental",
-        "action": "do_not_fix",
-        "capability": "expose_service",
-        "message": (
-            "CAA service exposure is an experimental capability and is not "
-            "enabled in this build (no kernel route). This is a deliberate "
-            "design state, not a runtime failure — do not attempt to repair."
-        ),
-    })
-
-
-def cmd_suggest(args):
-    """Suggest via Kernel — routes through analyze()."""
-    result = _kernel("analyze", "suggest next action")
-    _print_kernel(result)
 
 
 def cmd_plan(args):

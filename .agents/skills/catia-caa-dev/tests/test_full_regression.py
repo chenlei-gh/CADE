@@ -229,7 +229,6 @@ MODULES = {
     "docgen": ["generate_all"],
     "intents": [
         "create_executable_command",
-        "expose_service",
         "create_component_with_interfaces",
         "create_feature",
         "create_extension",
@@ -499,7 +498,6 @@ print("=" * 70)
 int_mod, _ = safe_import("intents")
 if int_mod:
     check("6.1 create_executable_command", callable(int_mod.create_executable_command))
-    check("6.2 expose_service", callable(int_mod.expose_service))
     check(
         "6.4 create_component_with_interfaces",
         callable(int_mod.create_component_with_interfaces),
@@ -977,8 +975,6 @@ if cade_mod:
         "cmd_runtime_view",
         "cmd_refactor",
         "cmd_rollback",
-        "cmd_expose",
-        "cmd_suggest",
         "cmd_prereq_manager",
         "cmd_setup",
         "cmd_snapshot",

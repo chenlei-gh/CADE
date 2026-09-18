@@ -39,7 +39,6 @@ from intents import (
     create_executable_command,
     create_extension,
     create_feature,
-    expose_service,
 )
 
 ctx = ActionContext(str(SKILL_ROOT.parent.parent))  # D:\test
@@ -74,7 +73,6 @@ triggers_map = [
     ("find orphaned", "actions.find_orphaned_files", find_orphaned_files),
     # 创建类 (Intent)
     ("create command", "intents.create_executable_command", create_executable_command),
-    ("expose service", "intents.expose_service", expose_service),
     ("create feature", "intents.create_feature", create_feature),
     ("create extension", "intents.create_extension", create_extension),
     # 删除类
@@ -103,7 +101,6 @@ print("\n[Part 2] API Parameter Validation")
 api_checks = [
     # (fn, 必需的 ctx 之外的参数名称列表)
     (create_executable_command, ["name", "module"]),
-    (expose_service, ["component_name", "module"]),
     (create_component_with_interfaces, ["name", "module"]),
     (create_feature, ["name", "module"]),
     (create_extension, ["name", "target_object", "module"]),
@@ -156,11 +153,6 @@ examples = [
     (
         "create_executable_command",
         lambda: create_executable_command(ctx, name="Test", module="TestModule.m"),
-    ),
-
-    (
-        "expose_service",
-        lambda: expose_service(ctx, component_name="Test", module="TestModule.m"),
     ),
     (
         "create_feature",
@@ -300,7 +292,6 @@ imports_from_docs = [
     ("actions", "list_rollback_points"),
     ("actions", "cleanup_old_backups"),
     ("intents", "create_executable_command"),
-    ("intents", "expose_service"),
     ("intents", "create_feature"),
     ("intents", "create_extension"),
     ("refactor", "rename_command"),
@@ -333,7 +324,6 @@ from intents import (
     create_executable_command,
     create_extension,
     create_feature,
-    expose_service,
 )
 from meta_model import WorkspaceSnapshot
 from refactor import move_command, rename_command

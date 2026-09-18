@@ -41,8 +41,7 @@ def collect_registry():
     fixed-structure file.  Only reads status / action / implementation keys."""
     # Map BOTH the capability name and its implementation files to the
     # declared state.  Capability-name matching is precise (a file can host
-    # several capabilities — services.py holds both the unavailable
-    # expose_service and the active create_component_with_interfaces); file
+    # several capabilities with different statuses); file
     # matching is kept as a fallback for whole-file experimental modules.
     declared = {"by_name": {}, "by_file": {}}
     if not LIFECYCLE.exists():
@@ -755,9 +754,8 @@ def check(name, file_path, entry_src, test_src, doc_src,
     # Capability-name match is precise and applies to any declared status.
     # File fallback is ONLY safe for 'experimental' (a whole-file research
     # module like specification.py); it must NOT be used for 'unavailable',
-    # which is a single-capability property — services.py hosts both the
-    # unavailable expose_service and the active create_component_with_interfaces,
-    # so a file-level unavailable tag would smear the active capability.
+    # which is a single-capability property. A file-level unavailable tag
+    # could smear other active capabilities in the same file.
     declared = registry.get("by_name", {}).get(name)
     if not declared:
         by_file = registry.get("by_file", {}).get(rel)

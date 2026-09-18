@@ -43,8 +43,7 @@
 #
 # 覆盖范围：sync + build + retrieval 三家族 7 能力（P1）
 #         + cade 子命令批量登记 18 能力（P2，v0 验收通过后）。
-# 未登记：expose（lifecycle unavailable，不可路由）、version（元信息）、
-#         validate/suggest（analyze 薄 alias，见 analyze_workspace.note）。
+# 未登记：version（元信息）、validate（analyze 薄 alias，见 analyze_workspace.note）。
 
 capabilities:
 
@@ -170,7 +169,7 @@ capabilities:
       - analyze
     bindings:
       cli: cade analyze [workspace] [--modules|--commands|--deps|--graph]
-    note: cade validate / cade suggest 是本能力的薄 alias（同走 kernel analyze），不单列
+    note: cade validate 是本能力的薄 alias（同走 kernel analyze），不单列
 
   - name: diagnose_workspace
     description: 诊断工作区问题（经 kernel analyze 的诊断路径）

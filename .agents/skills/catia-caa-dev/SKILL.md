@@ -151,8 +151,6 @@ triggers:
   - create feature
   - create extension
   - data extension
-  - expose service
-  - suggest next
   - recommend
   - rollback
   - undo
@@ -160,7 +158,6 @@ triggers:
   - restore
   - 创建Feature
   - 创建扩展
-  - 暴露接口
   - 回滚
   - 撤销
   - 查询依赖
@@ -908,7 +905,6 @@ result = find_orphaned_files(ctx)
 ```python
 from intents import (
     create_executable_command,
-    expose_service,  # experimental — 返回 error（未接入 kernel）
 )
 
 # 创建完整的可执行命令（一次调用完成所有工作）
@@ -921,18 +917,6 @@ result = create_executable_command(
     add_to_workbench="GeometryWB"  # 自动添加到工作台
 )
 # 自动创建：Command、Dialog、Header、Catalog、NLS、Icon、Dictionary
-
-# 暴露组件服务（experimental — 返回 error）
-result = expose_service(
-    ctx,
-    component_name="DataManager",
-    module="CoreModule.m",
-    methods=[
-        {"name": "LoadData", "params": ["path"], "return": "HRESULT"},
-        {"name": "SaveData", "params": ["path"], "return": "HRESULT"}
-    ]
-)
-# 返回 error：CAA service exposure is experimental and not enabled
 
 # create_ui_dialog 已删除 — 对话框创建通过 create_executable_command(with_dialog=True) 实现
 ```
@@ -966,8 +950,6 @@ print(f"删除了 {len(result['deleted'])} 个旧备份")
 
 ```python
 from intents import create_feature, create_extension
-
-# suggest_next_action 已删除 — 无生产路由，为 phantom capability
 
 # 创建 Feature 对象
 result = create_feature(

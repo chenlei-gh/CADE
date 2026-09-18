@@ -35,14 +35,6 @@ capabilities:
     note: Spec-driven generation research. Not wired into the kernel pipeline.
       Production generation uses changeset.render_template via intents/.
 
-  expose_service:
-    status: unavailable
-    action: do_not_fix
-    implementation:
-      - intents/services.py
-    note: CAA service exposure. Returns a blocked/do_not_fix state by design;
-      no kernel route exists. Not a bug.
-
   create_feature:
     status: unavailable
     action: do_not_fix

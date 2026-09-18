@@ -379,11 +379,10 @@ cade build [workspace] [--full|--clean|--threads N]
 cade dev <workspace>
 cade run [workspace] [--stop|--macro|--status]
 cade create <type> <name> <module> …
-cade analyze / diagnose / validate / suggest
+cade analyze / diagnose / validate
 cade fix / refactor / rollback
 cade docs / rv / setup / prereq / check / test / version
 cade plan / impact
-cade expose     # unavailable：设计态拦截，不要当运行时故障去修
 ```
 
 ---

@@ -22,7 +22,6 @@ from actions import (
 )
 from intents import (
     create_executable_command, create_feature, create_extension,
-    expose_service,
 )
 from diagnostics import diagnose_workspace
 from build import error_result
@@ -80,7 +79,6 @@ print("  Creates:")
 measure("create_command   ", create_executable_command, ctx, "AuditCmd", "TestMod.m")
 measure("create_feature   ", create_feature, ctx, "AuditFeat", "TestMod.m")
 measure("create_extension ", create_extension, ctx, "AuditExt", "CATPart", "TestMod.m")
-measure("expose_service   ", expose_service, ctx, "AuditComp", "TestMod.m")
 
 # ═══ Diagnostics ═══════════════════════════════════════════
 print("  Diagnostics:")

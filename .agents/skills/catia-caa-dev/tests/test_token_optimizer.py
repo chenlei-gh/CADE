@@ -261,7 +261,6 @@ try:
     )
     from intents import (
         create_executable_command, create_feature, create_extension,
-        expose_service,
     )
     from diagnostics import diagnose_workspace
     from build import error_result as build_err
@@ -305,7 +304,6 @@ try:
     measure("create_command   ", create_executable_command, actx, "OptCmd", "TestMod.m")
     measure("create_feature   ", create_feature, actx, "OptFeat", "TestMod.m")
     measure("create_extension ", create_extension, actx, "OptExt", "CATPart", "TestMod.m")
-    measure("expose_service   ", expose_service, actx, "OptComp", "TestMod.m")
 
     # Diagnostics
     measure("diagnose_workspace", diagnose_workspace, actx)

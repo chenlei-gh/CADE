@@ -307,7 +307,6 @@ cade rollback --id latest         # undo anything
 
 ### 🤖 AI & Docs
 ```bash
-cade suggest                      # AI recommends next action
 cade docs                         # auto-generate documentation
 cade prereq MyModule              # view prerequisites
 cade rv                           # create Runtime View
@@ -598,7 +597,6 @@ cade rollback --id latest           # 撤销任意操作
 
 **🤖 AI 辅助**
 ```bash
-cade suggest                        # AI 推荐下一步
 cade docs                           # 自动生成文档
 cade test --quick                   # 42 套件快速测试 (~60s)
 cade test                           # 43 套件全量测试 (启动 CATIA)

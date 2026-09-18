@@ -57,20 +57,16 @@
 - **Reason**: 无入口。是反向 Phantom——文档承诺了代码里不存在的能力
   （`from build import workspace_build_config` 会 ImportError）。
 
+### expose_service
+- **Removed**: 架构减法退役（Phase 1 历史残留清理）。
+- **Reason**: 未接入 kernel intent router，长期以 `blocked / do_not_fix` 存留；
+  CADE 现行架构闭环不维护不可用运行时概念，因此物理退役该能力、CLI 入口及关联测试。
+- **Restore condition**: 若未来有真正的服务暴露需求，基于完备的 IDL/TIE 代码生成与
+  Kernel Router 支持重新设计引入。
+
 ---
 
 ## Unavailable（有意关闭，非 bug）
-
-### expose_service
-- **Status**: unavailable（见 `skills/lifecycle.yaml`）
-- **Since**: commit `71a6ad7`
-- **Why not enabled**: CAA service exposure 是实验能力，未接 kernel intent
-  router（`_detect_intent_type` 无 service 关键字）。
-- **Boundary**: `cade expose` 在 router 层直接返回 `blocked / do_not_fix`，
-  不进入 `develop()` 业务路径——让 Agent 读到"能力未开放"而非"执行失败"，
-  避免触发自动修复循环。`services.py expose_service` 返回同样结构。
-- **Enable condition**: kernel intent router 增加 service 意图并接通实现后，
-  将 `lifecycle.yaml` 中状态改为 active。
 
 ### create_feature
 - **Status**: unavailable（见 `skills/lifecycle.yaml`）

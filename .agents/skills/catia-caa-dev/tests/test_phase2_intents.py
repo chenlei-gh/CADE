@@ -71,7 +71,7 @@ try:
 
     from actions import ActionContext
     from changeset import ChangeSet
-    from intents import create_executable_command, expose_service
+    from intents import create_executable_command
     from intents.helpers import generate_tooltip, merge_changeset
 
     ctx = ActionContext(WORKSPACE)
@@ -107,25 +107,6 @@ try:
         check("dialog source included", any(path.endswith("DialogCmdDlg.cpp") for path in created))
 
     run_case("command with dialog", test_command_with_dialog)
-
-    def test_service():
-        result = expose_service(
-            ctx,
-            component_name="TestComponent",
-            module="TestModule.m",
-            framework="TestFramework",
-            methods=[{"name": "GetData", "params": [], "return": "HRESULT"}],
-        )
-        # expose_service is experimental and returns a blocked/do_not_fix state
-        # (not wired into kernel).  blocked, not error: this is a design state,
-        # not a runtime failure, so agents must not try to repair it.
-        check("expose service returns blocked", result.get("status") == "blocked", result.get("message", ""))
-        check("blocked is do_not_fix", result.get("action") == "do_not_fix", result.get("message", ""))
-        check("message mentions experimental", "experimental" in result.get("message", ""))
-
-    run_case("expose service", test_service)
-
-
 
     def test_validation():
         result = create_executable_command(

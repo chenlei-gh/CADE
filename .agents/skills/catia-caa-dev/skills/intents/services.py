@@ -16,45 +16,6 @@ from .helpers import (
 )
 
 
-def expose_service(
-    ctx: ActionContext,
-    component_name: str,
-    module: str,
-    framework: str = None,
-    *,
-    methods: Optional[List[Dict]] = None,
-    interface_name: Optional[str] = None,
-    use_idl: bool = True,
-    generate_tie: bool = True,
-) -> Dict:
-    """
-    Expose a component's service via interface.
-
-    Automatically creates: IDL, C++ header, TIE, Dictionary registration, IID.
-    """
-    # CAA service exposure is experimental and NOT wired into the kernel
-    # intent router.  Return a machine-readable 'blocked' state (not 'error'):
-    # an agent must read this as a deliberate design state and must NOT try to
-    # repair it.  Failing loudly here beats silently producing the wrong
-    # artifact (a command masquerading as a service).
-    # (The unreachable implementation that followed this return was removed;
-    # see git history if it's ever needed.)
-    return {
-        "status": "blocked",
-        "reason": "experimental",
-        "action": "do_not_fix",
-        "capability": "expose_service",
-        "intent": "expose_service",
-        "message": (
-            "CAA service exposure is experimental and not enabled in this "
-            "build. No runtime route exists (kernel._detect_intent_type has no "
-            "service keyword). This is a deliberate design state, not a runtime "
-            "failure — do not attempt to repair. See git history for the full "
-            "implementation."
-        ),
-    }
-
-
 def create_component_with_interfaces(
     ctx: ActionContext,
     name: str,
