@@ -10,6 +10,22 @@
 
 ## [未发布]
 
+### W-1-C Runtime Validation
+
+- VERIFIED (developer-machine physical evidence):
+  - Executed the real B28 build chain, including `mkmk -a`.
+  - Captured process return code `0`.
+  - Build completed with zero reported errors and warnings.
+  - Physically audited DLL, DICO, CATNls, CATRsc, and 22x22 BMP outputs.
+  - Verified expected Addin dictionary mapping and resource references.
+- Evidence boundary:
+  - Build and artifact validation were performed in an isolated
+    B28 test workspace.
+  - CATIA B28 process loading and GUI rendering remain independently
+    unverified.
+- Status: LEVEL 1 & LEVEL 2 VERIFIED / LEVEL 3 PENDING
+- Detailed audit data: `.agents/skills/catia-caa-dev/docs/validation/W1-C-build-artifacts-audit.json`
+
 ### 🏗️ W-1-C Workbench 资源装配、构建前置审计与安全加固 (2026-09-18, IMPLEMENTED / 真实真机实证待收口)
 
 - **工作台官方图标规范与 UI 资源装配**：

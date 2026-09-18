@@ -1,0 +1,74 @@
+{
+  "audit_version": "1.0",
+  "task": "W-1-C Workbench Real Build and Artifacts Audit",
+  "timestamp": "2026-09-18T14:56:09.941349",
+  "workspace": "D:\\Vault\\FSWorkspaces\\_tmp_real_wb_test",
+  "environment": {
+    "CATIA_INSTALL": "C:\\Program Files\\Dassault Systemes\\B28",
+    "CATIA_VERSION": "B28",
+    "architecture": "win_b64",
+    "TCK_INIT": "C:\\Program Files\\Dassault Systemes\\B28\\win_b64\\code\\command\\tck_init.bat",
+    "MKMK": "C:\\Program Files\\Dassault Systemes\\B28\\win_b64\\code\\bin\\mkmkM.exe",
+    "tck_id": "V5_6R2018_B28",
+    "compiler": "Microsoft Visual C++ v11.0 (amd64 cl.exe, Visual Studio 2012)",
+    "windows_kit": "Windows Kits 8.0"
+  },
+  "level1_build": {
+    "command_chain": "tck_init.bat -> tck_profile.bat V5_6R2018_B28 -> mkinit.bat -> mkGetPreq -p ... -> mkmk -a",
+    "status": "success",
+    "return_code": 0,
+    "duration": "22.1s",
+    "error_count": 0,
+    "warning_count": 0,
+    "cascade_count": 0,
+    "codepage_warning_count": 0,
+    "verdict": "PASS"
+  },
+  "level2_artifacts": {
+    "dll": {
+      "path": "D:\\Vault\\FSWorkspaces\\_tmp_real_wb_test\\win_b64\\code\\bin\\WbRealBuildMod.dll",
+      "size_bytes": 17920,
+      "mtime": "2026-09-18T14:56:32.132383",
+      "sha256": "0d10611360f2822d254c996ee5fb97b263241240d4d2e1a96d1f28332332bb1e",
+      "verified": true,
+      "note": "PE64 shared library compiled and linked by mkmk link2nd"
+    },
+    "dico": {
+      "path": "D:\\Vault\\FSWorkspaces\\_tmp_real_wb_test\\win_b64\\code\\dictionary\\WbRealBuildFW.dico",
+      "size_bytes": 60,
+      "mtime": "2026-09-18T14:56:09.968223",
+      "sha256": "48769a57c87e7fd677a3249c3c7c6e9e36c0d9c4bcd8d135bbdee25217f0d24e",
+      "content": "WbRealTestAddin  CATIAfrGeneralWksAddin  libWbRealBuildMod",
+      "has_entry": true,
+      "verified": true
+    },
+    "nls": {
+      "path": "D:\\Vault\\FSWorkspaces\\_tmp_real_wb_test\\win_b64\\resources\\msgcatalog\\WbRealTestAddin.CATNls",
+      "size_bytes": 188,
+      "mtime": "2026-09-18T14:56:09.967215",
+      "sha256": "6b4fdd3c0e7267ede561409206a2d042850171de939b69b87fdef638b92dfda5",
+      "has_title": true,
+      "verified": true
+    },
+    "rsc": {
+      "path": "D:\\Vault\\FSWorkspaces\\_tmp_real_wb_test\\win_b64\\resources\\msgcatalog\\WbRealTestAddin.CATRsc",
+      "size_bytes": 47,
+      "mtime": "2026-09-18T14:56:09.968223",
+      "sha256": "6783f4f566fc98ae52437f6626b312fe440067ba0f78f3aa17c34dafda3634db",
+      "has_icon_ref": true,
+      "verified": true
+    },
+    "bmp": {
+      "path": "D:\\Vault\\FSWorkspaces\\_tmp_real_wb_test\\win_b64\\resources\\graphic\\icons\\normal\\I_WbRealTest.bmp",
+      "size_bytes": 1606,
+      "mtime": "2026-09-18T14:56:09.968223",
+      "sha256": "6de163d44843f03e504a7d7b1d0b1279f7c229a334f1ac8b21e6d7130ca2bd38",
+      "is_bmp": true,
+      "width": 22,
+      "height": 22,
+      "bpp": 1,
+      "verified": true
+    }
+  },
+  "overall_verdict": "LEVEL 1 & LEVEL 2 VERIFIED / LEVEL 3 PENDING"
+}
