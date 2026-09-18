@@ -50,6 +50,7 @@ Note: This is a Facade module - intentionally consolidated for unified API.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import sys
 from datetime import datetime
@@ -2584,17 +2585,23 @@ def inspect_delete_command(
 
 
 def _remove_statement_line(
-    content: str, stmt: str, replace_with: Optional[str] = None
+    content: str,
+    stmt: str,
+    replace_with: Optional[str] = None,
+    search_start: int = 0,
+    search_end: Optional[int] = None,
 ) -> str:
-    """Remove or replace a single C++ statement line in content.
+    """Remove or replace a single C++ statement line in content within optional scope bounds.
 
+    If search_start / search_end are specified, the search for stmt is strictly bounded.
     If the line containing stmt has only whitespace before/after stmt,
     the entire line (including newline) is replaced by indent + replace_with,
     or deleted entirely. Otherwise, inline replacement/deletion is performed.
     """
     if not stmt:
         return content
-    idx = content.find(stmt)
+    end_bound = len(content) if search_end is None else search_end
+    idx = content.find(stmt, search_start, end_bound)
     if idx == -1:
         return content
 
@@ -2622,6 +2629,68 @@ def _remove_statement_line(
             return content[:idx] + replace_with + content[idx + len(stmt):]
         else:
             return content[:idx] + content[idx + len(stmt):]
+
+
+def _clean_imakefile_content(
+    content: str, name: str, class_name: Optional[str] = None
+) -> str:
+    """Clean references to a command from Imakefile.mk using exact token boundaries.
+
+    Distinguishes DiskCmd.cpp from DiskCmdHelper.cpp via token/word boundary matching,
+    preventing unintended substring deletions.
+    """
+    targets = set()
+    if name:
+        targets.add(name)
+    if class_name:
+        targets.add(class_name)
+
+    token_patterns = [
+        re.compile(
+            r'(?:^|(?<=[\s=:]))(?:[a-zA-Z0-9_]+[/\\])?' + re.escape(t) + r'(?:\.(?:cpp|cxx|c|h|obj|o))?(?=$|[\s/\\=:#,])',
+            re.IGNORECASE,
+        )
+        for t in targets
+    ]
+
+    new_lines = []
+    for line in content.splitlines():
+        line_strip = line.strip()
+        # Protect framework linkage, object type directives, and comments
+        if line_strip.startswith(("LINK_WITH", "BUILT_OBJECT_TYPE", "#")):
+            new_lines.append(line)
+            continue
+
+        modified_line = line
+        has_match = False
+        for pat in token_patterns:
+            if pat.search(modified_line):
+                has_match = True
+                modified_line = pat.sub("", modified_line)
+
+        if not has_match:
+            new_lines.append(line)
+            continue
+
+        # If line had a match, check if anything meaningful remains
+        rem = modified_line.strip().rstrip("\\").strip()
+        rem_core = re.sub(r'^[A-Za-z0-9_]+\s*(?:\+=|=)\s*', '', rem).strip()
+        if rem_core == "":
+            continue
+        else:
+            if line.rstrip().endswith("\\") and not rem.endswith("\\"):
+                tokens = rem.split()
+                indent = line[:len(line) - len(line.lstrip())]
+                new_lines.append(f"{indent}{' '.join(tokens)} \\")
+            else:
+                tokens = rem.split()
+                indent = line[:len(line) - len(line.lstrip())]
+                new_lines.append(f"{indent}{' '.join(tokens)}")
+
+    new_content = "\n".join(new_lines)
+    if content.endswith("\n") and not new_content.endswith("\n") and new_content:
+        new_content += "\n"
+    return new_content
 
 
 def delete_command(
@@ -2691,7 +2760,7 @@ def delete_command(
         if f.exists():
             master_cs.add_delete(f)
 
-    # 2. Update Imakefile.mk (remove references to command/class)
+    # 2. Update Imakefile.mk (remove references to command/class with exact token matching)
     imakefile_path_str = plan.get("imakefile_path")
     if imakefile_path_str:
         imk_p = Path(imakefile_path_str)
@@ -2704,18 +2773,7 @@ def delete_command(
                 old_imk = imk_p.read_text(encoding="utf-8", errors="replace")
 
             c_name = plan.get("class_name") or name
-            new_lines = []
-            for line in old_imk.splitlines():
-                line_strip = line.strip()
-                if line_strip.startswith(("LINK_WITH", "BUILT_OBJECT_TYPE")):
-                    new_lines.append(line)
-                elif name in line or c_name in line:
-                    continue
-                else:
-                    new_lines.append(line)
-            new_imk = "\n".join(new_lines)
-            if old_imk.endswith("\n") and not new_imk.endswith("\n") and new_imk:
-                new_imk += "\n"
+            new_imk = _clean_imakefile_content(old_imk, name, c_name)
             if new_imk != old_imk:
                 if str(imk_p) in master_cs.created:
                     master_cs.created[str(imk_p)] = new_imk
@@ -2732,28 +2790,52 @@ def delete_command(
     else:
         content = addin_source.read_text(encoding="utf-8", errors="replace")
 
-    # 3a. Remove Header registration from CreateCommands()
+    # 3a. Remove Header registration from CreateCommands() scope
     header_stmt = plan.get("header_statement")
     if header_stmt:
-        content = _remove_statement_line(content, header_stmt)
+        cc_scope = _extract_create_commands_scope(content)
+        if cc_scope:
+            content = _remove_statement_line(
+                content, header_stmt, search_start=cc_scope[1], search_end=cc_scope[2]
+            )
+        else:
+            content = _remove_statement_line(content, header_stmt)
 
-    # 3b. Execute toolbar splices
+    # 3b. Execute toolbar splices strictly within CreateToolbars() scope
     for splice in plan.get("toolbar_splices", []):
         mode = splice.get("splice_mode")
         stmts_to_remove = splice.get("statements_to_remove", [])
         stmts_to_add = splice.get("statements_to_add", [])
 
+        tb_scope = _extract_create_toolbars_scope(content)
+        tb_start, tb_end = (tb_scope[1], tb_scope[2]) if tb_scope else (0, len(content))
+
         if mode == "remove_only_child" or mode == "remove_tail":
             for stmt in stmts_to_remove:
-                content = _remove_statement_line(content, stmt)
+                content = _remove_statement_line(
+                    content, stmt, search_start=tb_start, search_end=tb_end
+                )
+                tb_scope = _extract_create_toolbars_scope(content)
+                if tb_scope:
+                    tb_start, tb_end = tb_scope[1], tb_scope[2]
         elif mode == "new_child":
             child_stmt = next((s for s in stmts_to_remove if s.strip().startswith("SetAccessChild")), None)
             new_child_stmt = stmts_to_add[0] if stmts_to_add else None
             if child_stmt and new_child_stmt:
-                content = _remove_statement_line(content, child_stmt, replace_with=new_child_stmt)
+                content = _remove_statement_line(
+                    content, child_stmt, replace_with=new_child_stmt, search_start=tb_start, search_end=tb_end
+                )
+                tb_scope = _extract_create_toolbars_scope(content)
+                if tb_scope:
+                    tb_start, tb_end = tb_scope[1], tb_scope[2]
             for stmt in stmts_to_remove:
                 if stmt != child_stmt:
-                    content = _remove_statement_line(content, stmt)
+                    content = _remove_statement_line(
+                        content, stmt, search_start=tb_start, search_end=tb_end
+                    )
+                    tb_scope = _extract_create_toolbars_scope(content)
+                    if tb_scope:
+                        tb_start, tb_end = tb_scope[1], tb_scope[2]
         elif mode == "relink_next":
             prev_var = splice.get("prev_starter_var")
             tgt_starter = splice.get("starter_var")
@@ -2763,10 +2845,20 @@ def delete_command(
             )
             new_next_stmt = stmts_to_add[0] if stmts_to_add else None
             if prev_next_stmt and new_next_stmt:
-                content = _remove_statement_line(content, prev_next_stmt, replace_with=new_next_stmt)
+                content = _remove_statement_line(
+                    content, prev_next_stmt, replace_with=new_next_stmt, search_start=tb_start, search_end=tb_end
+                )
+                tb_scope = _extract_create_toolbars_scope(content)
+                if tb_scope:
+                    tb_start, tb_end = tb_scope[1], tb_scope[2]
             for stmt in stmts_to_remove:
                 if stmt != prev_next_stmt:
-                    content = _remove_statement_line(content, stmt)
+                    content = _remove_statement_line(
+                        content, stmt, search_start=tb_start, search_end=tb_end
+                    )
+                    tb_scope = _extract_create_toolbars_scope(content)
+                    if tb_scope:
+                        tb_start, tb_end = tb_scope[1], tb_scope[2]
 
     if addin_source_str in master_cs.created:
         master_cs.created[addin_source_str] = content
@@ -2789,6 +2881,421 @@ def delete_command(
     )
 
     return _result(master_cs)
+
+
+def _rename_imakefile_content(content: str, old_name: str, new_name: str) -> str:
+    """Rename source file tokens in Imakefile.mk with strict token boundary (R-4-B).
+
+    Replaces 'OldCmd.cpp' -> 'NewCmd.cpp' without touching 'OldCmdHelper.cpp'
+    or directives like LINK_WITH, BUILT_OBJECT_TYPE, or comments.
+    """
+    pattern = re.compile(
+        r'(?P<prefix>(?:^|(?<=[\s=:]))(?:[a-zA-Z0-9_]+[/\\])?)'
+        + re.escape(old_name)
+        + r'(?P<ext>\.(?:cpp|cxx|c|h|obj|o))(?=$|[\s/\\=:#,])'
+    )
+    new_lines = []
+    for line in content.splitlines(keepends=True):
+        line_strip = line.strip()
+        if line_strip.startswith(("LINK_WITH", "BUILT_OBJECT_TYPE", "#")):
+            new_lines.append(line)
+            continue
+        new_line = pattern.sub(r'\g<prefix>' + new_name + r'\g<ext>', line)
+        new_lines.append(new_line)
+    return "".join(new_lines)
+
+
+def _compute_cpp_rename_content(
+    old_name: str, new_name: str, content: str, is_header: bool = False
+) -> Tuple[str, List[Dict[str, str]]]:
+    """Perform bounded, semantic-aware C++ token replacement for command renaming (R-4-B).
+
+    Precise structural targets:
+      - Include guards (#ifndef/#define/#endif)
+      - #include directives for the header
+      - CATCreateClass(OldCmd) macro
+      - Class declaration / definition: class ... OldCmd : ...
+      - Constructor / destructor declarations and definitions
+      - Member function qualifiers: OldCmd::
+    Plain string literals (e.g. const char* str = "OldCmd";) and comments are left intact.
+    """
+    replacements: List[Dict[str, str]] = []
+    res = content
+
+    # 1. Include guard (if header)
+    if is_header:
+        p_guard_if = re.compile(r'(#ifndef\s+[_A-Za-z0-9]*?)' + re.escape(old_name) + r'([_A-Za-z0-9]*)')
+        if p_guard_if.search(res):
+            res = p_guard_if.sub(r'\g<1>' + new_name + r'\2', res)
+            replacements.append({"target": "include_guard_ifndef"})
+
+        p_guard_def = re.compile(r'(#define\s+[_A-Za-z0-9]*?)' + re.escape(old_name) + r'([_A-Za-z0-9]*)')
+        if p_guard_def.search(res):
+            res = p_guard_def.sub(r'\g<1>' + new_name + r'\2', res)
+            replacements.append({"target": "include_guard_define"})
+
+        p_guard_end = re.compile(r'(#endif\s*//\s*[_A-Za-z0-9]*?)' + re.escape(old_name) + r'([_A-Za-z0-9]*)')
+        if p_guard_end.search(res):
+            res = p_guard_end.sub(r'\g<1>' + new_name + r'\2', res)
+            replacements.append({"target": "include_guard_endif"})
+
+    # 2. #include directives
+    p_inc = re.compile(r'(#include\s+["<])' + re.escape(old_name) + r'(\.h[">])')
+    if p_inc.search(res):
+        res = p_inc.sub(r'\g<1>' + new_name + r'\2', res)
+        replacements.append({"target": "include_directive"})
+
+    # 3. CATCreateClass macro
+    p_ccc = re.compile(r'\bCATCreateClass\s*\(\s*' + re.escape(old_name) + r'\s*\)')
+    if p_ccc.search(res):
+        res = p_ccc.sub(f'CATCreateClass({new_name})', res)
+        replacements.append({"target": "cat_create_class"})
+
+    # 4. Class declaration / definition: class [ExportedBy...] OldCmd [: {]
+    p_cls = re.compile(r'\bclass\s+([A-Za-z0-9_]+\s+)?' + re.escape(old_name) + r'(\s*[:{])')
+    if p_cls.search(res):
+        res = p_cls.sub(r'class \g<1>' + new_name + r'\2', res)
+        replacements.append({"target": "class_declaration"})
+
+    # 5. Constructor & destructor declarations (header lines like "OldCmd();" or "virtual ~OldCmd();")
+    p_ctor_decl = re.compile(r'^\s*' + re.escape(old_name) + r'(\s*\([^;]*\)\s*;)', re.MULTILINE)
+    if p_ctor_decl.search(res):
+        res = p_ctor_decl.sub(r'  ' + new_name + r'\1', res)
+        replacements.append({"target": "constructor_declaration"})
+
+    p_dtor_decl = re.compile(r'^\s*(virtual\s+)?~' + re.escape(old_name) + r'(\s*\([^;]*\)\s*;)', re.MULTILINE)
+    if p_dtor_decl.search(res):
+        res = p_dtor_decl.sub(r'  \g<1>~' + new_name + r'\2', res)
+        replacements.append({"target": "destructor_declaration"})
+
+    # 6. Constructor & destructor definitions (OldCmd::OldCmd / OldCmd::~OldCmd)
+    p_ctor_def = re.compile(r'\b' + re.escape(old_name) + r'::' + re.escape(old_name) + r'\b')
+    if p_ctor_def.search(res):
+        res = p_ctor_def.sub(f'{new_name}::{new_name}', res)
+        replacements.append({"target": "constructor_definition"})
+
+    p_dtor_def = re.compile(r'\b' + re.escape(old_name) + r'::~' + re.escape(old_name) + r'\b')
+    if p_dtor_def.search(res):
+        res = p_dtor_def.sub(f'{new_name}::~{new_name}', res)
+        replacements.append({"target": "destructor_definition"})
+
+    # 7. Member function scope qualifiers: OldCmd::Activate(...)
+    p_scope = re.compile(r'\b' + re.escape(old_name) + r'::')
+    if p_scope.search(res):
+        res = p_scope.sub(f'{new_name}::', res)
+        replacements.append({"target": "member_function_scope"})
+
+    return res, replacements
+
+
+def inspect_rename_command(
+    ctx: ActionContext,
+    old_name: str,
+    new_name: str,
+    *,
+    module: Optional[str] = None,
+    framework: Optional[str] = None,
+    workbench_name: Optional[str] = None,
+    cs: Optional[ChangeSet] = None,
+) -> Dict[str, Any]:
+    """Inspect workspace to compute a deterministic CommandRenamePlan (R-4-B Phase 1).
+
+    Pure read-only pre-validation:
+      - Validates new_name is a valid C++ identifier (RN3)
+      - Validates new_name is not identical to old_name
+      - Locates command entity and identity
+      - Detects if new_name command already exists in module or workspace (RN2)
+      - Detects if target renamed files already exist on disk or staged in cs (RN12)
+      - Builds strict source_snapshot with content_hash and content_length
+      - Previews bounded C++ semantic token replacements (RN4, RN5, RN6)
+      - Previews Imakefile token replacement without touching similar names (RN7)
+      - Locates unique 4-parameter header registration in CreateCommands() (RN8, RN10)
+      - Previews header registration update with HeaderID strictly stable (RN8, RN9)
+      - Audits Toolbar mounts and confirms zero mutation needed (RN9)
+      - Audits associated resources without migrating or deleting (RN15)
+      - Preserves ChangeSet zero-mutation on any failure (RN11)
+    """
+    ctx.refresh()
+
+    # 1. Validate new_name C++ identifier
+    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', new_name):
+        return {"status": "error", "error": f"Invalid C++ identifier for new command name: '{new_name}'", "plan": None}
+
+    if old_name.lower() == new_name.lower():
+        return {"status": "error", "error": f"New command name cannot be identical to old name: '{new_name}'", "plan": None}
+
+    # 2. Locate target command entity
+    mod = ctx.snapshot.get_module(module, framework) if module else None
+    cmd = None
+    if mod:
+        cmd = next((c for c in mod.commands if c.name.lower() == old_name.lower()), None)
+    if not cmd:
+        all_cmds = ctx.snapshot.get_all_commands()
+        cmd = next((c for c in all_cmds if c.name.lower() == old_name.lower()), None)
+    if not cmd:
+        return {"status": "error", "error": f"Command not found: {old_name}", "plan": None}
+
+    # 3. Check if new_name already exists in module or workspace
+    target_mod = cmd.module
+    if target_mod:
+        if any(c.name.lower() == new_name.lower() for c in target_mod.commands):
+            return {"status": "error", "error": f"Command already exists in module '{target_mod.name}': {new_name}", "plan": None}
+    all_cmds = ctx.snapshot.get_all_commands()
+    if any(c.name.lower() == new_name.lower() for c in all_cmds):
+        return {"status": "error", "error": f"Command already exists in workspace: {new_name}", "plan": None}
+
+    # 4. Check for target file collision on disk or in staged cs
+    file_renames = []
+    cmd_files = [f for f in cmd.all_files if f.exists()]
+    if cmd.dialog:
+        cmd_files.extend([f for f in cmd.dialog.all_files if f.exists()])
+
+    for old_file in cmd_files:
+        new_filename = old_file.name.replace(old_name, new_name, 1)
+        new_file = old_file.parent / new_filename
+        if new_file.exists():
+            return {"status": "error", "error": f"Target file already exists on disk: {new_file}", "plan": None}
+        if cs is not None and (str(new_file) in cs.created or str(new_file) in cs.modified):
+            return {"status": "error", "error": f"Target file already exists in staged ChangeSet: {new_file}", "plan": None}
+
+        # Read content (staged-first)
+        content = None
+        old_file_str = str(old_file)
+        if cs is not None and old_file_str in cs.created:
+            content = cs.created[old_file_str]
+        elif cs is not None and old_file_str in cs.modified:
+            content = cs.modified[old_file_str]
+        elif old_file.exists():
+            content = old_file.read_text(encoding="utf-8", errors="replace")
+
+        if content is None:
+            return {"status": "error", "error": f"Failed to read source file: {old_file}", "plan": None}
+
+        source_snapshot = {
+            "path": str(old_file),
+            "content_hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            "content_length": len(content),
+        }
+
+        is_header = old_file.suffix.lower() in (".h", ".hpp", ".hxx")
+        new_content, repl_details = _compute_cpp_rename_content(old_name, new_name, content, is_header=is_header)
+
+        file_renames.append({
+            "old_path": str(old_file),
+            "new_path": str(new_file),
+            "is_header": is_header,
+            "source_snapshot": source_snapshot,
+            "replacements": repl_details,
+            "new_content": new_content,
+        })
+
+    # 5. Imakefile token replacement preview
+    imakefile_update = None
+    if target_mod:
+        imake_path = target_mod.imakefile_path()
+        if imake_path.exists():
+            imake_str = str(imake_path)
+            imake_content = None
+            if cs is not None and imake_str in cs.created:
+                imake_content = cs.created[imake_str]
+            elif cs is not None and imake_str in cs.modified:
+                imake_content = cs.modified[imake_str]
+            else:
+                imake_content = imake_path.read_text(encoding="utf-8", errors="replace")
+
+            if imake_content is not None:
+                new_imake_content = _rename_imakefile_content(imake_content, old_name, new_name)
+                imakefile_update = {
+                    "path": str(imake_path),
+                    "old_token": f"{old_name}.cpp",
+                    "new_token": f"{new_name}.cpp",
+                    "source_snapshot": {
+                        "path": str(imake_path),
+                        "content_hash": hashlib.sha256(imake_content.encode("utf-8")).hexdigest(),
+                        "content_length": len(imake_content),
+                    },
+                    "new_content": new_imake_content,
+                }
+
+    # 6. Locate candidate workbenches and unique 4-param header registration
+    wbs = ctx.snapshot.get_all_workbenches()
+    if workbench_name:
+        wb = next((w for w in wbs if w.name.lower() == workbench_name.lower()), None)
+        if not wb:
+            return {"status": "error", "error": f"Workbench not found: {workbench_name}", "plan": None}
+        target_wbs = [wb]
+    else:
+        if len(wbs) == 0:
+            return {"status": "error", "error": "No workbenches found in workspace", "plan": None}
+        target_wbs = wbs
+
+    target_class_name = getattr(cmd, "class_name", None) or cmd.name
+    expected_load_name = cmd.module.bare_name if cmd.module else (cmd.module.name if cmd.module else None)
+
+    reg_pattern = re.compile(
+        r'new\s+(\w+)\s*\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*(?:\(void\s*\*\)\s*)?NULL\s*\)\s*;?'
+    )
+
+    candidate_matches = []
+    for candidate_wb in target_wbs:
+        addin_source = candidate_wb.addin_source or candidate_wb.addin_source_path()
+        if not addin_source:
+            continue
+        addin_str = str(addin_source)
+        content = None
+        if cs is not None and addin_str in cs.modified:
+            content = cs.modified[addin_str]
+        elif cs is not None and addin_str in cs.created:
+            content = cs.created[addin_str]
+        elif addin_source.exists():
+            content = addin_source.read_text(encoding="utf-8", errors="replace")
+        if content is None:
+            continue
+
+        scope_cc = _extract_create_commands_scope(content)
+        if not scope_cc:
+            continue
+        cc_body, cc_start_idx, cc_end_idx = scope_cc
+
+        for match in reg_pattern.finditer(cc_body):
+            hdr_cls, hdr_id, ld_name, cls_name = match.groups()
+            if cls_name != target_class_name:
+                continue
+            if expected_load_name and ld_name != expected_load_name:
+                continue
+            candidate_matches.append({
+                "workbench": candidate_wb,
+                "addin_source": addin_source,
+                "header_class": hdr_cls,
+                "header_id": hdr_id,
+                "load_name": ld_name,
+                "class_name": cls_name,
+                "statement": match.group(0).strip(),
+                "scope_start": cc_start_idx,
+                "scope_end": cc_end_idx,
+                "addin_content": content,
+            })
+
+    if len(candidate_matches) == 0:
+        return {
+            "status": "error",
+            "error": f"No 4-parameter header registration found for command '{old_name}' (class_name='{target_class_name}')",
+            "plan": None,
+        }
+    if len(candidate_matches) > 1:
+        return {
+            "status": "error",
+            "error": f"Ambiguous header registration for command '{old_name}': found {len(candidate_matches)} matches across workbenches",
+            "plan": None,
+        }
+
+    match_info = candidate_matches[0]
+    matched_hdr_cls = match_info["header_class"]
+    matched_hdr_id = match_info["header_id"]
+    matched_ld_name = match_info["load_name"]
+    matched_cls_name = match_info["class_name"]
+    old_stmt = match_info["statement"]
+    wb = match_info["workbench"]
+    addin_source = match_info["addin_source"]
+    addin_content = match_info["addin_content"]
+
+    # Construct new header statement: HeaderID, LoadName, NULL strictly preserved, only ClassName replaced
+    new_stmt = f'new {matched_hdr_cls}("{matched_hdr_id}", "{matched_ld_name}", "{new_name}", (void *)NULL);'
+
+    header_update = {
+        "workbench_name": wb.name,
+        "addin_source": str(addin_source),
+        "header_class": matched_hdr_cls,
+        "header_id": matched_hdr_id,  # Stable
+        "load_name": matched_ld_name,  # Stable
+        "old_class_name": matched_cls_name,
+        "new_class_name": new_name,
+        "old_statement": old_stmt,
+        "new_statement": new_stmt,
+        "source_snapshot": {
+            "path": str(addin_source),
+            "content_hash": hashlib.sha256(addin_content.encode("utf-8")).hexdigest(),
+            "content_length": len(addin_content),
+        },
+    }
+
+    # 7. Toolbar read-only audit: confirm HeaderID is mounted and remains stable (zero mutation)
+    toolbar_references = []
+    scope_tb = _extract_create_toolbars_scope(addin_content)
+    if scope_tb:
+        tb_body, _, _ = scope_tb
+        # Look for SetAccessCommand referencing matched_hdr_id
+        cmd_re = re.compile(r'SetAccessCommand\s*\(\s*(\w+)\s*,\s*"([^"]+)"\s*\)\s*;')
+        for m in cmd_re.finditer(tb_body):
+            s_var, h_id = m.groups()
+            if h_id == matched_hdr_id:
+                toolbar_references.append({
+                    "starter_var": s_var,
+                    "header_id": h_id,
+                    "needs_update": False,
+                    "reason": "HeaderID remains stable; no toolbar mutation in phase 1",
+                })
+
+    # 8. Resource read-only audit: report resources associated with matched_hdr_id
+    fw = getattr(wb, "framework", None)
+    if not fw and hasattr(wb, "framework_name") and wb.framework_name:
+        fw = ctx.snapshot.get_framework(wb.framework_name)
+    if not fw and cmd.module and hasattr(cmd.module, "framework"):
+        fw = cmd.module.framework
+
+    affected_resources = []
+    if fw:
+        nls_path = fw.cnext_dir() / "resources" / "msgcatalog" / f"{matched_hdr_cls}.CATNls"
+        if nls_path.exists():
+            nls_text = nls_path.read_text(encoding="utf-8", errors="replace")
+            if f"{matched_hdr_cls}.{matched_hdr_id}" in nls_text or matched_hdr_id in nls_text:
+                affected_resources.append({
+                    "type": "nls",
+                    "path": str(nls_path),
+                    "key_prefix": f"{matched_hdr_cls}.{matched_hdr_id}",
+                })
+        rsc_path = fw.cnext_dir() / "resources" / "msgcatalog" / f"{matched_hdr_cls}.CATRsc"
+        if rsc_path.exists():
+            rsc_text = rsc_path.read_text(encoding="utf-8", errors="replace")
+            if f"{matched_hdr_cls}.{matched_hdr_id}" in rsc_text or matched_hdr_id in rsc_text:
+                affected_resources.append({
+                    "type": "rsc",
+                    "path": str(rsc_path),
+                    "key_prefix": f"{matched_hdr_cls}.{matched_hdr_id}",
+                })
+        icon_name = getattr(cmd, "icon", None) or old_name
+        icon_path = fw.cnext_dir() / "resources" / "graphic" / "icons" / "normal" / f"I_{icon_name}.bmp"
+        if icon_path.exists():
+            affected_resources.append({
+                "type": "icon",
+                "path": str(icon_path),
+            })
+
+    resource_impact_report = {
+        "status": "preserved",
+        "reason": "HeaderID remains stable; no resource migration required in phase 1",
+        "affected_resources": affected_resources,
+    }
+
+    plan = {
+        "command_identity": {
+            "old_name": old_name,
+            "new_name": new_name,
+            "module": target_mod.name if target_mod else None,
+            "framework": target_mod.framework.name if (target_mod and target_mod.framework) else None,
+        },
+        "file_renames": file_renames,
+        "imakefile_updates": imakefile_update,
+        "header_update": header_update,
+        "toolbar_references": toolbar_references,
+        "resource_impact_report": resource_impact_report,
+    }
+
+    return {
+        "status": "ok",
+        "error": None,
+        "plan": plan,
+    }
 
 
 def delete_module(ctx: ActionContext, name: str, framework: str = None) -> Dict:

@@ -1924,7 +1924,7 @@ finally:
 # DA13 (同一 Toolbar 重复 MountKey 拦截): Duplicate mount of same Header in same toolbar rejected as error
 da_ws = Path(tempfile.mkdtemp(prefix="cade_da_test_"))
 try:
-    from actions import inspect_delete_command, delete_command
+    from actions import inspect_delete_command, delete_command, inspect_rename_command
 
     fw_dir = da_ws / "TestFW.edu"
     (fw_dir / "IdentityCard").mkdir(parents=True)
@@ -2475,6 +2475,348 @@ try:
     check("DA20: DiskCmd.cpp restored after rollback", (src_dir / "DiskCmd.cpp").exists())
     check("DA20: DiskCmd.h restored after rollback", (mod_dir / "LocalInterfaces" / "DiskCmd.h").exists())
     check("DA20: Addin content restored after rollback", "DiskCmdHdr" in addin_cpp.read_text(encoding="utf-8"))
+
+    # ── DA21: 语句移除严格限定在函数作用域内 (P1 Scope Bound) ──
+    addin_da21 = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::HelperBefore() {\n'
+        '    // Identical statement appearing before CreateCommands\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pSingleTlb, SingleTlb);\n'
+        '    AddToolbarView(pSingleTlb, 1, Top);\n'
+        '    NewAccess(CATCmdStarter, pDiskCmdStr, DiskCmdStr);\n'
+        '    SetAccessCommand(pDiskCmdStr, "DiskCmdHdr");\n'
+        '    SetAccessChild(pSingleTlb, pDiskCmdStr);\n'
+        '    return pSingleTlb;\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::HelperAfter() {\n'
+        '    // Identical statement appearing after CreateToolbars\n'
+        '    SetAccessCommand(pDiskCmdStr, "DiskCmdHdr");\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_da21, encoding="utf-8")
+    (src_dir / "DiskCmd.cpp").write_text("CATStateCommand BuildGraph DiskCmd\n", encoding="utf-8")
+    (mod_dir / "LocalInterfaces" / "DiskCmd.h").write_text("// DiskCmd header\n", encoding="utf-8")
+    r_da21 = delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    cs_da21 = ChangeSet.from_dict(r_da21.get("changeset", {}))
+    apply_da21 = cs_da21.apply(workspace_root=da_ws)
+    check("DA21: changeset apply succeeds", apply_da21.get("status") == "applied", str(apply_da21))
+    addin_post_da21 = addin_cpp.read_text(encoding="utf-8")
+    cc_post_da21 = addin_post_da21.split("CreateCommands()")[1].split("CreateToolbars()")[0]
+    check("DA21: CreateCommands scope statement removed", "DiskCmdHdr" not in cc_post_da21, cc_post_da21)
+    check("DA21: HelperBefore scope statement intact",
+          'HelperBefore() {\n    // Identical statement appearing before CreateCommands\n    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);' in addin_post_da21,
+          addin_post_da21)
+    check("DA21: HelperAfter scope statement intact",
+          'HelperAfter() {\n    // Identical statement appearing after CreateToolbars\n    SetAccessCommand(pDiskCmdStr, "DiskCmdHdr");' in addin_post_da21,
+          addin_post_da21)
+
+    # ── DA22: Imakefile 词元边界精确清理，防止子串误伤 (P1 Token Match) ──
+    imk_da22 = (
+        'BUILT_OBJECT_TYPE=SHARED LIBRARY\n'
+        'LINK_WITH=JS0GROUP JS0CORBA\n\n'
+        'SOURCES = \\\n'
+        '    DiskCmd.cpp \\\n'
+        '    DiskCmdHelper.cpp \\\n'
+        '    DiskCmdExtra.cpp\n'
+    )
+    (mod_dir / "Imakefile.mk").write_text(imk_da22, encoding="utf-8")
+    addin_cpp.write_text(addin_da2, encoding="utf-8")
+    (src_dir / "DiskCmd.cpp").write_text("CATStateCommand BuildGraph DiskCmd\n", encoding="utf-8")
+    (mod_dir / "LocalInterfaces" / "DiskCmd.h").write_text("// DiskCmd header\n", encoding="utf-8")
+    r_da22 = delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    cs_da22 = ChangeSet.from_dict(r_da22.get("changeset", {}))
+    apply_da22 = cs_da22.apply(workspace_root=da_ws)
+    check("DA22: changeset apply succeeds", apply_da22.get("status") == "applied", str(apply_da22))
+    imk_post_da22 = (mod_dir / "Imakefile.mk").read_text(encoding="utf-8")
+    check("DA22: DiskCmd.cpp cleanly removed from Imakefile", "DiskCmd.cpp" not in imk_post_da22, imk_post_da22)
+    check("DA22: DiskCmdHelper.cpp preserved in Imakefile", "DiskCmdHelper.cpp" in imk_post_da22, imk_post_da22)
+    check("DA22: DiskCmdExtra.cpp preserved in Imakefile", "DiskCmdExtra.cpp" in imk_post_da22, imk_post_da22)
+    check("DA22: LINK_WITH directives intact", "LINK_WITH=JS0GROUP JS0CORBA" in imk_post_da22, imk_post_da22)
+    check("DA22: BUILT_OBJECT_TYPE intact", "BUILT_OBJECT_TYPE=SHARED LIBRARY" in imk_post_da22, imk_post_da22)
+
+    # ══════════════════════════════════════════════════════════════════
+    # R-4-B Phase 1: Command Rename Pre-validation & Semantic Contract (inspect_rename_command)
+    # RN1  (标准合法命令重命名): Plan structure complete; HeaderID stable; source_snapshot hashes present
+    # RN2  (新名称已存在): Collision with existing command in module/workspace rejected
+    # RN3  (非法 C++ 标识符): Invalid characters/digits rejected
+    # RN4  (类声明/定义/构造/析构精准替换): Bounded replacements; comments & string literals untouched
+    # RN5  (CATCreateClass 宏精确更新): CATCreateClass(DiskCmd) -> CATCreateClass(NewDiskCmd)
+    # RN6  (相似前缀命令隔离): DiskCmdHelper / DiskCmdExtra untouched
+    # RN7  (Imakefile 相似文件名隔离): DiskCmd.cpp renamed, DiskCmdHelper.cpp intact
+    # RN8  (4 参数 Header 第三参数精确更新): ClassName updated, HeaderID/LoadName/NULL strictly preserved
+    # RN9  (HeaderID 稳定与 Toolbar 引用零变动): Toolbar audited, needs_update is False
+    # RN10 (歧义 Header 注册硬拦截): Ambiguous header matches rejected as error
+    # RN11 (预检失败 ChangeSet 零变更): Pre-validation failure leaves caller ChangeSet untouched
+    # RN12 (目标重命名文件冲突拦截): Pre-existing target file on disk or staged rejected
+    # RN13 (staged ChangeSet 内容优先): Reads staged changes before disk
+    # RN14 (ChangeSet 语义与故障恢复验证):
+    #       RN14a: Normal apply
+    #       RN14b: Normal rollback
+    #       RN14c: Target conflict hard rejection before any write
+    #       RN14d: Mid-flight failure recovery preserves old files & cleans new files
+    #       RN14e: Multi-file batch atomicity
+    # RN15 (资源保护与只读审计): NLS/RSC/Icon audited, status preserved, no mutation tasks
+    # ══════════════════════════════════════════════════════════════════
+
+    # ── 准备环境：重新部署 DiskCmd 源码与工作台 ──
+    diskcmd_h_code = (
+        '#ifndef DiskCmd_H\n'
+        '#define DiskCmd_H\n\n'
+        '#include "CATCommand.h"\n\n'
+        'class ExportedByTestMod DiskCmd : public CATCommand {\n'
+        '    CATDeclareClass;\n'
+        'public:\n'
+        '    DiskCmd();\n'
+        '    virtual ~DiskCmd();\n'
+        '    virtual CATStatusChangeRC Activate(CATCommand *iFromClient, CATNotification *iEvtDat);\n'
+        '};\n\n'
+        '#endif\n'
+    )
+    diskcmd_cpp_code = (
+        '#include "DiskCmd.h"\n'
+        '#include "CATCreateExternalObject.h"\n\n'
+        'CATCreateClass(DiskCmd);\n\n'
+        'DiskCmd::DiskCmd() : CATCommand(NULL, "DiskCmd") {\n'
+        '    const char* keep_literal = "DiskCmd";\n'
+        '    DiskCmdHelper* pHelper = NULL;\n'
+        '}\n\n'
+        'DiskCmd::~DiskCmd() {\n'
+        '}\n\n'
+        'CATStatusChangeRC DiskCmd::Activate(CATCommand *iFromClient, CATNotification *iEvtDat) {\n'
+        '    return CATStatusChangeRCCompleted;\n'
+        '}\n'
+    )
+    (mod_dir / "LocalInterfaces" / "DiskCmd.h").write_text(diskcmd_h_code, encoding="utf-8")
+    (src_dir / "DiskCmd.cpp").write_text(diskcmd_cpp_code, encoding="utf-8")
+    imk_rn = (
+        'BUILT_OBJECT_TYPE=SHARED LIBRARY\n'
+        'LINK_WITH=JS0GROUP JS0CORBA\n\n'
+        'SOURCES = \\\n'
+        '    DiskCmd.cpp \\\n'
+        '    DiskCmdHelper.cpp\n'
+    )
+    (mod_dir / "Imakefile.mk").write_text(imk_rn, encoding="utf-8")
+    addin_rn = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'CATCmdContainer* SampleWorkbenchAddin::CreateToolbars() {\n'
+        '    NewAccess(CATCmdContainer, pSingleTlb, SingleTlb);\n'
+        '    AddToolbarView(pSingleTlb, 1, Top);\n'
+        '    NewAccess(CATCmdStarter, pDiskCmdStr, DiskCmdStr);\n'
+        '    SetAccessCommand(pDiskCmdStr, "DiskCmdHdr");\n'
+        '    SetAccessChild(pSingleTlb, pDiskCmdStr);\n'
+        '    return pSingleTlb;\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_rn, encoding="utf-8")
+    ctx.refresh()
+
+    # ── RN1: 标准合法命令重命名 Plan 检查 ──
+    r_rn1 = inspect_rename_command(ctx, "DiskCmd", "NewDiskCmd", workbench_name="SampleWorkbench")
+    check("RN1: inspect_rename_command succeeds", r_rn1.get("status") == "ok", str(r_rn1))
+    p_rn1 = r_rn1.get("plan", {})
+    check("RN1: plan old_name matches", p_rn1.get("command_identity", {}).get("old_name") == "DiskCmd")
+    check("RN1: plan new_name matches", p_rn1.get("command_identity", {}).get("new_name") == "NewDiskCmd")
+    check("RN1: plan module matches", p_rn1.get("command_identity", {}).get("module") == "TestMod.m")
+    check("RN1: plan file_renames count == 2", len(p_rn1.get("file_renames", [])) == 2)
+    for fr in p_rn1.get("file_renames", []):
+        check("RN1: file_rename has source_snapshot with hash",
+              "content_hash" in fr.get("source_snapshot", {}) and "content_length" in fr.get("source_snapshot", {}))
+
+    # ── RN2: 新名称已存在硬拦截 ──
+    (src_dir / "ExistingCmd.cpp").write_text("// ExistingCmd\n", encoding="utf-8")
+    ctx.refresh()
+    r_rn2 = inspect_rename_command(ctx, "DiskCmd", "ExistingCmd", workbench_name="SampleWorkbench")
+    check("RN2: existing command name rejected as error", r_rn2.get("status") == "error", str(r_rn2))
+    check("RN2: error message indicates already exists", "already exists" in r_rn2.get("error", "").lower(), r_rn2.get("error", ""))
+    (src_dir / "ExistingCmd.cpp").unlink()
+    ctx.refresh()
+
+    # ── RN3: 非法 C++ 标识符硬拦截 ──
+    r_rn3a = inspect_rename_command(ctx, "DiskCmd", "123BadCmd")
+    check("RN3a: digit prefix rejected", r_rn3a.get("status") == "error" and "identifier" in r_rn3a.get("error", "").lower())
+    r_rn3b = inspect_rename_command(ctx, "DiskCmd", "Bad-Cmd")
+    check("RN3b: hyphen rejected", r_rn3b.get("status") == "error" and "identifier" in r_rn3b.get("error", "").lower())
+    r_rn3c = inspect_rename_command(ctx, "DiskCmd", "Bad Cmd")
+    check("RN3c: whitespace rejected", r_rn3c.get("status") == "error" and "identifier" in r_rn3c.get("error", "").lower())
+    r_rn3d = inspect_rename_command(ctx, "DiskCmd", "DiskCmd")
+    check("RN3d: identical name rejected", r_rn3d.get("status") == "error" and "identical" in r_rn3d.get("error", "").lower())
+
+    # ── RN4: 类声明、定义、构造函数、析构函数精准语义替换 ──
+    h_fr = next((fr for fr in p_rn1.get("file_renames", []) if fr.get("is_header")), {})
+    h_new = h_fr.get("new_content", "")
+    check("RN4: include guard ifndef updated", "#ifndef NewDiskCmd_H" in h_new, h_new)
+    check("RN4: include guard define updated", "#define NewDiskCmd_H" in h_new, h_new)
+    check("RN4: class declaration updated", "class ExportedByTestMod NewDiskCmd : public CATCommand" in h_new, h_new)
+    check("RN4: ctor declaration updated", "NewDiskCmd();" in h_new, h_new)
+    check("RN4: dtor declaration updated", "~NewDiskCmd();" in h_new, h_new)
+
+    cpp_fr = next((fr for fr in p_rn1.get("file_renames", []) if not fr.get("is_header")), {})
+    cpp_new = cpp_fr.get("new_content", "")
+    check("RN4: ctor definition updated", "NewDiskCmd::NewDiskCmd()" in cpp_new, cpp_new)
+    check("RN4: dtor definition updated", "NewDiskCmd::~NewDiskCmd()" in cpp_new, cpp_new)
+    check("RN4: member function scope updated", "NewDiskCmd::Activate(" in cpp_new, cpp_new)
+    check("RN4: string literal untouched", '"DiskCmd"' in cpp_new, cpp_new)
+
+    # ── RN5: CATCreateClass 宏精确更新 ──
+    check("RN5: CATCreateClass macro updated", "CATCreateClass(NewDiskCmd);" in cpp_new, cpp_new)
+
+    # ── RN6: 相似前缀命令隔离 ──
+    check("RN6: DiskCmdHelper untouched in cpp", "DiskCmdHelper* pHelper = NULL;" in cpp_new, cpp_new)
+
+    # ── RN7: Imakefile 相似文件名隔离 ──
+    imk_upd = p_rn1.get("imakefile_updates", {})
+    imk_new = imk_upd.get("new_content", "")
+    check("RN7: DiskCmd.cpp renamed in Imakefile", "NewDiskCmd.cpp" in imk_new, imk_new)
+    check("RN7: DiskCmdHelper.cpp preserved in Imakefile", "DiskCmdHelper.cpp" in imk_new, imk_new)
+    check("RN7: LINK_WITH intact in Imakefile", "LINK_WITH=JS0GROUP JS0CORBA" in imk_new, imk_new)
+
+    # ── RN8: 4 参数 Header 第三参数精确更新 ──
+    hdr_upd = p_rn1.get("header_update", {})
+    check("RN8: header_class stable", hdr_upd.get("header_class") == "SampleWorkbenchAddinHeader")
+    check("RN8: header_id strictly stable", hdr_upd.get("header_id") == "DiskCmdHdr")
+    check("RN8: load_name strictly stable", hdr_upd.get("load_name") == "TestMod")
+    check("RN8: old_class_name matches", hdr_upd.get("old_class_name") == "DiskCmd")
+    check("RN8: new_class_name matches", hdr_upd.get("new_class_name") == "NewDiskCmd")
+    expected_new_stmt = 'new SampleWorkbenchAddinHeader("DiskCmdHdr", "TestMod", "NewDiskCmd", (void *)NULL);'
+    check("RN8: new_statement replaces third parameter only", hdr_upd.get("new_statement") == expected_new_stmt, hdr_upd.get("new_statement"))
+
+    # ── RN9: HeaderID 稳定与 Toolbar 引用零变动 ──
+    tb_refs = p_rn1.get("toolbar_references", [])
+    check("RN9: toolbar_references found", len(tb_refs) == 1, str(tb_refs))
+    check("RN9: starter_var is pDiskCmdStr", tb_refs[0].get("starter_var") == "pDiskCmdStr")
+    check("RN9: header_id is DiskCmdHdr", tb_refs[0].get("header_id") == "DiskCmdHdr")
+    check("RN9: needs_update is False", tb_refs[0].get("needs_update") is False)
+
+    # ── RN10: 歧义 Header 注册硬拦截 ──
+    addin_rn10 = (
+        addin_base_header +
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr1", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '    new SampleWorkbenchAddinHeader("DiskCmdHdr2", "TestMod", "DiskCmd", (void *)NULL);\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::CreateToolbars() {}\n'
+    )
+    addin_cpp.write_text(addin_rn10, encoding="utf-8")
+    r_rn10 = inspect_rename_command(ctx, "DiskCmd", "NewDiskCmd", workbench_name="SampleWorkbench")
+    check("RN10: ambiguous header registration rejected as error", r_rn10.get("status") == "error", str(r_rn10))
+    check("RN10: error indicates ambiguous", "ambiguous" in r_rn10.get("error", "").lower(), r_rn10.get("error", ""))
+    addin_cpp.write_text(addin_rn, encoding="utf-8")
+
+    # ── RN11: 预检失败 ChangeSet 零变更 ──
+    caller_cs_rn11 = ChangeSet(action="caller_audit", description="caller audit")
+    r_rn11 = inspect_rename_command(ctx, "DiskCmd", "123BadCmd", cs=caller_cs_rn11)
+    check("RN11: inspect returns error on bad name", r_rn11.get("status") == "error", str(r_rn11))
+    check("RN11: caller CS created is empty", caller_cs_rn11.created == {})
+    check("RN11: caller CS modified is empty", caller_cs_rn11.modified == {})
+    check("RN11: caller CS deleted is empty", caller_cs_rn11.deleted == [])
+
+    # ── RN12: 目标重命名文件冲突拦截 ──
+    (src_dir / "NewDiskCmd.cpp").write_text("// collision\n", encoding="utf-8")
+    r_rn12 = inspect_rename_command(ctx, "DiskCmd", "NewDiskCmd", workbench_name="SampleWorkbench")
+    check("RN12: existing target file rejected as error", r_rn12.get("status") == "error", str(r_rn12))
+    check("RN12: error indicates target file already exists", "already exists" in r_rn12.get("error", "").lower(), r_rn12.get("error", ""))
+    (src_dir / "NewDiskCmd.cpp").unlink()
+
+    # ── RN13: staged ChangeSet 内容优先 ──
+    staged_cs = ChangeSet(action="staged_preview", description="staged preview")
+    staged_addin_content = addin_rn.replace("DiskCmdStr", "StagedDiskCmdStr")
+    staged_cs.add_modify(addin_cpp, staged_addin_content)
+    r_rn13 = inspect_rename_command(ctx, "DiskCmd", "NewDiskCmd", workbench_name="SampleWorkbench", cs=staged_cs)
+    check("RN13: inspect succeeds with staged ChangeSet", r_rn13.get("status") == "ok", str(r_rn13))
+
+    # ── RN14a: ChangeSet 文件重命名正常 apply ──
+    test_old = mod_dir / "test_old.txt"
+    test_new = mod_dir / "test_new.txt"
+    test_old.write_text("old original content", encoding="utf-8")
+    cs_rn14a = ChangeSet(action="rename_file", description="rn14a test")
+    cs_rn14a.add_create(test_new, "new updated content")
+    cs_rn14a.add_delete(test_old)
+    res_14a = cs_rn14a.apply(workspace_root=da_ws)
+    check("RN14a: apply succeeds", res_14a.get("status") == "applied", str(res_14a))
+    check("RN14a: new file created", test_new.exists() and test_new.read_text(encoding="utf-8") == "new updated content")
+    check("RN14a: old file deleted", not test_old.exists())
+
+    # ── RN14b: ChangeSet 文件重命名正常 rollback ──
+    rb_14b = cs_rn14a.rollback()
+    check("RN14b: rollback succeeds", rb_14b.get("status") == "rolled_back", str(rb_14b))
+    check("RN14b: old file restored", test_old.exists() and test_old.read_text(encoding="utf-8") == "old original content")
+    check("RN14b: new file deleted", not test_new.exists())
+    test_old.unlink(missing_ok=True)
+
+    # ── RN14c: 目标已存在冲突预检硬拦截，旧文件不受影响 ──
+    test_old_c = mod_dir / "test_old_c.txt"
+    test_new_c = mod_dir / "test_new_c.txt"
+    test_old_c.write_text("old content", encoding="utf-8")
+    test_new_c.write_text("pre-existing target", encoding="utf-8")
+    cs_rn14c = ChangeSet(action="rename_file", description="rn14c collision")
+    cs_rn14c.add_create(test_new_c, "new content")
+    cs_rn14c.add_delete(test_old_c)
+    res_14c = cs_rn14c.apply(workspace_root=da_ws)
+    check("RN14c: apply rejected on collision", res_14c.get("status") == "rejected", str(res_14c))
+    check("RN14c: old file untouched", test_old_c.exists() and test_old_c.read_text(encoding="utf-8") == "old content")
+    check("RN14c: pre-existing target untouched", test_new_c.exists() and test_new_c.read_text(encoding="utf-8") == "pre-existing target")
+    test_old_c.unlink(missing_ok=True)
+    test_new_c.unlink(missing_ok=True)
+
+    # ── RN14d: 中途失败故障恢复，清除新文件恢复旧文件 ──
+    test_old_d = mod_dir / "test_old_d.txt"
+    test_new_d = mod_dir / "test_new_d.txt"
+    test_old_d.write_text("old original d", encoding="utf-8")
+    cs_rn14d = ChangeSet(action="rename_file", description="rn14d failure recovery")
+    cs_rn14d.add_create(test_new_d, "new content d")
+    cs_rn14d.add_delete(test_old_d)
+    cs_rn14d._deleted_backups[str(test_old_d)] = ("old original d", None)
+    test_new_d.write_text("new content d", encoding="utf-8")
+    test_old_d.unlink()
+    cs_rn14d._rollback_operations(
+        created_paths=[str(test_new_d)],
+        modified_paths=[],
+        deleted_paths=[str(test_old_d)],
+        patched_paths=[],
+    )
+    check("RN14d: old file restored via recovery", test_old_d.exists() and test_old_d.read_text(encoding="utf-8") == "old original d")
+    check("RN14d: partially created new file removed via recovery", not test_new_d.exists())
+    test_old_d.unlink(missing_ok=True)
+
+    # ── RN14e: 多文件批次原子重命名 ──
+    f1_old = mod_dir / "f1_old.txt"
+    f1_new = mod_dir / "f1_new.txt"
+    f2_old = mod_dir / "f2_old.txt"
+    f2_new = mod_dir / "f2_new.txt"
+    f1_old.write_text("f1 old", encoding="utf-8")
+    f2_old.write_text("f2 old", encoding="utf-8")
+    cs_rn14e = ChangeSet(action="rename_batch", description="rn14e batch")
+    cs_rn14e.add_create(f1_new, "f1 new")
+    cs_rn14e.add_delete(f1_old)
+    cs_rn14e.add_create(f2_new, "f2 new")
+    cs_rn14e.add_delete(f2_old)
+    res_14e = cs_rn14e.apply(workspace_root=da_ws)
+    check("RN14e: batch apply succeeds", res_14e.get("status") == "applied", str(res_14e))
+    check("RN14e: all new files exist", f1_new.exists() and f2_new.exists())
+    check("RN14e: all old files deleted", (not f1_old.exists()) and (not f2_old.exists()))
+    rb_14e = cs_rn14e.rollback()
+    check("RN14e: batch rollback succeeds", rb_14e.get("status") == "rolled_back", str(rb_14e))
+    check("RN14e: all old files restored", f1_old.exists() and f2_old.exists())
+    check("RN14e: all new files removed", (not f1_new.exists()) and (not f2_new.exists()))
+    f1_old.unlink(missing_ok=True)
+    f2_old.unlink(missing_ok=True)
+
+    # ── RN15: 资源保护与只读审计 ──
+    res_report = p_rn1.get("resource_impact_report", {})
+    check("RN15: resource status is preserved", res_report.get("status") == "preserved")
+    check("RN15: reason confirms stable HeaderID", "stable" in res_report.get("reason", "").lower())
+    aff_res = res_report.get("affected_resources", [])
+    check("RN15: affected resources found", len(aff_res) > 0, str(aff_res))
+    check("RN15: plan has no resource mutation tasks", "resource_updates" not in p_rn1)
 
 finally:
     shutil.rmtree(da_ws, ignore_errors=True)
