@@ -87,8 +87,9 @@ def create_executable_command(
     # Add to workbench
     if add_to_workbench:
         wb_result = add_cmd_to_wb(ctx, name, add_to_workbench, cs=master_cs)
-        if wb_result["status"] != "error":
-            components["workbench"] = add_to_workbench
+        if wb_result.get("status") == "error":
+            return wb_result
+        components["workbench"] = add_to_workbench
 
     master_cs.merge_metadata(
         intent="create_executable_command",

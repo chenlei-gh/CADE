@@ -1154,42 +1154,104 @@ def add_command_to_workbench(
     ctx: ActionContext, command_name: str, workbench_name: str,
     *, cs: ChangeSet = None,
 ) -> Dict:
-    """Register a command with a workbench (update Addin + Catalog)
+    """Register a command header in a workbench's Addin source file.
 
-    `cs` is an optional caller-owned ChangeSet — see create_command().
+    Inserts the command header declaration include and instantiation in
+    the Addin's CreateCommands() method. Supports both existing commands
+    and commands queued in a caller-owned ChangeSet (`cs`).
+
+    Note on scope:
+      Implemented:
+        - Command header include and registration in Addin source
+        - Support for caller-owned ChangeSet (in-memory command and Addin)
+      Not implemented in this scope:
+        - Toolbar Starter creation and Access mounting (CreateToolbars)
+        - Resource files generation (.CATNls / .CATRsc)
+        - Cross-module LINK_WITH dependency updates
     """
     ctx.refresh()
     cmds = ctx.snapshot.get_all_commands()
     wbs = ctx.snapshot.get_all_workbenches()
 
     cmd = next((c for c in cmds if c.name.lower() == command_name.lower()), None)
-    wb = next((w for w in wbs if w.name.lower() == workbench_name.lower()), None)
+    cmd_in_cs = False
+    mod_name = "Unknown"
 
-    if not cmd:
+    if cmd:
+        mod_name = cmd.module.name if cmd.module else "Unknown"
+    elif cs is not None:
+        meta_cmd = cs.metadata.get("command")
+        if meta_cmd and meta_cmd.lower() == command_name.lower():
+            cmd_in_cs = True
+            mod_name = cs.metadata.get("module") or "Unknown"
+        else:
+            for p_str in cs.created:
+                p = Path(p_str)
+                if p.stem.lower() == command_name.lower() and p.suffix.lower() in (".cpp", ".h"):
+                    cmd_in_cs = True
+                    for parent in p.parents:
+                        if parent.name.endswith(".m"):
+                            mod_name = parent.name
+                            break
+                    break
+
+    if not cmd and not cmd_in_cs:
         return _error(f"Command not found: {command_name}")
+
+    wb = next((w for w in wbs if w.name.lower() == workbench_name.lower()), None)
     if not wb:
         return _error(f"Workbench not found: {workbench_name}")
+
+    addin_source = wb.addin_source or wb.addin_source_path()
+    if not addin_source:
+        return _error(f"Workbench '{workbench_name}' has no Addin source configured")
+
+    addin_str = str(addin_source)
+    old_content = None
+    if cs is not None and addin_str in cs.modified:
+        old_content = cs.modified[addin_str]
+    elif cs is not None and addin_str in cs.created:
+        old_content = cs.created[addin_str]
+    elif addin_source.exists():
+        old_content = addin_source.read_text(encoding="utf-8", errors="replace")
+
+    if old_content is None:
+        return _error(f"Workbench '{workbench_name}' Addin source not found: {addin_source}")
+
+    content = old_content
+
+    # 1. Ensure header include is present
+    header_name = f"{command_name}Header.h"
+    include_line = f'#include "{header_name}"'
+    if header_name not in content:
+        matches = list(re.finditer(r'^[ \t]*#include\s+[<"][^>"]+[>"].*$', content, re.MULTILINE))
+        if matches:
+            last_match = matches[-1]
+            pos = last_match.end()
+            content = content[:pos] + f"\n{include_line}" + content[pos:]
+        else:
+            content = f"{include_line}\n" + content
+
+    # 2. Ensure command registration is present in CreateCommands()
+    clean_mod_name = mod_name.replace(".m", "") if mod_name != "Unknown" else "Unknown"
+    new_cmd = f'    new {command_name}Header("{command_name}", "{clean_mod_name}");'
+    if new_cmd not in content and f'"{command_name}"' not in content:
+        m = re.search(r"void\s+\w+::CreateCommands\s*\([^)]*\)\s*\{", content)
+        if m:
+            anchor = m.group(0)
+            insertion = anchor + f"\n    // Register {command_name}\n{new_cmd}"
+            content = content.replace(anchor, insertion, 1)
 
     cs = cs if cs is not None else ChangeSet(
         action="add_command_to_workbench",
         description=f"Add '{command_name}' to workbench '{workbench_name}'",
     )
 
-    if wb.addin_source and wb.addin_source.exists():
-        old = wb.addin_source.read_text(encoding="utf-8", errors="replace")
-        new_cmd = f'    new {command_name}Header("{command_name}", "{cmd.module.name if cmd.module else "Unknown"}");'
-        if new_cmd not in old:
-            # The addin class name is substituted at template-render time
-            # ("AddinName" → the real class), so a literal
-            # "void AddinName::CreateCommands()" marker never matches a
-            # rendered file and this whole branch was a no-op. Match the real
-            # signature instead: "void <AnyClass>::CreateCommands() {".
-            m = re.search(r"void\s+\w+::CreateCommands\s*\(\s*\)\s*\{", old)
-            if m:
-                anchor = m.group(0)
-                insertion = anchor + f"\n    // Register {command_name}\n{new_cmd}"
-                new = old.replace(anchor, insertion, 1)
-                cs.add_modify(wb.addin_source, new)
+    if content != old_content:
+        if addin_str in cs.created:
+            cs.created[addin_str] = content
+        else:
+            cs.add_modify(addin_source, content)
 
     cs.merge_metadata(command=command_name, workbench=workbench_name)
     return _result(cs)

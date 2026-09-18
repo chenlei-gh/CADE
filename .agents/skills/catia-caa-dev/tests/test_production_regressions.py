@@ -14,7 +14,7 @@ from unittest.mock import patch
 SKILL_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL_ROOT / "skills"))
 
-from actions import ActionContext, create_framework
+from actions import ActionContext, create_framework, add_command_to_workbench
 from analyzer import WorkspaceAnalyzer
 import backup as backup_module
 import build as build_module
@@ -24,6 +24,7 @@ from build import verify_build
 from changeset import ChangeSet, Patch, merge_changesets
 from diagnostics import DiagnosticsEngine
 from generator import TemplateGenerator
+from intents.commands import create_executable_command
 from parser import parse_mkmk_output
 from repair import RepairLoop, RepairState
 import runtime_view as runtime_view_module
@@ -965,6 +966,132 @@ try:
           str(merged_idem.metadata.get("merge_conflicts", [])))
 finally:
     shutil.rmtree(merge_ws, ignore_errors=True)
+
+# ── add_command_to_workbench: discovery & ChangeSet contract (R-2 / A-1) ──
+# 1. Disk command found and injected into Addin source.
+# 2. In-memory command queued in cs.created / cs.metadata discovered correctly.
+# 3. In-memory Addin source in cs.modified used as base, not stale disk copy.
+# 4. Existing header include is not duplicated.
+# 5. Missing header include is cleanly inserted after last include.
+# 6. Missing Addin source returns explicit error, not empty pending.
+# 7. Repeated invocation is idempotent (no duplicate include or registration).
+# 8. Orchestrator create_executable_command propagates workbench errors.
+wb_ws = Path(tempfile.mkdtemp(prefix="cade_wb_test_"))
+try:
+    fw_dir = wb_ws / "TestFW.edu"
+    (fw_dir / "IdentityCard").mkdir(parents=True)
+    (fw_dir / "IdentityCard" / "IdentityCard.h").write_text("// ic", encoding="utf-8")
+    (fw_dir / "Imakefile.mk").write_text("", encoding="utf-8")
+
+    mod_dir = fw_dir / "TestMod.m"
+    src_dir = mod_dir / "src"
+    src_dir.mkdir(parents=True)
+    (mod_dir / "Imakefile.mk").write_text("BUILT_OBJECT_TYPE=SHARED LIBRARY", encoding="utf-8")
+
+    # (1) Existing disk command
+    (src_dir / "DiskCmd.cpp").write_text(
+        "CATStateCommand BuildGraph\n", encoding="utf-8"
+    )
+
+    # Workbench with Addin source
+    addin_cpp = src_dir / "SampleWorkbenchAddin.cpp"
+    addin_initial = (
+        '#include "SampleWorkbenchAddin.h"\n'
+        '#include <iostream>\n\n'
+        'CATIAfrGeneralWksAddin\n\n'
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::CreateToolbars() {\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_initial, encoding="utf-8")
+
+    ctx = ActionContext(wb_ws)
+
+    # 1. Disk command discovery and injection
+    r1 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench")
+    check("add_command_to_workbench finds disk command",
+          r1.get("status") in ("success", "pending"), str(r1))
+    cs1_mod = r1.get("changeset", {}).get("modified", {})
+    new_addin_1 = cs1_mod.get(str(addin_cpp), "")
+    check("add_command_to_workbench injects include for disk command",
+          '#include "DiskCmdHeader.h"' in new_addin_1, new_addin_1)
+    check("add_command_to_workbench registers disk command",
+          'new DiskCmdHeader("DiskCmd", "TestMod");' in new_addin_1, new_addin_1)
+
+    # 2. In-memory command queued in ChangeSet (cs.created & cs.metadata)
+    cs_mem = ChangeSet(action="cmd", description="memory cmd")
+    mem_cmd_path = src_dir / "MemoryCmd.cpp"
+    cs_mem.add_create(mem_cmd_path, "CATStateCommand BuildGraph\n")
+    cs_mem.merge_metadata(command="MemoryCmd", module="TestMod.m")
+    r2 = add_command_to_workbench(ctx, "MemoryCmd", "SampleWorkbench", cs=cs_mem)
+    check("add_command_to_workbench finds in-memory command in ChangeSet",
+          r2.get("status") in ("success", "pending"), str(r2))
+    new_addin_2 = r2.get("changeset", {}).get("modified", {}).get(str(addin_cpp), "")
+    check("add_command_to_workbench registers in-memory command",
+          'new MemoryCmdHeader("MemoryCmd", "TestMod");' in new_addin_2, new_addin_2)
+
+    # 3. Addin source already in cs.modified is used as base
+    cs_chain = ChangeSet(action="chain", description="chain")
+    cs_chain.add_modify(addin_cpp, addin_initial + "\n// existing modification\n")
+    r3 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench", cs=cs_chain)
+    new_addin_3 = r3.get("changeset", {}).get("modified", {}).get(str(addin_cpp), "")
+    check("add_command_to_workbench preserves prior cs.modified content",
+          "// existing modification" in new_addin_3, new_addin_3)
+
+    # 4. Existing include is not duplicated
+    addin_with_inc = (
+        '#include "SampleWorkbenchAddin.h"\n'
+        '#include "DiskCmdHeader.h"\n\n'
+        'CATIAfrGeneralWksAddin\n\n'
+        'void SampleWorkbenchAddin::CreateCommands() {\n'
+        '}\n\n'
+        'void SampleWorkbenchAddin::CreateToolbars() {\n'
+        '}\n'
+    )
+    addin_cpp.write_text(addin_with_inc, encoding="utf-8")
+    ctx.refresh(force=True)
+    r4 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench")
+    new_addin_4 = (r4.get("changeset") or {}).get("modified", {}).get(str(addin_cpp), "")
+    check("add_command_to_workbench does not duplicate existing include",
+          new_addin_4.count("DiskCmdHeader.h") == 1, new_addin_4)
+
+    # 5. Missing include is cleanly inserted after last include
+    check("include cleanly inserted after last existing include",
+          '#include <iostream>\n#include "DiskCmdHeader.h"' in new_addin_1, new_addin_1)
+
+    # 6. Missing Addin source returns explicit error, not empty pending
+    bare_wb_cpp = src_dir / "BareWorkbench.cpp"
+    bare_wb_cpp.write_text("CATCmdWorkbench BareWorkbench;\n", encoding="utf-8")
+    ctx.refresh(force=True)
+    r6 = add_command_to_workbench(ctx, "DiskCmd", "BareWorkbench")
+    check("missing Addin source returns error status",
+          r6.get("status") == "error", str(r6))
+    check("missing Addin source error message is informative",
+          "Addin source" in r6.get("message", ""), r6.get("message", ""))
+
+    # 7. Repeated invocation is idempotent
+    addin_cpp.write_text(new_addin_1, encoding="utf-8")
+    ctx.refresh(force=True)
+    r7 = add_command_to_workbench(ctx, "DiskCmd", "SampleWorkbench")
+    r7_modified = r7.get("changeset", {}).get("modified", {})
+    check("repeated invocation produces no additional modifications",
+          str(addin_cpp) not in r7_modified, str(r7_modified))
+
+    # 8. Orchestrator create_executable_command propagates workbench errors
+    r8 = create_executable_command(
+        ctx,
+        name="FailCmd",
+        module="TestMod.m",
+        framework="TestFW.edu",
+        add_to_workbench="NonExistentWorkbench",
+    )
+    check("create_executable_command propagates workbench error",
+          r8.get("status") == "error", str(r8))
+    check("propagated error mentions missing workbench",
+          "NonExistentWorkbench" in r8.get("message", ""), str(r8))
+finally:
+    shutil.rmtree(wb_ws, ignore_errors=True)
 
 print(f"\nProduction regressions: {passed}/{total}")
 if failures:
