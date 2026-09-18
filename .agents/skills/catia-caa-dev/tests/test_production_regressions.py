@@ -896,6 +896,76 @@ finally:
     shutil.rmtree(uniq_ws, ignore_errors=True)
     shutil.rmtree(rv_root, ignore_errors=True)
 
+# ── merge_changesets: contract alignment & data integrity (R-1) ───────────
+# 1. Binary payloads were dropped by merge_changesets(), leading to apply() rejection.
+# 2. created + patch was falsely flagged as conflict.
+# 3. Contributor metadata was lost.
+# 4. Same-content created across ChangeSets is idempotent.
+merge_ws = Path(tempfile.mkdtemp(prefix="cade_merge_cs_"))
+try:
+    # (1) Binary payload preservation through merge_changesets & disk write
+    bin_cs1 = ChangeSet(action="cmd", description="create command")
+    bin_file = merge_ws / "icon.bmp"
+    bin_data = b"\x42\x4d\x1e\x00\x00\x00\x00\x00\x00\x00\x1a\x00\x00\x00"
+    bin_cs1.add_create_binary(bin_file, bin_data)
+    bin_cs2 = ChangeSet(action="doc", description="docs")
+    bin_cs2.add_create(merge_ws / "doc.txt", "doc text")
+
+    merged_bin = merge_changesets(bin_cs1, bin_cs2)
+    check("merge_changesets carries over _binary payload",
+          str(bin_file) in merged_bin._binary and merged_bin._binary[str(bin_file)] == bin_data)
+    bin_apply = merged_bin.apply(workspace_root=merge_ws)
+    check("merged binary changeset applies successfully",
+          bin_apply["status"] == "applied", str(bin_apply.get("errors", [])))
+    check("merged binary file written to disk",
+          bin_file.is_file() and bin_file.read_bytes() == bin_data)
+
+    # (2) created + patch is valid and does not raise conflict
+    patch_file = merge_ws / "patched.txt"
+    cs_create = ChangeSet(action="create", description="create file")
+    cs_create.add_create(patch_file, "line1\nline2\n")
+    cs_patch = ChangeSet(action="patch", description="patch file")
+    cs_patch.add_patch(Patch(file=patch_file, operation="append", target="", content="line3\n"))
+
+    merged_patch = merge_changesets(cs_create, cs_patch)
+    check("merge_changesets allows created + patch without conflict",
+          "merge_conflicts" not in merged_patch.metadata,
+          str(merged_patch.metadata.get("merge_conflicts", [])))
+    patch_apply = merged_patch.apply(workspace_root=merge_ws)
+    check("merged created + patch applies cleanly",
+          patch_apply["status"] == "applied", str(patch_apply.get("errors", [])))
+    check("patched file contains both original and appended content",
+          patch_file.is_file()
+          and "line1" in patch_file.read_text(encoding="utf-8")
+          and "line3" in patch_file.read_text(encoding="utf-8"))
+
+    # (3) Contributor metadata preservation
+    cs_meta1 = ChangeSet(action="c1", description="c1")
+    cs_meta1.merge_metadata(author="Alice", generator="v1")
+    cs_meta2 = ChangeSet(action="c2", description="c2")
+    cs_meta2.merge_metadata(tool="CADETool", generator="v1")
+
+    merged_meta = merge_changesets(cs_meta1, cs_meta2)
+    check("merge_changesets preserves contributor metadata keys",
+          merged_meta.metadata.get("author") == "Alice" and
+          merged_meta.metadata.get("tool") == "CADETool" and
+          merged_meta.metadata.get("generator") == "v1",
+          str(merged_meta.metadata))
+
+    # (4) Idempotent on same-content created vs conflict on differing content
+    cs_idem1 = ChangeSet(action="i1", description="i1")
+    cs_idem2 = ChangeSet(action="i2", description="i2")
+    idem_path = merge_ws / "same.txt"
+    cs_idem1.add_create(idem_path, "identical")
+    cs_idem2.add_create(idem_path, "identical")
+    merged_idem = merge_changesets(cs_idem1, cs_idem2)
+    check("same-content created across changesets is idempotent",
+          "merge_conflicts" not in merged_idem.metadata and
+          merged_idem.created.get(str(idem_path)) == "identical",
+          str(merged_idem.metadata.get("merge_conflicts", [])))
+finally:
+    shutil.rmtree(merge_ws, ignore_errors=True)
+
 print(f"\nProduction regressions: {passed}/{total}")
 if failures:
     print("Failures:")

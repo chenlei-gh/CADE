@@ -798,41 +798,52 @@ def diff_content(old: str, new: str, context: int = 3) -> str:
 def merge_changesets(*changesets: ChangeSet) -> ChangeSet:
     """Merge multiple ChangeSets into one.
 
-    Detects same-path conflicts (P1-008 fix).
+    Detects same-path conflicts while supporting created+patch workflows
+    and preserving binary payloads and contributor metadata.
     """
     merged = ChangeSet(action="merged", description="Merged changeset")
     seen_created: set = set()
     seen_modified: set = set()
     conflicts: List[str] = []
-    merged_patches_by_file: Dict[str, List[Patch]] = {}
 
     for cs in changesets:
         # Detect created-path conflicts
-        for path_str in cs.created:
-            if path_str in seen_created or path_str in seen_modified:
+        for path_str, content in cs.created.items():
+            if path_str in seen_modified:
                 conflicts.append(f"Created conflict on {path_str}")
+            elif path_str in seen_created:
+                if merged.created.get(path_str) != content:
+                    conflicts.append(f"Created conflict on {path_str}")
             else:
-                merged.created[path_str] = cs.created[path_str]
+                merged.created[path_str] = content
             seen_created.add(path_str)
 
         # Detect modified-path conflicts
-        for path_str in cs.modified:
-            if path_str in seen_modified or path_str in seen_created:
-                conflicts.append(f"Modified conflict on {path_str}")
+        for path_str, content in cs.modified.items():
+            if path_str in seen_created or path_str in seen_modified:
+                if merged.modified.get(path_str) != content or path_str in seen_created:
+                    conflicts.append(f"Modified conflict on {path_str}")
             else:
-                merged.modified[path_str] = cs.modified[path_str]
+                merged.modified[path_str] = content
             seen_modified.add(path_str)
 
-        # Merge patches — track per file for conflict detection
+        # Merge patches (created+patch is valid)
         for patch in cs.patches:
-            f = str(patch.file)
-            if f in seen_created:
-                conflicts.append(f"Patch conflict: {f} also in created")
-            merged_patches_by_file.setdefault(f, []).append(patch)
             merged.patches.append(patch)
 
         merged.deleted.extend(cs.deleted)
         merged.warnings.extend(cs.warnings)
+
+        # Merge contributor metadata (protect internal merge_conflicts)
+        cs_meta = {k: v for k, v in cs.metadata.items() if k != "merge_conflicts"}
+        if "merge_conflicts" in cs.metadata:
+            conflicts.extend(cs.metadata["merge_conflicts"])
+        merged.merge_metadata(**cs_meta)
+
+        # Merge binary payloads
+        merged.merge_binary_from(cs)
+
+    merged._discard_stale_binary_payloads()
 
     if conflicts:
         merged.metadata["merge_conflicts"] = conflicts
