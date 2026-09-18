@@ -964,6 +964,75 @@ try:
           "merge_conflicts" not in merged_idem.metadata and
           merged_idem.created.get(str(idem_path)) == "identical",
           str(merged_idem.metadata.get("merge_conflicts", [])))
+
+    # (5) R-1-B: Differing binary payloads on same path keep first and warn
+    bin_diff_1 = ChangeSet(action="b1", description="b1")
+    bin_diff_2 = ChangeSet(action="b2", description="b2")
+    diff_bin_file = merge_ws / "conflict_icon.bmp"
+    data1 = b"\x42\x4d\x01\x01"
+    data2 = b"\x42\x4d\x02\x02"
+    bin_diff_1.add_create_binary(diff_bin_file, data1)
+    bin_diff_2.add_create_binary(diff_bin_file, data2)
+    merged_diff_bin = merge_changesets(bin_diff_1, bin_diff_2)
+    check("differing binary payloads keeps first queued bytes",
+          merged_diff_bin._binary.get(str(diff_bin_file)) == data1)
+    check("differing binary payloads emits conflict warning",
+          any("binary conflict" in w for w in merged_diff_bin.warnings),
+          str(merged_diff_bin.warnings))
+
+    # (6) R-1-B: Contributor metadata key conflict keeps first and warns
+    meta_c1 = ChangeSet(action="m1", description="m1")
+    meta_c2 = ChangeSet(action="m2", description="m2")
+    meta_c1.merge_metadata(priority="high")
+    meta_c2.merge_metadata(priority="low")
+    merged_meta_conflict = merge_changesets(meta_c1, meta_c2)
+    check("metadata conflict keeps first queued value",
+          merged_meta_conflict.metadata.get("priority") == "high",
+          str(merged_meta_conflict.metadata))
+    check("metadata conflict emits warning",
+          any("metadata conflict" in w for w in merged_meta_conflict.warnings),
+          str(merged_meta_conflict.warnings))
+
+    # (7) R-1-B: Immutability of input changesets (pure function semantics)
+    orig_c1 = ChangeSet(action="orig1", description="orig1")
+    orig_c1.add_create(merge_ws / "f1.txt", "content1")
+    orig_c1.merge_metadata(k1="v1")
+    orig_c2 = ChangeSet(action="orig2", description="orig2")
+    orig_c2.add_create(merge_ws / "f2.txt", "content2")
+    orig_c2.merge_metadata(k2="v2")
+
+    c1_created_before = dict(orig_c1.created)
+    c1_meta_before = dict(orig_c1.metadata)
+    c2_created_before = dict(orig_c2.created)
+
+    _ = merge_changesets(orig_c1, orig_c2)
+
+    check("merge_changesets does not mutate input cs1 created",
+          orig_c1.created == c1_created_before)
+    check("merge_changesets does not mutate input cs1 metadata",
+          orig_c1.metadata == c1_meta_before)
+    check("merge_changesets does not mutate input cs2 created",
+          orig_c2.created == c2_created_before)
+
+    # (8) R-1-B: Cross-ChangeSet created vs modified conflict
+    cs_cross_create = ChangeSet(action="cr", description="cr")
+    cs_cross_modify = ChangeSet(action="mo", description="mo")
+    cross_file = merge_ws / "cross.txt"
+    cs_cross_create.add_create(cross_file, "created content")
+    cs_cross_modify.add_modify(cross_file, "modified content")
+    merged_cross = merge_changesets(cs_cross_create, cs_cross_modify)
+    check("cross-changeset created + modified flags conflict",
+          any("conflict on" in c.lower() for c in merged_cross.metadata.get("merge_conflicts", [])),
+          str(merged_cross.metadata.get("merge_conflicts", [])))
+
+    # (9) R-1-B: Inheritance of existing merge_conflicts from inputs
+    cs_with_conflict = ChangeSet(action="conflicted", description="conflicted")
+    cs_with_conflict.metadata["merge_conflicts"] = ["prior conflict on file.txt"]
+    cs_normal = ChangeSet(action="norm", description="norm")
+    merged_inherited = merge_changesets(cs_with_conflict, cs_normal)
+    check("existing merge_conflicts carried over without loss",
+          "prior conflict on file.txt" in merged_inherited.metadata.get("merge_conflicts", []),
+          str(merged_inherited.metadata.get("merge_conflicts", [])))
 finally:
     shutil.rmtree(merge_ws, ignore_errors=True)
 
