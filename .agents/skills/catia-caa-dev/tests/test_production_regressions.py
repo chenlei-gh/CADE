@@ -3258,6 +3258,10 @@ try:
     imake_shared_content = "BUILT_OBJECT_TYPE = SHARED LIBRARY\nLINK_WITH = JS0GROUP\n"
     imake_shared.write_text(imake_shared_content, encoding="utf-8")
 
+    ic_bytes_initial = ic_xml.read_bytes()
+    imake_bytes_initial = imake_shared.read_bytes()
+    dico_bytes_initial = dico_file.read_bytes()
+
     # Non-shared module (for WB3)
     mod_arch = fw_dir / "ArchMod.m"
     (mod_arch / "src").mkdir(parents=True)
@@ -3389,6 +3393,132 @@ try:
     check("WB8: caller CS created is empty on success", caller_cs_succ.created == {})
     check("WB8: caller CS modified is empty on success", caller_cs_succ.modified == {})
     check("WB8: caller CS deleted is empty on success", caller_cs_succ.deleted == [])
+
+    # ── W-1-B: Workbench Create Physical Execution & ChangeSet Dual Transaction (create_workbench) ──
+    from actions import create_workbench
+
+    # ── WB9: Pending 状态纯内存暂存与零物理变更 ──
+    r_wb9 = create_workbench(ctx_wb, "DemoWb", framework="TestFW.edu", module="SharedMod.m")
+    check("WB9: create_workbench succeeds with pending ChangeSet", r_wb9.get("status") == "pending", str(r_wb9))
+    cs9 = ChangeSet.from_dict(r_wb9.get("changeset", {}))
+    check("WB9: ChangeSet action is create_workbench", cs9 is not None and cs9.action == "create_workbench")
+    check("WB9: ChangeSet has 5 created files", len(cs9.created) == 5, str(list(cs9.created.keys())))
+    check("WB9: ChangeSet has 3 modified files", len(cs9.modified) == 3, str(list(cs9.modified.keys())))
+    check("WB9: disk DemoWbAddin.h not yet created", not (mod_shared / "LocalInterfaces" / "DemoWbAddin.h").exists())
+    check("WB9: disk IdentityCard.xml still unchanged", ic_xml.read_text(encoding="utf-8") == ic_content_valid)
+
+    # ── WB10: apply() 端到端物理落地与语法/格式校验 ──
+    res_apply9 = cs9.apply(workspace_root=wb_ws)
+    check("WB10: apply succeeds", res_apply9.get("status") == "applied", str(res_apply9))
+    addin_h_file = mod_shared / "LocalInterfaces" / "DemoWbAddin.h"
+    addin_cpp_file = mod_shared / "src" / "DemoWbAddin.cpp"
+    nls_en_file = fw_dir / "CNext" / "resources" / "msgcatalog" / "DemoWbAddin.CATNls"
+    nls_zh_file = fw_dir / "CNext" / "resources" / "msgcatalog" / "Simplified_Chinese" / "DemoWbAddin.CATNls"
+    rsc_file = fw_dir / "CNext" / "resources" / "msgcatalog" / "DemoWbAddin.CATRsc"
+
+    check("WB10: DemoWbAddin.h physically created", addin_h_file.is_file())
+    check("WB10: DemoWbAddin.cpp physically created", addin_cpp_file.is_file())
+    check("WB10: DemoWbAddin.CATNls EN physically created", nls_en_file.is_file())
+    check("WB10: DemoWbAddin.CATNls ZH physically created", nls_zh_file.is_file())
+    check("WB10: DemoWbAddin.CATRsc physically created", rsc_file.is_file())
+    check("WB10: dico contains DemoWbAddin mapping", "DemoWbAddin  CATIAfrGeneralWksAddin  libSharedMod" in dico_file.read_text(encoding="utf-8"))
+    check("WB10: IdentityCard.xml contains ApplicationFrame prerequisite", "ApplicationFrame" in ic_xml.read_text(encoding="utf-8"))
+    check("WB10: Imakefile.mk contains CATApplicationFrame in LINK_WITH", "CATApplicationFrame" in imake_shared.read_text(encoding="utf-8"))
+
+    # ── WB11: 工作区分析器发现与元数据绑定闭环 ──
+    ctx_wb.refresh(force=True)
+    wb_snap = ctx_wb.snapshot
+    refreshed_fw = wb_snap.get_framework("TestFW.edu")
+    check("WB11: framework has discovered workbenches", len(refreshed_fw.workbenches) >= 1)
+    discovered_wb = next((w for w in refreshed_fw.workbenches if w.name == "DemoWb"), None)
+    check("WB11: DemoWb discovered by analyzer", discovered_wb is not None)
+    if discovered_wb:
+        check("WB11: DemoWb has matching addin source", discovered_wb.addin_source is not None and discovered_wb.addin_source.name == "DemoWbAddin.cpp")
+
+    # ── WB14: rollback() 物理双向对称还原 ──
+    res_rb9 = cs9.rollback()
+    check("WB14: rollback succeeds", res_rb9.get("status") == "rolled_back", str(res_rb9))
+    check("WB14: DemoWbAddin.h deleted on disk", not addin_h_file.exists())
+    check("WB14: DemoWbAddin.cpp deleted on disk", not addin_cpp_file.exists())
+    check("WB14: DemoWbAddin.CATNls EN deleted on disk", not nls_en_file.exists())
+    check("WB14: DemoWbAddin.CATNls ZH deleted on disk", not nls_zh_file.exists())
+    check("WB14: DemoWbAddin.CATRsc deleted on disk", not rsc_file.exists())
+    check("WB14: IdentityCard.xml raw bytes restored 100%", ic_xml.read_bytes() == ic_bytes_initial)
+    check("WB14: Imakefile.mk raw bytes restored 100%", imake_shared.read_bytes() == imake_bytes_initial)
+    check("WB14: TestFW.dico raw bytes restored 100%", dico_file.read_bytes() == dico_bytes_initial)
+
+    # ── WB16: 回滚后工作区环境洁净再预检验证 ──
+    ctx_wb.refresh(force=True)
+    r_wb16 = inspect_create_workbench(ctx_wb, "DemoWb", framework="TestFW.edu", module="SharedMod.m")
+    check("WB16: inspect succeeds after rollback", r_wb16.get("status") == "ok", str(r_wb16))
+    plan16 = r_wb16.get("plan")
+    check("WB16: plan generated cleanly after rollback", plan16 is not None)
+
+    # ── WB12: 并发修改防篡改硬拦截 ──
+    ic_xml.write_text(ic_content_valid + "<!-- concurrent modification -->\n", encoding="utf-8")
+    r_wb12 = create_workbench(ctx_wb, "DemoWb", framework="TestFW.edu", module="SharedMod.m", plan=plan16)
+    check("WB12: concurrent tampering detected and rejected", r_wb12.get("status") == "error", str(r_wb12))
+    err12 = r_wb12.get("message") or r_wb12.get("error") or ""
+    check("WB12: error message mentions concurrent modification", "concurrent modification" in err12.lower(), str(r_wb12))
+    check("WB12: no files created on disk", not addin_h_file.exists())
+    # 恢复 IdentityCard.xml 原始内容
+    ic_xml.write_bytes(ic_bytes_initial)
+
+    # ── WB13: Plan 身份篡改、版本异常与突现文件硬拦截 ──
+    # 13a: 版本异常
+    bad_plan_ver = dict(plan16)
+    bad_plan_ver["plan_schema_version"] = "1.0"
+    r_wb13a = create_workbench(ctx_wb, "DemoWb", framework="TestFW.edu", module="SharedMod.m", plan=bad_plan_ver)
+    check("WB13a: incompatible plan schema rejected", r_wb13a.get("status") == "error", str(r_wb13a))
+
+    # 13b: 身份不匹配
+    bad_plan_id = dict(plan16)
+    bad_plan_id["workbench_identity"] = dict(plan16["workbench_identity"], name="MismatchWb")
+    r_wb13b = create_workbench(ctx_wb, "DemoWb", framework="TestFW.edu", module="SharedMod.m", plan=bad_plan_id)
+    check("WB13b: identity mismatch rejected", r_wb13b.get("status") == "error", str(r_wb13b))
+
+    # 13c: 突现文件硬拦截（预检后磁盘突然出现同名文件）
+    addin_h_file.write_text("// sudden collision before create_workbench", encoding="utf-8")
+    r_wb13c = create_workbench(ctx_wb, "DemoWb", framework="TestFW.edu", module="SharedMod.m", plan=plan16)
+    check("WB13c: sudden file collision rejected", r_wb13c.get("status") == "error", str(r_wb13c))
+    err13c = r_wb13c.get("message") or r_wb13c.get("error") or ""
+    check("WB13c: error mentions already exists on disk", "already exists on disk" in err13c.lower(), str(r_wb13c))
+    addin_h_file.unlink()
+
+    # ── WB15: 外部 ChangeSet 编排兼容 ──
+    ext_cs = ChangeSet(action="composite_workflow", description="external caller workflow")
+    ext_file = wb_ws / "ExternalUserFile.txt"
+    ext_cs.add_create(ext_file, "external user file content")
+    r_wb15 = create_workbench(ctx_wb, "DemoWb", framework="TestFW.edu", module="SharedMod.m", plan=plan16, cs=ext_cs)
+    check("WB15: create_workbench with caller cs succeeds", r_wb15.get("status") == "pending", str(r_wb15))
+    cs15 = ChangeSet.from_dict(r_wb15.get("changeset", {}))
+    check("WB15: caller file retained in staged ChangeSet", str(ext_file) in cs15.created)
+    check("WB15: addin header staged in caller ChangeSet", str(addin_h_file) in cs15.created)
+    check("WB15: metadata merged with workbench info", cs15.metadata.get("workbench") == "DemoWb")
+
+    # ── WB17: 中途写入失败自动恢复与原子性回滚保证 ──
+    fail_cs = ChangeSet(action="create_workbench", description="partial failure recovery test")
+    will_be_reverted = mod_shared / "LocalInterfaces" / "TempNormalFile.h"
+    fail_cs.add_create(will_be_reverted, "normal content to be reverted")
+
+    # 构造一个因为父路径是文件而导致 mkdir/write 必崩的非法路径
+    blocker_file = mod_shared / "LocalInterfaces" / "blocker_regular_file"
+    blocker_file.write_text("i am a regular file, not a directory", encoding="utf-8")
+    unreachable_path = blocker_file / "unreachable_sub_file.h"
+    fail_cs.add_create(unreachable_path, "unreachable content")
+
+    res_fail17 = fail_cs.apply(workspace_root=wb_ws)
+    check("WB17: apply fails on invalid path", res_fail17.get("status") == "failed", str(res_fail17))
+    check("WB17: partial write is rolled back and normal file removed", not will_be_reverted.exists())
+    blocker_file.unlink()
+
+    # ── WB18: 外部 ChangeSet 冲突隔离 ──
+    conflict_cs = ChangeSet(action="caller_cs", description="caller with conflicting staged create")
+    conflict_cs.add_create(addin_h_file, "conflicting different addin header")
+    r_wb18 = create_workbench(ctx_wb, "DemoWb", framework="TestFW.edu", module="SharedMod.m", plan=plan16, cs=conflict_cs)
+    check("WB18: caller ChangeSet conflict detected and rejected", r_wb18.get("status") == "error", str(r_wb18))
+    err18 = r_wb18.get("message") or r_wb18.get("error") or ""
+    check("WB18: error mentions conflict", "conflict on" in err18.lower(), str(r_wb18))
 
 finally:
     shutil.rmtree(wb_ws, ignore_errors=True)

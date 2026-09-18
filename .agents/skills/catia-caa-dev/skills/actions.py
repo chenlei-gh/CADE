@@ -1013,43 +1013,149 @@ def create_command(
     return _result(cs)
 
 
-def create_workbench(ctx: ActionContext, name: str, framework: str = None) -> Dict:
-    """Create a Workbench with Addin"""
+def create_workbench(
+    ctx: ActionContext,
+    name: str,
+    framework: Optional[str] = None,
+    *,
+    module: Optional[str] = None,
+    plan: Optional[Dict[str, Any]] = None,
+    cs: Optional[ChangeSet] = None,
+) -> Dict[str, Any]:
+    """Create a Workbench with Addin and register to general workshop (W-1-B Phase 2).
+
+    Strictly consumes the WorkbenchCreatePlan (schema 2.0) computed by inspect_create_workbench()
+    to maintain transaction integrity, concurrent modification resistance, and rollback symmetry.
+    Guarantees:
+      - Plan v2.0 schema and identity binding (name, framework, module)
+      - Host directory scope and path escape verification (relative_to)
+      - Post-plan newly discovered file collisions hard rejection (no blind overwrite)
+      - Physical raw byte snapshot SHA-256 hash checks against concurrent tampering
+      - Caller-owned ChangeSet conflict detection and atomic staging
+    """
     ctx.refresh()
-    fw = (
-        ctx.snapshot.get_framework(framework)
-        if framework
-        else (ctx.snapshot.frameworks[0] if ctx.snapshot.frameworks else None)
-    )
-    if not fw:
-        return _error("No framework found")
 
-    # Find a module to place the workbench in
-    mod = fw.modules[0] if fw.modules else None
-    if not mod:
-        return _error("No modules found in framework")
+    if plan is None:
+        inspect_res = inspect_create_workbench(
+            ctx,
+            name,
+            framework=framework,
+            module=module,
+            cs=cs,
+        )
+        if inspect_res.get("status") != "ok":
+            return _error(inspect_res.get("error") or f"Inspection failed for workbench '{name}'")
+        plan = inspect_res["plan"]
 
-    cs = ChangeSet(action="create_workbench", description=f"Create workbench '{name}'")
-    src = mod.src_dir or mod.path / "src"
-    li = mod.path / "LocalInterfaces"
-    # Directories created in ChangeSet.apply() — no premature writes (P0-004 fix)
+    # 1. Plan schema and identity binding validation
+    if plan.get("plan_schema_version") != "2.0":
+        return _error(f"Incompatible or missing plan_schema_version: expected '2.0', got '{plan.get('plan_schema_version')}'")
 
-    tpl_wb = ctx.tpl("workbench")
-    cs.add_create_file(
-        li / f"{name}.h", tpl_wb / "WorkbenchClass.h", _r(name, fw.name, mod.name)
-    )
-    cs.add_create_file(
-        src / f"{name}.cpp", tpl_wb / "WorkbenchClass.cpp", _r(name, fw.name, mod.name)
-    )
-    cs.add_create_file(
-        li / f"{name}Addin.h", tpl_wb / "AddinClass.h", _r(name, fw.name, mod.name)
-    )
-    cs.add_create_file(
-        src / f"{name}Addin.cpp", tpl_wb / "AddinClass.cpp", _r(name, fw.name, mod.name)
+    wid = plan.get("workbench_identity")
+    if not isinstance(wid, dict):
+        return _error("Plan missing or invalid workbench_identity")
+
+    if wid.get("name") != name:
+        return _error(f"Plan workbench_identity mismatch: expected name '{name}', got '{wid.get('name')}'")
+
+    fw_name = wid.get("framework")
+    mod_name = wid.get("module")
+
+    if framework and fw_name != framework:
+        return _error(f"Plan framework mismatch: expected '{framework}', got '{fw_name}'")
+    if module and mod_name != module:
+        return _error(f"Plan module mismatch: expected '{module}', got '{mod_name}'")
+
+    target_fw = ctx.snapshot.get_framework(fw_name) if fw_name else None
+    if not target_fw:
+        return _error(f"Target framework '{fw_name}' not found in workspace")
+
+    target_mod = ctx.snapshot.get_module(mod_name, fw_name) if mod_name else None
+    if not target_mod:
+        return _error(f"Target module '{mod_name}' not found in framework '{fw_name}'")
+
+    fw_root = target_fw.path.resolve()
+
+    # 2. Path boundary & scope verification (no directory escape)
+    for fc in plan.get("file_creations", []):
+        p = Path(fc["path"]).resolve()
+        try:
+            p.relative_to(fw_root)
+        except ValueError:
+            return _error(f"Plan file creation path outside target framework directory: {p}")
+
+    for patch in plan.get("patches", []):
+        p = Path(patch["path"]).resolve()
+        try:
+            p.relative_to(fw_root)
+        except ValueError:
+            return _error(f"Plan patch path outside target framework directory: {p}")
+
+    # 3. Post-plan newly discovered file collision checks (disk state)
+    for fc in plan.get("file_creations", []):
+        p = Path(fc["path"])
+        if p.exists():
+            return _error(f"Target creation file already exists on disk: {p}")
+
+    # 4. Caller ChangeSet conflict detection
+    if cs is not None:
+        for fc in plan.get("file_creations", []):
+            p_str = str(Path(fc["path"]))
+            if p_str in cs.created and cs.created[p_str] != fc["content"]:
+                return _error(f"Conflict on {p_str}: already created with different content in caller ChangeSet")
+            if p_str in cs.modified:
+                return _error(f"Conflict on {p_str}: planned for creation but already marked modified in caller ChangeSet")
+            if p_str in (str(d) for d in cs.deleted):
+                return _error(f"Conflict on {p_str}: planned for creation but marked deleted in caller ChangeSet")
+
+        for patch in plan.get("patches", []):
+            p_str = str(Path(patch["path"]))
+            if p_str in (str(d) for d in cs.deleted):
+                return _error(f"Conflict on {p_str}: planned for modification but marked deleted in caller ChangeSet")
+            if p_str in cs.created:
+                return _error(f"Conflict on {p_str}: planned for modification but marked created in caller ChangeSet")
+
+    # 5. Verify source snapshot physical byte hashes against concurrent tampering
+    for patch in plan.get("patches", []):
+        snap = patch.get("source_snapshot")
+        if not snap:
+            return _error(f"Plan patch missing source_snapshot: {patch.get('path')}")
+        p = Path(patch["path"])
+        raw_bytes, current_content, enc = _read_file_bytes_and_text(p, cs=cs)
+        if raw_bytes is None:
+            return _error(f"Source file not found or unreadable during workbench create: {p}")
+
+        cur_hash = hashlib.sha256(raw_bytes).hexdigest()
+        cur_len = len(raw_bytes)
+        expected_hash = snap.get("content_hash") or snap.get("sha256")
+        expected_len = snap.get("content_length") if "content_length" in snap else snap.get("byte_length")
+        if cur_hash != expected_hash or (expected_len is not None and cur_len != expected_len):
+            hash_display = expected_hash[:12] if expected_hash else "unknown"
+            return _error(
+                f"Concurrent modification detected on {p}: expected hash {hash_display} "
+                f"({expected_len} bytes), got {cur_hash[:12]} ({cur_len} bytes)"
+            )
+
+    # 6. Initialize or reuse ChangeSet and stage operations
+    master_cs = cs if cs is not None else ChangeSet(
+        action="create_workbench", description=f"Create workbench '{name}' with addin"
     )
 
-    cs.metadata = {"workbench": name, "framework": fw.name}
-    return _result(cs)
+    for fc in plan.get("file_creations", []):
+        master_cs.add_create(Path(fc["path"]), fc["content"])
+
+    for patch in plan.get("patches", []):
+        master_cs.add_modify(Path(patch["path"]), patch["new_content"])
+
+    master_cs.merge_metadata(
+        workbench=name,
+        addin_class=wid.get("addin_class"),
+        framework=fw_name,
+        module=mod_name,
+        plan=plan,
+    )
+
+    return _result(master_cs)
 
 
 def create_dialog(
