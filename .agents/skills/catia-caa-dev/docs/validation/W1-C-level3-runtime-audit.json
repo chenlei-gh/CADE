@@ -1,0 +1,60 @@
+{
+  "task": "W-1-C Level 3 Runtime Validation",
+  "timestamp": "2026-09-18T16:14:56",
+  "workspace": "D:/Vault/FSWorkspaces/_tmp_wb_l3_test",
+  "steps": {
+    "framework_created": true,
+    "workbench_created": true,
+    "probe_injected": true,
+    "build_successful": true
+  },
+  "overall_status": "CLOSED",
+  "build": {
+    "exit_code": 0,
+    "duration_seconds": 11.534866571426392,
+    "dll": {
+      "path": "D:\\Vault\\FSWorkspaces\\_tmp_wb_l3_test\\win_b64\\code\\bin\\WbL3Mod.dll",
+      "size": 18432,
+      "sha256": "9ba932c06155b1064eda886de88eabc0b706e99c0d653bd7908662816b9f52bb"
+    },
+    "dico": {
+      "path": "D:\\Vault\\FSWorkspaces\\_tmp_wb_l3_test\\win_b64\\code\\dictionary\\WbL3FW.dico",
+      "content": "WbL3WbAddin  CATIAfrGeneralWksAddin  libWbL3Mod"
+    },
+    "icon": {
+      "path": "D:\\Vault\\FSWorkspaces\\_tmp_wb_l3_test\\win_b64\\resources\\graphic\\icons\\normal\\I_WbL3Wb.bmp",
+      "width": 22,
+      "height": 22
+    },
+    "nls": {
+      "path": "D:\\Vault\\FSWorkspaces\\_tmp_wb_l3_test\\win_b64\\resources\\msgcatalog\\WbL3WbAddin.CATNls",
+      "exists": true
+    },
+    "rsc": {
+      "path": "D:\\Vault\\FSWorkspaces\\_tmp_wb_l3_test\\win_b64\\resources\\msgcatalog\\WbL3WbAddin.CATRsc",
+      "exists": true
+    }
+  },
+  "start_response": {
+    "status": "started",
+    "message": "CATIA started successfully",
+    "pid": 83920,
+    "timestamp": "2026-09-18T16:15:21.114493",
+    "runtime_view_mounted": true
+  },
+  "runtime_evidence": {
+    "cnext_pid": 83920,
+    "marker_verified": true,
+    "marker_content": "W1_C_WORKBENCH_ADDIN_LOADED_BY_CNEXT_PID_83920",
+    "dll_loaded_in_proc": true,
+    "poll_duration": 7.0
+  },
+  "stop_response": {
+    "status": "stopped",
+    "message": "Stopped 1 process(es) [graceful+force]",
+    "stopped": [
+      83920
+    ],
+    "failed": []
+  }
+}

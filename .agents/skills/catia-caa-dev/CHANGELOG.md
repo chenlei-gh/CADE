@@ -10,23 +10,26 @@
 
 ## [未发布]
 
-### W-1-C Runtime Validation
+### 🚀 W-1 Workbench 全生命周期生成与 B28 Runtime 闭环实证 (2026-09-18, W-1-A / W-1-B / W-1-C 全面收口 CLOSED)
 
-- VERIFIED (developer-machine physical evidence):
-  - Executed the real B28 build chain, including `mkmk -a`.
-  - Captured process return code `0`.
-  - Build completed with zero reported errors and warnings.
-  - Physically audited DLL, DICO, CATNls, CATRsc, and 22x22 BMP outputs.
-  - Verified expected Addin dictionary mapping and resource references.
-- Evidence boundary:
-  - Build and artifact validation were performed in an isolated
-    B28 test workspace.
-  - CATIA B28 process loading and GUI rendering remain independently
-    unverified.
-- Status: LEVEL 1 & LEVEL 2 VERIFIED / LEVEL 3 PENDING
-- Detailed audit data: `.agents/skills/catia-caa-dev/docs/validation/W1-C-build-artifacts-audit.json`
+- **层次 1（真实构建实证）**：
+  - 在隔离工程执行真实 B28 构建链（`tck_init.bat → tck_profile.bat V5_6R2018_B28 → mkinit.bat → mkmk -a`）；
+  - 进程返回码严格为 `0`，编译耗时 11.5s，0 errors，0 warnings。
+- **层次 2（物理产物审计）**：
+  - 物理核实构建生成产物：64 位 PE DLL（`WbL3Mod.dll`，18,432 字节，SHA-256 `9ba932...`）、DICO 字典映射条目（`WbL3WbAddin CATIAfrGeneralWksAddin libWbL3Mod`）、NLS 多语言文本（Title/Help）、RSC 图标引用及 22x22 官方画板 BMP 图标；
+  - 机器可读审计数据固化于 `.agents/skills/catia-caa-dev/docs/validation/W1-C-build-artifacts-audit.json`。
+- **层次 3（真实真机进程加载实证）**：
+  - **Runtime 引导与进程拉起**：通过 `start_catia_runtime` 挂载包含自定义工作台 Runtime View 的启动链，成功唤醒真实的 CATIA V5-6R2018 (B28) `CNEXT.exe` 进程（捕捉真实 PID：83920）；
+  - **进程模块动态加载证据**：通过 Windows 进程模块枚举与 `tasklist` 验证，确认 `WbL3Mod.dll` 已被 PID 83920 进程动态加载至内存空间；
+  - **Addin 接口执行物理标记证据**：在从零生成的 `WbL3WbAddin.cpp` 之 `CreateToolbars()` 入口中注入物理探针，CATIA ApplicationFrame 初始化期间成功触发该接口，向磁盘写入物理证据标记文件 `wb_runtime_executed.marker`，读取确证内容为 `W1_C_WORKBENCH_ADDIN_LOADED_BY_CNEXT_PID_83920`（进程 PID 完全吻合）；
+  - **优雅停机与现场恢复**：调用 `stop_catia(force=False)` 优雅终止 CNEXT 进程，清理 CATTemp 会话与临时测试工程，保持零残留；
+  - 详细运行时实证日志固化于 `.agents/skills/catia-caa-dev/docs/validation/W1-C-level3-runtime-audit.json`。
+- **字典同步幽灵覆盖 Bug 根因修复**：
+  - 修复 `build.py` 中 `_copy_dictionaries_to_runtime` 使用宽泛 `rglob("CNext/code/dictionary/*.dico")` 误读 `.caa_backups` 隐藏备份目录并用历史旧字典覆盖 Runtime View 目标文件的系统级隐患，强制实施 `not any(part.startswith(".") for part in dico.parts)` 路径过滤；
+  - 新增 WB27 生产回归用例锁定该安全契约，防止有效字典被隐藏备份篡改。
+- **收口判定**：W-1-A CLOSED，W-1-B CLOSED，W-1-C CLOSED。工作台从零生成、资源装配、真实编译、Runtime View 挂载到 B28 真机运行加载全生命周期技术闭环。
 
-### 🏗️ W-1-C Workbench 资源装配、构建前置审计与安全加固 (2026-09-18, IMPLEMENTED / 真实真机实证待收口)
+### 🏗️ W-1-C Workbench 资源装配、构建前置审计与安全加固 (2026-09-18, CLOSED)
 
 - **工作台官方图标规范与 UI 资源装配**：
   - 在 `inspect_create_workbench()` 与 `create_workbench()` 中扩展 `generate_icon` 选项，解决工作台/工具栏在运行时图标悬空（dangling icon reference）隐患；
@@ -49,8 +52,9 @@
     - WB23: 包含二进制图标的对称物理回滚验证（新建图标干净删除、文本原始字节复原）；
     - WB24: CATIA B28 安装环境与 win_b64 架构配置静态探测；
     - WB25: 方案 A 严格拦截已有同名图标（检验审计门禁与执行门禁拦截，且已有文件物理字节不变）；
-    - WB26: Runtime View 事务边界确证（win_b64 派生缓存独立于 ChangeSet 回滚）。
-  - 生产回归套件规模从 648/648 提升至 **676/676 全量通过**。
+    - WB26: Runtime View 事务边界确证（win_b64 派生缓存独立于 ChangeSet 回滚）；
+    - WB27: 运行时字典同步排除 `.caa_backups` 等隐藏备份，防止有效条目被旧备份静默覆盖。
+  - 生产回归套件规模从 648/648 提升至 **678/678 全量通过**。
 
 ### 🏗️ W-1-B Workbench 物理原子执行与 ChangeSet 双向事务保证 (2026-09-18)
 

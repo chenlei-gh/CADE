@@ -750,7 +750,7 @@ def _copy_dictionaries_to_runtime(workspace_path: Path):
     workspace_path = _resolve_workspace_root(workspace_path)
     rv_dict = workspace_path / "win_b64" / "code" / "dictionary"
     for dico in workspace_path.rglob("CNext/code/dictionary/*.dico"):
-        if dico.is_file():
+        if dico.is_file() and not any(part.startswith(".") for part in dico.parts):
             rv_dict.mkdir(parents=True, exist_ok=True)
             shutil.copy2(dico, rv_dict / dico.name)
 

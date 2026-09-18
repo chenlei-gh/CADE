@@ -3632,6 +3632,24 @@ try:
     # 验证 synced_icon 存在于 win_b64，未被源码级 ChangeSet 误认并删除（符合派生可重建构建缓存定义）
     check("WB26: win_b64 runtime artifact survives source rollback as derived cache", synced_icon.exists())
 
+    # ── WB27: 运行时字典同步排除 .caa_backups 等隐藏备份（防止有效条目被旧备份静默覆盖） ──
+    from build import _copy_dictionaries_to_runtime
+    dico_backup_dir = wb_ws / ".caa_backups" / "20260101_000000" / "modified" / "TestFW.edu" / "CNext" / "code" / "dictionary"
+    dico_backup_dir.mkdir(parents=True, exist_ok=True)
+    fake_stale_dico = dico_backup_dir / "TestFW.dico"
+    fake_stale_dico.write_text("// STALE_BACKUP_EMPTY\n", encoding="utf-8")
+
+    real_fw_dico = fw_dir / "CNext" / "code" / "dictionary" / "TestFW.dico"
+    real_fw_dico.parent.mkdir(parents=True, exist_ok=True)
+    valid_dico_content = "RealValidAddin  CATIAfrGeneralWksAddin  libSharedMod\n"
+    real_fw_dico.write_text(valid_dico_content, encoding="utf-8")
+
+    _copy_dictionaries_to_runtime(wb_ws)
+    rv_dico_path = wb_ws / "win_b64" / "code" / "dictionary" / "TestFW.dico"
+    check("WB27: runtime dictionary exists after sync", rv_dico_path.is_file())
+    rv_dico_content = rv_dico_path.read_text(encoding="utf-8") if rv_dico_path.is_file() else ""
+    check("WB27: runtime dictionary retains valid content without stale backup override", "RealValidAddin" in rv_dico_content and "STALE_BACKUP" not in rv_dico_content, rv_dico_content)
+
 finally:
     shutil.rmtree(wb_ws, ignore_errors=True)
 
