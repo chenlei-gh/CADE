@@ -10,6 +10,21 @@
 
 ## [未发布]
 
+### 🚀 Command / UI 运行时闭环 (2026-09-18, R-2-C / R-3-A / R-3-B 与 B28 真机实证)
+
+- **4 参数 Header 跨模块解耦注册 (R-2-C)**：
+  - **能力与机制**：重构 `add_command_to_workbench`，以 `(HeaderClassName, HeaderID)` 为唯一身份，采用 4 参数 `CATCommandHeader` 注册机制；引入词法预检门禁 `inspect_workbench_registration`，确保多 HeaderClass、缺少 `CreateCommands` 或 Payload 冲突等异常在 ChangeSet 创建前被硬拦截，避免进入下游变更阶段。
+  - **验证结论**：验证 4 参数 Header 架构可避免 Workbench DLL 对 Command DLL 的静态链接依赖，并在 B28 Runtime 中实现按需动态加载。S1～S10 回归全量通过。
+- **Header 资源原子绑定 (R-3-A)**：
+  - **能力与机制**：绑定以 `(HeaderClassName, HeaderID)` 为唯一键，自动化同步 `CATNls`、`CATRsc` 与图标文件；实施严格的冲突判定规则（同 Key 同 Value 幂等 no-op，同 Key 异 Value 抛出 `ValueError` 硬拦截），并在 Staged ChangeSet 与 Disk 状态间建立零重复写入与事务保护。
+  - **验证结论**：完成 RA1～RA10 回归覆盖，解决历史命令生成与宿主资源脱节问题，确保 Header 拥有完整的多语言文本与工具栏图标。
+- **显式工具栏挂载 (R-3-B)**：
+  - **能力与机制**：从 `create_command` 彻底剥离隐式修改，新增独立的挂载 Action `attach_command_to_toolbar` 与只读拓扑分析门禁 `inspect_toolbar_mount`；支持单链拓扑追踪（首节点 `SetAccessChild`，后续尾节点 `SetAccessNext`），排除 Menubar 误识别，并支持跨 Toolbar 隔离与标识符安全清洗重命名。
+  - **验证结论**：落地 RB1～RB16（共 54 项拓扑断言）全量回归，确保工具栏修改具备确定性源码边界与零污染幂等保护。
+- **CATIA V5-6R2018 (B28) 真机 Runtime 闭环实证**：
+  - **实证证据链**：基于真实工程通过 `create_command` → `add_command_to_workbench` → `attach_command_to_toolbar` → `mkmk -a` 生成双按钮工具栏与独立命令 DLL。
+  - **运行时表现**：启动 CATIA 进程后，工具栏正确渲染双按钮，启动后进程模块快照未发现目标命令 DLL；触发 Header 后目标 DLL 出现在模块快照中，验证该命令路径的按需动态加载；目标 DLL 成功调用工厂宏实例化并执行 `Activate()`，弹出模态通知框并生成物理验证标记，全链路闭环通过。
+
 ### 🔧 Build / 检索 (2026-09-11)
 
 - **修复 mkmk 中文错误 GBK 乱码 + 连锁错误归并**：`build.py` 原以 UTF-8 读 `cmd` 重定向日志，MSVC 中文错误变 ``；现按 GBK/系统代码页解码。连锁错误（首个编译错误后的 `make-ERROR`/`syst-ERROR`）不再计入 `error_count`，只报根因。
