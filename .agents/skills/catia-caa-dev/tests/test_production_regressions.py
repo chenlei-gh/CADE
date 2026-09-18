@@ -3217,6 +3217,182 @@ try:
 finally:
     shutil.rmtree(da_ws, ignore_errors=True)
 
+# ── W-1-A: Workbench Create Inspection & Deterministic Plan (inspect_create_workbench) ──
+# WB1 (标准合法 Workbench 预检生成完整 Plan): schema 2.0, dependencies audit, file_creations, patches
+# WB2 (已存在同名 Workbench / Addin 冲突与非法 C++ 标识符硬拦截)
+# WB3 (非 SHARED LIBRARY 模块类型硬拦截: BUILT_OBJECT_TYPE != 'SHARED LIBRARY')
+# WB4 (损坏或不可解析的 IdentityCard.xml 硬拦截)
+# WB5 (缺失或不可解析的 Imakefile.mk 硬拦截)
+# WB6 (DICO 映射冲突硬拦截)
+# WB7 (依赖注入只读 Plan 验证: 物理字节哈希快照与零磁盘副作用)
+# WB8 (预检失败与成功时调用者 ChangeSet 零变更)
+wb_ws = Path(tempfile.mkdtemp(prefix="cade_wb_test_"))
+try:
+    from actions import inspect_create_workbench
+
+    fw_dir = wb_ws / "TestFW.edu"
+    ic_dir = fw_dir / "IdentityCard"
+    ic_dir.mkdir(parents=True)
+    ic_xml = ic_dir / "IdentityCard.xml"
+    ic_content_valid = (
+        '<?xml version="1.0" encoding="iso-8859-1"?>\n'
+        '<eduFramework xmlns="http://www.3ds.ic" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n'
+        '  <prerequisite name="System" access="Protected" />\n'
+        '</eduFramework>\n'
+    )
+    ic_xml.write_text(ic_content_valid, encoding="utf-8")
+    (fw_dir / "Imakefile.mk").write_text("", encoding="utf-8")
+
+    dico_dir = fw_dir / "CNext" / "code" / "dictionary"
+    dico_dir.mkdir(parents=True)
+    dico_file = dico_dir / "TestFW.dico"
+    dico_content_valid = "# TestFW dictionary\n"
+    dico_file.write_text(dico_content_valid, encoding="utf-8")
+
+    # Shared Library module
+    mod_shared = fw_dir / "SharedMod.m"
+    src_shared = mod_shared / "src"
+    src_shared.mkdir(parents=True)
+    (mod_shared / "LocalInterfaces").mkdir(parents=True)
+    imake_shared = mod_shared / "Imakefile.mk"
+    imake_shared_content = "BUILT_OBJECT_TYPE = SHARED LIBRARY\nLINK_WITH = JS0GROUP\n"
+    imake_shared.write_text(imake_shared_content, encoding="utf-8")
+
+    # Non-shared module (for WB3)
+    mod_arch = fw_dir / "ArchMod.m"
+    (mod_arch / "src").mkdir(parents=True)
+    (mod_arch / "LocalInterfaces").mkdir(parents=True)
+    (mod_arch / "Imakefile.mk").write_text("BUILT_OBJECT_TYPE = ARCHIVE\nLINK_WITH = JS0GROUP\n", encoding="utf-8")
+
+    ctx_wb = ActionContext(wb_ws)
+    ctx_wb.refresh(force=True)
+
+    # ── WB1: 标准合法 Workbench 预检生成完整 Plan (schema 2.0) ──
+    r_wb1 = inspect_create_workbench(ctx_wb, "DemoWb", framework="TestFW.edu", module="SharedMod.m")
+    check("WB1: inspection succeeds", r_wb1.get("status") == "ok", str(r_wb1))
+    check("WB1: error is None", r_wb1.get("error") is None, str(r_wb1))
+    plan1 = r_wb1.get("plan", {})
+    check("WB1: plan_schema_version is 2.0", plan1.get("plan_schema_version") == "2.0", str(plan1))
+    ident1 = plan1.get("workbench_identity", {})
+    check("WB1: identity name is DemoWb", ident1.get("name") == "DemoWb", str(ident1))
+    check("WB1: identity addin_class is DemoWbAddin", ident1.get("addin_class") == "DemoWbAddin", str(ident1))
+    check("WB1: identity module is SharedMod.m", ident1.get("module") == "SharedMod.m", str(ident1))
+    check("WB1: identity module_bare_name is SharedMod", ident1.get("module_bare_name") == "SharedMod", str(ident1))
+
+    # 验证 file_creations 内容
+    fcreations1 = plan1.get("file_creations", [])
+    check("WB1: at least 4 file creations planned", len(fcreations1) >= 4, str(len(fcreations1)))
+    h_creation = next((fc for fc in fcreations1 if "DemoWbAddin.h" in fc.get("path", "")), None)
+    check("WB1: DemoWbAddin.h creation planned", h_creation is not None)
+    if h_creation:
+        check("WB1: header declares CATIAfrGeneralWksAddin", "CATIAfrGeneralWksAddin" in h_creation.get("content", ""))
+        check("WB1: header declares CreateCommands and CreateToolbars",
+              "CreateCommands()" in h_creation.get("content", "") and "CreateToolbars()" in h_creation.get("content", ""))
+
+    cpp_creation = next((fc for fc in fcreations1 if "DemoWbAddin.cpp" in fc.get("path", "")), None)
+    check("WB1: DemoWbAddin.cpp creation planned", cpp_creation is not None)
+    if cpp_creation:
+        check("WB1: cpp implements DataExtension with self class name",
+              "CATImplementClass(DemoWbAddin" in cpp_creation.get("content", "") and "DemoWbAddin);" in cpp_creation.get("content", ""))
+        check("WB1: cpp has TIE_CATIAfrGeneralWksAddin", "TIE_CATIAfrGeneralWksAddin(DemoWbAddin)" in cpp_creation.get("content", ""))
+        check("WB1: cpp creates toolbar starter container", "NewAccess(CATCmdContainer, pToolbarStarter" in cpp_creation.get("content", ""))
+
+    # 验证零磁盘写入副作用
+    check("WB1: disk has no DemoWbAddin.h", not (mod_shared / "LocalInterfaces" / "DemoWbAddin.h").exists())
+    check("WB1: disk has no DemoWbAddin.cpp", not (src_shared / "DemoWbAddin.cpp").exists())
+
+    # ── WB2: 已存在同名冲突与非法标识符硬拦截 ──
+    # 2a: 非法标识符
+    r_wb2a = inspect_create_workbench(ctx_wb, "123BadWb", framework="TestFW.edu", module="SharedMod.m")
+    check("WB2a: invalid identifier rejected as error", r_wb2a.get("status") == "error", str(r_wb2a))
+    check("WB2a: error mentions invalid C++ identifier", "invalid c++ identifier" in r_wb2a.get("error", "").lower(), r_wb2a.get("error", ""))
+    check("WB2a: plan is None", r_wb2a.get("plan") is None)
+
+    # 2b: 磁盘拟创建目标文件已存在冲突
+    test_h_collision = mod_shared / "LocalInterfaces" / "DemoWbAddin.h"
+    test_h_collision.write_text("// existing collision", encoding="utf-8")
+    r_wb2b = inspect_create_workbench(ctx_wb, "DemoWb", framework="TestFW.edu", module="SharedMod.m")
+    check("WB2b: target file collision rejected as error", r_wb2b.get("status") == "error", str(r_wb2b))
+    check("WB2b: error mentions target file already exists", "already exists" in r_wb2b.get("error", "").lower(), r_wb2b.get("error", ""))
+    test_h_collision.unlink()
+
+    # ── WB3: 非 SHARED LIBRARY 模块类型硬拦截 ──
+    r_wb3 = inspect_create_workbench(ctx_wb, "ArchWb", framework="TestFW.edu", module="ArchMod.m")
+    check("WB3: non-shared library rejected as error", r_wb3.get("status") == "error", str(r_wb3))
+    check("WB3: error mentions expected 'SHARED LIBRARY'", "expected 'shared library'" in r_wb3.get("error", "").lower(), r_wb3.get("error", ""))
+    check("WB3: plan is None", r_wb3.get("plan") is None)
+
+    # ── WB4: 损坏或不可解析的 IdentityCard.xml 硬拦截 ──
+    ic_xml.write_text("<eduFramework><broken_xml_no_close>", encoding="utf-8")
+    r_wb4 = inspect_create_workbench(ctx_wb, "XmlWb", framework="TestFW.edu", module="SharedMod.m")
+    check("WB4: corrupted xml rejected as error", r_wb4.get("status") == "error", str(r_wb4))
+    check("WB4: error mentions malformed or corrupted", "malformed or corrupted" in r_wb4.get("error", "").lower(), r_wb4.get("error", ""))
+    check("WB4: plan is None", r_wb4.get("plan") is None)
+    ic_xml.write_text(ic_content_valid, encoding="utf-8")
+
+    # ── WB5: 缺失或不可解析的 Imakefile.mk 硬拦截 ──
+    imake_shared.write_text("SOME_VAR = 123\n# No BUILT_OBJECT_TYPE\n", encoding="utf-8")
+    r_wb5 = inspect_create_workbench(ctx_wb, "ImkFailWb", framework="TestFW.edu", module="SharedMod.m")
+    check("WB5: missing BUILT_OBJECT_TYPE rejected as error", r_wb5.get("status") == "error", str(r_wb5))
+    check("WB5: error mentions missing BUILT_OBJECT_TYPE", "missing built_object_type" in r_wb5.get("error", "").lower(), r_wb5.get("error", ""))
+    imake_shared.write_text(imake_shared_content, encoding="utf-8")
+
+    # ── WB6: DICO 映射冲突硬拦截 ──
+    dico_file.write_text("ConflictWbAddin  CATIAfrGeneralWksAddin  libSharedMod\n", encoding="utf-8")
+    r_wb6 = inspect_create_workbench(ctx_wb, "ConflictWb", framework="TestFW.edu", module="SharedMod.m")
+    check("WB6: dico mapping collision rejected as error", r_wb6.get("status") == "error", str(r_wb6))
+    check("WB6: error mentions dictionary mapping already exists", "already exists" in r_wb6.get("error", "").lower(), r_wb6.get("error", ""))
+    check("WB6: plan is None", r_wb6.get("plan") is None)
+    dico_file.write_text(dico_content_valid, encoding="utf-8")
+
+    # ── WB7: 依赖注入只读 Plan 验证 ──
+    dep_audit = plan1.get("dependencies_audit", {})
+    check("WB7: missing prerequisite ApplicationFrame detected", dep_audit.get("missing_prereqs") == ["ApplicationFrame"], str(dep_audit))
+    check("WB7: missing library CATApplicationFrame detected", dep_audit.get("missing_libs") == ["CATApplicationFrame"], str(dep_audit))
+
+    patches1 = plan1.get("patches", [])
+    ic_patch = next((p for p in patches1 if p.get("kind") == "identitycard"), None)
+    check("WB7: IdentityCard patch planned", ic_patch is not None)
+    if ic_patch:
+        check("WB7: ic patch injects ApplicationFrame prerequisite",
+              'prerequisite name="ApplicationFrame"' in ic_patch.get("new_content", ""))
+        import xml.etree.ElementTree as ET
+        parsed_patched_xml = ET.fromstring(ic_patch.get("new_content", ""))
+        check("WB7: patched XML parses cleanly", parsed_patched_xml is not None)
+
+    imake_patch = next((p for p in patches1 if p.get("kind") == "imakefile"), None)
+    check("WB7: Imakefile patch planned", imake_patch is not None)
+    if imake_patch:
+        check("WB7: imake patch injects CATApplicationFrame library",
+              "CATApplicationFrame" in imake_patch.get("new_content", ""))
+
+    dico_patch = next((p for p in patches1 if p.get("kind") == "dictionary"), None)
+    check("WB7: dictionary patch planned", dico_patch is not None)
+    if dico_patch:
+        check("WB7: dico patch adds DemoWbAddin CATIAfrGeneralWksAddin libSharedMod",
+              "DemoWbAddin  CATIAfrGeneralWksAddin  libSharedMod" in dico_patch.get("new_content", ""))
+
+    # 磁盘字节级零改变
+    check("WB7: disk IdentityCard.xml content unchanged", ic_xml.read_text(encoding="utf-8") == ic_content_valid)
+    check("WB7: disk Imakefile.mk content unchanged", imake_shared.read_text(encoding="utf-8") == imake_shared_content)
+    check("WB7: disk TestFW.dico content unchanged", dico_file.read_text(encoding="utf-8") == dico_content_valid)
+
+    # ── WB8: 预检失败与成功时调用者 ChangeSet 零变更 ──
+    caller_cs_fail = ChangeSet(action="caller_test", description="caller fail test")
+    inspect_create_workbench(ctx_wb, "123BadWb", framework="TestFW.edu", module="SharedMod.m", cs=caller_cs_fail)
+    check("WB8: caller CS created is empty on failure", caller_cs_fail.created == {})
+    check("WB8: caller CS modified is empty on failure", caller_cs_fail.modified == {})
+    check("WB8: caller CS deleted is empty on failure", caller_cs_fail.deleted == [])
+
+    caller_cs_succ = ChangeSet(action="caller_test", description="caller success test")
+    inspect_create_workbench(ctx_wb, "SuccessWb", framework="TestFW.edu", module="SharedMod.m", cs=caller_cs_succ)
+    check("WB8: caller CS created is empty on success", caller_cs_succ.created == {})
+    check("WB8: caller CS modified is empty on success", caller_cs_succ.modified == {})
+    check("WB8: caller CS deleted is empty on success", caller_cs_succ.deleted == [])
+
+finally:
+    shutil.rmtree(wb_ws, ignore_errors=True)
+
 print(f"\nProduction regressions: {passed}/{total}")
 if failures:
     print("Failures:")

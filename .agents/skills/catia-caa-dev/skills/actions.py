@@ -53,6 +53,7 @@ import argparse
 import hashlib
 import re
 import sys
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -3659,6 +3660,461 @@ def rename_command(
     res = _result(master_cs)
     res["plan"] = plan
     return res
+
+
+def inspect_create_workbench(
+    ctx: ActionContext,
+    workbench_name: str,
+    *,
+    framework: Optional[str] = None,
+    module: Optional[str] = None,
+    cs: Optional[ChangeSet] = None,
+) -> Dict[str, Any]:
+    """Inspect workspace to compute a deterministic WorkbenchCreatePlan (W-1-A Phase 1).
+
+    Pure read-only pre-validation across 7 strict security gates:
+      Gate 1: Identifier validity and workspace-wide identity collision check
+      Gate 2: Target host module existence and BUILT_OBJECT_TYPE == 'SHARED LIBRARY'
+      Gate 3: IdentityCard.xml existence, strict XML parsing, and prerequisite audit
+      Gate 4: Imakefile.mk token-bounded LINK_WITH audit and library injection plan
+      Gate 5: Dictionary (*.dico) conflict check and mapping entry plan
+      Gate 6: Resources, NLS, and RSC localization planning
+      Gate 7: Deterministic WorkbenchCreatePlan (schema 2.0) with byte snapshots
+
+    Guarantees zero physical disk mutation, zero directory creation, and zero
+    mutation to caller-owned ChangeSet upon any gate failure or success.
+    """
+    ctx.refresh()
+
+    # ── Gate 1: Identifier validity & collision check ──
+    if not workbench_name or not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', workbench_name):
+        return {
+            "status": "error",
+            "error": f"Invalid C++ identifier for workbench name: '{workbench_name}'",
+            "plan": None,
+        }
+
+    fw = (
+        ctx.snapshot.get_framework(framework)
+        if framework
+        else (ctx.snapshot.frameworks[0] if ctx.snapshot.frameworks else None)
+    )
+    if not fw:
+        return {
+            "status": "error",
+            "error": f"Framework not found: '{framework}'" if framework else "No framework found in workspace",
+            "plan": None,
+        }
+
+    # Check for existing workbench collision in workspace
+    for f in ctx.snapshot.frameworks:
+        for wb in f.workbenches:
+            if wb.name.lower() == workbench_name.lower():
+                return {
+                    "status": "error",
+                    "error": f"Workbench already exists in workspace: '{wb.name}'",
+                    "plan": None,
+                }
+
+    addin_name = f"{workbench_name}Addin"
+
+    # Check for class/command/module name collision
+    for f in ctx.snapshot.frameworks:
+        for m in f.modules:
+            for c in m.commands:
+                if c.name.lower() in (workbench_name.lower(), addin_name.lower()):
+                    return {
+                        "status": "error",
+                        "error": f"Command already exists with matching name in module '{m.name}': '{c.name}'",
+                        "plan": None,
+                    }
+
+    # ── Gate 2: Target host module existence and BUILT_OBJECT_TYPE ──
+    mod = None
+    if module:
+        mod = fw.find_module(module)
+        if not mod:
+            return {
+                "status": "error",
+                "error": f"Module not found in framework '{fw.name}': '{module}'",
+                "plan": None,
+            }
+    else:
+        # Discover first shared library module in framework
+        for candidate in fw.modules:
+            c_imake = candidate.imakefile_path()
+            _, c_text, _ = _read_file_bytes_and_text(c_imake, cs=cs)
+            if c_text:
+                m_type = re.search(r'^\s*BUILT_OBJECT_TYPE\s*=\s*(.+?)\s*$', c_text, re.MULTILINE)
+                if m_type and m_type.group(1).strip().strip('"\'').upper().replace("_", " ") == "SHARED LIBRARY":
+                    mod = candidate
+                    break
+        if not mod:
+            if fw.modules:
+                mod = fw.modules[0]
+            else:
+                return {
+                    "status": "error",
+                    "error": f"No modules found in framework '{fw.name}'",
+                    "plan": None,
+                }
+
+    imake_path = mod.imakefile_path()
+    imake_raw, imake_text, imake_enc = _read_file_bytes_and_text(imake_path, cs=cs)
+    if imake_raw is None or imake_text is None:
+        return {
+            "status": "error",
+            "error": f"Imakefile.mk not found or unreadable in module '{mod.name}': {imake_path}",
+            "plan": None,
+        }
+
+    m_type = re.search(r'^\s*BUILT_OBJECT_TYPE\s*=\s*(.+?)\s*$', imake_text, re.MULTILINE)
+    if not m_type:
+        return {
+            "status": "error",
+            "error": f"Missing BUILT_OBJECT_TYPE in Imakefile.mk: {imake_path}",
+            "plan": None,
+        }
+    obj_type = m_type.group(1).strip().strip('"\'')
+    if obj_type.upper().replace("_", " ") != "SHARED LIBRARY":
+        return {
+            "status": "error",
+            "error": f"Module '{mod.name}' BUILT_OBJECT_TYPE is '{obj_type}', expected 'SHARED LIBRARY'",
+            "plan": None,
+        }
+
+    # Check file collision on disk and in staged ChangeSet
+    src_dir = mod.src_dir_path()
+    li_dir = mod.local_interfaces_dir()
+    addin_h = li_dir / f"{addin_name}.h"
+    addin_cpp = src_dir / f"{addin_name}.cpp"
+
+    for target_file in (addin_h, addin_cpp):
+        if target_file.exists():
+            return {
+                "status": "error",
+                "error": f"Target file already exists on disk: {target_file}",
+                "plan": None,
+            }
+        if cs is not None and (str(target_file) in cs.created or str(target_file) in cs.modified):
+            return {
+                "status": "error",
+                "error": f"Target file already exists in staged ChangeSet: {target_file}",
+                "plan": None,
+            }
+
+    # ── Gate 3: IdentityCard.xml existence, strict XML parsing, & prereq audit ──
+    ic_path = fw.path / "IdentityCard" / "IdentityCard.xml"
+    if not ic_path.exists() and (cs is None or str(ic_path) not in cs.created):
+        return {
+            "status": "error",
+            "error": f"IdentityCard.xml not found in framework '{fw.name}': {ic_path}",
+            "plan": None,
+        }
+
+    ic_raw, ic_text, ic_enc = _read_file_bytes_and_text(ic_path, cs=cs)
+    if ic_raw is None or ic_text is None:
+        return {
+            "status": "error",
+            "error": f"Failed to read IdentityCard.xml: {ic_path}",
+            "plan": None,
+        }
+
+    try:
+        ic_root = ET.fromstring(ic_text)
+    except ET.ParseError as e:
+        return {
+            "status": "error",
+            "error": f"IdentityCard.xml is malformed or corrupted: {e}",
+            "plan": None,
+        }
+
+    existing_prereqs = {
+        elem.attrib.get("name")
+        for elem in ic_root.iter()
+        if elem.tag.split("}")[-1] == "prerequisite" and "name" in elem.attrib
+    }
+    required_prereqs = ["System", "ApplicationFrame"]
+    missing_prereqs = [p for p in required_prereqs if p not in existing_prereqs]
+
+    ic_patch = None
+    if missing_prereqs:
+        nl = "\r\n" if "\r\n" in ic_text else "\n"
+        ic_lines = ic_text.splitlines()
+        close_idx = -1
+        for idx, line in enumerate(ic_lines):
+            if re.search(r'</([a-zA-Z0-9_:-]+)>', line):
+                close_idx = idx
+
+        indent = "  "
+        for line in ic_lines:
+            m_ind = re.match(r'^([ \t]+)<prerequisite', line)
+            if m_ind:
+                indent = m_ind.group(1)
+                break
+
+        injections = [f'{indent}<prerequisite name="{p}" access="Protected" />' for p in missing_prereqs]
+        if close_idx >= 0:
+            for inj in reversed(injections):
+                ic_lines.insert(close_idx, inj)
+            new_ic_text = nl.join(ic_lines) + (nl if ic_text.endswith(("\r\n", "\n")) else "")
+        else:
+            new_ic_text = ic_text.rstrip() + nl + nl.join(injections) + nl
+
+        try:
+            ET.fromstring(new_ic_text)
+        except ET.ParseError as e:
+            return {
+                "status": "error",
+                "error": f"Generated IdentityCard.xml patch would be invalid: {e}",
+                "plan": None,
+            }
+
+        ic_snapshot = {
+            "path": str(ic_path),
+            "content_hash": hashlib.sha256(ic_raw).hexdigest(),
+            "content_length": len(ic_raw),
+            "encoding": ic_enc,
+        }
+        ic_patch = {
+            "path": str(ic_path),
+            "kind": "identitycard",
+            "source_snapshot": ic_snapshot,
+            "new_content": new_ic_text,
+            "missing_prereqs": missing_prereqs,
+        }
+
+    # ── Gate 4: Imakefile.mk token-bounded LINK_WITH audit ──
+    required_libs = ["JS0GROUP", "CATApplicationFrame"]
+    missing_libs = [
+        lib for lib in required_libs
+        if not re.search(r'\b' + re.escape(lib) + r'\b', imake_text)
+    ]
+    imake_patch = None
+    if missing_libs:
+        nl = "\r\n" if "\r\n" in imake_text else "\n"
+        imake_lines = imake_text.splitlines()
+        last_lw_idx = -1
+        for idx, line in enumerate(imake_lines):
+            if re.match(r'^[ \t]*LINK_WITH[ \t]*=', line):
+                last_lw_idx = idx
+
+        injection_line = f"LINK_WITH = $(LINK_WITH) {' '.join(missing_libs)}"
+        if last_lw_idx >= 0:
+            imake_lines.insert(last_lw_idx + 1, injection_line)
+            new_imake_text = nl.join(imake_lines) + (nl if imake_text.endswith(("\r\n", "\n")) else "")
+        else:
+            new_imake_text = imake_text.rstrip() + nl + injection_line + nl
+
+        imake_snapshot = {
+            "path": str(imake_path),
+            "content_hash": hashlib.sha256(imake_raw).hexdigest(),
+            "content_length": len(imake_raw),
+            "encoding": imake_enc,
+        }
+        imake_patch = {
+            "path": str(imake_path),
+            "kind": "imakefile",
+            "source_snapshot": imake_snapshot,
+            "new_content": new_imake_text,
+            "missing_libs": missing_libs,
+        }
+
+    # ── Gate 5: Dictionary (*.dico) conflict check & mapping entry plan ──
+    dico_dir = fw.path / "CNext" / "code" / "dictionary"
+    dico_files = list(dico_dir.glob("*.dico")) if dico_dir.exists() else []
+    for df in dico_files:
+        _, d_text, _ = _read_file_bytes_and_text(df, cs=cs)
+        if d_text:
+            for line in d_text.splitlines():
+                parts = line.strip().split()
+                if parts and parts[0].lower() == addin_name.lower():
+                    return {
+                        "status": "error",
+                        "error": f"Dictionary mapping already exists for '{addin_name}' in {df}",
+                        "plan": None,
+                    }
+
+    target_dico = fw.dictionary_path()
+    dico_entry = f"{addin_name}  CATIAfrGeneralWksAddin  lib{mod.bare_name}\n"
+    dico_patch = None
+    dico_creation = None
+    if target_dico.exists() or (cs is not None and str(target_dico) in (cs.created or cs.modified)):
+        d_raw, d_text, d_enc = _read_file_bytes_and_text(target_dico, cs=cs)
+        stripped = (d_text or "").rstrip()
+        nl = "\r\n" if (d_text and "\r\n" in d_text) else "\n"
+        new_dico_text = (stripped + nl if stripped else "") + dico_entry
+        dico_snapshot = {
+            "path": str(target_dico),
+            "content_hash": hashlib.sha256(d_raw).hexdigest() if d_raw else "",
+            "content_length": len(d_raw) if d_raw else 0,
+            "encoding": d_enc or "utf-8",
+        }
+        dico_patch = {
+            "path": str(target_dico),
+            "kind": "dictionary",
+            "source_snapshot": dico_snapshot,
+            "new_content": new_dico_text,
+            "entry": dico_entry.strip(),
+        }
+    else:
+        dico_creation = {
+            "path": str(target_dico),
+            "kind": "dictionary",
+            "content": dico_entry,
+        }
+
+    # ── Gate 6: Resource & C++ code generation planning ──
+    year_str = str(datetime.now().year)
+
+    addin_h_content = f"""// COPYRIGHT DASSAULT SYSTEMES {year_str}
+//===================================================================
+// {addin_name}.h
+// Addin class for integrating into existing workbenches
+//===================================================================
+#ifndef {addin_name}_H
+#define {addin_name}_H
+
+#include "CATBaseUnknown.h"
+#include "CATIAfrGeneralWksAddin.h"
+
+class {addin_name} : public CATBaseUnknown
+{{
+    CATDeclareClass;
+
+public:
+    {addin_name}();
+    virtual ~{addin_name}();
+
+    void CreateCommands();
+    virtual CATCmdContainer* CreateToolbars();
+    virtual CATCmdContainer* CreateMenus();
+
+private:
+    {addin_name}(const {addin_name}&);
+    {addin_name}& operator=(const {addin_name}&);
+}};
+
+#endif // {addin_name}_H
+"""
+
+    addin_cpp_content = f"""// COPYRIGHT DASSAULT SYSTEMES {year_str}
+//===================================================================
+// {addin_name}.cpp
+// Addin implementation
+//===================================================================
+#include "{addin_name}.h"
+
+#include "CATCommandHeader.h"
+#include "CATCmdContainer.h"
+#include "CATCmdStarter.h"
+#include "CATCreateWorkshop.h"
+
+#include "TIE_CATIAfrGeneralWksAddin.h"
+
+TIE_CATIAfrGeneralWksAddin({addin_name});
+
+CATImplementClass({addin_name},
+                  DataExtension,
+                  CATBaseUnknown,
+                  {addin_name});
+
+{addin_name}::{addin_name}()
+    : CATBaseUnknown()
+{{
+}}
+
+{addin_name}::~{addin_name}()
+{{
+}}
+
+void {addin_name}::CreateCommands()
+{{
+}}
+
+CATCmdContainer* {addin_name}::CreateToolbars()
+{{
+    NewAccess(CATCmdContainer, pToolbarStarter, {workbench_name}TlbStarter);
+    if (pToolbarStarter)
+    {{
+        NewAccess(CATCmdContainer, pToolbar, {workbench_name}Tlb);
+        if (pToolbar)
+        {{
+            SetAccessChild(pToolbarStarter, pToolbar);
+        }}
+    }}
+    return pToolbarStarter;
+}}
+
+CATCmdContainer* {addin_name}::CreateMenus()
+{{
+    return NULL;
+}}
+"""
+
+    nls_en_path = fw.path / "CNext" / "resources" / "msgcatalog" / f"{addin_name}.CATNls"
+    rsc_path = fw.path / "CNext" / "resources" / "msgcatalog" / f"{addin_name}.CATRsc"
+    nls_zh_path = fw.path / "CNext" / "resources" / "msgcatalog" / "Simplified_Chinese" / f"{addin_name}.CATNls"
+
+    file_creations = [
+        {"path": str(addin_h), "kind": "header", "content": addin_h_content},
+        {"path": str(addin_cpp), "kind": "source", "content": addin_cpp_content},
+    ]
+    if dico_creation:
+        file_creations.append(dico_creation)
+
+    file_creations.extend([
+        {
+            "path": str(nls_en_path),
+            "kind": "nls",
+            "content": f'{addin_name}.Title = "{workbench_name}";\n{addin_name}.Help = "{workbench_name} Workbench";\n{addin_name}.ShortHelp = "{workbench_name}";\n{addin_name}.LongHelp = "{workbench_name} Workbench Addin";\n',
+        },
+        {
+            "path": str(nls_zh_path),
+            "kind": "nls_zh",
+            "content": f'{addin_name}.Title = "{workbench_name}";\n{addin_name}.Help = "{workbench_name} 工作台";\n{addin_name}.ShortHelp = "{workbench_name}";\n{addin_name}.LongHelp = "{workbench_name} 工作台插件";\n',
+        },
+        {
+            "path": str(rsc_path),
+            "kind": "rsc",
+            "content": f'{addin_name}.Icon.Normal = "I_{workbench_name}";\n',
+        },
+    ])
+
+    patches = []
+    source_snapshots = []
+    if ic_patch:
+        patches.append(ic_patch)
+        source_snapshots.append(ic_patch["source_snapshot"])
+    if imake_patch:
+        patches.append(imake_patch)
+        source_snapshots.append(imake_patch["source_snapshot"])
+    if dico_patch:
+        patches.append(dico_patch)
+        source_snapshots.append(dico_patch["source_snapshot"])
+
+    # ── Gate 7: Deterministic WorkbenchCreatePlan (schema 2.0) ──
+    plan = {
+        "plan_schema_version": "2.0",
+        "workbench_identity": {
+            "name": workbench_name,
+            "addin_class": addin_name,
+            "framework": fw.name,
+            "module": mod.name,
+            "module_bare_name": mod.bare_name,
+        },
+        "file_creations": file_creations,
+        "patches": patches,
+        "source_snapshots": source_snapshots,
+        "dependencies_audit": {
+            "required_prereqs": required_prereqs,
+            "missing_prereqs": missing_prereqs,
+            "required_libs": required_libs,
+            "missing_libs": missing_libs,
+        },
+    }
+
+    return {"status": "ok", "error": None, "plan": plan}
 
 
 def delete_module(ctx: ActionContext, name: str, framework: str = None) -> Dict:
