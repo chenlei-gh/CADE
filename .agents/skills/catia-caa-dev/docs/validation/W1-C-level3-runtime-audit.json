@@ -72,7 +72,17 @@
     "closeup_screenshot_path": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\docs\\validation\\W1-C-gui-toolbar-closeup.png",
     "closeup_dimensions": "2000x220",
     "closeup_size_bytes": 22328,
-    "closeup_sha256": "9d77b3679f7fe14fdc0cd77c68ed78763b7b98cc01d4562b4813d03e3b571701"
+    "closeup_sha256": "9d77b3679f7fe14fdc0cd77c68ed78763b7b98cc01d4562b4813d03e3b571701",
+    "toolbar_icon_recognition": {
+      "method": "win32_top_level_and_dock_area_capture",
+      "create_toolbars_entry_executed": true,
+      "probe_marker_verified": true,
+      "main_window_rendered": true,
+      "menubar_and_dock_area_captured": true,
+      "custom_toolbar_control_identified": "PENDING_CONTROL_TREE_PROBE",
+      "custom_icon_pixel_matched": "PENDING_TEMPLATE_MATCHING",
+      "boundary_statement": "Verified that CATIA main MDI document window rendered with full standard menu and docked toolbar region (non-blank pixels). Addin CreateToolbars entry execution was verified via disk probe marker. However, sub-control-level recognition of custom toolbar (WbGuiWbTlb) and icon template matching require specialized in-process UI tree inspection, which is beyond non-invasive Win32 top-level window capture."
+    }
   },
   "stop_response": {
     "status": "stopped",

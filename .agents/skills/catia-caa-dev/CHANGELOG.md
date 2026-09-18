@@ -10,29 +10,29 @@
 
 ## [未发布]
 
-### 🚀 W-1 Workbench 全生命周期生成与 B28 Runtime 闭环实证 (2026-09-18, W-1-A / W-1-B / W-1-C 全面收口 CLOSED)
+### 🚀 W-1 Workbench 全生命周期生成与 B28 Runtime 闭环实证 (2026-09-18)
 
 - **层次 1（真实构建实证）**：
-  - 在隔离工程执行真实 B28 构建链（`tck_init.bat → tck_profile.bat V5_6R2018_B28 → mkinit.bat → mkmk -a`）；
-  - 进程返回码严格为 `0`，编译耗时 11.5s，0 errors，0 warnings。
+  - 在隔离工程（`_tmp_wb_gui_test`）执行真实 B28 构建链（`tck_init.bat → tck_profile.bat V5_6R2018_B28 → mkinit.bat → mkmk -a`）；
+  - 进程返回码严格为 `0`，编译耗时 14.7s，0 errors，0 warnings。
 - **层次 2（物理产物审计）**：
-  - 物理核实构建生成产物：64 位 PE DLL（`WbL3Mod.dll`，18,432 字节，SHA-256 `9ba932...`）、DICO 字典映射条目（`WbL3WbAddin CATIAfrGeneralWksAddin libWbL3Mod`）、NLS 多语言文本（Title/Help）、RSC 图标引用及 22x22 官方画板 BMP 图标；
-  - 机器可读审计数据固化于 `.agents/skills/catia-caa-dev/docs/validation/W1-C-build-artifacts-audit.json`。
+  - 物理核实构建生成产物：64 位 PE DLL（`WbGuiMod.dll`，18,432 字节，SHA-256 `79d4d3...`）、DICO 字典映射条目（`WbGuiWbAddin CATIAfrGeneralWksAddin libWbGuiMod`）、NLS 多语言文本（Title/Help）、RSC 图标引用及 22x22 官方画板 BMP 图标（`I_WbGuiWb.bmp`，1,606 字节，SHA-256 `ff5dc4...`）；
+  - 机器可读审计数据固化于 `.agents/skills/catia-caa-dev/docs/validation/W1-C-build-artifacts-audit.json`，与 Level 3 保持同一测试批次完全自洽。
 - **层次 3（真实真机进程加载与 GUI 界面渲染全闭环实证）**：
   - **Runtime 引导与进程拉起**：通过 `start_catia_runtime` 挂载包含自定义工作台 Runtime View 的启动链，成功唤醒真实的 CATIA V5-6R2018 (B28) `CNEXT.exe` 进程（真实 PID：82588）；
   - **进程模块动态加载证据**：通过 Windows 进程模块枚举与 `tasklist` 验证，确认 `WbGuiMod.dll` 已被 PID 82588 进程动态加载至内存空间；
   - **Addin 接口执行物理标记证据**：在从零生成的 `WbGuiWbAddin.cpp` 之 `CreateToolbars()` 入口中注入物理探针，CATIA ApplicationFrame 初始化期间成功触发该接口，向磁盘写入物理证据标记文件 `wb_gui_executed.marker`，读取确证内容为 `W1_C_WORKBENCH_GUI_LOADED_BY_CNEXT_PID_82588`（进程 PID 完全吻合）；
   - **真实 GUI 界面渲染实证与高清截图固化**：
     - **顶级 GUI 窗口识别与唤醒**：在 ApplicationFrame 与图形引擎完成初始化后，精确捕获到顶级主窗口 `HWND 1051266`，类名为官方 MFC MDI 主文档类 `CATDlgDocument [ l_CATDlgMfcDocumentMDI ]`，窗口标题为 `CATIA V5`，尺寸为 `2576x1408`；
-    - **窗口置顶激活与界面渲染实证**：通过 Win32 API 将 CATIA 主窗口前置最大化并完成桌面重绘，成功渲染 CATIA V5 标准通用工作间主界面（包含 Start / File / Edit / View / Insert / Tools / Window / Help 完整菜单栏，以及挂载的工具栏按钮）；
-    - **物理截图固化与像素级确证**：通过 `ImageGrab` 捕获 2560x1440 桌面全屏物理截图（`W1-C-gui-screenshot.png`，143,795 字节，SHA-256 `e9dbaa...`），以及 2000x220 标题栏/菜单栏/工具栏特写截图（`W1-C-gui-toolbar-closeup.png`，22,328 字节，SHA-256 `9d77b3...`），验证像素全范围分布非黑屏非纯色；
-    - 彻底解决“仅有进程/DLL/探针加载证据，缺少 GUI 界面级实证”的边界分歧。
+    - **窗口置顶激活与界面渲染实证**：通过 Win32 API 将 CATIA 主窗口前置最大化并完成桌面重绘，成功渲染 CATIA V5 标准通用工作间主界面（包含 Start / File / Edit / View / Insert / Tools / Window / Help 完整菜单栏，以及通用工具栏停靠区域）；
+    - **物理截图固化与像素级确证**：通过 `ImageGrab` 捕获 2560x1440 桌面全屏物理截图（`W1-C-gui-screenshot.png`，143,795 字节，SHA-256 `e9dbaa...`），以及 2000x220 标题栏/菜单栏/工具栏停靠区特写截图（`W1-C-gui-toolbar-closeup.png`，22,328 字节，SHA-256 `9d77b3...`），验证像素全范围分布非黑屏非纯色；
+    - **证据边界严格说明**：特写截图验证了主窗口顶层与工具栏停靠区域正常呈现；但对自定义工具栏（`WbGuiWbTlb`）及按钮图标的子像素匹配属于控件级交互，当前审计客观区分“主窗口级渲染确证”与“控件级精确定位”，保持事实与证据严格对齐。
   - **优雅停机与现场恢复**：调用 `stop_catia(force=False)` 优雅终止 CNEXT 进程，清理 CATTemp 会话与临时测试工程，保持零残留；
   - 详细运行时实证日志固化于 `.agents/skills/catia-caa-dev/docs/validation/W1-C-level3-runtime-audit.json`。
 - **字典同步幽灵覆盖 Bug 根因修复**：
   - 修复 `build.py` 中 `_copy_dictionaries_to_runtime` 使用宽泛 `rglob("CNext/code/dictionary/*.dico")` 误读 `.caa_backups` 隐藏备份目录并用历史旧字典覆盖 Runtime View 目标文件的系统级隐患，强制实施 `not any(part.startswith(".") for part in dico.parts)` 路径过滤；
   - 新增 WB27 生产回归用例锁定该安全契约，防止有效字典被隐藏备份篡改。
-- **收口判定**：W-1-A CLOSED，W-1-B CLOSED，W-1-C CLOSED。工作台从零生成、资源装配、真实编译、Runtime View 挂载到 B28 真机运行加载全生命周期技术闭环。
+- **收口判定**：W-1-A CLOSED，W-1-B CLOSED，W-1-C LEVEL 1 / LEVEL 2 / LEVEL 3 开发端真机物理实证闭环（同批次数据统一自洽，证据链与边界定义完整记录）。
 
 ### 🏗️ W-1-C Workbench 资源装配、构建前置审计与安全加固 (2026-09-18, CLOSED)
 
