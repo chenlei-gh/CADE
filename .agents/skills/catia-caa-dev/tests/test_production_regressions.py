@@ -1924,7 +1924,7 @@ finally:
 # DA13 (同一 Toolbar 重复 MountKey 拦截): Duplicate mount of same Header in same toolbar rejected as error
 da_ws = Path(tempfile.mkdtemp(prefix="cade_da_test_"))
 try:
-    from actions import inspect_delete_command
+    from actions import inspect_delete_command, delete_command
 
     fw_dir = da_ws / "TestFW.edu"
     (fw_dir / "IdentityCard").mkdir(parents=True)
@@ -2344,6 +2344,137 @@ try:
     check("DA13: duplicate MountKey in same toolbar rejected as error", r_da13.get("status") == "error", str(r_da13))
     check("DA13: error identifies duplicate mount", "duplicate mount" in r_da13.get("error", "").lower(), r_da13.get("error", ""))
     check("DA13: plan is None", r_da13.get("plan") is None, str(r_da13))
+
+    # ══════════════════════════════════════════════════════════════════
+    # R-4-A Phase 2: Command Cascade Delete Execution Tests (DA14~DA20)
+    # ══════════════════════════════════════════════════════════════════
+
+    res_dir = fw_dir / "CNext" / "resources" / "msgcatalog"
+    res_dir.mkdir(parents=True, exist_ok=True)
+    nls_file = res_dir / "SampleWorkbenchAddinHeader.CATNls"
+    nls_file.write_text('SampleWorkbenchAddinHeader.DiskCmdHdr.Title = "Disk Command";\n', encoding="utf-8")
+    rsc_file = res_dir / "SampleWorkbenchAddinHeader.CATRsc"
+    rsc_file.write_text('SampleWorkbenchAddinHeader.DiskCmdHdr.Icon.Normal = "I_DiskCmd";\n', encoding="utf-8")
+    icon_dir = fw_dir / "CNext" / "resources" / "graphic" / "icons" / "normal"
+    icon_dir.mkdir(parents=True, exist_ok=True)
+    icon_file = icon_dir / "I_DiskCmd.bmp"
+    icon_file.write_bytes(b"BMfakebmpheader")
+
+    # ── DA14: 真实级联删除执行 (Mode 1: remove_only_child) ──
+    addin_cpp.write_text(addin_da2, encoding="utf-8")
+    (src_dir / "DiskCmd.cpp").write_text("CATStateCommand BuildGraph DiskCmd\n", encoding="utf-8")
+    (mod_dir / "LocalInterfaces" / "DiskCmd.h").write_text("// DiskCmd header\n", encoding="utf-8")
+    r_da14 = delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA14: delete_command returns pending status", r_da14.get("status") == "pending", str(r_da14))
+    cs_dict_da14 = r_da14.get("changeset", {})
+    check("DA14: changeset dict contains deleted files", len(cs_dict_da14.get("deleted", [])) >= 2, str(cs_dict_da14.get("deleted")))
+    cs_da14 = ChangeSet.from_dict(cs_dict_da14)
+    apply_da14 = cs_da14.apply(workspace_root=da_ws)
+    check("DA14: changeset apply succeeds", apply_da14.get("status") == "applied", str(apply_da14))
+    check("DA14: DiskCmd.cpp physically deleted", not (src_dir / "DiskCmd.cpp").exists())
+    check("DA14: DiskCmd.h physically deleted", not (mod_dir / "LocalInterfaces" / "DiskCmd.h").exists())
+    addin_post_da14 = addin_cpp.read_text(encoding="utf-8")
+    check("DA14: DiskCmd registration removed from CreateCommands", "DiskCmd" not in addin_post_da14, addin_post_da14)
+    check("DA14: Toolbar container preserved in CreateToolbars", "NewAccess(CATCmdContainer, pSingleTlb, SingleTlb);" in addin_post_da14)
+    check("DA14: AddToolbarView preserved", "AddToolbarView(pSingleTlb, 1, Top);" in addin_post_da14)
+    check("DA14: Starter pDiskCmdStr removed from CreateToolbars", "pDiskCmdStr" not in addin_post_da14)
+    check("DA14: CATNls file preserved on disk", nls_file.exists())
+    check("DA14: CATRsc file preserved on disk", rsc_file.exists())
+    check("DA14: icon file preserved on disk", icon_file.exists())
+    check("DA14: orphan resources reported in metadata", len(cs_da14.metadata.get("orphan_resources", [])) >= 2, str(cs_da14.metadata))
+
+    # ── DA15: 首节点物理删除与拓扑缝合 (Mode 2: new_child) ──
+    addin_cpp.write_text(addin_da3, encoding="utf-8")
+    (src_dir / "DiskCmd.cpp").write_text("CATStateCommand BuildGraph DiskCmd\n", encoding="utf-8")
+    (mod_dir / "LocalInterfaces" / "DiskCmd.h").write_text("// DiskCmd header\n", encoding="utf-8")
+    r_da15 = delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA15: delete_command returns pending status", r_da15.get("status") == "pending", str(r_da15))
+    cs_da15 = ChangeSet.from_dict(r_da15.get("changeset", {}))
+    apply_da15 = cs_da15.apply(workspace_root=da_ws)
+    check("DA15: changeset apply succeeds", apply_da15.get("status") == "applied", str(apply_da15))
+    addin_post_da15 = addin_cpp.read_text(encoding="utf-8")
+    check("DA15: SetAccessChild now points to pS2", "SetAccessChild(pTlb, pS2);" in addin_post_da15, addin_post_da15)
+    check("DA15: pS1 starter removed", "pS1" not in addin_post_da15, addin_post_da15)
+    check("DA15: pS2 and pS3 remain intact", "pS2" in addin_post_da15 and "pS3" in addin_post_da15, addin_post_da15)
+    check("DA15: SetAccessNext(pS2, pS3) remains intact", "SetAccessNext(pS2, pS3);" in addin_post_da15, addin_post_da15)
+    check("DA15: SecondCmdHdr remains in CreateCommands", "SecondCmdHdr" in addin_post_da15, addin_post_da15)
+
+    # ── DA16: 中间节点物理删除与拓扑缝合 (Mode 3: relink_next) ──
+    addin_cpp.write_text(addin_da4, encoding="utf-8")
+    (src_dir / "DiskCmd.cpp").write_text("CATStateCommand BuildGraph DiskCmd\n", encoding="utf-8")
+    (mod_dir / "LocalInterfaces" / "DiskCmd.h").write_text("// DiskCmd header\n", encoding="utf-8")
+    r_da16 = delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA16: delete_command returns pending status", r_da16.get("status") == "pending", str(r_da16))
+    cs_da16 = ChangeSet.from_dict(r_da16.get("changeset", {}))
+    apply_da16 = cs_da16.apply(workspace_root=da_ws)
+    check("DA16: changeset apply succeeds", apply_da16.get("status") == "applied", str(apply_da16))
+    addin_post_da16 = addin_cpp.read_text(encoding="utf-8")
+    check("DA16: SetAccessNext seamlessly bridges pS1 to pS3", "SetAccessNext(pS1, pS3);" in addin_post_da16, addin_post_da16)
+    check("DA16: pS2 starter removed", "pS2" not in addin_post_da16, addin_post_da16)
+    check("DA16: SetAccessChild(pTlb, pS1) remains intact", "SetAccessChild(pTlb, pS1);" in addin_post_da16, addin_post_da16)
+    check("DA16: FirstCmdHdr remains in CreateCommands", "FirstCmdHdr" in addin_post_da16, addin_post_da16)
+
+    # ── DA17: 尾节点物理删除与拓扑截断 (Mode 4: remove_tail) ──
+    addin_cpp.write_text(addin_da5, encoding="utf-8")
+    (src_dir / "DiskCmd.cpp").write_text("CATStateCommand BuildGraph DiskCmd\n", encoding="utf-8")
+    (mod_dir / "LocalInterfaces" / "DiskCmd.h").write_text("// DiskCmd header\n", encoding="utf-8")
+    r_da17 = delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA17: delete_command returns pending status", r_da17.get("status") == "pending", str(r_da17))
+    cs_da17 = ChangeSet.from_dict(r_da17.get("changeset", {}))
+    apply_da17 = cs_da17.apply(workspace_root=da_ws)
+    check("DA17: changeset apply succeeds", apply_da17.get("status") == "applied", str(apply_da17))
+    addin_post_da17 = addin_cpp.read_text(encoding="utf-8")
+    check("DA17: pS3 removed from CreateToolbars", "pS3" not in addin_post_da17, addin_post_da17)
+    check("DA17: SetAccessChild(pTlb, pS1) remains", "SetAccessChild(pTlb, pS1);" in addin_post_da17, addin_post_da17)
+    check("DA17: SetAccessNext(pS1, pS2) remains", "SetAccessNext(pS1, pS2);" in addin_post_da17, addin_post_da17)
+
+    # ── DA18: 多工具栏物理删除原子缝合 ──
+    addin_cpp.write_text(two_toolbars_content, encoding="utf-8")
+    (src_dir / "DiskCmd.cpp").write_text("CATStateCommand BuildGraph DiskCmd\n", encoding="utf-8")
+    (mod_dir / "LocalInterfaces" / "DiskCmd.h").write_text("// DiskCmd header\n", encoding="utf-8")
+    r_da18 = delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench")
+    check("DA18: delete_command returns pending status", r_da18.get("status") == "pending", str(r_da18))
+    cs_da18 = ChangeSet.from_dict(r_da18.get("changeset", {}))
+    apply_da18 = cs_da18.apply(workspace_root=da_ws)
+    check("DA18: changeset apply succeeds", apply_da18.get("status") == "applied", str(apply_da18))
+    addin_post_da18 = addin_cpp.read_text(encoding="utf-8")
+    check("DA18: pA2 removed from ToolbarA", "pA2" not in addin_post_da18, addin_post_da18)
+    check("DA18: pA1 remains in ToolbarA", "pA1" in addin_post_da18, addin_post_da18)
+    check("DA18: pB1 removed from ToolbarB", "pB1" not in addin_post_da18, addin_post_da18)
+    check("DA18: pB2 remains in ToolbarB", "pB2" in addin_post_da18, addin_post_da18)
+    check("DA18: ToolbarB SetAccessChild points to pB2", "SetAccessChild(pTlbB, pB2);" in addin_post_da18, addin_post_da18)
+    check("DA18: ToolbarA container intact", "NewAccess(CATCmdContainer, pTlbA, ToolbarA);" in addin_post_da18)
+    check("DA18: ToolbarB container intact", "NewAccess(CATCmdContainer, pTlbB, ToolbarB);" in addin_post_da18)
+
+    # ── DA19: 预检失败的事务门禁零变更 ──
+    addin_cpp.write_text(addin_da10_target_fail, encoding="utf-8")
+    (src_dir / "DiskCmd.cpp").write_text("CATStateCommand BuildGraph DiskCmd\n", encoding="utf-8")
+    (mod_dir / "LocalInterfaces" / "DiskCmd.h").write_text("// DiskCmd header\n", encoding="utf-8")
+    caller_cs_da19 = ChangeSet(action="caller_audit", description="caller audit")
+    r_da19 = delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench", cs=caller_cs_da19)
+    check("DA19: delete_command returns error on malformed target", r_da19.get("status") == "error", str(r_da19))
+    check("DA19: caller CS created is empty", caller_cs_da19.created == {})
+    check("DA19: caller CS modified is empty", caller_cs_da19.modified == {})
+    check("DA19: caller CS deleted is empty", caller_cs_da19.deleted == [])
+    check("DA19: DiskCmd.cpp still exists on disk", (src_dir / "DiskCmd.cpp").exists())
+    check("DA19: DiskCmd.h still exists on disk", (mod_dir / "LocalInterfaces" / "DiskCmd.h").exists())
+
+    # ── DA20: 回滚安全性验证 ──
+    addin_cpp.write_text(addin_da2, encoding="utf-8")
+    (src_dir / "DiskCmd.cpp").write_text("CATStateCommand BuildGraph DiskCmd\n", encoding="utf-8")
+    (mod_dir / "LocalInterfaces" / "DiskCmd.h").write_text("// DiskCmd header\n", encoding="utf-8")
+    cs_da20 = ChangeSet(action="delete_command", description="delete with rollback test")
+    r_da20 = delete_command(ctx, "DiskCmd", workbench_name="SampleWorkbench", cs=cs_da20)
+    check("DA20: delete_command returns pending status", r_da20.get("status") == "pending", str(r_da20))
+    apply_da20 = cs_da20.apply(workspace_root=da_ws)
+    check("DA20: apply succeeds", apply_da20.get("status") == "applied", str(apply_da20))
+    check("DA20: files deleted after apply", not (src_dir / "DiskCmd.cpp").exists())
+    # Rollback
+    rb_res = cs_da20.rollback()
+    check("DA20: rollback succeeds", rb_res.get("status") == "rolled_back", str(rb_res))
+    check("DA20: DiskCmd.cpp restored after rollback", (src_dir / "DiskCmd.cpp").exists())
+    check("DA20: DiskCmd.h restored after rollback", (mod_dir / "LocalInterfaces" / "DiskCmd.h").exists())
+    check("DA20: Addin content restored after rollback", "DiskCmdHdr" in addin_cpp.read_text(encoding="utf-8"))
 
 finally:
     shutil.rmtree(da_ws, ignore_errors=True)

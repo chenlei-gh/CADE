@@ -2260,6 +2260,7 @@ def inspect_delete_command(
     name: str,
     *,
     module: Optional[str] = None,
+    framework: Optional[str] = None,
     workbench_name: Optional[str] = None,
     cs: Optional[ChangeSet] = None,
 ) -> Dict[str, Any]:
@@ -2277,7 +2278,7 @@ def inspect_delete_command(
       - Preserves ChangeSet zero-mutation on any failure (DA11)
     """
     ctx.refresh()
-    mod = ctx.snapshot.get_module(module) if module else None
+    mod = ctx.snapshot.get_module(module, framework) if module else None
     cmd = None
     if mod:
         cmd = next((c for c in mod.commands if c.name.lower() == name.lower()), None)
@@ -2582,78 +2583,212 @@ def inspect_delete_command(
     }
 
 
-def delete_command(
-    ctx: ActionContext, name: str, module: str = None, framework: str = None
-) -> Dict:
-    """
-    Delete a Command AND all related files with cascade detection.
-    Removes: .h, .cpp, Header.cpp, Dialog (if owned), Catalog entry, NLS entries, Imakefile references.
+def _remove_statement_line(
+    content: str, stmt: str, replace_with: Optional[str] = None
+) -> str:
+    """Remove or replace a single C++ statement line in content.
 
-    Returns preview with warnings if other entities depend on this command.
+    If the line containing stmt has only whitespace before/after stmt,
+    the entire line (including newline) is replaced by indent + replace_with,
+    or deleted entirely. Otherwise, inline replacement/deletion is performed.
+    """
+    if not stmt:
+        return content
+    idx = content.find(stmt)
+    if idx == -1:
+        return content
+
+    line_start = content.rfind("\n", 0, idx)
+    line_start = 0 if line_start == -1 else line_start + 1
+    indent = content[line_start:idx]
+
+    line_end = content.find("\n", idx + len(stmt))
+    if line_end == -1:
+        line_end = len(content)
+        has_newline = False
+    else:
+        has_newline = True
+
+    trailing = content[idx + len(stmt):line_end]
+
+    if indent.strip() == "" and trailing.strip() == "":
+        if replace_with is not None:
+            new_line = indent + replace_with + ("\n" if has_newline else "")
+            return content[:line_start] + new_line + content[line_end + (1 if has_newline else 0):]
+        else:
+            return content[:line_start] + content[line_end + (1 if has_newline else 0):]
+    else:
+        if replace_with is not None:
+            return content[:idx] + replace_with + content[idx + len(stmt):]
+        else:
+            return content[:idx] + content[idx + len(stmt):]
+
+
+def delete_command(
+    ctx: ActionContext,
+    name: str,
+    module: Optional[str] = None,
+    framework: Optional[str] = None,
+    workbench_name: Optional[str] = None,
+    cs: Optional[ChangeSet] = None,
+) -> Dict[str, Any]:
+    """Delete a Command and cascade remove its Header registration and Toolbar mounts (R-4-A).
+
+    Strictly consumes the CommandDeletePlan computed by inspect_delete_command()
+    to maintain transaction integrity and zero-mutation guarantees upon failure.
+    Removes:
+      - Command implementation (.h, .cpp, owned dialog files)
+      - Imakefile.mk references (if any)
+      - Header registration from CreateCommands()
+      - Starter mounts from CreateToolbars() with single-chain splicing
+    Resources (.CATNls, .CATRsc, .bmp) are NOT deleted; orphan resources are recorded
+    in metadata for user audit.
     """
     ctx.refresh()
-    mod = ctx.snapshot.get_module(module, framework) if module else None
+
+    inspect_res = inspect_delete_command(
+        ctx,
+        name,
+        module=module,
+        framework=framework,
+        workbench_name=workbench_name,
+        cs=cs,
+    )
+    if inspect_res.get("status") != "ok":
+        return _error(inspect_res.get("error") or f"Delete inspection failed for command '{name}'")
+
+    plan = inspect_res["plan"]
+
+    # Locate command entity for breaking dependents / cascade metadata
     cmd = None
-
-    if mod:
-        cmd = next((c for c in mod.commands if c.name.lower() == name.lower()), None)
+    all_cmds = ctx.snapshot.get_all_commands()
+    if module:
+        mod = ctx.snapshot.get_module(module, framework)
+        if mod:
+            cmd = next((c for c in mod.commands if c.name.lower() == name.lower()), None)
     if not cmd:
-        all_cmds = ctx.snapshot.get_all_commands()
         cmd = next((c for c in all_cmds if c.name.lower() == name.lower()), None)
-    if not cmd:
-        return _error(f"Command not found: {name}")
 
-    cs = ChangeSet(
+    master_cs = cs if cs is not None else ChangeSet(
         action="delete_command",
-        description=f"Delete command '{name}' and ALL related files",
+        description=f"Delete command '{name}' and cascade remove Header registration and Toolbar mounts",
     )
 
-    # Check for breaking dependents (e.g., workbenches using this command)
-    breaking_deps = ctx.snapshot.find_breaking_dependents(cmd)
+    breaking_deps = ctx.snapshot.find_breaking_dependents(cmd) if cmd else []
     if breaking_deps:
-        warnings = []
         for dep, reason in breaking_deps:
-            warnings.append(reason)
-            cs.add_warning(reason)
-
-        # Add to metadata for AI to decide
-        cs.metadata["breaking_dependents"] = [
+            master_cs.add_warning(reason)
+        master_cs.metadata["breaking_dependents"] = [
             {"name": dep.name, "type": dep.__class__.__name__.lower(), "reason": reason}
             for dep, reason in breaking_deps
         ]
 
-    # Find all files to delete using cascade
-    cascade_entities = ctx.snapshot.find_cascade_delete(cmd)
+    cascade_entities = ctx.snapshot.find_cascade_delete(cmd) if cmd else []
 
-    # Delete main command files using domain model
-    for f in cmd.all_files:
+    # 1. Delete implementation files
+    for f_str in plan.get("command_files", []):
+        f = Path(f_str)
         if f.exists():
-            cs.add_delete(f)
+            master_cs.add_delete(f)
 
-    # Delete owned dialog if exists
-    if cmd.dialog:
-        for f in cmd.dialog.all_files:
-            if f.exists():
-                cs.add_delete(f)
+    # 2. Update Imakefile.mk (remove references to command/class)
+    imakefile_path_str = plan.get("imakefile_path")
+    if imakefile_path_str:
+        imk_p = Path(imakefile_path_str)
+        if imk_p.exists():
+            if str(imk_p) in master_cs.modified:
+                old_imk = master_cs.modified[str(imk_p)]
+            elif str(imk_p) in master_cs.created:
+                old_imk = master_cs.created[str(imk_p)]
+            else:
+                old_imk = imk_p.read_text(encoding="utf-8", errors="replace")
 
-    # Clean Imakefile reference
-    if cmd.module and cmd.module.imakefile_path().exists():
-        old = cmd.module.imakefile_path().read_text(encoding="utf-8", errors="replace")
-        new = "\n".join([l for l in old.split("\n") if cmd.name not in l])
-        if new != old:
-            cs.add_modify(cmd.module.imakefile_path(), new)
+            c_name = plan.get("class_name") or name
+            new_lines = []
+            for line in old_imk.splitlines():
+                line_strip = line.strip()
+                if line_strip.startswith(("LINK_WITH", "BUILT_OBJECT_TYPE")):
+                    new_lines.append(line)
+                elif name in line or c_name in line:
+                    continue
+                else:
+                    new_lines.append(line)
+            new_imk = "\n".join(new_lines)
+            if old_imk.endswith("\n") and not new_imk.endswith("\n") and new_imk:
+                new_imk += "\n"
+            if new_imk != old_imk:
+                if str(imk_p) in master_cs.created:
+                    master_cs.created[str(imk_p)] = new_imk
+                else:
+                    master_cs.add_modify(imk_p, new_imk)
 
-    # Add metadata
-    cs.metadata.update(
+    # 3. Update Addin source (Header registration + Toolbar splices)
+    addin_source_str = plan["addin_source"]
+    addin_source = Path(addin_source_str)
+    if addin_source_str in master_cs.modified:
+        content = master_cs.modified[addin_source_str]
+    elif addin_source_str in master_cs.created:
+        content = master_cs.created[addin_source_str]
+    else:
+        content = addin_source.read_text(encoding="utf-8", errors="replace")
+
+    # 3a. Remove Header registration from CreateCommands()
+    header_stmt = plan.get("header_statement")
+    if header_stmt:
+        content = _remove_statement_line(content, header_stmt)
+
+    # 3b. Execute toolbar splices
+    for splice in plan.get("toolbar_splices", []):
+        mode = splice.get("splice_mode")
+        stmts_to_remove = splice.get("statements_to_remove", [])
+        stmts_to_add = splice.get("statements_to_add", [])
+
+        if mode == "remove_only_child" or mode == "remove_tail":
+            for stmt in stmts_to_remove:
+                content = _remove_statement_line(content, stmt)
+        elif mode == "new_child":
+            child_stmt = next((s for s in stmts_to_remove if s.strip().startswith("SetAccessChild")), None)
+            new_child_stmt = stmts_to_add[0] if stmts_to_add else None
+            if child_stmt and new_child_stmt:
+                content = _remove_statement_line(content, child_stmt, replace_with=new_child_stmt)
+            for stmt in stmts_to_remove:
+                if stmt != child_stmt:
+                    content = _remove_statement_line(content, stmt)
+        elif mode == "relink_next":
+            prev_var = splice.get("prev_starter_var")
+            tgt_starter = splice.get("starter_var")
+            prev_next_stmt = next(
+                (s for s in stmts_to_remove if s.strip().startswith("SetAccessNext") and prev_var in s and tgt_starter in s),
+                None,
+            )
+            new_next_stmt = stmts_to_add[0] if stmts_to_add else None
+            if prev_next_stmt and new_next_stmt:
+                content = _remove_statement_line(content, prev_next_stmt, replace_with=new_next_stmt)
+            for stmt in stmts_to_remove:
+                if stmt != prev_next_stmt:
+                    content = _remove_statement_line(content, stmt)
+
+    if addin_source_str in master_cs.created:
+        master_cs.created[addin_source_str] = content
+    else:
+        master_cs.add_modify(addin_source, content)
+
+    # 4. Record metadata
+    master_cs.metadata.update(
         {
             "command": name,
-            "deleted_files": [str(d) for d in cs.deleted],
+            "class_name": plan.get("class_name"),
+            "header_id": plan.get("header_id"),
+            "workbench_name": plan.get("workbench_name"),
+            "toolbar_splices": plan.get("toolbar_splices", []),
+            "orphan_resources": plan.get("orphan_resources", []),
+            "deleted_files": [str(d) for d in master_cs.deleted],
             "cascade_count": len(cascade_entities),
             "has_breaking_dependents": len(breaking_deps) > 0,
         }
     )
 
-    return _result(cs)
+    return _result(master_cs)
 
 
 def delete_module(ctx: ActionContext, name: str, framework: str = None) -> Dict:
