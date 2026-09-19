@@ -91,3 +91,62 @@ Recommended use: Experimental / version-scoped only (仅限实验性验证或特
 > **核心原则：Slot 17/18 是证据，不是 API 合同。**
 > 
 > 任何基于虚函数表偏移（vtable slot offset）的直接内存调用均不属于 Dassault Systèmes 的官方 API 承诺。CATIA 在后续的 Service Pack、Hotfix 或大版本更迭中，可能会因重构基类、调整继承链或重排虚函数顺序导致虚表偏移发生变化，进而引发非法内存访问硬崩溃。生产代码应优先追求官方支持的替代方案或明确受控的版本屏障。
+
+---
+
+## 停止条件 (Exit / Stop Criteria)
+
+逆向调查应保持高度克制，当出现以下任一情况时，必须立即**终止逆向调查流程**：
+
+1. **已发现公开替代方案**：在后续排查或深入官方用例中发现了官方支持的公开 API 组合，优先退回公开 CAA 路线。
+2. **已有可靠 Knowledge / Failure Pattern 支持**：现有知识库或已知失效模式已能合理解释该现象或提供既有规避手段。
+3. **原生行为无法稳定复现**：在纯净环境下该功能表现为偶发、强依赖特定环境或无法确立最小复现路径。
+4. **候选私有接口无法独立验证**：缺乏必要的上下文句柄、初始化依赖深重或调用时必然引发无符号段错误。
+5. **私有 ABI 风险不可承受**：项目明确要求跨 CATIA 大版本/Hotfix 强二进制兼容，且无法设置版本隔离保护网。
+
+---
+
+## 调查成果沉淀出口与规范 (Knowledge Sinks)
+
+调查完成后，无论成功、部分成功或失败，均应通过人工方式进行结构化沉淀，严禁将未经验证的经验作为普通公开 API 合同沉淀。
+
+### 1. 验证成功（获得可控规避或受限方案）
+沉淀出口：`knowledge/<domain>/<name>.md`
+
+必须包含以下结构化要素，**不能把一次“验证成功”直接等同于通用可复用方案**：
+
+```markdown
+---
+id: <domain>.<name>
+title: <简明描述>
+category: knowledge
+domain: <domain>
+release: [<明确验证过的版本, 如 R28>]
+tags: [<domain>, reverse_engineered, <环境实证tag>]
+---
+
+### 1. 观察到的事实 (Observed Facts)
+- 原生界面的行为、命令 ID、对应承载 DLL。
+
+### 2. 验证环境与版本 (Environment & Version)
+- 严禁默认使用 `b28_verified`！只有真实在 B28 本机运行验证时方可标注；其它版本如实标注（如 `r21_verified`），仅靠二进制静态分析尚未实机运行的必须标为 `unverified_static_analysis`。
+
+### 3. 实验复现步骤 (Reproduction Steps)
+- 触发该行为的最小前置条件与调用代码示例。
+
+### 4. 生效条件与前置约束 (Preconditions & Constraints)
+- 目标对象类型、状态要求、必要的上下文环境。
+
+### 5. 尚未确认的假设 (Unconfirmed Hypotheses)
+- 明确指出哪些推论（如参数含义、副效应、内存释放机制）尚未完全证明。
+
+### 6. 跨版本与 ABI 风险 (Cross-version & ABI Risks)
+- 声明不可作为公开 API 合同，评估不同 SP/Hotfix 可能存在的虚表偏移变动风险与崩溃规避措施。
+```
+
+### 2. 验证失败（证明为死路或崩溃陷阱）
+沉淀出口：`knowledge/failure_patterns/fp_<name>.md`
+
+- 记录失败现象、崩溃堆栈或未生效的调用路径；
+- 记录已排除的假设（例如确认某 DLL 导出函数并非预期功能）；
+- 防止后续开发者重复进行无谓的二次探雷。

@@ -47,14 +47,14 @@ annotation.md · assembly-tree.md · document-export.md · feature-recognition.m
 geometry-query.md · parameter-system.md · persistence.md · powercopy.md ·
 selection.md · surface-operations.md · undo-redo.md · update-mechanism.md · visualization.md
 
-### playbooks/（14个，**全部已核实**✅，除 README.md）
+### playbooks/（15个，**全部已核实**✅，除 README.md）
 
 assembly_constraint_check · assembly_stats · auto_annotate_3d · auto_color ·
 batch_drawing · batch_feature_check · batch_update_save · create_context_menu ·
 custom_viewer · dialog_wizard · export_bom · geometry_quality_check ·
-parameter_editor · surface_analysis
+native_command_investigation · parameter_editor · surface_analysis
 
-（对应 commit：`321604d` `ff8b596` `c23e661` `3d2d289` `e585c5e` `39d97d6` `49a26e7` `e39e3cc`）
+（对应 commit：`321604d` `ff8b596` `c23e661` `3d2d289` `e585c5e` `39d97d6` `49a26e7` `e39e3cc` `31cf56a`）
 
 ### knowledge/（已核实部分）
 
