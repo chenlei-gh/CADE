@@ -99,7 +99,6 @@
 |------|------|
 | `test_master.py` | runner 本身 |
 
-`tools/production_readiness_check.py` 是工具，不是测试套件。
 
 ---
 

@@ -52,7 +52,6 @@ Usage:
   cade prereq suggest <module>     # Suggest prerequisites
   cade prereq init <framework>     # Add default prerequisites
 
-  cade check                       # Production readiness audit (10 categories)
 
   cade version                     # Show version info
   cade test [--quick]              # Run test suite
@@ -171,8 +170,7 @@ def main():
         cmd_impact(args)
     elif cmd == "prereq":
         cmd_prereq_manager(args)
-    elif cmd == "check":
-        rc = cmd_check(args)
+
     elif cmd == "setup":
         cmd_setup(args)
     elif cmd == "version":
@@ -573,22 +571,6 @@ def cmd_prereq_manager(args):
     except subprocess.CalledProcessError as e:
         sys.exit(e.returncode)
 
-
-def cmd_check(args):
-    """Production readiness checklist (tools/production_readiness_check.py).
-
-    Runs the 10-category readiness audit (code quality, docs, tests,
-    security, performance, maintainability, deployment, compatibility,
-    error handling, versioning) against the skill installation.
-    """
-    import subprocess
-
-    script = SKILL_ROOT.parent / "tools" / "production_readiness_check.py"
-    if not script.exists():
-        print(f"Error: {script} not found")
-        return 1
-    result = subprocess.run([sys.executable, str(script)] + args)
-    return result.returncode
 
 
 def cmd_setup(args):

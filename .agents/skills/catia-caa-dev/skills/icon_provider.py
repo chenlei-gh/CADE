@@ -773,7 +773,7 @@ ICON_HASH = _compute_icon_hash()
 #  CLI: semantic audit + preview render
 # ═══════════════════════════════════════════════════════════════════
 
-def audit(names: List[str], render_dir: Path = None) -> int:
+def _audit(names: List[str], render_dir: Path = None) -> int:
     """Print semantic resolution per name; exit 1 if any FALLBACK."""
     counts = {"EXACT": 0, "COMPOUND": 0, "LONGEST": 0, "FALLBACK": 0}
     for n in names:
@@ -814,4 +814,4 @@ if __name__ == "__main__":
     if not args:
         print(__doc__)
         sys.exit(2)
-    sys.exit(audit(args, render_dir))
+    sys.exit(_audit(args, render_dir))

@@ -285,14 +285,6 @@ capabilities:
     bindings:
       cli: cade prereq add|remove|list|validate|suggest|init ...
 
-  - name: readiness_check
-    description: 生产就绪审计（10 类：代码质量/文档/测试/安全/性能等）
-    triggers:
-      - 就绪检查
-      - 发布前检查
-      - production readiness
-    bindings:
-      cli: cade check
 
   - name: setup_environment
     description: 工作区环境初始化/CATIA 安装检测/配置查看

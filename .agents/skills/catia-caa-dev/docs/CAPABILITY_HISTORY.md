@@ -72,6 +72,21 @@
 - **Restore condition**: 若未来确有 Spec 驱动的独立抽象需求，应先定义好与 Kernel 生产
   管线的端到端集成契约后再行引入，不维护悬空实验链。
 
+### readiness_check / cade check
+- **Removed**: 架构减法退役（Phase 3 旧质量门退役）。
+- **Reason**: 原 `tools/production_readiness_check.py` 仅为早期泛 Python 指标清单
+  （grep TODO/password、行数/文件数统计等），完全不覆盖 CATIA CAA 编译器工具链、
+  构建门禁、领域模型与生命周期核心安全；且 `cmd_check` 仅为薄壳子进程包装。
+- **Architectural Decision**: 不保留 `cade check` 命令，亦不创建新的综合聚合包装层
+  （避免重新引入职责混杂、语义模糊的“万能入口”）；引导全面收敛至职责清晰的现役专项入口：
+  - 测试套件全量/快速回归：`cade test [--quick]` / `python test_master.py`
+  - 环境与工作区健康诊断：`cade health [workspace]`
+  - 静态代码与依赖审查：`cade validate [workspace]`
+  - 框架依赖合法性验证：`cade prereq validate [workspace]`
+  - 架构能力契约审计：`python tools/check_capabilities.py`
+  - 全局交叉一致性审计：`python tests/test_cross_reference.py`
+- **Restore condition**: 永久退役；不设单点聚合质量门，各专项质量门保持独立可验证。
+
 ---
 
 ## Unavailable（有意关闭，非 bug）

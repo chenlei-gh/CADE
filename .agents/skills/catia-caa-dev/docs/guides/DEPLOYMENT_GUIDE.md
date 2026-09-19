@@ -135,8 +135,7 @@ tools/
 ├── generate_guid_ai.bat              # GUID 生成 (AI 专用，机器可读输出)
 ├── check_code_reuse.py               # 代码重用检查
 ├── catia_detector.py                 # CATIA 安装动态检测
-├── prerequisites_manager.py          # Prerequisites 依赖管理
-└── production_readiness_check.py     # 生产就绪度检查
+└── prerequisites_manager.py          # Prerequisites 依赖管理
 ```
 
 所有 `tools/*.bat` 均为 AI 专用工具：无交互，机器可读输出（`KEY=VALUE` 格式），退出码指示状态。

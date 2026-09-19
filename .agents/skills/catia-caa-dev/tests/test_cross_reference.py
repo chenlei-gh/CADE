@@ -246,42 +246,10 @@ if complete.exists():
         check("No master in suites", "test_master.py" not in " ".join(es_files))
 
 # ═══════════════════════════════════════════════════════════
-# 5. ../tools/production_readiness_check.py
+# 5. Architecture compliance
 # ═══════════════════════════════════════════════════════════
 print("\n" + "=" * 70)
-print("  5. ../tools/production_readiness_check.py <-> Consistency")
-print("=" * 70)
-
-prod = TESTS_DIR / "../tools/production_readiness_check.py"
-if prod.exists():
-    prod_src = prod.read_text(encoding="utf-8")
-
-    # Version check
-    vers = re.findall(r'"(\d+\.\d+\.\d+)"', prod_src)
-    for v in vers:
-        check(
-            f"Production version {v} matches SKILL {skill_ver}",
-            v == skill_ver or v == "2.0.0",
-        )
-
-    # README.md path - should use parent.parent.parent
-    # README.md path check — non-root READMEs are fine (knowledge/, patterns/)
-    # Only flag self.root / "README.md" without parent fix
-    readme_refs = re.findall(r'self\.root\s*/\s*"README\.md"', prod_src)
-    for ref in readme_refs:
-        check(
-            f"README.md path uses root (should use parent...): {ref[:60]}",
-            False,
-            ref[:60],
-        )
-    if not readme_refs:
-        check("All README.md paths use CADE root", True)
-
-# ═══════════════════════════════════════════════════════════
-# 6. Architecture compliance
-# ═══════════════════════════════════════════════════════════
-print("\n" + "=" * 70)
-print("  6. Architecture Compliance")
+print("  5. Architecture Compliance")
 print("=" * 70)
 
 # 6a. Core layer modules must exist
@@ -350,10 +318,10 @@ if violations == 0:
     check("No skills/ -> tests/ imports (layer isolation)", True)
 
 # ═══════════════════════════════════════════════════════════
-# 7. README.md consistency
+# 6. README.md consistency
 # ═══════════════════════════════════════════════════════════
 print("\n" + "=" * 70)
-print("  7. README.md Consistency")
+print("  6. README.md Consistency")
 print("=" * 70)
 
 readme_path = CADE_ROOT / "README.md"
@@ -485,10 +453,10 @@ if docs_dir.is_dir():
     check(f"Documentation files >= 10 (actual={len(docs_md)})", len(docs_md) >= 10)
 
 # ═══════════════════════════════════════════════════════════
-# 8. Knowledge gaps — CAADoc unresolved gaps (P3-009 fix: before summary)
+# 7. Knowledge Gaps (CAADoc unresolved)
 # ═══════════════════════════════════════════════════════════
 print("\n" + "=" * 70)
-print("  8. Knowledge Gaps (CAADoc unresolved)")
+print("  7. Knowledge Gaps (CAADoc unresolved)")
 print("=" * 70)
 
 gaps_dir = SKILL_ROOT / "knowledge" / "gaps"
