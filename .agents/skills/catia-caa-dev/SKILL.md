@@ -258,7 +258,7 @@ triggers:
 
 **版本**: 3.2.1
 **状态**: ✅ 活跃开发  
-**测试**: 42 套件（快速模式执行 41 套，跳过 1 套 CATIA 生命周期测试）
+**测试**: 43 套件（快速模式执行 42 套，跳过 1 套 CATIA 生命周期测试）
 
 这是一个**智能的 CAA 开发引擎（Development Kernel）**，将模糊的开发需求，经过需求分析、规划、知识推理和验证，稳定地转化为可执行实现。
 
@@ -330,7 +330,7 @@ AI 只知道 3 个 Mode:
 6. **代码验证** — 生成后自动静态检查（宏/头文件/命名规范），无需 mkmk
 7. **自动修复** — Repair Loop：诊断→修复→验证，最多 3 次重试
 8. **高性能** — 模板生成约50ms，比 RADE 工具快 100 倍
-9. **完整测试** — 42 套件，快速模式执行 41 套
+9. **完整测试** — 43 套件，快速模式执行 42 套
 10. **依赖图管理** — 完整的实体关系图和 Mermaid 可视化
 11. **知识体系** — Capability→Playbook→Knowledge→Philosophy→Framework→CAADoc + Failure Patterns + Decision Trees
 
@@ -1233,7 +1233,7 @@ python tests/test_full_integration.py
 python tests/test_full_regression.py --quick
 ```
 
-**Master quick**: 42 套中执行 41 套，跳过 1 套 CATIA 生命周期测试（套件数以 `tests/test_master.py` 的 `SUITES` 为准）
+**Master quick**: 43 套中执行 42 套，跳过 1 套 CATIA 生命周期测试（套件数以 `tests/test_master.py` 的 `SUITES` 为准）
 ```bash
 python tests/test_master.py --quick
 ```
@@ -1705,7 +1705,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 ### 部署前检查清单
 
 - [ ] 已阅读并接受上方「非阻塞残余风险」的使用规程（尤其：生成代码后必须在真实工作区跑一次 Build）
-- [ ] 已跑通 `python tests/test_master.py --quick`，确认本机 quick 模式通过（当前 42 套中执行 41 套，跳过 Int-1；套件数以 `SUITES` 为准）
+- [ ] 已跑通 `python tests/test_master.py --quick`，确认本机 quick 模式通过（当前 43 套中执行 42 套，跳过 Int-1；套件数以 `SUITES` 为准）
 - [ ] 已确认目标 CATIA 版本 ≥ R19（工具在 B28 上做过实机验证；跨版本首次使用建议先在测试工作区跑一次 `develop()`/`repair()` 全流程）
 - [ ] 团队已知晓 `KNOWLEDGE_AUDIT_STATUS.md` 中的审计状态与核实方法论，涉及关键 API 时以 `--query` 核验为准
 - [ ] 首次在新工作区使用时，先用小范围改动验证 ChangeSet 应用 + Build 闭环，再扩大到完整开发任务
@@ -1732,7 +1732,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 ### 已验证范围
 
-- **测试套件**: 42 套；快速模式执行 41 套，跳过 1 套 CATIA 生命周期测试。
+- **测试套件**: 43 套；快速模式执行 42 套，跳过 1 套 CATIA 生命周期测试。
 - **Full Integration**: 49/49 通过。
 - **Full Regression quick**: 394/398；4 项 quarantine 不计作通过。
 - **真实 mkmk Build（Tier B，非 quick 模式）**: 对 `TTEST` 工作区执行 `incremental_build()`，0 error，DLL 校验通过且已刷新（`Int-1 Build & Run` 套件，约 33s）。
@@ -1774,4 +1774,4 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 **最后更新**: 2026-08-28  
 **维护者**: Kiro AI Agent  
 **状态**: ✅ 活跃开发（已通过 P0-P2 安全审计）  
-**测试**: 42 套件可用
+**测试**: 43 套件可用

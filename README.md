@@ -299,7 +299,7 @@ python .agents/skills/catia-caa-dev/tests/test_master.py --quick
 python .agents/skills/catia-caa-dev/tests/test_master.py
 ```
 
-> **Test baseline**: 42 suites (41 quick + 1 CATIA lifecycle) · 43 test files · Fast regression: 41/41 passing.
+> **Test baseline**: 43 suites (42 quick + 1 CATIA lifecycle) · 44 test files · Fast regression: 42/42 passing.
 
 ---
 
@@ -584,7 +584,7 @@ python .agents/skills/catia-caa-dev/tests/test_master.py --quick
 python .agents/skills/catia-caa-dev/tests/test_master.py
 ```
 
-> **测试基线**：42 套件（41 快速套件 + 1 CATIA 生命周期套件）· 43 测试文件 · 快速回归通过：41/41。
+> **测试基线**：43 套件（42 快速套件 + 1 CATIA 生命周期套件）· 44 测试文件 · 快速回归通过：42/42。
 
 ---
 
