@@ -59,7 +59,7 @@
 |------|------------|
 | `test_l4_architecture.py` | L4-1 Architecture (39) |
 | `test_l5_semantic.py` | L5-1 Semantic (40) |
-| `test_l6_fault_injection.py` | L6-1 Fault Inject (16) |
+| `test_l6_fault_injection.py` | L6-1 Fault Inject (36) |
 | `test_knowledge_system.py` | L7-1 Knowledge (16) |
 
 ### 集成套件

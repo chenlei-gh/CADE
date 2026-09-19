@@ -43,7 +43,7 @@ SUITES = {
     # ── L5: Semantic ──
     "L5-1 Semantic (40)": "test_l5_semantic.py",
     # ── L6: Fault Injection ──
-    "L6-1 Fault Inject (16)": "test_l6_fault_injection.py",
+    "L6-1 Fault Inject (36)": "test_l6_fault_injection.py",
     # ── L7: Knowledge System ──
     "L7-1 Knowledge (16)": "test_knowledge_system.py",
     # ── L0: Kernel Contract Tests (v3.0) ──
