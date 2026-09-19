@@ -15,6 +15,10 @@ from pathlib import Path
 
 SKILL_ROOT = Path(__file__).parent.parent
 CADE_ROOT = SKILL_ROOT.parent.parent.parent  # D:\DevTools\CADE
+is_cade_repo = (
+    (CADE_ROOT / "README.md").exists()
+    and "CADE" in (CADE_ROOT / "README.md").read_text(encoding="utf-8", errors="ignore")[:2000]
+)
 TESTS_DIR = SKILL_ROOT / "tests"
 SKILLS_DIR = SKILL_ROOT / "skills"
 TOOLS_DIR = SKILL_ROOT / "tools"
@@ -113,7 +117,7 @@ if claimed_suites:
 # real test_*.py count.
 readme_path = CADE_ROOT / "README.md"
 quick_suite_count = actual_suite_count - len(skip_keys) if skip_match else actual_suite_count
-if readme_path.exists():
+if is_cade_repo:
     readme_md = readme_path.read_text(encoding="utf-8")
     valid_suite_numbers = {actual_suite_count, quick_suite_count}
     claimed_suite_numbers = (
@@ -145,7 +149,8 @@ if readme_path.exists():
         f"stale numbers: {bad_files}" if bad_files else f"{len(claimed_file_numbers)} references OK",
     )
 else:
-    check("README.md found at project root", False, str(readme_path))
+    check("README suite counts (skipped: external host workspace)", True)
+    check("README test-file counts (skipped: external host workspace)", True)
 
 # 2c. Modules listed in the SKILL.md tree must exist in the directory the
 # tree places them in. Entries share the same indentation across sections
@@ -325,9 +330,11 @@ print("  6. README.md Consistency")
 print("=" * 70)
 
 readme_path = CADE_ROOT / "README.md"
-if readme_path.exists():
+if is_cade_repo:
     readme_md = readme_path.read_text(encoding="utf-8")
     check("README mentions test_master.py", "test_master.py" in readme_md)
+else:
+    check("README mentions test_master.py (skipped: external host workspace)", True)
     # Version check skipped — README.md intentionally omits version numbers
 
 # 7a. SKILL.md should NOT claim a README.md at the skill root (the project

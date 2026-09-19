@@ -390,8 +390,24 @@ def check_contract_bindings(caps):
                     # script paths are skill-root relative; ../../ escape ok
                     p = (SKILL_ROOT / t["script"]).resolve()
                     if not p.exists():
-                        errors.append(f"{name}: cli script '{t['script']}' "
-                                      f"not found (resolved: {p})")
+                        # If script escapes SKILL_ROOT into the host repo, and this is an
+                        # external host workspace (not the CADE development repo itself),
+                        # the upstream developer tooling (e.g. sync_agents.sh) is naturally absent.
+                        host_readme = (SKILL_ROOT / "../../../README.md").resolve()
+                        is_external_host = not (
+                            host_readme.exists()
+                            and "CADE" in host_readme.read_text(encoding="utf-8", errors="ignore")[:2000]
+                        )
+                        escapes_skill = True
+                        try:
+                            escapes_skill = not p.is_relative_to(SKILL_ROOT)
+                        except AttributeError:
+                            escapes_skill = ".." in t["script"]
+                        if is_external_host and escapes_skill:
+                            pass
+                        else:
+                            errors.append(f"{name}: cli script '{t['script']}' "
+                                          f"not found (resolved: {p})")
                     elif p.suffix == ".py":
                         ok, err = _module_import_probe(p)
                         if not ok:
