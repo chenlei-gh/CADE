@@ -119,8 +119,16 @@ ck(
     in Path(new_cpp_path).read_text(encoding="utf-8", errors="replace"),
 )
 
-# Restore OldCmd for subsequent tests
-Path(new_cpp_path).rename(old_cpp_path)
+# Rollback changeset and verify complete reversibility
+rb_res = applied_cs.rollback()
+ck("1.4.8 rollback: status ok", rb_res.get("status") == "rolled_back", str(rb_res.get("errors", [])))
+ck("1.4.9 rollback: old file restored on disk", Path(old_cpp_path).exists())
+ck(
+    "1.4.10 rollback: old file content restored",
+    "// OldCmd implementation"
+    in Path(old_cpp_path).read_text(encoding="utf-8", errors="replace"),
+)
+ck("1.4.11 rollback: new file cleaned up", not Path(new_cpp_path).exists())
 
 # Error: same name
 r2 = rename_command(snapshot, "TestMod.m", "NewCmd", "NewCmd")
