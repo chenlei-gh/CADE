@@ -33,7 +33,7 @@
 
 *From intent to generated code, verification, build, runtime, diagnosis, and recovery.*
 
-[**Quick Start**](#06--quick-start) · [**Why CADE?**](#02--why-cade) · [**The Loop**](#03--the-development-loop) · [**Capabilities**](#04--core-capabilities) · [**Example**](#07--end-to-end-example) · [**Architecture**](#05--architecture) · [**Docs**](.agents/skills/catia-caa-dev/docs/) · [**中文说明**](#-中文说明)
+[**Quick Start**](#06--quick-start) · [**Why CADE?**](#02--why-cade) · [**The Loop**](#03--the-development-loop) · [**Capabilities**](#04--core-capabilities) · [**Example**](#07--end-to-end-example) · [**Architecture**](#05--architecture) · [**Docs**](.agents/skills/catia-caa-dev/docs/) · [**License**](#11--license--disclaimer) · [**中文说明**](#-中文说明)
 
 </div>
 
@@ -330,14 +330,25 @@ To keep engineering goals focused and reliable, CADE maintains clear functional 
 
 ---
 
-## 11 — License
+## 11 — License & Disclaimer
 
-Distributed under the [MIT License](.agents/skills/catia-caa-dev/LICENSE).  
-Copyright © [chenlei-gh](https://github.com/chenlei-gh).
+Distributed under the [MIT License](LICENSE).  
+Copyright © 2026 [chenlei-gh](https://github.com/chenlei-gh) & CADE Contributors.
+
+### Trademark Disclaimer
+- **CATIA**, **CAA**, **RADE**, and related marks are registered trademarks of Dassault Systèmes SE in France and/or other countries.
+- CADE is an independent, third-party open-source development tool and is not affiliated with, endorsed by, sponsored by, or supported by Dassault Systèmes.
+- Any CAA code templates and references provided herein are intended to aid developer productivity. Users remain responsible for complying with their own Dassault Systèmes licensing and CAA development agreements.
 
 ---
 
 ## 🇨🇳 中文说明
+
+<div align="center">
+
+[**快速开始**](#06--快速开始) · [**为什么选择 CADE**](#02--为什么选择-cade) · [**开发闭环**](#03--开发闭环3-种模式) · [**核心能力**](#04--核心能力) · [**完整示例**](#07--端到端完整示例) · [**系统架构**](#05--系统架构) · [**开源许可**](#11--开源许可与免责声明)
+
+</div>
 
 ### 01 — 什么是 CADE？
 
@@ -611,3 +622,15 @@ python .agents/skills/catia-caa-dev/tests/test_master.py
 - **[知识系统架构](.agents/skills/catia-caa-dev/knowledge/README.md)** — 结构化知识体系层级与检索契约。
 - **[实战 Playbook 目录](.agents/skills/catia-caa-dev/playbooks/README.md)** — 精选工程场景套路与逆向调查指南。
 - **[更新日志](.agents/skills/catia-caa-dev/CHANGELOG.md)** — 版本发布历史、演进记录与迁移注意事项。
+
+---
+
+### 11 — 开源许可与免责声明
+
+本项目采用 [MIT 许可证](LICENSE) 开源发布。  
+版权所有 © 2026 [chenlei-gh](https://github.com/chenlei-gh) 及 CADE 贡献者。
+
+#### 商标免责声明 (Trademark Disclaimer)
+- **CATIA**、**CAA**、**RADE** 及相关标识均为达索系统（Dassault Systèmes SE）在法国和/或其他国家/地区的注册商标。
+- CADE 是一套独立的第三方开源辅助开发内核与工具链，与达索系统（Dassault Systèmes）无官方隶属、赞助、授权、认证或背书关系。
+- 项目所包含的代码模板、知识索引及脚手架仅用于辅助 CAA 开发者提升日常工程效率。用户在使用本工具开发专有业务模块时，应确保遵守自身与达索系统签订的商业许可协议与 CAA 开发者准则。
