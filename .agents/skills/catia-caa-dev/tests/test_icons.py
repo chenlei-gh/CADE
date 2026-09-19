@@ -663,6 +663,61 @@ for _cmd, _expected_stem in (
         check(f"get_icon({_cmd}) byte-identical to {_expected_stem}.bmp",
               _p.read_bytes() == _gen_bmp.read_bytes())
 
+# Verify create_command & inspect_header_resources CATRsc stem contract (ADR §8)
+try:
+    from actions import ActionContext, create_command, inspect_header_resources
+    _tmp_adr = Path(tempfile.mkdtemp())
+    try:
+        _fw = _tmp_adr / "AdrFw.edu"
+        (_fw / "IdentityCard").mkdir(parents=True)
+        (_fw / "IdentityCard" / "IdentityCard.h").write_text('AddPrereqComponent("System",Public);')
+        _mod = _fw / "AdrMod.m"
+        (_mod / "src").mkdir(parents=True)
+        (_mod / "LocalInterfaces").mkdir()
+        (_mod / "Imakefile.mk").write_text("MODULE=AdrMod\nSOURCES = \\")
+
+        _ctx = ActionContext(str(_tmp_adr))
+        _ctx.refresh()
+        _res = create_command(_ctx, "CAAPartToAsm", "AdrMod.m")
+        check("create_command(CAAPartToAsm) status pending", _res["status"] == "pending")
+
+        from changeset import ChangeSet
+        _cs = ChangeSet.from_dict(_res["changeset"]) if isinstance(_res["changeset"], dict) else _res["changeset"]
+
+        # 1. CATRsc must reference "I_CADEPartToAsm" (not "I_caaparttoasm")
+        _rsc_key = str(_fw / "CNext" / "resources" / "msgcatalog" / "CAAPartToAsmHdr.CATRsc")
+        _rsc_content = _cs.created.get(_rsc_key, "")
+        check("CAAPartToAsm CATRsc Icon.Normal references I_CADEPartToAsm",
+              'Icon.Normal = "I_CADEPartToAsm"' in _rsc_content, _rsc_content)
+
+        # 2. Binary icon must be written as I_CADEPartToAsm.bmp
+        _ico_key = str(_fw / "CNext" / "resources" / "graphic" / "icons" / "normal" / "I_CADEPartToAsm.bmp")
+        check("CAAPartToAsm writes I_CADEPartToAsm.bmp in ChangeSet", _ico_key in _cs._binary)
+        if _ico_key in _cs._binary:
+            _expected_bytes = (_GENERATED_ICONS_DIR / "I_CADEPartToAsm.bmp").read_bytes()
+            check("CAAPartToAsm icon bytes match I_CADEPartToAsm.bmp", _cs._binary[_ico_key] == _expected_bytes)
+
+        # 3. inspect_header_resources resolves I_CADEPartToAsm
+        from meta_model import Workbench
+        _wb_entity = Workbench(name="AdrWb", path=_fw, framework=_ctx.snapshot.frameworks[0])
+        _ctx.snapshot.frameworks[0].workbenches.append(_wb_entity)
+        _insp = inspect_header_resources(
+            _ctx,
+            workbench_name="AdrWb",
+            header_class="CAAPartToAsmHdr",
+            header_id="CAAPartToAsm",
+            command_name="CAAPartToAsm",
+            cs=_cs,
+        )
+        check("inspect_header_resources(CAAPartToAsm) icon_ref == I_CADEPartToAsm",
+              _insp.get("icon_ref") == "I_CADEPartToAsm", str(_insp.get("icon_ref")))
+        check("inspect_header_resources(CAAPartToAsm) icon_file == I_CADEPartToAsm.bmp",
+              _insp.get("icon_file") is not None and _insp["icon_file"].name == "I_CADEPartToAsm.bmp")
+    finally:
+        shutil.rmtree(_tmp_adr, ignore_errors=True)
+except Exception as e:
+    check("create_command ADR contract test", False, str(e))
+
 
 # ═══════════════════════════════════════════════════════════════
 print("\n" + "=" * 60)

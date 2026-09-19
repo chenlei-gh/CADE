@@ -283,6 +283,8 @@ def resolve_generated_stem(command_name: str, hint: Optional[str] = None) -> Opt
         return None
     if command_name in _GENERATED_STEMS:
         return command_name
+    if f"I_{command_name}" in _GENERATED_STEMS:
+        return f"I_{command_name}"
     candidates = []
     if hint:
         candidates.append(re.sub(r'[^a-z0-9]', '', hint.lower()))

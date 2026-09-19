@@ -933,10 +933,28 @@ def create_command(
         # Computed unconditionally so the icon-file generation block below
         # (8c) can always see the same name the .CATRsc reference uses,
         # even if tpl_rsc happens to be missing.
-        icon_name = icon if icon else name.lower()
+        gen_stem = None
+        if not icon:
+            try:
+                from icon_provider import resolve_generated_stem
+                gen_stem = resolve_generated_stem(name, hint=category)
+            except Exception:
+                pass
+
+        if icon:
+            icon_ref = icon if icon.startswith("I_") else f"I_{icon}"
+            icon_lookup_key = icon
+        elif gen_stem:
+            icon_ref = gen_stem
+            icon_lookup_key = gen_stem
+        else:
+            icon_name = name.lower()
+            icon_ref = f"I_{icon_name}"
+            icon_lookup_key = icon_name
+
         if tpl_rsc.exists():
             rsc_category = category if category else "Commands"
-            rsc_content = f'{name}Hdr.{module_base}.{name}.Icon.Normal = "I_{icon_name}";\n'
+            rsc_content = f'{name}Hdr.{module_base}.{name}.Icon.Normal = "{icon_ref}";\n'
             if rsc_file.exists():
                 old = rsc_file.read_text(encoding="utf-8", errors="replace")
                 if name not in old:
@@ -945,12 +963,8 @@ def create_command(
                 cs.add_create(rsc_file, rsc_content)
 
         # --- 8c. Icon file — resolve via icon_provider, add to ChangeSet (P0-004 fix) ---
-        # NOTE: the .CATRsc block above always writes an "I_{icon_name}"
-        # reference (falling back to the command name in lowercase when no
-        # explicit `icon=` is given). This block MUST use the same fallback,
-        # otherwise a command created without an explicit icon gets a
-        # dangling icon reference — CNEXT shows the toolbar button with no
-        # logo because the referenced .bmp was never generated.
+        # NOTE: the .CATRsc block above writes an "{icon_ref}" reference.
+        # This block MUST use the exact same stem so CNEXT finds the .bmp.
         if fw:
             try:
                 from icon_provider import get_icon
@@ -958,10 +972,10 @@ def create_command(
                 # semantics the name alone may not (e.g. a 'FooCmd' with
                 # category='hole' still gets the hole icon). Name parsing
                 # remains the primary source; hint is the entity fallback.
-                ico_path = get_icon(icon_name, hint=category)
+                ico_path = get_icon(icon_lookup_key, hint=category)
                 if ico_path and ico_path.exists():
                     icons_dir = fw.path / "CNext" / "resources" / "graphic" / "icons" / "normal"
-                    ico_name = f"I_{icon_name.replace(' ', '_')}.bmp"
+                    ico_name = f"{icon_ref.replace(' ', '_')}.bmp"
                     target = icons_dir / ico_name
                     # Custom-icon override: a project-drawn bmp placed under
                     # icons/custom/ (e.g. a 24x24 panel icon) shadows the
@@ -1494,7 +1508,7 @@ def _queue_icon_binary(
         target_path = fw_path / "CNext" / "resources" / "graphic" / "icons" / "normal" / f"{icon_ref}.bmp"
     if icon_bytes is None:
         icon_base = icon_ref[2:] if icon_ref.startswith("I_") else icon_ref
-        icon_bytes = _resolve_icon_bytes(icon_base)
+        icon_bytes = _resolve_icon_bytes(icon_ref) or _resolve_icon_bytes(icon_base)
     if icon_bytes is None:
         return
 
@@ -1555,10 +1569,29 @@ def inspect_header_resources(
 
     target_title = (title or tooltip or command_name).replace('"', '\\"')
     target_tooltip = (tooltip or title or command_name).replace('"', '\\"')
-    raw_icon = icon or command_name.lower()
-    icon_ref = raw_icon if raw_icon.startswith("I_") else f"I_{raw_icon}"
+
+    gen_stem = None
+    if not icon:
+        try:
+            from icon_provider import resolve_generated_stem
+            gen_stem = resolve_generated_stem(command_name)
+        except Exception:
+            pass
+
+    if icon:
+        raw_icon = icon
+        icon_ref = raw_icon if raw_icon.startswith("I_") else f"I_{raw_icon}"
+        icon_lookup = raw_icon
+    elif gen_stem:
+        icon_ref = gen_stem
+        icon_lookup = gen_stem
+    else:
+        raw_icon = command_name.lower()
+        icon_ref = raw_icon if raw_icon.startswith("I_") else f"I_{raw_icon}"
+        icon_lookup = raw_icon
+
     icon_ref = icon_ref.replace('"', '')
-    icon_base_name = icon_ref[2:]
+    icon_base_name = icon_ref[2:] if icon_ref.startswith("I_") else icon_ref
 
     msg_dir = fw_path / "CNext" / "resources" / "msgcatalog"
     nls_file = msg_dir / f"{header_class}.CATNls"
@@ -1620,7 +1653,11 @@ def inspect_header_resources(
         return {"status": "error", "error": err_rsc}
 
     # Check icon binary conflict
-    target_icon_bytes = icon_bytes if icon_bytes is not None else _resolve_icon_bytes(icon_base_name)
+    target_icon_bytes = (
+        icon_bytes
+        if icon_bytes is not None
+        else (_resolve_icon_bytes(icon_lookup) or _resolve_icon_bytes(icon_base_name))
+    )
     if target_icon_bytes is not None:
         key = str(icon_file)
         existing_bytes = None
