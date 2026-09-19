@@ -1,6 +1,5 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/tests-600%2B-brightgreen?style=for-the-badge" />
 <img src="https://img.shields.io/badge/python-3.7%2B-blue?style=for-the-badge" />
 <img src="https://img.shields.io/badge/CATIA-V5-orange?style=for-the-badge" />
 <img src="https://img.shields.io/badge/license-MIT-lightgrey?style=for-the-badge" />
@@ -26,692 +25,338 @@
 
 ---
 
-# CADE — CATIA CAA Development Kernel
+# CADE — CATIA CAA Development Engine
 
 <div align="center">
 
-### 🎯 AI-Powered CATIA CAA Development. *One command. Eight files. Done.*
+### An AI-native development kernel for CATIA V5 CAA
 
-From "I need a dialog command" to compiling code — without touching RADE wizards.
+*From intent to generated code, verification, build, runtime, diagnosis, and recovery.*
 
-**[Quick Start](#-quick-start) · [Why CADE?](#-why-cade) · [Commands](#-what-it-can-do) · [Docs](.agents/skills/catia-caa-dev/docs/) · [中文](#-中文)**
+[**Quick Start**](#06--quick-start) · [**Why CADE?**](#02--why-cade) · [**The Loop**](#03--the-development-loop) · [**Capabilities**](#04--core-capabilities) · [**Architecture**](#05--architecture) · [**Docs**](.agents/skills/catia-caa-dev/docs/) · [**中文说明**](#-中文说明)
 
 </div>
 
-> 🟢 **CI Status**: `41/41 suites (quick, 100%)` | **43 test files** | *2026-09-19*
+---
 
-> ✅ **Production readiness**: Conditional GO — see [SKILL.md § Production Readiness](.agents/skills/catia-caa-dev/SKILL.md#-生产就绪评估) before deploying
+## 01 · What is CADE?
 
-> **v3.2.1** — Generate → Build → Run closed loop | `cade dev` one-command cycle
+**CADE** (CATIA CAA Development Engine) is an AI-native development kernel designed specifically for Dassault Systèmes CATIA V5 CAA C++ development.
+
+Developing CAA applications has traditionally required navigating fragmented RADE wizards, hand-crafting dozens of boilerplate files, memorizing undocumented macros, and manually diagnosing arcane compilation errors. CADE replaces this friction with a unified engineering closed loop:
+
+```text
+              User Intent
+                   │
+                   ▼
+          ┌─────────────────┐
+          │   CADE Kernel   │
+          │                 │
+          │ develop         │
+          │ analyze         │
+          │ repair          │
+          └────────┬────────┘
+                   │
+       ┌───────────┼───────────┐
+       ▼           ▼           ▼
+   Knowledge     Planning    Impact
+       │           │           │
+       └───────────┼───────────┘
+                   ▼
+              Generation
+                   │
+                   ▼
+               Verify
+                   │
+              ┌────┴────┐
+              │         │
+             pass      fail
+              │         │
+              ▼         ▼
+            Build     Repair
+              │         │
+              ▼         │
+             Run ◄──────┘
+              │
+              ▼
+            CATIA
+```
 
 ---
 
-## ⚡ Quick Start
+## 02 · Why CADE?
 
-```bash
-# 1. Clone CADE anywhere (this creates a ./CADE folder here)
-git clone https://github.com/chenlei-gh/CADE.git
-
-# 2. Copy the .agents folder into your CAA project (use the full path
-#    from step 1, e.g. ./CADE/.agents if you didn't cd elsewhere)
-cp -r ./CADE/.agents /path/to/your/caa/project/
-
-# 3. Install the only Python dependency
-pip install Pillow
-
-# 4. That's it. Open your CAA project in your editor.
-#    CADE auto-detects CATIA. Zero config.
-```
-
-**Prerequisites:** CATIA V5 B28 + Visual Studio with RADE plugin installed.
-
-> [!TIP]
-> **Zed** — works out of the box.  
-> **Claude / Cursor / VS Code / Windsurf** — run `python .agents/skills/catia-caa-dev/tools/setup_mcp.py`
-
-> [!IMPORTANT]
-> **Upgrading an existing project?** Do NOT delete the project's `.agents` folder and re-copy — that would wipe your project-specific `debug_tools/` scripts and the `cache/` / `logs/` runtime data. Instead, sync the skill body only:
-> ```powershell
-> # PowerShell: copies new/changed files, skips project assets
-> $src = 'CADE\.agents\skills\catia-caa-dev'          # freshly cloned CADE
-> $dst = 'your\project\.agents\skills\catia-caa-dev'
-> $skip = @('\cache\','\logs\','\__pycache__\','\debug_tools\')
-> Get-ChildItem $src -Recurse -File | Where-Object {
->   $rel = $_.FullName.Substring($src.Length)
->   $_.Extension -ne '.pyc' -and -not ($skip | Where-Object { $rel.Contains($_) })
-> } | ForEach-Object {
->   $t = Join-Path $dst $_.FullName.Substring($src.Length)
->   New-Item -ItemType Directory -Path (Split-Path $t) -Force | Out-Null
->   Copy-Item $_.FullName $t -Force
-> }
-> ```
-
-<details><summary>📋 Manual MCP setup</summary>
-
-```json
-{
-  "mcpServers": {
-    "cade": {
-      "command": "python",
-      "args": ["skills/mcp_server.py"],
-      "cwd": ".agents/skills/catia-caa-dev"
-    }
-  }
-}
-```
-</details>
-
----
-
-## 🔥 Why CADE?
-
-| Without CADE | With CADE |
+| Traditional CAA Development | With CADE |
 |---|---|
-| Create command manually (8 files) | One command: `cade create` |
-| Click through RADE wizards | Tell AI in natural language |
-| Multi-step build/run workflow | `cade dev` (build+run in one) |
-| Guess what broke | `cade health && cade diagnose` |
-| No undo for mistakes | `cade rollback --id latest` |
-| Wasted AI context tokens | Auto 50% token savings |
+| **Wizard-driven**: Click through dozens of RADE dialogs | **Intent-driven**: Natural language requirements mapped directly to code |
+| **Manual assembly**: Stitch together 8+ files per component | **Coherent generation**: Complete component scaffolding in a single call |
+| **Doc hunting**: Search fragmented SDK & CAADoc repeatedly | **Knowledge retrieval**: 5-layer grounded knowledge and API verification |
+| **Manual troubleshooting**: Build, inspect logs, and guess fixes | **Automated loop**: Integrated Build → Verify → Repair pipeline |
+| **Risky refactoring**: Renaming breaks `.dico`, NLS, and Imakefile | **Atomic ChangeSet**: Change preview, disk backup, and instant rollback |
+| **AI hallucination**: Generic models invent non-existent CAA APIs | **Grounded verification**: Header validation against CATIA B28 SDK |
+| **Tool sprawl**: Dozens of disconnected scripts and commands | **3 Kernel modes**: AI interacts with three stable, high-level modes |
 
 ---
 
-## 🧠 What's New
+## 03 · The Development Loop
 
-### 🧬 Development Kernel 
+AI interacts with only **three stable modes**. CADE handles the underlying implementation complexity, state tracking, and recovery.
 
-CADE evolves from a tool collection to a **Development Kernel** — AI knows only 3 modes:
+```text
+develop()
+   │
+   ├─ clarify      — Resolve requirement ambiguities with structured decision trees
+   ├─ decompose    — Break compound requirements into coherent sub-intents
+   ├─ plan         — Formulate dependency-ordered change plans
+   ├─ retrieve     — Ground code generation with 5-layer CAA knowledge
+   ├─ generate     — Scaffold complete, compilable CAA component files
+   └─ verify       — Validate syntax, includes, and CAA structural rules
 
-```
-develop()   — create/generate (Command, may modify)
-analyze()   — query/diagnose (Query, read-only)
-repair()    — fix/refactor  (Command, with recovery)
-```
+analyze()
+   │
+   ├─ inspect      — Scan workspace topology and discover CAA entities
+   ├─ retrieve     — Query API signatures, SDK headers, and playbooks
+   ├─ diagnose     — Detect broken references, missing exports, and misconfigurations
+   └─ impact       — Compute blast-radius analysis before refactoring
 
-- **Kernel** — 3-mode unified entry, internal state machine + dynamic dispatch
-- **Requirement Clarifier** — vague intent → structured decisions (decision trees)
-- **Planner** — Intent + Requirements → optimal DevelopmentPlan
-- **Verifier** — static code check (no mkmk needed) + compile-check via mkmk
-- **Repair Loop** — diagnose → fix → verify, up to 3 retries
-
-→ 41 MCP tools collapsed to **3 modes**. AI never needs to know internals.
-
-### 📉 Token Optimizer
-
-All MCP responses are **auto-optimized** for AI consumption. Key data preserved, noise removed.
-
-```
-API call       Raw     Optimized   Saved
-build_health   339 →   112         67%
-parse_mkmk     199 →   85          57%
-run_command    589 →   156         74%
-─────────────────────────────────────
-Total average: 55% savings
+repair()
+   │
+   ├─ diagnose     — Classify build failures, mkmk diagnostics, and lint issues
+   ├─ change       — Execute targeted fix plans or safe refactoring operations
+   ├─ verify       — Validate repaired code against compiler and build gates
+   └─ rollback     — Cleanly restore workspace if a repair sequence regresses
 ```
 
-### 🧩 Intent Engine
-
-**Plan before execute.** Complex tasks become structured workflows.
-
-```bash
-cade plan CreateCommandWithDialog MyCmd MyModule
-# → 8 steps: ensure_module → create_command → ... → update_imakefile
-
-cade impact IMyInterface interface delete
-# → CRITICAL: 12 affected files, snapshot recommended
-```
-
-- **Planner** — Intent → DevelopmentPlan (task decomposition)
-- **Impact Analyzer** — Assess blast radius before refactoring  
-### 🎨 Smart Icon Resolution (v3.2 — Color-Coded)
-
-Commands get **context-aware, color-coded icons** from IBM Carbon:
-
-```python
-create_command(ctx, "DrillCmd", "Machining.m", icon="drill")
-# → Iconify Carbon search → drill-back SVG → Pillow render → 22×22 BMP
-# → DOMAIN_MAP[keyword] → COLOR_MAP[domain] → deep red (220,38,38)
-# → I_drill.bmp with 256-step color palette (anti-aliased)
-# → auto-copied to Runtime View after build
-```
-
-- **58 domain keywords** → 46 unique Carbon icons via Iconify API
-- **7 color categories** mapped by engineering domain:
-  🔴 Red (mfg) · 🔵 Blue (assembly) · 🟣 Indigo (geometry) · 🟢 Green (analysis) · 🟣 Purple (settings) · 🟠 Orange (data) · 🩵 Teal (test)
-- **Pillow-based rendering**: SVG → ImageDraw polygon fill → 256-step color palette (preserves anti-aliasing)
-- **Offline-first**: local cache `~/.cade/cache/icons/` + placeholder fallback
-- **Post-build persistence**: icons survive compilation and CNEXT restart
-- **Each BMP**: 22×22, 8-bit indexed, 1,606 bytes
-
-### 📐 New Knowledge Domains
-
-Three new CAA domains unlocked — powered by 6 knowledge files + 3 patterns:
-
-| Domain | Knowledge | Pattern | Use Case |
-|--------|-----------|---------|----------|
-| **Drawing** | Views, annotations, BOM tables | Batch drawing generation | Auto-drawings |
-| **Surface/GSD** | Extrude, sweep, flatten, join | Surface analysis automation | Surface flattening |
-| **FTA / 3D PMI** | Capture, annotation, tolerance | Auto-annotation generation | 3D PMI |
-
-### 🧠 5-Layer Knowledge Architecture
-
-CADE's Knowledge System organizes knowledge in **5 layers** — AI finds answers 10x faster:
-
-```
-🎯 Capability (13)  → "What can CATIA do?"        AI entry point
-📋 Playbook   (15)  → "How to accomplish this?"    Battle-tested recipes
-📚 Knowledge  (52)  → "How to use this API?"       Code reference
-🗂 Framework  (148) → "Which framework?"           CAADoc navigation
-📖 CAADoc          → "What's the exact API?"      Official docs
-```
-
-Retrieval path: **Capability → Playbook → Knowledge → Framework → CAADoc**
-
-→ **244 total knowledge assets** (32K + 14P + 13C + 15PB + 148FW + 1E + 6PH + 15FP)
-
-### 🔍 Deep Audit
-
-42-suite test suite catches drift early:
-
-```bash
-cade test --quick   # 41 suites (~60s), quick mode skips CATIA lifecycle
-cade test           # 42 suites, full including CATIA lifecycle
-```
-
-> 🟢 **Verified**: 41/41 suites quick (100%) — last run 2026-09-19
-
-- **Link Checker** — 101 internal links validated
-- **Import Validator** — All Python imports resolvable
-- **Hardcoded Path Detection** — 92 files scanned
-- **Retrieval Benchmark** — cache-engagement tripwire for the 5 indexes
-
-### 🧭 Retrieval Architecture Contract (v1)
-
-All knowledge lookup in CADE now goes through a **single facade**. No feature code scans B28 headers, greps `knowledge/`, or infers capability from file existence.
-
-```
-Agent / CLI / Kernel
-        │
-        ▼
-Retrieval facade (get_retrieval)   ← single entry point
-        │
-├───────────┬───────────┬───────────┬─────────────┐
-▼           ▼           ▼           ▼             ▼
-Catalog     ApiRegistry HeaderMap   MethodIndex   UseCaseIndex
-│           │           │           │             │
-index.yaml  md files    B28 scan    caadoc_index  usecase_index
-            (cached)                (pickle)      (json)
-```
-
-- **5 indexes, one facade** — every index is process-cached and reached only through `get_retrieval()`; catalog / method_index / header_map add a disk cache (mtime + version)
-- **Decision Rules** — HeaderMap is authority for existence, MethodIndex for method validity, capabilities.yaml for capability truth
-- **Agent diagnostics** — `python skills/retrieval.py` prints a JSON health report for all five indexes
-
-→ Full contract: [docs/architecture/retrieval.md](.agents/skills/catia-caa-dev/docs/architecture/retrieval.md)
+> **Design Philosophy**: AI interacts with three modes. CADE handles the implementation complexity underneath.
 
 ---
 
-## 🎯 What CADE Handles (and What It Doesn't)
+## 04 · Core Capabilities
 
-CADE generates **structural CAA code** — the scaffolding that every CAA component needs:
-
-| ✅ CADE Handles | ❌ CADE Does NOT Handle |
-|---|---|
-| Commands, Dialogs, StateCommands | Business logic inside `BuildGraph()` |
-| Interfaces, Components, Extensions | Algorithm implementation |
-| Modules, Frameworks, IdentityCards | Custom math/geometry operations |
-| Dictionaries, NLS, Imakefiles, Icons | Application-specific data processing |
-| Workbenches, Addins, Toolbars | Runtime behavior tuning |
-| Feature models, Factory models | Third-party library integration |
-
-> **CADE gives you a complete, compilable skeleton.** You fill in the `// TODO: implement` blocks with your business logic.
-
----
-
-## 🧰 What It Can Do
-
-### 🏗️ Create
-```bash
-cade create command MyCmd MyModule --dialog --wb MyWb
-cade create feature  MyFeature MyModule
-cade create extension MyExt CATPart MyModule
-```
-→ Generates `.cpp`, `.h`, Header, Catalog, NLS, Icon, Dictionary, Imakefile — **all 8 files in one call**.
+### 🏗️ Generate
+- **Commands & StateCommands**: Full state-chart initialization, agent bindings, and lifecycle methods.
+- **Dialogs & Windows**: CATDlgDialog, containers, controls, and event subscriber callbacks.
+- **Workbenches & Addins**: Custom workbenches, toolbars, menus, and Addin interface implementations.
+- **Components & Interfaces**: COM-style interfaces, TIE/BOA macros, code extensions, and data members.
+- **Complete Scaffolding**: Produces `.h`, `.cpp`, `Imakefile.mk`, `.dico` entries, NLS message catalogs, and icons simultaneously.
 
 ### 🔨 Build & Run
-```bash
-cade dev <workspace>               # Build + Run in one command
-cade build                         # incremental (mkmk -u)
-cade build --full                  # full rebuild
-cade run                           # start CATIA Runtime View (via mkrun)
-cade run --stop                    # stop CATIA gracefully
-cade health [workspace]            # diagnose environment + workspace
-```
+- **mkmk Integration**: Incremental builds (`mkmk -u`) and clean full rebuilds.
+- **Prerequisites Engine**: Automatic dependency resolution and `IdentityCard.h` verification.
+- **Runtime View**: Automated assembly of `win_b64` runtime trees (`mkCreateRuntimeView`).
+- **CATIA Launcher**: Process control via `mkrun` with environment initialization.
+- **Telemetry & Error Parsing**: Real-time compiler log classification and error location.
 
-### 🔍 Analyze & Fix
-```bash
-cade analyze                        # full workspace scan
-cade analyze --graph                # Mermaid dependency diagram
-cade diagnose                       # find issues
-cade fix --apply                    # auto-fix broken references
-cade validate                       # integrity check
-```
+### 🔍 Analyze
+- **Workspace Model**: Rich domain model mapping Frameworks, Modules, Commands, Interfaces, and Workbenches.
+- **Dependency Graph**: Complete inter-module dependency visualization with Mermaid export.
+- **Blast-Radius Impact**: Identify all affected files, dictionaries, and callers before modifying code.
+- **Header & API Verification**: Grounded checks against official Dassault B28 SDK headers.
 
-### ♻️ Refactor & Rollback
-```bash
-cade refactor rename OldCmd NewCmd --module MyModule
-cade refactor move MyCmd --from M1 --to M2
-cade snapshot                     # checkpoint
-cade rollback --id latest         # undo anything
-```
+### 🛠️ Repair & Refactor
+- **Atomic Refactoring**: Rename commands/interfaces and move commands across modules safely.
+- **Token-Aware Dictionaries**: Precise `.dico` line-level updates without substring corruption.
+- **ChangeSet & Rollback**: Every destructive operation creates a timestamped disk backup for 100% reversible rollbacks.
+- **Auto-Fix Plans**: Pre-packaged automated remediation for common CAA setup mistakes.
 
-### 🤖 AI & Docs
-```bash
-cade docs                         # auto-generate documentation
-cade prereq MyModule              # view prerequisites
-cade rv                           # create Runtime View
-cade test --quick                 # run 41 suites (~16s)
-cade test                         # full: 42 suites (launches CATIA)
-```
+### 🧠 Knowledge System
+- **5-Layer Retrieval**: `Capability` → `Playbook` → `Knowledge` → `Framework` → `CAADoc`.
+- **Battle-Tested Playbooks**: Proven recipes for Drawing, Surface/GSD, FTA/PMI, and Native Command Investigation.
+- **Failure Patterns**: Hardened guards against known CATIA SDK crashes, macro gotchas, and memory leaks.
 
-> 🔌 Also available as **MCP Server** (3 modes) and **Python API** (~80 functions) — [see docs](.agents/skills/catia-caa-dev/docs/).
-
-### ⚡ Test Results
-
-<details>
-<summary>42 suites (41 quick + 1 CATIA lifecycle) · 43 files · 700+ checks · 2026-09-19</summary>
-
-| | | |
-|---|---|---|
-| L1-1 Unit(49) ✅ | L1-2 Icons(14) ✅ | L1-3 Token Audit ✅ |
-| L2-1 DepGraph ✅ | L2-2 Intent ✅ | L2-3 Rollback ✅ |
-| L2-4 Enhanced Intents ✅ | L2-5 Diagnostics ✅ | L2-6 FixPlan ✅ |
-| L2-7 Refactor ✅ | L2-8 Prod Regressions ✅ | L3-1 E2E ✅ |
-| L4-1 Arch(39) ✅ | L5-1 Semantic(40) ✅ | L6-1 Fault(16) ✅ |
-| L7-1 Knowledge(16) ✅ | L0-1 Kernel API ✅ | L0-2 Requirements ✅ |
-| L0-3 Repair Loop ✅ | L0-4 Routing ✅ | L0-5 Verifier ✅ |
-| L0-6 Token Status ✅ | L0-7 SKILL YAML ✅ | Decomposer ✅ |
-| Int-1 Build & Run ✅ | Sys-1 CATIA Detect ✅ | Int-2 Skill-AI ✅ |
-| Full System ✅ | Cross-Ref Audit ✅ | Token Optimizer ✅ |
-| CAA Structure ✅ | Intent Planner ✅ | AI Integration ✅ |
-| Deep Audit ✅ | System Health ✅ | Multi-Intent ✅ |
-| Kernel Edges ✅ | UI Scenario ✅ | Capability Contract ✅ |
-| Retrieval Benchmark ✅ | UseCase Index ✅ | UI Clarifier ✅ |
-
-</details>
-
-```bash
-python .agents/skills/catia-caa-dev/tests/test_master.py --quick   # 41 suites (~60s)
-python .agents/skills/catia-caa-dev/tests/test_master.py           # 42 suites (starts CATIA)
-```
+### 🎨 Developer Experience
+- **Color-Coded BMP Icons**: Automatic 22×22 anti-aliased BMP generation mapped by engineering domain.
+- **Token-Optimized Responses**: MCP output filters out compiler noise, reducing AI context consumption by ~50%.
+- **Editor Integrations**: Native support for Zed, Cursor, VS Code, Windsurf, and Claude Desktop via MCP.
 
 ---
 
-## 🏛 Architecture
+## 05 · Architecture
 
-### Knowledge Retrieval (5-Layer)
+CADE is structured around two central engines: the **Kernel Execution Pipeline** and the **Unified Retrieval Facade**.
 
-```
-User Intent
-    ↓
-🎯 Capability    "What can CATIA do?"    13 files
-    ↓
-📋 Playbook      "How to accomplish?"    15 files
-    ↓
-📚 Knowledge     "How to use this API?"  52 files
-    ↓
-🗂 Framework     "Which framework?"      148 files
-    ↓
-📖 CAADoc        "Exact API signature"   Official
-```
-
-### Engine Architecture
-
-```mermaid
-graph TD
-    U[AI / User] -->|3 Modes| K[Kernel<br/>develop / analyze / repair]
-    K --> R[Requirement<br/>Clarifier]
-    D[Decision Trees] -.-> R
-    R --> E[Decomposer<br/>decisions -> extras]
-    E --> I[Planner +<br/>Impact]
-    E --> Q[Knowledge<br/>5-Layer Retrieval]
-    I --> G[Generator<br/>17+ Templates]
-    G --> V[CodeVerifier<br/>static + mkmk]
-    V -->|fail| P[Repair Loop<br/>3 retries]
-    P --> V
-    V -->|pass| O[Output]
-
-    K --> Q
-    Q --> I
-
-    K --> B[Build Engine<br/>35 Commands]
-    K --> X[Runtime Engine<br/>7 Commands]
-    K --> Z[Diagnostics +<br/>FixPlan + Refactor]
-```
-
-> **Philosophy**: Capability grows by accumulating knowledge assets, not by modifying code.
-
----
-
-## 📊 By the Numbers
-
-| | |
-|---|---|
-| Suites | 42 (41 quick + 1 CATIA lifecycle) |
-| Files | 43 |
-| Checks | 700+ |
-| Pass Rate | 100% |
-| Templates | 82 (19 types) |
-| APIs | 15 (Intent + Action) |
-| CLI Commands | 24 |
-| MCP Modes | 3 (develop / analyze / repair) |
-| Build Commands | 35 |
-| Refactor Ops | 3 |
-| Domain Entities | 8 |
-| Knowledge Assets | 244 (32K + 14P + 13C + 15PB + 148FW + 1E + 6PH + 15FP) |
-| Retrieval Indexes | 5 (Catalog / ApiRegistry / HeaderMap / MethodIndex / UseCaseIndex) |
-
----
-
-## 📂 Project Structure
+### Kernel Execution Pipeline
 
 ```text
-your_project/
-├── .agents/skills/catia-caa-dev/   ← CADE (drop-in)
-│   ├── SKILL.md                    ← Main documentation
-│   ├── skills/                     ← Engine (33 modules)
-│   │   ├── kernel.py               ← Development Kernel (3-mode)
-│   │   ├── cade.py                 ← CLI: build / dev / run / refactor
-│   │   ├── build.py                ← mkmk build pipeline
-│   │   ├── run.py                  ← CNEXT runtime launcher
-│   │   ├── actions.py              ← Atomic dev actions (CRUD)
-│   │   ├── generator.py            ← Template engine (19 types)
-│   │   ├── icon_provider.py        ← 107 geometric icons, RGBA multi-color
-│   │   ├── verifier.py             ← Static + mkmk code verifier
-│   │   ├── repair.py               ← Repair loop
-│   │   ├── refactor.py             ← Rename / move / extract
-│   │   ├── diagnostics.py          ← Issue detection + fix plans
-│   │   ├── retrieval.py            ← Unified retrieval facade (5 indexes)
-│   │   ├── catalog.py              ← Knowledge catalog index
-│   │   ├── header_map.py           ← B28 header→framework map
-│   │   ├── method_index.py         ← Type→method existence check
-│   │   ├── api_registry.py         ← Knowledge-driven API whitelist
-│   │   ├── intent/                 ← Intent Engine (Planner + Impact)
-│   │   ├── intents/                ← Intent-specific handlers
-│   │   └── ...
-│   ├── templates/                  ← 82 code templates (19 types)
-│   ├── capabilities/               ← CAA capability docs
-│   ├── playbooks/                  ← Solution playbooks
-│   ├── knowledge/                  ← CAA knowledge base
-│   │   ├── frameworks/             ← 148 CAADoc framework indexes
-│   │   ├── philosophy/             ← 6 CAA philosophy docs
-│   │   ├── failure_patterns/       ← 15 failure patterns
-│   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
-│   ├── patterns/                   ← Architecture patterns
-│   ├── examples/                   ← Real CAA project examples
-│   ├── tests/                      ← 42 suites, ~12,000 lines
-│   ├── docs/                       ← Full documentation
-│   ├── tools/                      ← Setup, validation, utilities
-│   └── config/                     ← Editor MCP templates
-├── MyFramework.edu/
-└── MyModule.m/
+                 ┌──────────────┐
+                 │     Kernel   │
+                 └──────┬───────┘
+                        │
+          ┌─────────────┼─────────────┐
+          ▼             ▼             ▼
+       develop       analyze        repair
+          │             │             │
+          └─────────────┼─────────────┘
+                        ▼
+              Internal Engine
+                        │
+       ┌────────────────┼────────────────┐
+       ▼                ▼                ▼
+ Requirements       Retrieval        Execution
+ Planner            Knowledge        Build & Run
+ Verifier           Framework        Refactor
+ Repair Loop        CAADoc           Rollback
 ```
+
+### 5-Layer Knowledge & Retrieval
+
+```text
+                  Retrieval Facade
+                         │
+      ┌──────────────────┼──────────────────┐
+      ▼                  ▼                  ▼
+   Catalog          ApiRegistry         HeaderMap
+ (Index/Playbooks)  (Verified APIs)   (B28 SDK Headers)
+      │                  │                  │
+      └──────────────────┼──────────────────┘
+                         ▼
+                 Method / UseCase
+                         │
+                         ▼
+                 Official CAADoc
+```
+
+> **Core Tenet**: Capability grows by accumulating structured knowledge assets, not by expanding code complexity.
 
 ---
 
-## 🇨🇳 中文
+## 06 · Quick Start
 
-### ❓ 是什么？
-
-**CADE** 是 CATIA CAA V5 的 AI 驱动开发引擎。用自然语言告诉 AI "创建一个带对话框的命令"，引擎自动生成 8 个文件。一句命令替代 RADE 向导的多次点击。
+### 1. Clone & Install
 
 ```bash
-cade create command 我的命令 我的模块 --dialog --wb 我的工作台
-```
-
-### ⚡ 快速开始
-
-```bash
-# 1. 先克隆 CADE 到任意位置（会在当前目录下生成 ./CADE 文件夹）
+# 1. Clone CADE repository
 git clone https://github.com/chenlei-gh/CADE.git
 
-# 2. 将 .agents 文件夹拷贝到你的 CAA 项目里（使用第1步产生的完整路径，
-#    若未切换到其他目录则为 ./CADE/.agents）
-cp -r ./CADE/.agents /你的/CAA/项目/路径/
+# 2. Copy the .agents folder into your CAA workspace
+cp -r ./CADE/.agents /path/to/your/caa/workspace/
 
-# 3. 安装唯一的 Python 依赖
+# 3. Install optional icon generation dependency
 pip install Pillow
-
-# 4. 用编辑器打开你的 CAA 项目。CADE 自动检测 CATIA，零配置。
 ```
 
-**前置条件：** CATIA V5 B28 + Visual Studio（含 RADE 插件）已安装。
+### 2. Open in Editor
 
-> [!IMPORTANT]
-> **已有项目要升级 CADE？** 不要删掉项目里的 `.agents` 再整体重拷——那会清掉项目专用的 `debug_tools/` 脚本和 `cache/`、`logs/` 运行数据。正确做法是只同步 skill 本体（跳过这三类目录）：
-> ```powershell
-> # PowerShell：只复制新增/变更的文件，保留项目资产
-> $src = 'CADE\.agents\skills\catia-caa-dev'          # 刚克隆的最新 CADE
-> $dst = '你的\项目\.agents\skills\catia-caa-dev'
-> $skip = @('\cache\','\logs\','\__pycache__\','\debug_tools\')
-> Get-ChildItem $src -Recurse -File | Where-Object {
->   $rel = $_.FullName.Substring($src.Length)
->   $_.Extension -ne '.pyc' -and -not ($skip | Where-Object { $rel.Contains($_) })
-> } | ForEach-Object {
->   $t = Join-Path $dst $_.FullName.Substring($src.Length)
->   New-Item -ItemType Directory -Path (Split-Path $t) -Force | Out-Null
->   Copy-Item $_.FullName $t -Force
-> }
-> ```
+- **Zed**: Works out of the box (reads `.agents/skills/`).
+- **Cursor / VS Code / Windsurf / Claude**: Run `python .agents/skills/catia-caa-dev/tools/setup_mcp.py` to configure the MCP server.
 
-> ✅ **生产就绪状态**：条件性生产就绪（Conditional GO）——部署前请先阅读 [SKILL.md「生产就绪评估」章节](.agents/skills/catia-caa-dev/SKILL.md#-生产就绪评估) 及部署前检查清单。
+### 3. Prompt Your AI Agent
 
-> [!TIP]
-> **Zed** — 开箱即用。
-> **Claude / Cursor / VS Code / Windsurf** — 运行 `python .agents/skills/catia-caa-dev/tools/setup_mcp.py`
-
-### 🧠 最新更新
-
-**🧬 Development Kernel ** — 从工具集合升级为开发内核。AI 只需知道 3 个 Mode：`develop`（创建/生成）、`analyze`（查询/诊断）、`repair`（修复/重构）。Kernel 内部自动调度需求分析、多意图分解、规划、生成、验证和修复全链路。
-
-**🧩 多意图分解 ()** — 复合请求自动拆分。"做装配统计工具，包含导出BOM和自动着色" → 自动拆为 3 个独立子意图，每个走完整管线。
-
-**📉 Token 优化器** — MCP 响应自动压缩，平均节省 50% token。
-
-**🧩 Intent Engine** — 复杂任务自动分解为可执行步骤。Planner（意图→计划）+ Impact Analyzer（影响分析）。
-
-**🎨 智能图标解析 (v3.2 — 颜色编码)** — 命令自动获取语义化、颜色分类图标：
-
-```python
-create_command(ctx, "DrillCmd", "Machining.m", icon="drill")
-# → Iconify Carbon 搜索 → drill-back SVG → Pillow 渲染 → 22×22 BMP
-# → DOMAIN_MAP[关键词] → COLOR_MAP[领域] → 深红 (220,38,38)
-# → I_drill.bmp, 256 阶颜色渐变色板 (抗锯齿)
-# → 编译后自动同步到 Runtime View
-```
-
-- 58 个领域关键词 → 46 种 Carbon 图标 (Iconify API)
-- **7 色分类**按工程领域：🔴红(制造)·🔵蓝(装配)·🟣靛(几何)·🟢绿(分析)·🟣紫(设置)·🟠橙(数据)·🩵青(测试)
-- **Pillow 渲染管线**：SVG → ImageDraw 多边形填充 → 256 阶渐变色板 (保留抗锯齿)
-- 离线优先：本地缓存 `~/.cade/cache/icons/` + 占位兜底
-- 编译后持久化：图标随编译保留，重启 CNEXT 不丢失
-- 每个 BMP：22×22, 8-bit 索引色, 1,606 字节
-
-**📐 三大新领域** — 6 个知识文件 + 3 个开发模式：
-
-| 领域 | 知识 | 模式 | 用途 |
-|------|------|------|------|
-| **工程图** | 视图、标注、BOM表 | 批量出图 | 自动生成图纸 |
-| **曲面/GSD** | 拉伸/扫掠/展平/缝合 | 曲面分析 | 表皮展平 |
-| **FTA 3D标注** | 标注集/尺寸/公差 | 自动标注 | 3D PMI |
-
-### 🔥 为什么选 CADE？
-
-| ❌ 没有 CADE | ✅ 有 CADE |
-|---|---|
-| 手动创建 8 个文件 | `cade create command 我的命令 我的模块` |
-| 操作 RADE 向导，多次点击 | 告诉 AI："创建一个带对话框的命令" |
-| `mkmk` → `mkCreateRuntimeView` → `CNEXT` | `cade dev` 一键编译启动 |
-| 重构后猜测哪里坏了 | `cade diagnose && cade fix --apply` |
-| 误删了没法恢复 | `cade rollback --id latest` |
-| AI 上下文被冗长输出浪费 | Token 优化器自动节省 50% token |
-| 重构前拍脑袋猜影响范围 | `cade impact IMyInterface delete` |
-
-### 🧰 能做什么
-
-**🏗️ 创建**
-```bash
-cade create command  我的命令 我的模块 --dialog --wb 我的工作台
-cade create feature  我的Feature 我的模块
-cade create extension 我的扩展 CATPart 我的模块
-```
-→ 一次调用生成 .cpp、.h、Header、Catalog、NLS、Icon、Dictionary、Imakefile
-
-**🔨 编译运行**
-```bash
-cade dev <workspace>               # 一键编译+启动
-cade build                         # 增量编译
-cade build --full                  # 全量编译
-cade run                           # 启动 CATIA Runtime View
-cade run --stop                    # 停止 CATIA
-cade health [workspace]            # 环境+工作区诊断
-```
-
-**🔍 分析修复**
-```bash
-cade analyze --graph                # Mermaid 依赖图
-cade diagnose                       # 诊断问题
-cade fix --apply                    # 自动修复
-cade validate                       # 完整性检查
-cade impact IMyInterface delete     # 影响分析
-```
-
-**♻️ 重构回滚**
-```bash
-cade refactor rename 旧命令 新命令 --module 我的模块
-cade snapshot                       # 快照
-cade rollback --id latest           # 撤销任意操作
-```
-
-**🤖 AI 辅助**
-```bash
-cade docs                           # 自动生成文档
-cade test --quick                   # 41 套件快速测试 (~60s)
-cade test                           # 42 套件全量测试 (启动 CATIA)
-```
-
-### ⚡ 测试结果
-
-<details>
-<summary>42 套件（快速模式 41 套 + 1 套 CATIA 生命周期）· 43 文件 · 700+ 检查 · 2026-09-19</summary>
-
-| | | |
-|---|---|---|
-| L1-1 单元(49) ✅ | L1-2 图标(14) ✅ | L1-3 Token 审计 ✅ |
-| L2-1 依赖图 ✅ | L2-2 Intent ✅ | L2-3 回滚 ✅ |
-| L2-4 增强 Intent ✅ | L2-5 诊断 ✅ | L2-6 FixPlan ✅ |
-| L2-7 重构 ✅ | L2-8 生产回归 ✅ | L3-1 E2E ✅ |
-| L4-1 架构(39) ✅ | L5-1 语义(40) ✅ | L6-1 故障注入(16) ✅ |
-| L7-1 知识(16) ✅ | L0-1 Kernel API ✅ | L0-2 需求澄清 ✅ |
-| L0-3 修复闭环 ✅ | L0-4 路由 ✅ | L0-5 验证器 ✅ |
-| L0-6 Token 状态 ✅ | L0-7 SKILL YAML ✅ | 分解器 ✅ |
-| Int-1 构建运行 ✅ | Sys-1 CATIA 检测 ✅ | Int-2 协同 ✅ |
-| 全系统 ✅ | Cross-Ref 审计 ✅ | Token 优化 ✅ |
-| CAA 结构 ✅ | Intent 规划 ✅ | AI 集成 ✅ |
-| 深度审计 ✅ | 系统健康 ✅ | 多意图 ✅ |
-| Kernel 边界 ✅ | UI 场景 ✅ | 能力契约 ✅ |
-| 检索基准 ✅ | UseCase 索引 ✅ | UI 澄清器 ✅ |
-
-</details>
-
-### 🏛 架构
-
-```
-AI (3 Mode: develop / analyze / repair)
-     ↓
-Kernel（多意图分解 → 需求澄清 → 规划 → 生成 → 验证 → 修复 → 学习）
-     ↓
-Primitives（actions / generator / diagnostics / refactor / build / run）
-     ↓
-Retrieval（统一检索门面：Catalog / ApiRegistry / HeaderMap / MethodIndex / UseCaseIndex）
-     ↓
-Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework → CAADoc）
-```
-
-> **核心理念**：系统能力增长靠沉淀知识资产，不靠修改代码。
-> **检索契约**：所有知识查询必须走 Retrieval 门面，权威来源与禁止事项见 [docs/architecture/retrieval.md](.agents/skills/catia-caa-dev/docs/architecture/retrieval.md)。
-
-### 📊 数据
-
-| | |
-|---|---|
-| **测试套件** | 42（快速模式 41 套 + 1 套 CATIA 生命周期） |
-| **测试文件** | 43 |
-| **检查项** | 700+ |
-| **通过率** | 100% |
-| **模板** | 82（19 类型） |
-| **API** | 15（Intent + Action） |
-| **CLI 命令** | 24 |
-| **MCP 模式** | 3（develop / analyze / repair） |
-| **Build 命令** | 35 |
-| **领域实体** | 8 |
-| **知识资产** | 244（32K + 14P + 13C + 15PB + 148FW + 1E + 6PH + 15FP） |
-| **检索索引** | 5（Catalog / ApiRegistry / HeaderMap / MethodIndex / UseCaseIndex） |
-
-### 📂 项目结构
+Simply instruct your AI editor in natural language:
 
 ```text
-你的项目/
-├── .agents/skills/catia-caa-dev/   ← CADE（直接放入即可）
-│   ├── SKILL.md                    ← 主文档
-│   ├── skills/                     ← 引擎（33 模块）
-│   │   ├── kernel.py               ← 开发内核（3 模式）
-│   │   ├── cade.py                 ← CLI：build / dev / run / refactor
-│   │   ├── build.py                ← mkmk 编译管线
-│   │   ├── run.py                  ← CNEXT 运行时启动器
-│   │   ├── actions.py              ← 原子开发动作（增删改查）
-│   │   ├── generator.py            ← 模板引擎（19 种类型）
-│   │   ├── icon_provider.py        ← 107 种几何图标，RGBA 多色渲染
-│   │   ├── verifier.py             ← 静态 + mkmk 代码验证
-│   │   ├── repair.py               ← 修复闭环
-│   │   ├── refactor.py             ← 重命名 / 移动 / 提取
-│   │   ├── diagnostics.py          ← 问题检测 + 修复计划
-│   │   ├── retrieval.py            ← 统一检索门面（5 索引）
-│   │   ├── catalog.py              ← 知识目录索引
-│   │   ├── header_map.py           ← B28 头文件→框架映射
-│   │   ├── method_index.py         ← 类型→方法存在性检查
-│   │   ├── api_registry.py         ← 知识驱动 API 白名单
-│   │   ├── intent/                 ← 意图引擎（规划 + 影响分析）
-│   │   ├── intents/                ← 意图处理器
-│   │   └── ...
-│   ├── templates/                  ← 82 个代码模板（19 种类型）
-│   ├── capabilities/               ← CAA 能力文档
-│   ├── playbooks/                  ← 解决方案手册
-│   ├── knowledge/                  ← CAA 知识库
-│   │   ├── frameworks/             ← 148 个 CAADoc 框架索引
-│   │   ├── philosophy/             ← 6 篇 CAA 哲学
-│   │   ├── failure_patterns/       ← 15 个失败模式
-│   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
-│   ├── patterns/                   ← 架构模式
-│   ├── examples/                   ← 真实 CAA 项目示例
-│   ├── tests/                      ← 42 套件、~12,000 行
-│   ├── docs/                       ← 完整文档
-│   ├── tools/                      ← 安装、验证、工具
-│   └── config/                     ← 编辑器 MCP 模板
-├── MyFramework.edu/
-└── MyModule.m/
+"Create a CATIA state command named MyAnalysisCmd in AnalysisModule.m
+with a dialog containing an OK/Cancel button, and register it to MyWorkbench."
 ```
 
----
-
-## 📜 License
-
-MIT © [chenlei-gh](https://github.com/chenlei-gh) · [LICENSE](.agents/skills/catia-caa-dev/LICENSE)
+CADE automatically handles clarification, planning, code generation, dictionary updates, build verification, and runtime deployment.
 
 ---
 
-<div align="center">
+## 07 · Verification & Reliability
 
-**[📖 Documentation](.agents/skills/catia-caa-dev/docs/) · [🏗️ Architecture](.agents/skills/catia-caa-dev/docs/references/ARCHITECTURE.md) · [📝 Changelog](.agents/skills/catia-caa-dev/CHANGELOG.md)**
+CADE maintains strict quality gates verified through automated test suites:
 
-</div>
+- **Static Verification**: Validates generated C++ syntax, header includes, macro expansions, and Imakefile definitions without requiring a full compiler run.
+- **Architecture Contracts**: Enforces layer isolation, single-facade retrieval access, and clean module boundaries.
+- **Semantic & Schema Checks**: Ensures Rich Domain Model integrity, ChangeSet cleanliness, and 100% reversible rollback execution.
+- **Fault-Injection & Resiliency**: Validates recovery from corrupt manifests, broken builds, and interrupted operations.
+- **Lifecycle Verification**: Exercises end-to-end CAA build (`mkmk`) and CATIA runtime launch (`CNEXT`).
+
+Run the verification suite locally:
+
+```bash
+# Fast test suite (skips live CATIA launch)
+python .agents/skills/catia-caa-dev/tests/test_master.py --quick
+
+# Full regression suite (includes CATIA lifecycle)
+python .agents/skills/catia-caa-dev/tests/test_master.py
+```
+
+> **Test Baseline**: 42 suites (41 quick + 1 CATIA lifecycle) · 43 test files · 100% pass rate.
+
+---
+
+## 08 · Scope & Boundaries
+
+To keep engineering goals focused and reliable, CADE maintains clear functional boundaries:
+
+| CADE is | CADE is not |
+|---|---|
+| **CAA development automation kernel** | CATIA itself |
+| **AI development assistant for CAA engineers** | General-purpose CAD automation |
+| **Complete CAA component scaffolding generator** | Your proprietary engineering algorithms |
+| **Build, runtime, diagnosis & rollback tooling** | A replacement for CATIA/RADE or MSVC compilers |
+| **Grounded CAA knowledge & retrieval engine** | A generic, hallucination-prone coding assistant |
+
+> **CADE is a developer tool for CATIA CAA. It is not an end-user CATIA product.**
+
+---
+
+## 09 · Documentation
+
+- **[SKILL Specification](.agents/skills/catia-caa-dev/SKILL.md)** — Comprehensive agent instructions and execution contracts.
+- **[Architecture Guide](.agents/skills/catia-caa-dev/docs/references/ARCHITECTURE.md)** — Deep dive into Kernel, Domain Model, and ChangeSet internals.
+- **[Retrieval Architecture](.agents/skills/catia-caa-dev/docs/architecture/retrieval.md)** — Knowledge retrieval facade and indexing contracts.
+- **[Deployment & Setup](.agents/skills/catia-caa-dev/docs/guides/DEPLOYMENT_GUIDE.md)** — Environment setup and upgrade procedures.
+- **[Examples](.agents/skills/catia-caa-dev/docs/examples/)** — Working examples of Commands, Extensions, and Multi-Interface components.
+- **[Changelog](.agents/skills/catia-caa-dev/CHANGELOG.md)** — Version history and architecture evolution records.
+
+---
+
+## 10 · License
+
+Distributed under the [MIT License](.agents/skills/catia-caa-dev/LICENSE).  
+Copyright © [chenlei-gh](https://github.com/chenlei-gh).
+
+---
+
+## 🇨🇳 中文说明
+
+### 01 · 什么是 CADE？
+
+**CADE**（CATIA CAA Development Engine）是专为达索系统 CATIA V5 CAA C++ 开发设计的 **AI 原生开发内核**。
+
+传统 CAA 开发门槛高、RADE 向导繁琐、头文件与宏规则复杂、编译报错难以定位。CADE 将自然语言需求转化为标准的 CAA 工程资产，串联起 **需求澄清 → 规划生成 → 静态验证 → mkmk 构建 → CATIA 运行 → 诊断修复 → 原子回滚** 的完整开发闭环。
+
+### 02 · 为什么选择 CADE？
+
+| 传统 CAA 开发 | 使用 CADE |
+|---|---|
+| **向导繁琐**：在 RADE 界面反复点击向导 | **意图驱动**：自然语言直接映射到标准代码 |
+| **手工拼装**：每个组件手动维护 8 个以上关联文件 | **内聚生成**：一次调用生成完整的组件脚手架 |
+| **反复查阅**：官方 SDK / CAADoc 查阅低效 | **知识检索**：5 层检索门面与真实 API 校验防幻觉 |
+| **人工排错**：编译失败后手动查日志、猜原因 | **闭环修复**：构建 → 验证 → 修复全自动管线 |
+| **重构高危**：重命名极易漏改 `.dico`、NLS 与 Imakefile | **原子重构**：ChangeSet 变更预览、备份与秒级回滚 |
+| **工具碎片**：数十个独立脚本，调用链路复杂 | **内核统一**：AI 仅需交互 3 种极简稳定模式 |
+
+### 03 · 开发闭环（3 种模式）
+
+CADE 为 AI 提供 3 种高层稳定模式，隐藏底层的状态管理与执行复杂度：
+
+- `develop()`：需求澄清（决策树）、复合意图分解、生成任务规划、知识检索、代码脚手架生成、规则静态验证。
+- `analyze()`：工作区结构拓扑扫描、Mermaid 依赖图导出、改动影响面（Blast Radius）分析、API 真实性校验。
+- `repair()`：编译报错分类、自动修复计划执行、安全重构、回滚恢复。
+
+> **核心哲学**：AI 专注于高层工程意图；CADE 负责底层工程细节与可逆安全保障。
+
+### 04 · 快速开始
+
+1. **克隆仓库**：
+   ```bash
+   git clone https://github.com/chenlei-gh/CADE.git
+   ```
+2. **复制配置**：将 `CADE/.agents` 文件夹复制到你的 CAA 工程根目录下。
+3. **安装依赖**：`pip install Pillow`（用于本地生成领域分类 BMP 图标）。
+4. **开始开发**：
+   - **Zed**：开箱即用。
+   - **Cursor / VS Code / Windsurf / Claude**：运行 `python .agents/skills/catia-caa-dev/tools/setup_mcp.py` 配置 MCP。
+5. **在 AI 编辑器中提问**：
+   > *"在 AnalysisModule.m 中创建一个名为 MyAnalysisCmd 的状态机命令，带确定/取消对话框，并注册到工作台。"*
+
+### 05 · 项目边界
+
+- **CADE 是**：CAA 开发自动化内核、AI 辅助编程中间件、CAA 结构脚手架生成器与构建诊断工具。
+- **CADE 不是**：CATIA 软件本身、通用 CAD 自动化工具、用户专有业务算法的替代者，也不是 RADE/编译器的替代品。
+
+> **CADE 是面向 CATIA CAA 开发者的工程工具，而非终端用户的 CATIA 应用程序。**
