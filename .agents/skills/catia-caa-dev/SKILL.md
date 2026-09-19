@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（8 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（32K+14P+13Capability+14Playbook+148Framework+6Philosophy+14Failure+3DecisionTree），官方图标运行时引用+语义解析+HD PNG、75模板(16类型)、42测试套件、cade dev一键闭环。"
+description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（8 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（32K+14P+13Capability+15Playbook+148Framework+6Philosophy+15Failure+3DecisionTree），官方图标运行时引用+语义解析+HD PNG、75模板(16类型)、42测试套件、cade dev一键闭环。"
 triggers:
   - CAA component
   - CATIA component
@@ -1726,7 +1726,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 `develop()`/`analyze()`/`repair()` 的代码生成质量还取决于它引用的 `capabilities/`/`knowledge/`/`patterns/`/`playbooks/` 手写文档里的 API 是否真实存在。这些文档历史上曾大量包含 AI 自己“看起来合理”但 CAADoc 里不存在的虚构 API（已修复 40+ 处）。**当前核实状态**：
 
-- ✅ **完全已核实**：`capabilities/` 全部 13 个、`playbooks/` 全部 14 个（除 README）、`knowledge/drawing/` 全部 2 个、`patterns/drawing/batch_drawing.md`，及部分其他 `knowledge/`/`patterns/` 文件。
+- ✅ **完全已核实**：`capabilities/` 全部 13 个、`playbooks/` 全部 15 个（除 README）、`knowledge/drawing/` 全部 2 个、`patterns/drawing/batch_drawing.md`，及部分其他 `knowledge/`/`patterns/` 文件。
 - ⚠️ **尚未核实**：`patterns/` 目录其余大部分手写代码示例、部分 `knowledge/mecmod|philosophy|surface|ui|infrastructure|failure_patterns` 子文件。
 - 完整清单、核实方法论、下一步入口见 **[`KNOWLEDGE_AUDIT_STATUS.md`](KNOWLEDGE_AUDIT_STATUS.md)**。
 - **未核实不代表错**，只是尚未人工比对验证。AI 生成代码时引用到未核实区域的具体 API 时，应主动用 `--query`/`--check-file` 复核关键类型与方法名，而不是直接照抄。

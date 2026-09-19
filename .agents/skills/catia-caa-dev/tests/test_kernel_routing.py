@@ -175,6 +175,31 @@ with ExitStack() as mocks:
         f"recommended={r7.get('investigation_recommended')}",
     )
 
+    # Test 8: Native investigation with 'verify' not intercepted by Path 1 Diagnostics
+    r8 = k.execute(KernelMode.ANALYZE, "verify native command vtable")
+    ck(
+        "P0-8 verify native command vtable routes to advisory before diagnostics",
+        r8.get("query_type") == "native_investigation_advisory" and "diagnostics" not in r8.get("data", {}),
+        f"query_type={r8.get('query_type')}",
+    )
+
+    # Test 9: Native investigation with 'check' not intercepted by Path 1 Diagnostics
+    r9 = k.execute(KernelMode.ANALYZE, "check CATIA native command DLL")
+    ck(
+        "P0-9 check CATIA native command DLL routes to advisory before diagnostics",
+        r9.get("query_type") == "native_investigation_advisory" and "diagnostics" not in r9.get("data", {}),
+        f"query_type={r9.get('query_type')}",
+    )
+
+    # Test 10: Normal diagnostics query without native signals still routes to Path 1
+    r10 = k.execute(KernelMode.ANALYZE, "verify workspace diagnostics")
+    ck(
+        "P0-10 normal verify workspace routes to diagnostics",
+        r10.get("query_type") != "native_investigation_advisory"
+        and ("diagnostics" in r10.get("data", {}) or "Diagnostics complete" in r10.get("message", "")),
+        f"message={r10.get('message')}",
+    )
+
 print(f"\n{'='*60}")
 print(f"  Total: {passed}/{total} passed")
 print(f"{'='*60}")

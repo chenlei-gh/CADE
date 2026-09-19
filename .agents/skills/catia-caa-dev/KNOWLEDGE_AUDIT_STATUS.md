@@ -123,5 +123,5 @@ native_command_investigation · parameter_editor · surface_analysis
 
 ## 生产使用建议（给 AI/开发者的即时参考）
 
-- **可直接信任**：`capabilities/` 全部13个、`playbooks/` 全部14个、`knowledge/` 与 `patterns/` 全部手写教学文档（均已核实，含 drawing/surface/mecmod/infrastructure/philosophy/failure_patterns/ui 各子目录），以及 2026-08-14 补充核实的 `examples/geometry/fillet_checker.md`、`docs/examples/EXAMPLE_DIALOG.md`、`docs/references/DIALOG_QUICK_REFERENCE.md`（三者头部均有「⚠️ 重要修正」章节记录全部替换）。
+- **可直接信任**：`capabilities/` 全部13个、`playbooks/` 全部15个、`knowledge/` 与 `patterns/` 全部手写教学文档（均已核实，含 drawing/surface/mecmod/infrastructure/philosophy/failure_patterns/ui 各子目录），以及 2026-08-14 补充核实的 `examples/geometry/fillet_checker.md`、`docs/examples/EXAMPLE_DIALOG.md`、`docs/references/DIALOG_QUICK_REFERENCE.md`（三者头部均有「⚠️ 重要修正」章节记录全部替换）。
 - **frameworks/ 148个文件**：这是自动生成的 API 索引数据（非教学代码），可作为**查找线索**（定位属于哪个框架）放心使用，但具体方法签名仍以 `--query` 实时核对头文件为准（索引文件本身也会标注 SDK/refman mismatch）。

@@ -405,6 +405,15 @@ class Kernel:
         self._state = KernelState.PLANNING
         request_lower = request.lower()
 
+        # ── Path 0: Native Investigation Advisory (Tier A Explicit Candidate) ──
+        # Evaluated before Diagnostics/Dependency so that queries like
+        # "verify native command vtable" or "check CATIA native command DLL"
+        # are not hijacked by workspace diagnostics or dependency analyzers.
+        investigation_result = self._try_native_investigation_advisory(request)
+        if investigation_result:
+            self._state = KernelState.COMPLETED
+            return investigation_result
+
         # ── Path 1: Diagnostics ──
         if any(kw in request_lower for kw in ("diagnos", "check", "inspect", "validate", "verify")):
             try:
@@ -454,13 +463,7 @@ class Kernel:
             self._state = KernelState.COMPLETED
             return method_result
 
-        # ── Path 3c: Native Investigation Advisory (Tier A Explicit Candidate) ──
-        investigation_result = self._try_native_investigation_advisory(request)
-        if investigation_result:
-            self._state = KernelState.COMPLETED
-            return investigation_result
-
-        # ── Path 3d: General Knowledge / API query (Catalog semantic search) ──
+        # ── Path 3c: General Knowledge / API query (Catalog semantic search) ──
         if self._is_knowledge_query(request_lower):
             result = self._lookup_knowledge(request_lower, include_content=detail)
             if result:

@@ -199,7 +199,7 @@ CADE's Knowledge System organizes knowledge in **5 layers** — AI finds answers
 
 ```
 🎯 Capability (13)  → "What can CATIA do?"        AI entry point
-📋 Playbook   (14)  → "How to accomplish this?"    Battle-tested recipes
+📋 Playbook   (15)  → "How to accomplish this?"    Battle-tested recipes
 📚 Knowledge  (52)  → "How to use this API?"       Code reference
 🗂 Framework  (148) → "Which framework?"           CAADoc navigation
 📖 CAADoc          → "What's the exact API?"      Official docs
@@ -207,7 +207,7 @@ CADE's Knowledge System organizes knowledge in **5 layers** — AI finds answers
 
 Retrieval path: **Capability → Playbook → Knowledge → Framework → CAADoc**
 
-→ **241 total knowledge assets** (32K + 14P + 13C + 13PB + 148FW + 1E + 6PH + 14FP)
+→ **244 total knowledge assets** (32K + 14P + 13C + 15PB + 148FW + 1E + 6PH + 15FP)
 
 ### 🔍 Deep Audit
 
@@ -356,7 +356,7 @@ User Intent
     ↓
 🎯 Capability    "What can CATIA do?"    13 files
     ↓
-📋 Playbook      "How to accomplish?"    14 files
+📋 Playbook      "How to accomplish?"    15 files
     ↓
 📚 Knowledge     "How to use this API?"  52 files
     ↓
@@ -408,7 +408,7 @@ graph TD
 | Build Commands | 35 |
 | Refactor Ops | 3 |
 | Domain Entities | 8 |
-| Knowledge Assets | 241 (32K + 14P + 13C + 13PB + 148FW + 1E + 6PH + 14FP) |
+| Knowledge Assets | 244 (32K + 14P + 13C + 15PB + 148FW + 1E + 6PH + 15FP) |
 | Retrieval Indexes | 5 (Catalog / ApiRegistry / HeaderMap / MethodIndex / UseCaseIndex) |
 
 ---
@@ -445,7 +445,7 @@ your_project/
 │   ├── knowledge/                  ← CAA knowledge base
 │   │   ├── frameworks/             ← 148 CAADoc framework indexes
 │   │   ├── philosophy/             ← 6 CAA philosophy docs
-│   │   ├── failure_patterns/       ← 14 failure patterns
+│   │   ├── failure_patterns/       ← 15 failure patterns
 │   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
 │   ├── patterns/                   ← Architecture patterns
 │   ├── examples/                   ← Real CAA project examples
@@ -655,7 +655,7 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 | **MCP 模式** | 3（develop / analyze / repair） |
 | **Build 命令** | 35 |
 | **领域实体** | 8 |
-| **知识资产** | 241（32K + 14P + 13C + 13PB + 148FW + 1E + 6PH + 14FP） |
+| **知识资产** | 244（32K + 14P + 13C + 15PB + 148FW + 1E + 6PH + 15FP） |
 | **检索索引** | 5（Catalog / ApiRegistry / HeaderMap / MethodIndex / UseCaseIndex） |
 
 ### 📂 项目结构
@@ -690,7 +690,7 @@ Knowledge（Capability → Playbook → Knowledge → Philosophy → Framework �
 │   ├── knowledge/                  ← CAA 知识库
 │   │   ├── frameworks/             ← 148 个 CAADoc 框架索引
 │   │   ├── philosophy/             ← 6 篇 CAA 哲学
-│   │   ├── failure_patterns/       ← 14 个失败模式
+│   │   ├── failure_patterns/       ← 15 个失败模式
 │   │   └── mecmod/ part/ product/ ui/ drawing/ surface/ fta/ infrastructure/
 │   ├── patterns/                   ← 架构模式
 │   ├── examples/                   ← 真实 CAA 项目示例
