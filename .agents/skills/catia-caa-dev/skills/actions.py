@@ -88,6 +88,7 @@ class ActionContext:
         self.logger = Logger("actions.log")
         self.logger.clear()
         self._snapshot = None
+        self._snapshot_file_count = 0
         self._snapshot_mtime = 0
         self._cache_ttl = 5
         from meta_model import SnapshotHistory
@@ -96,11 +97,11 @@ class ActionContext:
 
     @property
     def snapshot(self) -> WorkspaceSnapshot:
-        """Get snapshot, with timestamp-based cache invalidation"""
+        """Get snapshot, with signature-based cache invalidation"""
         if self._snapshot is not None and not self._is_stale():
             return self._snapshot
         self._snapshot = WorkspaceAnalyzer(self.workspace_root).analyze()
-        self._snapshot_mtime = self._max_file_mtime()
+        self._snapshot_file_count, self._snapshot_mtime = self._workspace_signature()
         return self._snapshot
 
     def refresh(self, force: bool = False, label: str = "") -> WorkspaceSnapshot:
@@ -133,21 +134,16 @@ class ActionContext:
         {"win_b64", ".caa_backups", ".git", "__pycache__", ".pytest_cache"}
     )
 
-    def _max_file_mtime(self, early_exit_above: float = None) -> float:
-        """Get the most recent modification time in the workspace.
-        early_exit_above: staleness probe — stop walking once a file newer
-        than this value is found. None (the snapshot-baseline mode) computes
-        the TRUE max: the old unconditional early-exit compared against the
-        still-zero baseline on first build and returned the first file's
-        mtime, so nearly every subsequent staleness probe saw "newer" files
-        and rebuilt the snapshot for nothing.
-        """
+    def _workspace_signature(self) -> Tuple[int, float]:
+        """Compute (file_count, max_mtime) signature across the workspace."""
         import os
 
         try:
-            max_mtime = 0
+            count = 0
+            max_mtime = 0.0
             for root, dirs, files in os.walk(str(self.workspace_root)):
                 dirs[:] = [d for d in dirs if d not in self._PRUNE_DIRS]
+                count += len(files)
                 for f in files:
                     try:
                         mtime = Path(root, f).stat().st_mtime
@@ -155,25 +151,24 @@ class ActionContext:
                             max_mtime = mtime
                     except OSError:
                         pass
-                if (
-                    early_exit_above is not None
-                    and max_mtime > early_exit_above
-                ):
-                    break
-            return max_mtime
+            return count, max_mtime
         except Exception:
-            return float("inf")  # Force refresh on error
+            return -1, float("inf")
+
+    def _max_file_mtime(self, early_exit_above: float = None) -> float:
+        """Get the most recent modification time in the workspace (backward compatible)."""
+        return self._workspace_signature()[1]
 
     def _is_stale(self) -> bool:
-        """Check if snapshot is stale (files have changed)"""
+        """Check if snapshot is stale (files changed, created, or deleted)"""
         import time
 
         if time.time() - getattr(self, "_last_check", 0) < self._cache_ttl:
             return False
         self._last_check = time.time()
-        current_mtime = self._max_file_mtime(
-            early_exit_above=self._snapshot_mtime
-        )
+        current_count, current_mtime = self._workspace_signature()
+        if current_count != self._snapshot_file_count:
+            return True
         return current_mtime > self._snapshot_mtime
 
     def tpl(self, *parts) -> Path:

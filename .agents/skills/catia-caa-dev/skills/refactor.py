@@ -15,6 +15,7 @@ Operations:
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -79,10 +80,8 @@ def rename_command(
     for f in cmd.all_files:
         if f.exists():
             new_path = f.parent / f.name.replace(old_name, new_name, 1)
-            cs.add_modify(str(f), "")  # Will be handled as rename
-            cs.add_create(
-                str(new_path), f.read_text(encoding="utf-8", errors="replace")
-            )
+            content = f.read_text(encoding="utf-8", errors="replace")
+            cs.add_create(str(new_path), content.replace(old_name, new_name))
             cs.add_delete(f)
 
     # 2. Update Imakefile
@@ -99,7 +98,7 @@ def rename_command(
         dico = fw.dictionary_path()
         if dico.exists():
             content = dico.read_text(encoding="utf-8", errors="replace")
-            new_content = content.replace(old_name, new_name)
+            new_content = _update_dico_component(content, old_name, new_name)
             if new_content != content:
                 cs.add_modify(str(dico), new_content)
 
@@ -220,7 +219,9 @@ def rename_interface(
         dico = fw.dictionary_path()
         if dico.exists():
             content = dico.read_text(encoding="utf-8", errors="replace")
-            cs.add_modify(str(dico), content.replace(old_name, new_name))
+            new_content = _update_dico_interface(content, old_name, new_name)
+            if new_content != content:
+                cs.add_modify(str(dico), new_content)
 
     cs.metadata["refactor"] = {
         "operation": "rename_interface",
@@ -293,15 +294,23 @@ def move_command(
     old_lib = src_mod.bare_name
     new_lib = tgt_mod.bare_name
 
+    # Collect all candidate files for this command
+    command_files = list(cmd.all_files)
+    if cmd.path and cmd.path.is_file() and cmd.path not in command_files:
+        command_files.append(cmd.path)
+
+    # Validate all files belong strictly to source module
+    for f in command_files:
+        if f.exists() and not f.is_relative_to(src_mod.path):
+            return {
+                "status": "error",
+                "message": f"File '{f}' is outside source module '{source_module}'",
+            }
+
     # 1. Move all files
-    for f in cmd.all_files:
+    for f in command_files:
         if f.exists():
-            # Compute new path in target module
-            rel = (
-                f.relative_to(src_mod.path)
-                if f.is_relative_to(src_mod.path)
-                else Path(f.name)
-            )
+            rel = f.relative_to(src_mod.path)
             new_path = tgt_mod.path / rel
             cs.add_delete(f)
             cs.add_create(
@@ -334,7 +343,11 @@ def move_command(
         dico = fw.dictionary_path()
         if dico.exists():
             content = dico.read_text(encoding="utf-8", errors="replace")
-            cs.add_modify(str(dico), content.replace(f"lib{old_lib}", f"lib{new_lib}"))
+            new_content = _update_dico_command_lib(
+                content, command_name, old_lib, new_lib
+            )
+            if new_content != content:
+                cs.add_modify(str(dico), new_content)
 
     cs.metadata["refactor"] = {
         "operation": "move_command",
@@ -559,6 +572,94 @@ interface {new_interface_name} : CATBaseUnknown {{
 
 
 # ─── Helpers ─────────────────────────────────────────────────────
+
+
+def _update_dico_component(content: str, old_comp: str, new_comp: str) -> str:
+    """Update component name in dictionary content with token-aware line matching.
+
+    Matches non-comment lines where the first whitespace-separated token equals
+    old_comp or old_comp + 'Addin'.
+    """
+    new_lines = []
+    targets = {old_comp: new_comp, f"{old_comp}Addin": f"{new_comp}Addin"}
+    for line in content.splitlines(keepends=True):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            new_lines.append(line)
+            continue
+        parts = stripped.split()
+        if parts and parts[0] in targets:
+            repl = targets[parts[0]]
+            new_line = re.sub(
+                r"^(\s*)" + re.escape(parts[0]) + r"(?=\s|$)",
+                r"\g<1>" + repl,
+                line,
+                count=1,
+            )
+            new_lines.append(new_line)
+        else:
+            new_lines.append(line)
+    return "".join(new_lines)
+
+
+def _update_dico_interface(content: str, old_iface: str, new_iface: str) -> str:
+    """Update interface name in dictionary content with token-aware matching.
+
+    Matches non-comment lines where the second token equals old_iface.
+    """
+    new_lines = []
+    for line in content.splitlines(keepends=True):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            new_lines.append(line)
+            continue
+        parts = stripped.split()
+        if len(parts) >= 2 and parts[1] == old_iface:
+            new_line = re.sub(
+                r"^(\s*\S+\s+)" + re.escape(old_iface) + r"(?=\s|$)",
+                r"\g<1>" + new_iface,
+                line,
+                count=1,
+            )
+            new_lines.append(new_line)
+        else:
+            new_lines.append(line)
+    return "".join(new_lines)
+
+
+def _update_dico_command_lib(
+    content: str, cmd_name: str, old_lib: str, new_lib: str
+) -> str:
+    """Update library name in dictionary content for a specific command.
+
+    Matches non-comment lines where the first token is cmd_name (or cmd_name + 'Addin')
+    and the library token (third token) is lib{old_lib}.
+    """
+    new_lines = []
+    valid_comps = {cmd_name, f"{cmd_name}Addin"}
+    old_target_lib = f"lib{old_lib}"
+    new_target_lib = f"lib{new_lib}"
+    for line in content.splitlines(keepends=True):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            new_lines.append(line)
+            continue
+        parts = stripped.split()
+        if (
+            len(parts) >= 3
+            and parts[0] in valid_comps
+            and parts[2] == old_target_lib
+        ):
+            new_line = re.sub(
+                r"^(\s*\S+\s+\S+\s+)" + re.escape(old_target_lib) + r"(?=\s|$)",
+                r"\g<1>" + new_target_lib,
+                line,
+                count=1,
+            )
+            new_lines.append(new_line)
+        else:
+            new_lines.append(line)
+    return "".join(new_lines)
 
 
 def _find_rename_impact(

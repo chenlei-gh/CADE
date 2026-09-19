@@ -386,6 +386,11 @@ class TemplateGenerator:
 
 
 def main():
+    import sys
+
+    sys.stderr.write(
+        "WARNING: generator.py is experimental and not wired into the CADE kernel pipeline.\n"
+    )
     gen = TemplateGenerator()
     available = gen.get_available_templates()
 
