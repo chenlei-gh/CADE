@@ -145,7 +145,7 @@ class KernelResult:
         if self.state:
             d["state"] = self.state
         d.update(self.data)
-        return {k: v for k, v in d.items() if v}  # strip empty
+        return {k: v for k, v in d.items() if v is False or v}  # strip empty but keep boolean False
 
 
 # ─── Kernel ───────────────────────────────────────────────────────
@@ -454,7 +454,13 @@ class Kernel:
             self._state = KernelState.COMPLETED
             return method_result
 
-        # ── Path 3c: General Knowledge / API query (Catalog semantic search) ──
+        # ── Path 3c: Native Investigation Advisory (Tier A Explicit Candidate) ──
+        investigation_result = self._try_native_investigation_advisory(request)
+        if investigation_result:
+            self._state = KernelState.COMPLETED
+            return investigation_result
+
+        # ── Path 3d: General Knowledge / API query (Catalog semantic search) ──
         if self._is_knowledge_query(request_lower):
             result = self._lookup_knowledge(request_lower, include_content=detail)
             if result:
@@ -900,6 +906,113 @@ class Kernel:
 
         return None
 
+    # ─── Native Investigation (Tier A Advisory) ─────────────────
+
+    _NATIVE_INVESTIGATION_SIGNALS = (
+        "native command", "native commands", "private interface", "private interfaces",
+        "vtable", "virtual table", "reverse engineering", "undocumented api", "no public api",
+        "原生命令", "私有接口", "非公开接口", "虚表", "虚函数表", "槽位", "逆向",
+        "无公开api", "官方文档查不到",
+    )
+    _PUBLIC_DOC_SIGNALS = (
+        "公开", "官方", "文档", "public", "official", "caadoc", "documentation", "doc",
+    )
+
+    def _has_native_investigation_signal(self, request: str) -> bool:
+        """Check if request contains explicit Tier A native investigation signals."""
+        import re
+        req_lower = request.lower()
+        for sig in self._NATIVE_INVESTIGATION_SIGNALS:
+            if sig in req_lower:
+                return True
+        if re.search(r'\bslots?\b', req_lower):
+            return True
+        return False
+
+    def _try_native_investigation_advisory(self, request: str) -> Optional[dict]:
+        """Check if request warrants a native investigation advisory (Tier A candidate)."""
+        if not self._has_native_investigation_signal(request):
+            return None
+
+        req_lower = request.lower()
+        has_negative_public = any(neg in req_lower for neg in ("无公开", "非公开", "没有公开", "no public", "without public", "查不到"))
+        has_public_intent = not has_negative_public and any(sig in req_lower for sig in self._PUBLIC_DOC_SIGNALS)
+
+        ref_line = "| pb.native_command_investigation | playbooks/pb_native_command_investigation.md | 原生命令逆向调查方法论 | - |"
+        references = [ref_line]
+
+        if has_public_intent:
+            public_refs = []
+            try:
+                if self.catalog:
+                    entries = self.catalog.search(request, max_results=5)
+                    public_refs = [
+                        e.raw_line for e in entries
+                        if e.raw_line and "pb.native_command_investigation" not in e.raw_line
+                    ]
+            except Exception:
+                pass
+
+            return KernelResult(
+                status="ok",
+                mode="analyze",
+                state=self._state.value,
+                message="Native investigation advisory: verify official CAA API and documentation first.",
+                data={
+                    "query_type": "native_investigation_advisory",
+                    "intent_confidence": "candidate",
+                    "investigation_recommended": False,
+                    "evidence_boundary": "experimental_not_public_api_contract",
+                    "playbook": "pb.native_command_investigation",
+                    "file": "playbooks/pb_native_command_investigation.md",
+                    "advisory": {
+                        "trigger_reason": "Query mentions native command alongside public API/documentation intent.",
+                        "recommendation": "Verify official CAA documentation first before escalating to reverse engineering.",
+                        "investigation_ladder": [
+                            "P0 官方 API 检索与 CAADoc 查阅",
+                            "P1 官方用例与头文件确认",
+                            "P2 已知 Knowledge / Playbook 方案",
+                            "P3 原生命令标识与所属 DLL 定位",
+                            "P4 二进制/虚表/符号深入排查",
+                        ],
+                        "core_guardrail": "核心原则：逆向工程证据（如虚表槽位/Slot）是经验性事实证据，不是 Dassault Systèmes 官方 API 合同，不保证跨版本兼容。",
+                    },
+                    "references": public_refs + references,
+                },
+            ).to_dict()
+
+        return KernelResult(
+            status="ok",
+            mode="analyze",
+            state=self._state.value,
+            message="Native investigation advisory: pb.native_command_investigation",
+            data={
+                "query_type": "native_investigation_advisory",
+                "intent_confidence": "explicit",
+                "investigation_recommended": True,
+                "evidence_boundary": "experimental_not_public_api_contract",
+                "playbook": "pb.native_command_investigation",
+                "file": "playbooks/pb_native_command_investigation.md",
+                "advisory": {
+                    "trigger_reason": "Query indicates native behavior or private interface investigation.",
+                    "entry_criteria": [
+                        "1. 确认官方 CAA 确无公开方案（已查 CAADoc、头文件、.dico）",
+                        "2. 原生 UI 行为明确存在且可稳定复现",
+                        "3. 收益明确且了解私有二进制维护风险",
+                    ],
+                    "investigation_ladder": [
+                        "P0 官方 API 检索",
+                        "P1 官方用例/文档确认",
+                        "P2 已知 Knowledge / Playbook",
+                        "P3 原生命令标识与所属 DLL 定位",
+                        "P4 二进制/虚表/符号深入排查",
+                    ],
+                    "core_guardrail": "核心原则：逆向工程证据（如虚表槽位/Slot）是经验性事实证据，不是 Dassault Systèmes 官方 API 合同，不保证跨版本兼容。",
+                },
+                "references": references,
+            },
+        ).to_dict()
+
     def _execute_develop_plan(self, plan: dict, preview: bool = False) -> dict:
         """Execute a development plan via existing actions"""
         intent_data = plan.get("intent", {})
@@ -1326,6 +1439,8 @@ class Kernel:
     def _is_knowledge_query(self, request: str) -> bool:
         """Detect if this is a knowledge/API question, not a workspace operation"""
         import re
+        if self._has_native_investigation_signal(request):
+            return True
         # Check built-in keywords (short ones use word-boundary)
         for kw in self._KNOWLEDGE_KW:
             if len(kw) <= 2:

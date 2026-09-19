@@ -113,6 +113,68 @@ with ExitStack() as mocks:
             f"status={status}" if not has_route else "",
         )
 
+    print("\n  ── Native Investigation Routing Tests (P0) ──")
+    # Test 1: Tier A native command candidate
+    r1 = k.execute(KernelMode.ANALYZE, "CATIA 原生命令在哪个dll")
+    ck(
+        "P0-1 native command advisory",
+        r1.get("query_type") == "native_investigation_advisory" and r1.get("investigation_recommended") is True,
+        f"got query_type={r1.get('query_type')}",
+    )
+
+    # Test 2: Tier A slot/vtable does not fallback to workspace analysis
+    r2 = k.execute(KernelMode.ANALYZE, "slot 17 vtable binary investigation")
+    ck(
+        "P0-2 vtable/slot does not fallback to workspace analysis",
+        r2.get("query_type") == "native_investigation_advisory" and "workspace" not in r2.get("message", "").lower(),
+        f"message={r2.get('message')}",
+    )
+
+    # Test 3: Tier B normal issue isolation (not misrouted to investigation)
+    r3 = k.execute(KernelMode.ANALYZE, "为什么设置颜色不生效")
+    ck(
+        "P0-3 normal issue does not trigger native investigation",
+        r3.get("investigation_recommended") is not True
+        and r3.get("query_type") != "native_investigation_advisory"
+        and "workspace" not in r3.get("message", "").lower(),
+        f"query_type={r3.get('query_type')}",
+    )
+
+    # Test 4: SDK search empty with native signal provides restrained advice
+    r4 = k.execute(KernelMode.ANALYZE, "CATINonExistentFeature 原生命令 无公开api")
+    ck(
+        "P0-4 restrained advice without dogmatic claim",
+        r4.get("investigation_recommended") is True and r4.get("status") == "ok",
+        f"status={r4.get('status')}",
+    )
+
+    # Test 5: Slot 17/18 guardrail present and bound to experimental disclaimer
+    r5 = k.execute(KernelMode.ANALYZE, "CATIA B28 slot 17 18 属性重置私有接口")
+    ck(
+        "P0-5 slot 17/18 guardrail present",
+        r5.get("evidence_boundary") == "experimental_not_public_api_contract"
+        and "core_guardrail" in r5.get("advisory", {}),
+        f"evidence_boundary={r5.get('evidence_boundary')}",
+    )
+
+    # Test 6: Negative test (normal CAA method/interface query not misrouted)
+    r6 = k.execute(KernelMode.ANALYZE, "CATCommand 的 interface 和 method 有哪些")
+    ck(
+        "P0-6 normal API query not misrouted to native investigation",
+        r6.get("investigation_recommended") is not True
+        and r6.get("query_type") != "native_investigation_advisory",
+        f"query_type={r6.get('query_type')}",
+    )
+
+    # Test 7: Explicit investigation + Public API coexist
+    r7 = k.execute(KernelMode.ANALYZE, "CATIA native command 的公开 CAA API 和官方文档")
+    ck(
+        "P0-7 public doc intent prioritizes official verification before reverse engineering",
+        r7.get("investigation_recommended") is False
+        and "recommendation" in r7.get("advisory", {}),
+        f"recommended={r7.get('investigation_recommended')}",
+    )
+
 print(f"\n{'='*60}")
 print(f"  Total: {passed}/{total} passed")
 print(f"{'='*60}")
