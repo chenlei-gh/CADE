@@ -25,6 +25,8 @@ from icon_provider import (
     official_candidate_stem, resolve_official_icon, _official_icons_dir,
     _render_badge_plate, _render_placeholder, _compose_official,
     copy_icons_to_runtime, CACHE_DIR,
+    _GENERATED_ICONS_DIR, _GENERATED_BASE_MAP,
+    resolve_generated_stem, resolve_generated_icon,
 )
 
 total = passed = 0
@@ -361,8 +363,8 @@ b, g = resolve_icon_ex("RenameInstanceCmd")
 check("compose RenameInstanceCmd -> I_Instance+pencil (verb consumed)",
       b == "I_Instance" and g == "pencil", f"{b}+{g}")
 
-b, g = resolve_icon_ex("AutoRenameCmd")
-check("compose AutoRenameCmd -> I_RenameFamily+pencil",
+b, g = resolve_icon_ex("RenameFamilyCmd")
+check("compose RenameFamilyCmd -> I_RenameFamily+pencil",
       b == "I_RenameFamily" and g == "pencil", f"{b}+{g}")
 
 b, g = resolve_icon_ex("CheckModelCmd")
@@ -597,6 +599,69 @@ check("get_icon still populates the cache", cached_ok)
 cached_path = get_icon("CreateHoleCmd")
 check("cached icon is still a readable BMP",
       cached_path.read_bytes()[:2] == b"BM")
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PART L: Generated Base Resolution (ADR §3 Rule 7 / §8)
+# ═══════════════════════════════════════════════════════════════
+print("\n" + "=" * 60)
+print("  L. Generated Base Resolution (ADR §3 Rule 7 / §8)")
+print("=" * 60)
+
+check("generated icons dir exists", _GENERATED_ICONS_DIR.is_dir(), str(_GENERATED_ICONS_DIR))
+
+# All 4 production assets must exist on disk
+for _semantic, _stem in _GENERATED_BASE_MAP.items():
+    _f = _GENERATED_ICONS_DIR / f"{_stem}.bmp"
+    check(f"asset exists: {_stem}.bmp ({_semantic})", _f.is_file(), str(_f))
+
+# Direct stem resolution and path retrieval
+for _semantic, _stem in (
+    ("parttoasm", "I_CADEPartToAsm"),
+    ("bomtool", "I_CADEBOMTool"),
+    ("autocolor", "I_CADEAutoColor"),
+    ("autorename", "I_CADEAutoRename"),
+):
+    check(f"resolve_generated_stem({_semantic}) -> {_stem}",
+          resolve_generated_stem(_semantic) == _stem)
+    _path = resolve_generated_icon(_semantic)
+    check(f"resolve_generated_icon({_semantic}) -> {_stem}.bmp",
+          _path is not None and _path.name == f"{_stem}.bmp")
+
+# Production command names and variants in resolve_icon_ex (badge must be None)
+_GEN_VARIANTS = (
+    ("CAAPartToAsm", "I_CADEPartToAsm"),
+    ("CAAPartToAsmCmd", "I_CADEPartToAsm"),
+    ("parttoasm", "I_CADEPartToAsm"),
+    ("CAABOMTool", "I_CADEBOMTool"),
+    ("CAABOMToolCmd", "I_CADEBOMTool"),
+    ("bomtool", "I_CADEBOMTool"),
+    ("CAAAutoColor", "I_CADEAutoColor"),
+    ("CAAAutoColorCmd", "I_CADEAutoColor"),
+    ("autocolor", "I_CADEAutoColor"),
+    ("CAAAutoRename", "I_CADEAutoRename"),
+    ("CAAAutoRenameCmd", "I_CADEAutoRename"),
+    ("autorename", "I_CADEAutoRename"),
+    ("I_CADEPartToAsm", "I_CADEPartToAsm"),
+)
+for _cmd, _expected_stem in _GEN_VARIANTS:
+    _b, _g = resolve_icon_ex(_cmd)
+    check(f"resolve_icon_ex({_cmd}) -> {_expected_stem} + no badge",
+          _b == _expected_stem and _g is None, f"{_b}+{_g}")
+
+# End-to-end get_icon returns cached BMP matching generated asset bytes
+for _cmd, _expected_stem in (
+    ("CAAPartToAsm", "I_CADEPartToAsm"),
+    ("CAABOMTool", "I_CADEBOMTool"),
+    ("CAAAutoColor", "I_CADEAutoColor"),
+    ("CAAAutoRename", "I_CADEAutoRename"),
+):
+    _p = get_icon(_cmd)
+    _gen_bmp = _GENERATED_ICONS_DIR / f"{_expected_stem}.bmp"
+    check(f"get_icon({_cmd}) exists", _p is not None and _p.is_file(), str(_p))
+    if _p and _gen_bmp.is_file():
+        check(f"get_icon({_cmd}) byte-identical to {_expected_stem}.bmp",
+              _p.read_bytes() == _gen_bmp.read_bytes())
 
 
 # ═══════════════════════════════════════════════════════════════

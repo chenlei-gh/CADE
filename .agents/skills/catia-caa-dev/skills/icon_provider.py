@@ -260,9 +260,72 @@ def analyze_command(command_name: str, hint: str = None) -> IconSemantic:
     return IconSemantic(operation, base_key, modifier, base, badge,
                         confidence, tuple(toks))
 
+
+# ─── Generated Base (in-repo production assets, spec-linted, no badge) ───
+_GENERATED_ICONS_DIR = Path(__file__).resolve().parent.parent / "assets" / "icons" / "generated"
+
+_GENERATED_BASE_MAP: Dict[str, str] = {
+    "parttoasm":    "I_CADEPartToAsm",
+    "caaparttoasm": "I_CADEPartToAsm",
+    "bomtool":      "I_CADEBOMTool",
+    "caabomtool":   "I_CADEBOMTool",
+    "autocolor":    "I_CADEAutoColor",
+    "caaautocolor": "I_CADEAutoColor",
+    "autorename":   "I_CADEAutoRename",
+    "caaautorename":"I_CADEAutoRename",
+}
+_GENERATED_STEMS = frozenset(_GENERATED_BASE_MAP.values())
+
+
+def resolve_generated_stem(command_name: str, hint: Optional[str] = None) -> Optional[str]:
+    """Finite Generated Base I_CADE* stem for CADE-specific semantics, or None."""
+    if not command_name and not hint:
+        return None
+    if command_name in _GENERATED_STEMS:
+        return command_name
+    candidates = []
+    if hint:
+        candidates.append(re.sub(r'[^a-z0-9]', '', hint.lower()))
+    raw = command_name or ""
+    for suf in NAME_SUFFIXES:
+        if raw.lower().endswith(suf) and len(raw) > len(suf):
+            raw = raw[:-len(suf)]
+            break
+    raw_lower = re.sub(r'[^a-z0-9]', '', raw.lower())
+    if raw_lower:
+        candidates.append(raw_lower)
+        if raw_lower.startswith("caa") and len(raw_lower) > 3:
+            candidates.append(raw_lower[3:])
+    norm = normalize_command_name(command_name or "")
+    norm_lower = re.sub(r'[^a-z0-9]', '', norm.lower())
+    if norm_lower:
+        candidates.append(norm_lower)
+
+    for cand in candidates:
+        if cand in _GENERATED_BASE_MAP:
+            return _GENERATED_BASE_MAP[cand]
+    return None
+
+
+def resolve_generated_icon(command_name: str, hint: Optional[str] = None) -> Optional[Path]:
+    """Read-only path to an in-repo generated base BMP (assets/icons/generated/I_CADE*.bmp).
+    Returns None if not a generated base or file missing on disk."""
+    stem = resolve_generated_stem(command_name, hint)
+    if not stem:
+        return None
+    bmp = _GENERATED_ICONS_DIR / f"{stem}.bmp"
+    return bmp if bmp.is_file() else None
+
+
 def resolve_icon_ex(command_name: str, hint: str = None) -> Tuple[Optional[str], Optional[str]]:
-    """Back-compat: returns (official stem or None, corner badge).
+    """Back-compat: returns (stem or None, corner badge).
+    Generated Base takes precedence and carries no badge (ADR §3 Rule 7 / §8).
     'CreateHoleCmd' -> ('I_Hole','plus'); semantic detail via analyze_command()."""
+    gen_stem = resolve_generated_stem(command_name, hint)
+    if gen_stem:
+        bmp = _GENERATED_ICONS_DIR / f"{gen_stem}.bmp"
+        if bmp.is_file():
+            return gen_stem, None
     sem = analyze_command(command_name, hint)
     return sem.base, sem.badge
 
@@ -420,13 +483,19 @@ def get_icon(icon_name: str, style: str = "geo", size: int = 22,
     format='bmp' (CATIA runtime) or 'png' (docs/previews; alpha=True for
     transparent background). hint = entity-level domain hint (e.g. the
     Command's category), takes priority over name parsing.
-    Official Base: the local B28 I_*.bmp is the canvas and the existing
-    badge plate is composited. Falls back to a placeholder only when
-    CATIA is not installed (CI/test environments).
-    Cache key includes ICON_HASH and the official stem (if any)."""
+    Resolution order:
+      1. Generated Base (in-repo I_CADE*.bmp, no badge overlay)
+      2. Official Base (local B28 I_*.bmp canvas + badge plate)
+      3. Placeholder fallback (CATIA not installed)
+    Cache key includes ICON_HASH and the stem (if any)."""
     base, badge = resolve_icon_ex(icon_name, hint)
-    official = resolve_official_icon(icon_name, hint)
-    tag = official.stem if official is not None else "noph"
+    gen = resolve_generated_icon(icon_name, hint)
+    if gen is not None:
+        source_bmp = gen
+        badge = None
+    else:
+        source_bmp = resolve_official_icon(icon_name, hint)
+    tag = source_bmp.stem if source_bmp is not None else "noph"
     cache_name = f"{icon_name}+{badge}" if badge else icon_name
     key = (f"{cache_name}_{tag}_{ICON_HASH}_{style}_{size}{'a' if alpha else ''}"
            .replace("/","_").replace(" ","_").replace(":","_"))
@@ -434,12 +503,12 @@ def get_icon(icon_name: str, style: str = "geo", size: int = 22,
     cached = CACHE_DIR / f"{key}.{ext}"
     if cached.exists(): return cached
     path = None
-    if official is not None:
+    if source_bmp is not None:
         try:
-            path = _compose_official(official, badge, size=size,
+            path = _compose_official(source_bmp, badge, size=size,
                                      format=format, alpha=alpha)
         except Exception:
-            path = None  # corrupt / unreadable official BMP → placeholder
+            path = None  # corrupt / unreadable BMP -> placeholder
     if path is None:
         path = _render_placeholder(badge, size=size, format=format, alpha=alpha)
     if path:
@@ -752,6 +821,7 @@ def _compute_icon_hash() -> str:
         repr(sorted(OBJECT_VOCAB)),
         repr(sorted(VERB_MAP.items())),
         repr(sorted(COMPOUND_MAP.items())),
+        repr(sorted(_GENERATED_BASE_MAP.items())),
         repr(sorted(_OFFICIAL_ALIAS.items())),
         repr(sorted(_OFFICIAL_DENY)),
         repr(sorted(_OFFICIAL_WEAK)),
