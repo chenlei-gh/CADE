@@ -153,16 +153,6 @@ class VersionRules:
     source_ext: str = ".cpp"
     idl_ext: str = ".idl"
 
-    def component_declaration(self, name: str) -> str:
-        """Generate the component declaration macro"""
-        if self.prefer_tie:
-            return f"{self.tie_macro}({name})"
-        return f"{self.boa_macro}({name})"
-
-    def tie_include(self, interface_name: str) -> str:
-        """Generate the TIE include line"""
-        return f'#include "{self.tielib_prefix}{interface_name}{self.header_ext}"'
-
     @property
     def dictionary_format_hint(self) -> str:
         return f"# Format: ComponentName{self.dict_separator}BaseClass{self.dict_separator}libModule"
