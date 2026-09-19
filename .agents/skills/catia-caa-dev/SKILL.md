@@ -317,7 +317,7 @@ AI 只知道 3 个 Mode:
 | 📄 **批量核实整份文档用 `--check-file`** | 需要一次性核实某个 playbook/pattern/knowledge 文件里所有 API 时，不要逐个手敲 `--query`：跑 `python tools/build_caadoc_index.py --check-file <path>`，它会自动扫描文件里所有 ```cpp 代码块中的 `CAT*` 类型名和 `->`/`::` 方法调用，一次调用只打印疑点（SUSPECT），比人工逐个核对快一个数量级。`--query`/`--check-file` 都支持 `--quiet` 输出一行式 FOUND/NOT-FOUND/MISMATCH verdict，适合批量核对多个名字时减少输出体积。局限：只扫描代码块，不扫描正文反引号提及的 API 名；枚举成员/类型常量可能被误报，需人工用 `--query` 复核。 |
 | 🥇 **冲突时信 SDK 头文件** | `--query` 会自动扫描 CATIA 安装目录下所有 Framework/PublicInterfaces 的 .h 头文件，把 refman 的方法列表与头文件的方法列表交叉比对，不一致时打印 `SDK/refman mismatch` 提示。头文件是 refman 的生成源，比 refman htm 页面更权威（refman 存在生成缺失），看到 mismatch 提示时以头文件为准。同一命令还会展示查询名命中的枚举值列表及其行内注释，用于核实枚举成员是否真实存在（refman 枚举页经常遗漏这些信息）。 |
 | 🏆 **查“组件实现了哪些接口”信随产品发布的字典** | `--query <接口名>` 会自动扫描 CATIA 安装目录下 `<arch>/code/dictionary/*.dic`（比 CAADoc 自带的 44 个教学 `.dico` 大得多，约 885 个文件/7.3 万条），列出真正发布产品里哪个组件真实实现了该接口，标记为 "ground truth"。遇到“接口真实存在但不知道怎么获取实例”的情况时，先用它反查实现组件，往往能发现真实获取方式是对该组件做 `QueryInterface`（如 `CATTPSSet` 实现了 `CATITPSFactoryElementary`/`CATITPSCaptureFactory`/`CATITPSViewFactory` 三个工厂接口，都需对 Set 实例 QI 获取）。 |
-| 📋 **手写知识文档分可信度，先查审计表** | `capabilities/`、`knowledge/`、`patterns/`、`playbooks/` 里的手写教学文档**不是同等可信**——部分已用上述索引工具逐条核实过虚构 API，部分尚未核实。生成代码前先查 [`KNOWLEDGE_AUDIT_STATUS.md`](KNOWLEDGE_AUDIT_STATUS.md)：命中“已核实清单”可直接参考；命中“未核实清单”（`patterns/` 目录多数文件、部分 `knowledge/mecmod|philosophy|surface|ui|infrastructure|failure_patterns`）必须先用 `--query`/`--check-file` 核实关键 API 再使用，不要直接照抄示例代码。 |
+| 📋 **手写知识文档已完成核实，仍建议查审计表** | `capabilities/`（13）、`playbooks/`（15）、`knowledge/`、`patterns/` 里的手写教学文档已全部核实完毕（见 [`KNOWLEDGE_AUDIT_STATUS.md`](KNOWLEDGE_AUDIT_STATUS.md)）。对于 `frameworks/` 148 个自动生成的 API 索引文件，具体签名以 `--query` 实时核对头文件为准。 |
 | 🧠 **跨项目记忆库** | 遇到疑难问题（编译、运行时、工具链），先查 `D:/Vault/Memory/BestPractices.md`。症状速查表见下方 **故障排查** 章节。 |
 
 ### ✨ 核心优势
@@ -1700,14 +1700,14 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 - Full Regression quick 的 4 项 quarantine 均为测试基础设施本身的已知缺口（缺失的辅助模块 `test_skills.py`、`test_build_and_run.py` 在 subprocess 子进程模式下对 MCP 工具列表的间接断言问题），**不代表功能缺陷**，详见下方逐项说明。
 - quick 模式不执行真实 Build、CNEXT 或 CATIA 生命周期（`test_build_and_run.py` 整套在 `test_master.py --quick` 下被跳过）；真实 Build 验证需要单独跑 Tier B（见下方「已验证范围」），**每次生成代码后仍需在自己的工作区跑一次真实 Build 确认**，这是使用规程而非工具缺陷。
 - 模板全集和 CATIA 运行时验收证据仍只覆盖 `TTEST` 单一工作区的一个模块；新工作区/新模板组合首次使用时应加强人工审查。
-- 知识库里 `patterns/` 目录其余9个文件及部分 `knowledge/mecmod|philosophy|surface|ui|infrastructure|failure_patterns` 子文件仍未逐条核实（详见下方「知识库可信度」），AI 引用到这些区域的具体 API 时应主动用 `--query`/`--check-file` 复核，不影响已核实区域（含 `capabilities/`/`playbooks/`/`knowledge/drawing/` 全部）的可信度。
+- 知识库手写教学文档（`capabilities/` 13 个、`playbooks/` 15 个、`knowledge/` 各子目录、`patterns/` 目录）已全部完成虚构 API 校核并重写修正（详见下方「知识库可信度」及 [`KNOWLEDGE_AUDIT_STATUS.md`](KNOWLEDGE_AUDIT_STATUS.md)）。`frameworks/` 148 个文件为自动提取索引，具体方法签名仍以 `--query` 实时比对头文件为准。
 
 ### 部署前检查清单
 
 - [ ] 已阅读并接受上方「非阻塞残余风险」的使用规程（尤其：生成代码后必须在真实工作区跑一次 Build）
 - [ ] 已跑通 `python tests/test_master.py --quick`，确认本机 quick 模式通过（当前 42 套中执行 41 套，跳过 Int-1；套件数以 `SUITES` 为准）
 - [ ] 已确认目标 CATIA 版本 ≥ R19（工具在 B28 上做过实机验证；跨版本首次使用建议先在测试工作区跑一次 `develop()`/`repair()` 全流程）
-- [ ] 团队已知晓 `KNOWLEDGE_AUDIT_STATUS.md` 中「未核实清单」范围，涉及这些 API 时纳入代码审查重点
+- [ ] 团队已知晓 `KNOWLEDGE_AUDIT_STATUS.md` 中的审计状态与核实方法论，涉及关键 API 时以 `--query` 核验为准
 - [ ] 首次在新工作区使用时，先用小范围改动验证 ChangeSet 应用 + Build 闭环，再扩大到完整开发任务
 
 **2026-07-17 修复**：`build.py` 的 `incremental_build()` / `clean_build()` / `debug_build()` / `build_with_threads()` 此前只传递修饰标志（如 `-u`、`-g`、`-j N`），未附带 mkmk 强制要求的目标选择器 `-a`，导致对任意真实工作区调用都会失败，报出误导性的"must be executed in a workspace containing, at least, one framework"错误（实际是缺少 `-a`，与许可证/环境无关）。已修复为始终包含 `-a`；`dry_run_build()` 改用 `-a -nobuild`（mkmk 无 `-n` 选项，会被拒绝为非法参数）。新增 `test_build_and_run.py` Part 4.5（Tier B，opt-in、不启停 CATIA）对 `D:/Vault/FSWorkspaces/TTEST` 执行真实 `incremental_build()`，验证 0 编译错误、DLL 新鲜度校验通过、DLL mtime 确实刷新。
@@ -1726,10 +1726,9 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 `develop()`/`analyze()`/`repair()` 的代码生成质量还取决于它引用的 `capabilities/`/`knowledge/`/`patterns/`/`playbooks/` 手写文档里的 API 是否真实存在。这些文档历史上曾大量包含 AI 自己“看起来合理”但 CAADoc 里不存在的虚构 API（已修复 40+ 处）。**当前核实状态**：
 
-- ✅ **完全已核实**：`capabilities/` 全部 13 个、`playbooks/` 全部 15 个（除 README）、`knowledge/drawing/` 全部 2 个、`patterns/drawing/batch_drawing.md`，及部分其他 `knowledge/`/`patterns/` 文件。
-- ⚠️ **尚未核实**：`patterns/` 目录其余大部分手写代码示例、部分 `knowledge/mecmod|philosophy|surface|ui|infrastructure|failure_patterns` 子文件。
-- 完整清单、核实方法论、下一步入口见 **[`KNOWLEDGE_AUDIT_STATUS.md`](KNOWLEDGE_AUDIT_STATUS.md)**。
-- **未核实不代表错**，只是尚未人工比对验证。AI 生成代码时引用到未核实区域的具体 API 时，应主动用 `--query`/`--check-file` 复核关键类型与方法名，而不是直接照抄。
+- ✅ **完全已核实**：`capabilities/` 全部 13 个、`playbooks/` 全部 15 个（除 README）、`knowledge/` 与 `patterns/` 各子目录全部手写教学文档均已完成虚构 API 校核并纠正。
+- ℹ️ **索引类数据**：`frameworks/` 148 个文件为 CAADoc 脚本自动提取的 API 索引数据，不作为手写教学代码，具体方法签名以 `--query` 实时核对头文件为准。
+- 完整清单、核实方法论、维护指引见 **[`KNOWLEDGE_AUDIT_STATUS.md`](KNOWLEDGE_AUDIT_STATUS.md)**。
 
 ### 已验证范围
 

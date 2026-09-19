@@ -99,9 +99,9 @@ native_command_investigation · parameter_editor · surface_analysis
 
 ---
 
-## 未核实清单
+## 未核实清单（已清零）
 
-> ✅ **手写文档校核已全部完成。** `capabilities/`（13）、`playbooks/`（14）、`knowledge/`、`patterns/` 下所有手写教学文档均已核实完毕；2026-08-14 补充完成 `examples/`（1个）与 `docs/examples/`、`docs/references/` 中 Dialog 族教程文件（2个）。
+> ✅ **手写文档校核已全部完成。** `capabilities/`（13）、`playbooks/`（15）、`knowledge/`、`patterns/` 下所有手写教学文档均已核实完毕；2026-08-14 补充完成 `examples/`（1个）与 `docs/examples/`、`docs/references/` 中 Dialog 族教程文件（2个）。
 >
 > 仅剩 `knowledge/frameworks/` 148 个文件为脚本自动生成的 API 索引（非手写教学代码），不适用本审计。
 > `docs/references/`、`docs/guides/` 下其余参考/指南文件未逐一纳入本审计（多为流程说明而非 API 教学），如含代码块可按本页方法论用 `--check-file` 抽查。
@@ -110,14 +110,14 @@ native_command_investigation · parameter_editor · surface_analysis
 
 ## 下次会话继续入口
 
-知识库手写文档虚构 API 校核已**全部完成**（capabilities 13 + playbooks 14 + knowledge 全部 + patterns 全部）。无待办文件。
+知识库手写文档虚构 API 校核已**全部完成**（capabilities 13 + playbooks 15 + knowledge 全部 + patterns 全部）。无待办文件。
 
 后续如需复查个别 API：
 1. 跑 `python tools/build_caadoc_index.py --query <TypeName>` 或 `--check-file <path>` 快速核对
 2. 对 SUSPECT 结果，先排除已知误报源（宏/枚举值/库名/头文件名/教学占位符），再用 SDK 头文件或 win_b64 `.dll` 复核
 3. 判断头文件存在性用 `find <CATIA_INSTALL>/<Module>/PublicInterfaces/ -name X.h`，勿在 `win_b64` 下找
 4. 改知识库长 markdown 用 `write_file` 整体重写，勿用 `edit_file` 局部编辑（历史上多次截断/错位）
-5. 改完跑 `python tests/test_master.py --quick`（应 38/38 全过）
+5. 改完跑 `python tests/test_master.py --quick`（应 41/41 全过）
 
 ---
 
