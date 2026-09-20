@@ -321,18 +321,28 @@ def cmd_build(args):
     ws = _get_ws(args)
     opts = _get_flags(args)
 
+    target_mod = None
+    if "-m" in args:
+        idx = args.index("-m")
+        if idx + 1 < len(args):
+            target_mod = args[idx + 1]
+    elif "--module" in args:
+        idx = args.index("--module")
+        if idx + 1 < len(args):
+            target_mod = args[idx + 1]
+
     if "--full" in opts or "-a" in opts:
-        result = full_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False)
+        result = full_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False, target_module=target_mod)
     elif "--clean" in opts or "-c" in opts:
-        result = clean_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False)
+        result = clean_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False, target_module=target_mod)
     elif "--debug" in opts or "-g" in opts:
-        result = debug_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False)
+        result = debug_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False, target_module=target_mod)
     elif "--threads" in opts:
         idx = args.index("--threads") if "--threads" in args else args.index("-j")
         n = int(args[idx + 1]) if idx + 1 < len(args) else 8
-        result = build_with_threads(Path(ws), n, entrypoint="cade_cli", orchestrated_by_kernel=False)
+        result = build_with_threads(Path(ws), n, entrypoint="cade_cli", orchestrated_by_kernel=False, target_module=target_mod)
     else:
-        result = incremental_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False)
+        result = incremental_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False, target_module=target_mod)
 
     return _print_result(result)
 

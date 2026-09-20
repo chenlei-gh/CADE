@@ -170,6 +170,7 @@ void TestModPanelDlg::BuildWindow() {
         # Pre-seed a corrupted context file
         from maintenance_context import get_context_path
         ctx_file = get_context_path(self.workspace, "TestMod.m")
+        ctx_file.parent.mkdir(parents=True, exist_ok=True)
         ctx_file.write_text("{{corrupted json", encoding="utf-8")
 
         mock_failure = {
@@ -179,6 +180,106 @@ void TestModPanelDlg::BuildWindow() {
         # Hook must handle corrupted file gracefully and return None without throwing
         result = attach_build_result(self.workspace, mock_failure, target_module="TestMod.m")
         self.assertIsNone(result)
+
+    def test_build_workspace_timeout_attaches_error_result(self):
+        """
+        P2 Requirement: When build_workspace hits TimeoutExpired, the error result
+        is still attached to maintenance context without breaking the caller.
+        """
+        from unittest.mock import patch
+        import subprocess
+        from build import build_workspace
+
+        # Pre-create maintenance context for TestMod.m
+        ctx = MaintenanceContext(
+            task_id="task_timeout",
+            workspace=str(self.workspace),
+            target_module="TestMod.m",
+            original_request="Test timeout",
+        )
+        save_context(ctx)
+
+        # Mock CAA environment, validation, and subprocess.run to raise TimeoutExpired
+        with patch("build.CAAEnvironment") as mock_env_cls, \
+             patch("build.validate_workspace", return_value={"ok": True, "issues": [], "can_build": True}), \
+             patch("build.setup_prerequisite_path", return_value={"status": "success"}), \
+             patch("build.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="mkmk", timeout=10)):
+            mock_env = mock_env_cls.return_value
+            mock_env.load_config.return_value = True
+            mock_env.build_time_command.return_value = (["cmd", "/c"], "cmd /c")
+
+            res = build_workspace(self.workspace, timeout=10, target_module="TestMod.m")
+            self.assertEqual(res["status"], "error")
+            self.assertIn("timeout", res["message"].lower())
+
+            # Verify context recorded the timeout attempt
+            reloaded = load_context(self.workspace, "TestMod.m")
+            self.assertIsNotNone(reloaded)
+            self.assertEqual(len(reloaded.build_results), 1)
+            self.assertEqual(reloaded.last_build["status"], "error")
+
+    def test_build_workspace_exception_attaches_error_result(self):
+        """
+        P2 Requirement: When build_workspace encounters an unexpected Exception during execution,
+        it also attempts context attachment and returns structured error.
+        """
+        from unittest.mock import patch
+        from build import build_workspace
+
+        ctx = MaintenanceContext(
+            task_id="task_exc",
+            workspace=str(self.workspace),
+            target_module="TestMod.m",
+            original_request="Test exception",
+        )
+        save_context(ctx)
+
+        with patch("build.CAAEnvironment") as mock_env_cls, \
+             patch("build.validate_workspace", return_value={"ok": True, "issues": [], "can_build": True}), \
+             patch("build.setup_prerequisite_path", return_value={"status": "success"}), \
+             patch("build.subprocess.run", side_effect=RuntimeError("Simulated build crash")):
+            mock_env = mock_env_cls.return_value
+            mock_env.load_config.return_value = True
+            mock_env.build_time_command.return_value = (["cmd", "/c"], "cmd /c")
+
+            res = build_workspace(self.workspace, target_module="TestMod.m")
+            self.assertEqual(res["status"], "error")
+            self.assertIn("Simulated build crash", res["message"])
+
+            # Verify context recorded the error attempt
+            reloaded = load_context(self.workspace, "TestMod.m")
+            self.assertIsNotNone(reloaded)
+            self.assertEqual(len(reloaded.build_results), 1)
+            self.assertEqual(reloaded.last_build["status"], "error")
+
+    def test_multi_module_failure_without_target_refuses_active_pollution(self):
+        """
+        P0 Requirement: When active.json points to Mod1.m, an untargeted build
+        with ambiguous multi-module errors must NOT write into Mod1.m's context.
+        """
+        # Active context for Mod1.m
+        ctx1 = MaintenanceContext(
+            task_id="task_mod1",
+            workspace=str(self.workspace),
+            target_module="Mod1.m",
+            original_request="Fix Mod1",
+        )
+        save_context(ctx1)
+
+        # Ambiguous build errors spanning both Mod2 and Mod3
+        ambiguous_errors = {
+            "status": "failed",
+            "errors": [
+                {"file": "Mod2.m/src/Mod2.cpp", "line": 10, "code": "C2065", "module": "Mod2.m"},
+                {"file": "Mod3.m/src/Mod3.cpp", "line": 20, "code": "C2065", "module": "Mod3.m"},
+            ],
+        }
+        res = attach_build_result(self.workspace, ambiguous_errors, target_module=None)
+        self.assertIsNone(res)
+
+        # Confirm Mod1.m context remains pristine (0 build results)
+        reloaded1 = load_context(self.workspace, "Mod1.m")
+        self.assertEqual(len(reloaded1.build_results), 0)
 
 
 if __name__ == "__main__":

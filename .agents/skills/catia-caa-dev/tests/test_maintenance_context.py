@@ -145,6 +145,7 @@ class TestMaintenanceContext(unittest.TestCase):
 
         # Malformed JSON
         ctx_path = get_context_path(self.workspace, "CorruptedMod.m")
+        ctx_path.parent.mkdir(parents=True, exist_ok=True)
         ctx_path.write_text("{ malformed: json, [ ", encoding="utf-8")
         corrupted = load_context(self.workspace, "CorruptedMod.m")
         self.assertIsNone(corrupted)
@@ -152,6 +153,149 @@ class TestMaintenanceContext(unittest.TestCase):
         # attach_build_result on missing context is a clean no-op
         res = attach_build_result(self.workspace, {"status": "success"}, "NonExistent.m")
         self.assertIsNone(res)
+
+    def test_pure_read_has_zero_disk_side_effects(self):
+        """
+        P1 Requirement: Pure read operations (get_context_path, load_context)
+        MUST NOT create any directories or files on disk.
+        """
+        cade_dir = self.workspace / ".cade"
+        self.assertFalse(cade_dir.exists())
+
+        path = get_context_path(self.workspace, "AnyModule.m")
+        self.assertFalse(cade_dir.exists())
+        self.assertFalse(path.exists())
+
+        res = load_context(self.workspace, "AnyModule.m")
+        self.assertIsNone(res)
+        self.assertFalse(cade_dir.exists())
+
+        # Calling without target module (fallback check) also must not create directory
+        res_active = load_context(self.workspace)
+        self.assertIsNone(res_active)
+        self.assertFalse(cade_dir.exists())
+
+    def test_atomic_save_context(self):
+        """
+        P1 Requirement: save_context uses atomic file replacement without
+        leaving temporary files behind.
+        """
+        ctx = MaintenanceContext(
+            schema_version=1,
+            task_id="task_atomic",
+            workspace=str(self.workspace),
+            target_module="AtomicMod.m",
+            original_request="Test atomic replace",
+        )
+        ok = save_context(ctx)
+        self.assertTrue(ok)
+
+        target_file = get_context_path(self.workspace, "AtomicMod.m")
+        self.assertTrue(target_file.exists())
+        # Verify no .tmp_* leftover files exist in the maintenance directory
+        tmp_files = list(target_file.parent.glob(".tmp_*")) + list(target_file.parent.glob("*.tmp_*"))
+        self.assertEqual(len(tmp_files), 0)
+
+        # Verify content is valid JSON matching ctx
+        reloaded = load_context(self.workspace, "AtomicMod.m")
+        self.assertIsNotNone(reloaded)
+        self.assertEqual(reloaded.task_id, "task_atomic")
+
+    def test_workspace_level_success_does_not_clear_explicit_failures(self):
+        """
+        P0 Requirement: A general workspace-level success (or success from another module)
+        MUST NOT wash away an explicit failure record of the module under maintenance.
+        """
+        ctx = MaintenanceContext(
+            task_id="task_modA",
+            workspace=str(self.workspace),
+            target_module="ModA.m",
+            original_request="Fix ModA",
+        )
+        save_context(ctx)
+
+        # 1. ModA explicitly fails
+        failed_build = {
+            "status": "failed",
+            "duration_seconds": 6.0,
+            "errors": [
+                {
+                    "file": "ModA.m/src/ModA.cpp",
+                    "line": 10,
+                    "code": "C2065",
+                    "message": "undeclared",
+                    "module": "ModA.m",
+                }
+            ],
+        }
+        res1 = attach_build_result(self.workspace, failed_build, target_module="ModA.m")
+        self.assertIsNotNone(res1)
+        self.assertEqual(len(res1.unresolved_build_errors), 1)
+
+        # 2. An unrelated build happens: ModB succeeded, or workspace-level build ran
+        # with verification only confirming ModB.dll
+        unrelated_success = {
+            "status": "success",
+            "duration_seconds": 15.0,
+            "errors": [],
+            "verification": {"dlls": [{"name": "ModB.dll", "status": "ok"}]},
+        }
+        # Manually attach or let system process: association becomes 'workspace_level' for ModA
+        res1.build_results.append({
+            "build_id": "b_unrelated",
+            "status": "success",
+            "association": "workspace_level",
+            "errors": [],
+        })
+        save_context(res1)
+
+        # 3. Check unresolved errors: ModA's explicit failure MUST STILL BE ACTIVE!
+        reloaded = load_context(self.workspace, "ModA.m")
+        self.assertEqual(len(reloaded.unresolved_build_errors), 1)
+        self.assertEqual(reloaded.unresolved_build_errors[0]["code"], "C2065")
+
+        # 4. Now an explicit successful build for ModA occurs
+        modA_success = {
+            "status": "success",
+            "duration_seconds": 5.0,
+            "errors": [],
+            "verification": {"dlls": [{"name": "ModA.dll", "status": "ok"}]},
+        }
+        res2 = attach_build_result(self.workspace, modA_success, target_module="ModA.m")
+        self.assertIsNotNone(res2)
+        # Now it is explicitly resolved!
+        self.assertEqual(len(res2.unresolved_build_errors), 0)
+
+    def test_attach_build_result_refuses_blind_association_when_ambiguous(self):
+        """
+        P0 Requirement: If target_module is NOT passed and errors span multiple modules,
+        attach_build_result must REFUSE to associate to active.json (Contract: Better unassociated
+        than wrongly associated).
+        """
+        # Create an active context for ModA.m
+        ctx_a = MaintenanceContext(
+            task_id="task_a",
+            workspace=str(self.workspace),
+            target_module="ModA.m",
+            original_request="Working on ModA",
+        )
+        save_context(ctx_a)
+
+        # Ambiguous build with errors in both ModX.m and ModY.m, no explicit target_module
+        ambiguous_build = {
+            "status": "failed",
+            "errors": [
+                {"file": "ModX.m/src/X.cpp", "line": 1, "code": "C2065", "module": "ModX.m"},
+                {"file": "ModY.m/src/Y.cpp", "line": 2, "code": "C2065", "module": "ModY.m"},
+            ],
+        }
+        result = attach_build_result(self.workspace, ambiguous_build, target_module=None)
+        # Must be None: refused to associate!
+        self.assertIsNone(result)
+
+        # ModA context MUST NOT be polluted
+        reloaded_a = load_context(self.workspace, "ModA.m")
+        self.assertEqual(len(reloaded_a.build_results), 0)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 """
-CADE Maintenance Context Manager (P3-A.1)
-=========================================
+CADE Maintenance Context Manager (P3-A.1 / P3-A.2)
+=================================================
 Lightweight, resilient JSON persistence contract for brownfield maintenance tasks.
 Decoupled data layer: imported by build.py, kernel.py, and cade.py with zero circularity.
 
@@ -128,14 +128,21 @@ class MaintenanceContext:
     @property
     def unresolved_build_errors(self) -> List[dict]:
         """
-        Returns active build errors from the most recent build.
-        Crucial contract: If the last build succeeded, previously recorded errors
-        are considered resolved and this returns an empty list.
+        Returns active unresolved build errors for this module.
+        Crucial safety contract (P0 fix):
+          1. Scans build history in reverse for the latest EXPLICIT build regarding this module.
+          2. If the latest explicit build succeeded, errors are considered resolved -> [].
+          3. If the latest explicit build failed, returns the associated L0 errors.
+          4. A general workspace-level success that did NOT explicitly build or verify
+             this module MUST NOT clear previously recorded explicit failure records.
         """
-        lb = self.last_build
-        if not lb or lb.get("status") != "failed":
-            return []
-        return [e for e in lb.get("errors", []) if e.get("associated", True)]
+        for record in reversed(self.build_results):
+            if record.get("association") == "explicit":
+                if record.get("status") == "success":
+                    return []
+                elif record.get("status") in ("failed", "error"):
+                    return [e for e in record.get("errors", []) if e.get("associated", True)]
+        return []
 
 
 def generate_task_id(workspace: str, target_module: str, request: str = "") -> str:
@@ -149,41 +156,30 @@ def generate_task_id(workspace: str, target_module: str, request: str = "") -> s
 
 def get_context_path(workspace_root: Union[str, Path], target_module: Optional[str] = None) -> Path:
     """
-    Resolve the primary context storage path.
-    Prioritizes <workspace>/.cade/maintenance/<module>.json.
-    Falls back to user cache if workspace is read-only or inaccessible.
+    Resolve the context storage path purely in memory (P1 fix: zero filesystem side-effects).
+    Does NOT create directories or touch disk on read/load operations.
     """
     ws = Path(workspace_root).resolve()
     target_dir = ws / ".cade" / "maintenance"
     mod_slug = target_module.replace(".m", "") if target_module else "active"
-    
-    try:
-        target_dir.mkdir(parents=True, exist_ok=True)
-        return target_dir / f"{mod_slug}.json"
-    except (OSError, PermissionError):
-        # Fallback to local cache
-        ws_hash = hashlib.md5(str(ws).encode()).hexdigest()[:8]
-        fallback_dir = Path(tempfile.gettempdir()) / "cade_cache" / ws_hash / "maintenance"
-        fallback_dir.mkdir(parents=True, exist_ok=True)
-        return fallback_dir / f"{mod_slug}.json"
+    return target_dir / f"{mod_slug}.json"
 
 
 def load_context(workspace_root: Union[str, Path], target_module: Optional[str] = None) -> Optional[MaintenanceContext]:
     """
     Load an existing maintenance context.
-    Resilience contract: If the file is missing, empty, or corrupted, returns None
-    and logs a warning without crashing the caller.
+    Resilience contract:
+      - Never creates directories or modifies disk during read.
+      - If file is missing or corrupted, logs a warning and returns None gracefully.
     """
     try:
         path = get_context_path(workspace_root, target_module)
         if not path.exists():
-            # If a specific module was requested but not found, also check if 'active.json' matches
-            if target_module and target_module != "active":
+            # Only check 'active.json' as fallback if target_module was not explicitly requested
+            if not target_module:
                 active_path = get_context_path(workspace_root, "active")
                 if active_path.exists():
-                    active_ctx = load_context(workspace_root, "active")
-                    if active_ctx and active_ctx.target_module == target_module:
-                        return active_ctx
+                    return load_context(workspace_root, "active")
             return None
 
         content = path.read_text(encoding="utf-8")
@@ -206,29 +202,45 @@ def load_context(workspace_root: Union[str, Path], target_module: Optional[str] 
 
 def save_context(ctx: MaintenanceContext) -> bool:
     """
-    Persist maintenance context to disk atomically.
+    Persist maintenance context to disk using genuine atomic replace (P1 fix).
+    Uses os.replace / Path.replace without intermediate unlink to prevent data loss on crash.
     Never throws unhandled exceptions; returns True on success, False on failure.
     """
     try:
         path = get_context_path(ctx.workspace, ctx.target_module)
+        
+        # Ensure parent directory exists only at write time
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        except (OSError, PermissionError):
+            # Fallback to temp storage if workspace is read-only
+            ws_hash = hashlib.md5(str(Path(ctx.workspace).resolve()).encode()).hexdigest()[:8]
+            fallback_dir = Path(tempfile.gettempdir()) / "cade_cache" / ws_hash / "maintenance"
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            path = fallback_dir / path.name
+
         ctx.updated_at = datetime.now().isoformat()
         if not ctx.created_at:
             ctx.created_at = ctx.updated_at
 
         data_str = json.dumps(ctx.to_dict(), indent=2, ensure_ascii=False)
         
-        # Atomic write via temporary file
-        tmp_path = path.with_suffix(".tmp")
+        # Genuine atomic replace via unique PID-tagged temp file in same directory
+        pid = os.getpid()
+        ts_hash = hashlib.md5(f"{pid}_{datetime.now().isoformat()}".encode()).hexdigest()[:6]
+        tmp_path = path.with_suffix(f".tmp_{pid}_{ts_hash}")
         tmp_path.write_text(data_str, encoding="utf-8")
-        if path.exists():
-            path.unlink()
-        tmp_path.rename(path)
+        
+        # Atomic replacement: replaces existing file atomically on both POSIX and Windows
+        tmp_path.replace(path)
 
-        # Also update active.json pointer if this is a module-specific context
+        # Atomically update active.json pointer if this is a module-specific context
         if ctx.target_module and ctx.target_module != "active":
             active_path = get_context_path(ctx.workspace, "active")
             try:
-                active_path.write_text(data_str, encoding="utf-8")
+                active_tmp = active_path.with_suffix(f".tmp_{pid}_{ts_hash}")
+                active_tmp.write_text(data_str, encoding="utf-8")
+                active_tmp.replace(active_path)
             except Exception:
                 pass
 
@@ -260,7 +272,7 @@ def normalize_error(raw_err: Any, target_module: Optional[str] = None) -> Struct
 
     # Determine kind
     kind = "compiler_error"
-    if code and code.startswith("LNK"):
+    if code and str(code).startswith("LNK"):
         kind = "linker_error"
     elif code and "make" in str(code).lower():
         kind = "build_system_error"
@@ -275,10 +287,15 @@ def normalize_error(raw_err: Any, target_module: Optional[str] = None) -> Struct
     associated = False
     if target_module:
         t_mod_clean = target_module.replace(".m", "").lower()
-        if mod and t_mod_clean in mod.lower():
+        if mod and t_mod_clean == mod.replace(".m", "").lower():
             associated = True
-        elif file_path and (t_mod_clean in file_path.lower() or target_module.lower() in file_path.lower()):
-            associated = True
+        elif file_path:
+            fp_lower = str(file_path).lower().replace("\\", "/")
+            if (f"/{t_mod_clean}.m/" in fp_lower or
+                f"/{t_mod_clean}/" in fp_lower or
+                fp_lower.startswith(f"{t_mod_clean}.m/") or
+                fp_lower.startswith(f"{t_mod_clean}/")):
+                associated = True
 
     return StructuredError(
         kind=kind,
@@ -299,23 +316,60 @@ def attach_build_result(
     target_module: Optional[str] = None,
 ) -> Optional[MaintenanceContext]:
     """
-    Hook called after a build completes.
-    Associates the build outcome into the active maintenance context.
+    Hook called after any build attempt (success, failure, timeout, or exception).
+    Associates the build outcome into the relevant maintenance context.
 
-    Safety contract:
-      - Never alters the build exit status or throws exceptions.
-      - If no active maintenance context exists for target_module or workspace,
-        no spurious context is forced.
-      - Accurately classifies association (explicit vs unassociated).
+    Strict safety & association rules (P0 & P2 fixes):
+      1. Never alters the build exit status, duration, or throws exceptions.
+      2. If target_module is NOT explicitly passed, attempts strict inference:
+         - Inspects raw errors: if all errors exclusively belong to a single module M,
+           target_module is inferred as M.
+         - If build is success without explicit module, checks verification DLLs.
+         - If inference cannot achieve 100% certainty, REFUSES to associate to active.json
+           (Contract: Better unassociated than wrongly associated).
+      3. For successful builds, only marks association as 'explicit' if:
+         - target_module was explicitly targeted, OR
+         - verification output explicitly proves the module's DLL was compiled/verified.
     """
     try:
-        ctx = load_context(workspace_root, target_module)
-        if not ctx:
+        raw_errors = build_result.get("errors", [])
+        status = build_result.get("status", "unknown")
+        duration = build_result.get("duration_seconds", 0.0)
+
+        # P0 Fix: Strict target module inference (no blind fallback to active.json)
+        resolved_module = target_module
+        if not resolved_module:
+            error_modules = set()
+            for err in raw_errors:
+                m = err.get("module") if isinstance(err, dict) else getattr(err, "module", None)
+                if m:
+                    error_modules.add(m.strip())
+                else:
+                    f = err.get("file") if isinstance(err, dict) else getattr(err, "file", None)
+                    if f and ".m" in str(f):
+                        # Extract module name from path, e.g., .../CAABOMToolCmd.m/...
+                        parts = Path(f).parts
+                        for p in parts:
+                            if p.endswith(".m"):
+                                error_modules.add(p)
+
+            if len(error_modules) == 1:
+                resolved_module = list(error_modules)[0]
+            elif status == "success" and not error_modules:
+                # Success build without explicit module: check if single DLL in verification
+                v_dlls = build_result.get("verification", {}).get("dlls", [])
+                if len(v_dlls) == 1:
+                    dll_name = v_dlls[0].get("name", "")
+                    if dll_name.endswith(".dll"):
+                        resolved_module = dll_name.replace(".dll", ".m")
+
+        # If we still cannot reliably determine the module, do NOT force association
+        if not resolved_module:
             return None
 
-        status = build_result.get("status", "unknown")
-        raw_errors = build_result.get("errors", [])
-        duration = build_result.get("duration_seconds", 0.0)
+        ctx = load_context(workspace_root, resolved_module)
+        if not ctx:
+            return None
 
         # Normalize errors to L0 structured evidence
         normalized_errors = []
@@ -327,11 +381,17 @@ def attach_build_result(
                 has_module_specific_error = True
             normalized_errors.append(struct_err.to_dict())
 
-        # Determine association type
+        # Determine association type with strict verification (P0 fix)
         if has_module_specific_error:
             association = "explicit"
-        elif not normalized_errors and status == "success":
-            association = "explicit"
+        elif status == "success":
+            # Check if this module was actually compiled/verified in this build
+            verified_dlls = [d.get("name", "").lower() for d in build_result.get("verification", {}).get("dlls", [])]
+            mod_dll = f"{ctx.target_module.replace('.m', '').lower()}.dll"
+            if target_module or (mod_dll in verified_dlls):
+                association = "explicit"
+            else:
+                association = "workspace_level"
         else:
             association = "workspace_level"
 
