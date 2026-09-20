@@ -154,32 +154,33 @@ def generate_task_id(workspace: str, target_module: str, request: str = "") -> s
     return f"maint_{clean_mod}_{ws_hash}_{req_hash}_{ts}"
 
 
-def get_context_path(workspace_root: Union[str, Path], target_module: Optional[str] = None) -> Path:
+def get_context_path(workspace_root: Union[str, Path], target_module: Optional[str] = None) -> Optional[Path]:
     """
-    Resolve the context storage path purely in memory (P1 fix: zero filesystem side-effects).
+    Resolve the module-specific context storage path purely in memory (zero filesystem side-effects).
     Does NOT create directories or touch disk on read/load operations.
+    Returns None if target_module is omitted (active.json singleton completely removed).
     """
+    if not target_module:
+        return None
     ws = Path(workspace_root).resolve()
     target_dir = ws / ".cade" / "maintenance"
-    mod_slug = target_module.replace(".m", "") if target_module else "active"
+    mod_slug = target_module.replace(".m", "")
     return target_dir / f"{mod_slug}.json"
 
 
 def load_context(workspace_root: Union[str, Path], target_module: Optional[str] = None) -> Optional[MaintenanceContext]:
     """
-    Load an existing maintenance context.
+    Load an existing module maintenance context.
     Resilience contract:
+      - Requires target_module; no active.json singleton fallback exists.
       - Never creates directories or modifies disk during read.
       - If file is missing or corrupted, logs a warning and returns None gracefully.
     """
+    if not target_module:
+        return None
     try:
         path = get_context_path(workspace_root, target_module)
-        if not path.exists():
-            # Only check 'active.json' as fallback if target_module was not explicitly requested
-            if not target_module:
-                active_path = get_context_path(workspace_root, "active")
-                if active_path.exists():
-                    return load_context(workspace_root, "active")
+        if not path or not path.exists():
             return None
 
         content = path.read_text(encoding="utf-8")
@@ -204,10 +205,14 @@ def save_context(ctx: MaintenanceContext) -> bool:
     """
     Persist maintenance context to disk using genuine atomic replace (P1 fix).
     Uses os.replace / Path.replace without intermediate unlink to prevent data loss on crash.
+    Saves strictly to the target module context file; zero active.json singleton side-effects.
     Never throws unhandled exceptions; returns True on success, False on failure.
     """
     try:
         path = get_context_path(ctx.workspace, ctx.target_module)
+        if not path:
+            logger.warning("Failed to persist maintenance context: target_module is missing")
+            return False
         
         # Ensure parent directory exists only at write time
         try:
@@ -233,17 +238,6 @@ def save_context(ctx: MaintenanceContext) -> bool:
         
         # Atomic replacement: replaces existing file atomically on both POSIX and Windows
         tmp_path.replace(path)
-
-        # Atomically update active.json pointer if this is a module-specific context
-        if ctx.target_module and ctx.target_module != "active":
-            active_path = get_context_path(ctx.workspace, "active")
-            try:
-                active_tmp = active_path.with_suffix(f".tmp_{pid}_{ts_hash}")
-                active_tmp.write_text(data_str, encoding="utf-8")
-                active_tmp.replace(active_path)
-            except Exception:
-                pass
-
         return True
     except Exception as e:
         logger.warning(f"Failed to persist maintenance context: {e}")
@@ -325,7 +319,7 @@ def attach_build_result(
          - Inspects raw errors: if all errors exclusively belong to a single module M,
            target_module is inferred as M.
          - If build is success without explicit module, checks verification DLLs.
-         - If inference cannot achieve 100% certainty, REFUSES to associate to active.json
+         - If inference cannot achieve 100% certainty, REFUSES to associate
            (Contract: Better unassociated than wrongly associated).
       3. For successful builds, only marks association as 'explicit' if:
          - target_module was explicitly targeted, OR

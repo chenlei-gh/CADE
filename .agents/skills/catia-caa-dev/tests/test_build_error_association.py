@@ -254,10 +254,9 @@ void TestModPanelDlg::BuildWindow() {
 
     def test_multi_module_failure_without_target_refuses_active_pollution(self):
         """
-        P0 Requirement: When active.json points to Mod1.m, an untargeted build
+        P0 Requirement: When a context exists for Mod1.m, an untargeted build
         with ambiguous multi-module errors must NOT write into Mod1.m's context.
         """
-        # Active context for Mod1.m
         ctx1 = MaintenanceContext(
             task_id="task_mod1",
             workspace=str(self.workspace),
@@ -280,6 +279,69 @@ void TestModPanelDlg::BuildWindow() {
         # Confirm Mod1.m context remains pristine (0 build results)
         reloaded1 = load_context(self.workspace, "Mod1.m")
         self.assertEqual(len(reloaded1.build_results), 0)
+
+    def test_production_build_workspace_with_target_module_ignores_unrelated_errors_end_to_end(self):
+        """
+        Audit Requirement 2: End-to-end production verification.
+        When build_workspace is called explicitly with target_module='TestMod.m',
+        but the build failed entirely due to errors in 'OtherMod.m':
+          1. The build result is recorded as 'workspace_level' (NOT explicit).
+          2. unresolved_build_errors for TestMod.m strictly returns [].
+          3. Subsequent Kernel develop/analyze analysis displays 0 active build errors.
+          4. Zero active.json files are generated or modified.
+        """
+        from unittest.mock import patch, MagicMock
+        from build import build_workspace
+
+        # Step 1: Initialize maintenance context for TestMod.m via Kernel
+        res1 = self.kernel.execute(KernelMode.DEVELOP, "排查 TestMod.m 中列宽刷新问题")
+        self.assertEqual(res1["status"], "ok")
+        self.assertEqual(res1.get("target_module"), "TestMod.m")
+
+        # Step 2: Run build_workspace explicitly targeting TestMod.m
+        # Mock mkmk output showing failure strictly in OtherMod.m
+        other_error_output = (
+            "step: compilation\n"
+            "OtherMod.m/src/Other.cpp(55) : error C2065: 'undefined_symbol': undeclared identifier\n"
+            "#ERR# compilation failed\n"
+            "EXIT_CODE=1\n"
+        )
+        fake_process = MagicMock()
+        fake_process.returncode = 1
+        fake_process.stdout = other_error_output.encode("utf-8")
+        fake_process.stderr = b""
+
+        with patch("build.CAAEnvironment") as mock_env_cls, \
+             patch("build.validate_workspace", return_value={"ok": True, "issues": [], "can_build": True}), \
+             patch("build.setup_prerequisite_path", return_value={"status": "success"}), \
+             patch("build.subprocess.run", return_value=fake_process), \
+             patch("build.verify_build", return_value={"ok": False, "issues": ["Compilation failed"], "dlls": []}), \
+             patch("build.sync_runtime_view", return_value={"synced": [], "errors": [], "ok": True}):
+            mock_env = mock_env_cls.return_value
+            mock_env.load_config.return_value = True
+            mock_env.build_time_command.return_value = (["cmd", "/c"], "cmd /c")
+
+            b_res = build_workspace(self.workspace, target_module="TestMod.m", skip_gate=True)
+            self.assertEqual(b_res["status"], "failed")
+
+        # Step 3: Inspect TestMod.m context
+        ctx = load_context(self.workspace, "TestMod.m")
+        self.assertIsNotNone(ctx)
+        self.assertEqual(len(ctx.build_results), 1)
+        # Because errors were strictly in OtherMod.m, association MUST be workspace_level
+        self.assertEqual(ctx.last_build["association"], "workspace_level")
+        # And unresolved_build_errors MUST be empty!
+        self.assertEqual(len(ctx.unresolved_build_errors), 0)
+
+        # Step 4: Subsequent Kernel maintenance analysis
+        res2 = self.kernel.execute(KernelMode.DEVELOP, "排查 TestMod.m 中列宽刷新问题")
+        self.assertEqual(res2["status"], "ok")
+        # Active build errors MUST be empty (no false positive pollution from OtherMod.m)
+        self.assertEqual(len(res2.get("active_build_errors", [])), 0)
+
+        # Step 5: Verify zero active.json created on disk
+        active_json_path = self.workspace / ".cade" / "maintenance" / "active.json"
+        self.assertFalse(active_json_path.exists())
 
 
 if __name__ == "__main__":

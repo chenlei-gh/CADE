@@ -201,6 +201,10 @@ class TestMaintenanceContext(unittest.TestCase):
         self.assertIsNotNone(reloaded)
         self.assertEqual(reloaded.task_id, "task_atomic")
 
+        # Verify active.json singleton was NOT created
+        active_file = target_file.parent / "active.json"
+        self.assertFalse(active_file.exists())
+
     def test_workspace_level_success_does_not_clear_explicit_failures(self):
         """
         P0 Requirement: A general workspace-level success (or success from another module)
