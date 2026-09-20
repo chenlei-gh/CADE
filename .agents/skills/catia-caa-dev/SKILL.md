@@ -1314,6 +1314,7 @@ python tests/test_master.py --quick
 │   ├── requirements.py               # Requirements Clarifier + UI 4-axis clarifier (v3.0)
 │   ├── verifier.py                   # Code Verifier — static + mkmk (v3.0)
 │   ├── icon_provider.py              # Official-Only icons (CATIA BMP runtime ref), semantic resolver, 22px CATIA + HD PNG (v4.0)
+│   ├── maintenance_context.py        # 维护任务轻量上下文与构建证据持久化（P3-A）
 │   ├── repair.py                     # Repair Loop (v3.0)
 │   ├── token_optimizer.py            # AI Token 优化器
 │   ├── docgen.py                     # 文档生成器

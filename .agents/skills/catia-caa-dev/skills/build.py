@@ -695,6 +695,13 @@ def build_workspace(
             # 不能静默：同步失败 = 按钮消失/无图标/旧 dico，必须留痕 (FP-13)
             logger.write(f"WARNING: Runtime View sync failed: {e}")
         cache.save(build_result)
+        # Associate build result with active maintenance context if present (P3-A.1)
+        try:
+            from maintenance_context import attach_build_result
+            attach_build_result(verify_root, build_result)
+        except Exception as e:
+            logger.write(f"Maintenance context association non-blocking warning: {e}")
+
         logger.write(
             f"Status: {build_result['status']} | Errors: {parsed['error_count']} | Duration: {format_duration(duration)}"
         )

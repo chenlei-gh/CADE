@@ -271,7 +271,10 @@ class Kernel:
                 guidance = [
                     f"1. Target module confirmed: {target_mod.name} (framework: {target_mod.framework.name if target_mod.framework else 'unknown'}).",
                 ]
-                if problem_desc:
+                active_build_errs = analysis_data.get("active_build_errors", [])
+                if active_build_errs:
+                    guidance.append(f"2. [CRITICAL] {len(active_build_errs)} active compiler/linker error(s) from previous build. Address these L0 direct evidence issues first.")
+                elif problem_desc:
                     guidance.append(f"2. Focus area: '{problem_desc}'. See relevant_locations ({len(analysis_data.get('relevant_locations', []))} found) and failure_patterns.")
                 else:
                     guidance.append("2. Inspect files, symbols, and diagnostic/verification findings in the module.")
@@ -298,6 +301,8 @@ class Kernel:
                         "problem_description": problem_desc,
                         "analysis": analysis_data,
                         "relevant_locations": analysis_data.get("relevant_locations", []),
+                        "active_build_errors": analysis_data.get("active_build_errors", []),
+                        "task_id": analysis_data.get("task_id", ""),
                         "verification": analysis_data.get("verification", {}),
                         "failure_patterns": analysis_data.get("failure_patterns", []),
                         "guidance": guidance,
@@ -1588,9 +1593,43 @@ class Kernel:
         except Exception:
             pass
 
-        # 5. Problem description and critical code locations
+        # 5. Problem description, maintenance context, and critical code locations
         problem_desc = maintenance_info.get("problem_description", "") if maintenance_info else ""
+        
+        maint_ctx = None
+        active_build_errors = []
+        try:
+            from maintenance_context import load_context, save_context, MaintenanceContext, generate_task_id
+            maint_ctx = load_context(ctx.workspace_root, mod.name)
+            if not maint_ctx:
+                task_id = generate_task_id(str(ctx.workspace_root), mod.name, request)
+                maint_ctx = MaintenanceContext(
+                    task_id=task_id,
+                    workspace=str(ctx.workspace_root),
+                    target_module=mod.name,
+                    original_request=request,
+                    problem_description=problem_desc,
+                )
+            active_build_errors = maint_ctx.unresolved_build_errors
+        except Exception:
+            maint_ctx = None
+            active_build_errors = []
+
         relevant_locations = self._locate_relevant_code(mod, problem_desc, request)
+
+        # Prepend L0 direct build errors if present
+        if active_build_errors:
+            l0_locations = []
+            for b_err in active_build_errors:
+                l0_locations.append({
+                    "file": b_err.get("file") or f"{mod.name} (linker)",
+                    "line": b_err.get("line") or 0,
+                    "symbol": f"[{b_err.get('code') or 'BUILD_ERR'}]",
+                    "context": b_err.get("message") or b_err.get("raw", ""),
+                    "reason": f"L0 Direct Build Evidence ({b_err.get('kind', 'compiler_error')})",
+                    "level": "L0",
+                })
+            relevant_locations = l0_locations + relevant_locations
 
         # 6. Problem-Aware Knowledge & Failure Patterns
         knowledge_refs = {}
@@ -1669,6 +1708,15 @@ class Kernel:
 
         self._state = KernelState.COMPLETED
 
+        # Persist updated context snapshot
+        if maint_ctx:
+            try:
+                maint_ctx.candidate_locations = relevant_locations[:15]
+                maint_ctx.verification_findings = verification_data.get("code_issues", [])
+                save_context(maint_ctx)
+            except Exception:
+                pass
+
         if maintenance_info and maintenance_info.get("is_verify_only"):
             msg = f"Targeted verification for module {mod.name}: {files_verified} files checked, {total_code_errors} error(s), {total_code_warnings} warning(s), {total_ui_findings} UI finding(s)."
         elif problem_desc:
@@ -1690,6 +1738,8 @@ class Kernel:
                 "build_config": build_config,
                 "entities": entities_info,
                 "relevant_locations": relevant_locations,
+                "active_build_errors": active_build_errors,
+                "task_id": maint_ctx.task_id if maint_ctx else "",
                 "verification": verification_data,
                 "diagnostics": {
                     "module_specific": module_diags,

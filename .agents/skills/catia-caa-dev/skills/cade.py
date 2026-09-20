@@ -135,6 +135,17 @@ def _print_kernel(r: dict):
                 loc = f"{f.get('file', '')}:{f.get('line', '')}"
                 print(f"    [UI-{f.get('severity', 'warning')}] {loc} - {f.get('problem', '')} ({f.get('fix_hint', '')})")
 
+    # Show active build errors (L0 Direct Evidence) if any
+    active_errs = r.get("active_build_errors", data.get("active_build_errors", []) if isinstance(data, dict) else [])
+    if active_errs:
+        print("  Active Build Errors (L0 Direct Evidence):")
+        for err in active_errs[:5]:
+            if isinstance(err, dict):
+                f_name = err.get("file") or "linker"
+                l_num = f":{err.get('line')}" if err.get("line") else ""
+                c_code = f" [{err.get('code')}]" if err.get("code") else ""
+                print(f"    • [L0] {f_name}{l_num}{c_code} - {err.get('message', '')}")
+
     # Show relevant code locations
     locations = r.get("relevant_locations", data.get("relevant_locations", []) if isinstance(data, dict) else [])
     if locations:
