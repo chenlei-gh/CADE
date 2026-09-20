@@ -256,34 +256,55 @@ class Kernel:
         self._state = KernelState.CLARIFYING
         request_lower = request.lower()
 
-        # Phase 0.5: Brownfield Maintenance Routing (v3.2.2)
-        if any(kw in request_lower for kw in ("maintain", "fix issue in", "troubleshoot module")):
-            try:
-                from actions import ActionContext
-                ctx = ActionContext(str(self.workspace_root))
-                target_mod = self._find_target_module(request, ctx)
-                if target_mod:
-                    analysis_res = self._analyze_target_module(target_mod, ctx, request)
-                    self._state = KernelState.COMPLETED
-                    return KernelResult(
-                        status="ok",
-                        mode="develop",
-                        state=self._state.value,
-                        message=f"Identified brownfield maintenance for module {target_mod.name}. Provided source, build, diagnostic and knowledge analysis.",
-                        data={
-                            "task_type": "maintain_existing_module",
-                            "target_module": target_mod.name,
-                            "analysis": analysis_res.get("data", {}) or analysis_res,
-                            "guidance": [
-                                "1. Inspect files and diagnostic findings in the module.",
-                                "2. Make necessary manual edits in source/header files.",
-                                "3. Trigger Kernel build via develop('build') or 'cade build'.",
-                                "4. Verify runtime behavior with CATIA runtime view.",
-                            ]
-                        }
-                    ).to_dict()
-            except Exception:
-                pass
+        # Phase 0.5: Brownfield Maintenance Routing (v3.2.2 P1)
+        try:
+            from actions import ActionContext
+            ctx = ActionContext(str(self.workspace_root))
+            m_info = self._parse_maintenance_request(request, ctx)
+            if m_info:
+                target_mod = m_info["module"]
+                analysis_res = self._analyze_target_module(target_mod, ctx, request, maintenance_info=m_info)
+                self._state = KernelState.COMPLETED
+                analysis_data = analysis_res.get("data", {}) or analysis_res
+                problem_desc = m_info.get("problem_description", "")
+
+                guidance = [
+                    f"1. Target module confirmed: {target_mod.name} (framework: {target_mod.framework.name if target_mod.framework else 'unknown'}).",
+                ]
+                if problem_desc:
+                    guidance.append(f"2. Focus area: '{problem_desc}'. See relevant_locations ({len(analysis_data.get('relevant_locations', []))} found) and failure_patterns.")
+                else:
+                    guidance.append("2. Inspect files, symbols, and diagnostic/verification findings in the module.")
+
+                v_summary = analysis_data.get("verification", {}).get("summary", {})
+                code_errs = v_summary.get("code_errors", 0)
+                ui_errs = v_summary.get("ui_findings", 0)
+                if code_errs or ui_errs:
+                    guidance.append(f"3. Address {code_errs} code issue(s) and {ui_errs} UI failure pattern(s) identified.")
+                else:
+                    guidance.append("3. Make necessary edits in source/header files (zero destructive changes applied by CADE).")
+
+                guidance.append("4. Trigger Kernel build via develop('build') or 'cade build'.")
+                guidance.append("5. Verify runtime behavior with CATIA runtime view.")
+
+                return KernelResult(
+                    status="ok",
+                    mode="develop",
+                    state=self._state.value,
+                    message=f"Identified brownfield maintenance for module {target_mod.name}. Provided source, build, diagnostic, verification, and knowledge analysis.",
+                    data={
+                        "task_type": "maintain_existing_module",
+                        "target_module": target_mod.name,
+                        "problem_description": problem_desc,
+                        "analysis": analysis_data,
+                        "relevant_locations": analysis_data.get("relevant_locations", []),
+                        "verification": analysis_data.get("verification", {}),
+                        "failure_patterns": analysis_data.get("failure_patterns", []),
+                        "guidance": guidance,
+                    }
+                ).to_dict()
+        except Exception:
+            pass
 
         # Phase 0: Multi-Intent Decomposition (v3.1) — BEFORE clarification
         # Split compound requests first so clarification doesn't short-circuit.
@@ -447,9 +468,10 @@ class Kernel:
         try:
             from actions import ActionContext
             ctx = ActionContext(str(self.workspace_root))
-            target_mod = self._find_target_module(request, ctx)
+            m_info = self._parse_maintenance_request(request, ctx)
+            target_mod = m_info["module"] if m_info else self._find_target_module(request, ctx)
             if target_mod:
-                mod_analysis = self._analyze_target_module(target_mod, ctx, request)
+                mod_analysis = self._analyze_target_module(target_mod, ctx, request, maintenance_info=m_info)
                 self._state = KernelState.COMPLETED
                 return mod_analysis
         except Exception:
@@ -1061,8 +1083,13 @@ class Kernel:
 
     # ─── Targeted Module / Brownfield Analysis ─────────────────
 
-    def _find_target_module(self, request: str, ctx) -> Optional[Any]:
-        """Find a Module in workspace matching the request, or None."""
+    def _parse_maintenance_request(self, request: str, ctx) -> Optional[dict]:
+        """Structure natural language request for brownfield maintenance:
+        1. Identify whether targeting an existing workspace module (or entity in it)
+        2. Detect maintenance / troubleshooting / verification / review intent
+        3. Extract the clean problem description
+        4. Guard against destructive generator invocation
+        """
         try:
             snap = ctx.snapshot
             if not snap or not snap.frameworks:
@@ -1071,19 +1098,212 @@ class Kernel:
             return None
 
         import re
-        # 1. Look for explicit *.m token (e.g., CAABOMToolCmd.m)
-        m_matches = re.findall(r'\b([A-Za-z0-9_]+\.m)\b', request, re.IGNORECASE)
+        request_lower = request.lower()
+
+        # 1. Intent check: MUST have explicit maintenance/troubleshooting/inspection/verification keywords
+        maint_keywords = (
+            "maintain", "fix", "troubleshoot", "debug", "issue", "bug", "crash",
+            "error", "leak", "problem", "inspect", "analyze", "audit", "review",
+            "verify", "lint", "check", "exception", "fault",
+            "维护", "排查", "修复", "调试", "解决", "问题", "缺陷", "崩溃",
+            "报错", "异常", "泄露", "卡死", "不显示", "闪退", "分析", "检查",
+            "校验", "规范", "审查"
+        )
+        has_maint_intent = any(kw in request_lower for kw in maint_keywords)
+        if not has_maint_intent:
+            return None
+
+        # Check for explicit greenfield creation markers that indicate the user wants to
+        # generate a brand-new component (e.g. "create command FooCmd", "新建命令 FooCmd")
+        # unless combined with explicit maintenance verbs like "fix", "maintain", "排查".
+        greenfield_pattern = r'\b(?:create|make|generate|add|build|export|新建|创建|生成|新增|添加)\b'
+        has_explicit_create = bool(re.search(greenfield_pattern, request, re.IGNORECASE))
+        has_fix_override = any(kw in request_lower for kw in ("fix", "maintain", "修复", "维护", "排查", "调试", "verify", "检查", "lint"))
+        if has_explicit_create and not has_fix_override:
+            return None
+
+        # 2. Module candidate matching
+        target_mod = None
+        matched_token = ""
+        matched_by = ""
+
+        # 1a. Explicit *.m token (e.g. CAABOMToolCmd.m)
+        m_matches = re.findall(r'([A-Za-z0-9_]+\.m)\b', request, re.IGNORECASE)
+        for m_name in m_matches:
+            mod = snap.get_module(m_name)
+            if not mod:
+                for fw in snap.frameworks:
+                    for m in fw.modules:
+                        if m.name.lower() == m_name.lower():
+                            mod = m
+                            break
+                    if mod:
+                        break
+            if mod:
+                target_mod = mod
+                matched_token = m_name
+                matched_by = "dot_m"
+                break
+
+        # 1b. Look for preceding keyword: module <name>, maintain <name>, 模块 <name>, 维护 <name>, 修复 <name>, 排查 <name>
+        if not target_mod:
+            kw_match = re.search(
+                r'(?:module|maintain|fix|troubleshoot|verify|inspect|check|模块|维护|修复|排查|检查|分析|调试)\s*[:：\s]?\s*([A-Za-z0-9_]+(?:\.m)?)',
+                request,
+                re.IGNORECASE
+            )
+            if kw_match:
+                candidate = kw_match.group(1)
+                cand_name = candidate if candidate.endswith(".m") else candidate + ".m"
+                mod = snap.get_module(cand_name)
+                if not mod:
+                    for fw in snap.frameworks:
+                        for m in fw.modules:
+                            if m.name.lower() == cand_name.lower() or m.bare_name.lower() == candidate.lower():
+                                mod = m
+                                break
+                        if mod:
+                            break
+                if mod:
+                    target_mod = mod
+                    matched_token = candidate
+                    matched_by = "keyword_prefix"
+
+        # 1c. Test alphanumeric tokens in request against all module bare_names/names
+        if not target_mod:
+            words = re.findall(r'[A-Za-z0-9_]+', request)
+            for w in words:
+                if len(w) < 3:
+                    continue
+                for fw in snap.frameworks:
+                    for m in fw.modules:
+                        if m.bare_name.lower() == w.lower() or m.name.lower() == w.lower():
+                            target_mod = m
+                            matched_token = w
+                            matched_by = "word_module_match"
+                            break
+                    if target_mod:
+                        break
+                if target_mod:
+                    break
+
+        # 1d. Entity-to-module mapping: check if request mentions a Dialog, Command, Interface, or file in an existing module
+        if not target_mod:
+            words = re.findall(r'[A-Za-z0-9_]+', request)
+            for w in words:
+                if len(w) < 4:
+                    continue
+                w_lower = w.lower()
+                for fw in snap.frameworks:
+                    for m in fw.modules:
+                        # Check commands
+                        for c in m.commands:
+                            if c.name.lower() == w_lower:
+                                target_mod = m
+                                matched_token = w
+                                matched_by = "entity_command"
+                                break
+                        if target_mod:
+                            break
+                        # Check dialogs
+                        for d in m.dialogs:
+                            if d.name.lower() == w_lower:
+                                target_mod = m
+                                matched_token = w
+                                matched_by = "entity_dialog"
+                                break
+                        if target_mod:
+                            break
+                        # Check interfaces
+                        for iface in m.interfaces:
+                            if iface.name.lower() == w_lower:
+                                target_mod = m
+                                matched_token = w
+                                matched_by = "entity_interface"
+                                break
+                        if target_mod:
+                            break
+                        # Check source or header files
+                        if m.src_dir_path().exists():
+                            for sf in m.src_dir_path().glob("*.*"):
+                                if sf.stem.lower() == w_lower:
+                                    target_mod = m
+                                    matched_token = w
+                                    matched_by = "source_file"
+                                    break
+                        if target_mod:
+                            break
+                        if m.local_interfaces_dir().exists():
+                            for hf in m.local_interfaces_dir().glob("*.*"):
+                                if hf.stem.lower() == w_lower:
+                                    target_mod = m
+                                    matched_token = w
+                                    matched_by = "header_file"
+                                    break
+                        if target_mod:
+                            break
+                    if target_mod:
+                        break
+                if target_mod:
+                    break
+
+        if not target_mod:
+            return None
+
+        # 3. Check verification intent specifically
+        verify_keywords = ("verify", "lint", "check", "校验", "规范", "语法", "代码检查")
+        is_verify_only = any(kw in request_lower for kw in verify_keywords) and not any(
+            kw in request_lower for kw in ("fix", "maintain", "修复", "维护", "重构", "修改", "崩溃", "crash")
+        )
+
+        # 4. Extract clean problem description
+        problem_desc = request
+        if matched_token:
+            problem_desc = re.sub(re.escape(matched_token), ' ', problem_desc, flags=re.IGNORECASE)
+        problem_desc = re.sub(r'\b(?:module|in|for|the|of|issue|bug|problem|with)\b', ' ', problem_desc, flags=re.IGNORECASE)
+        problem_desc = re.sub(r'[，。、：:；;？！?!（）()\[\]{}"\'`]', ' ', problem_desc)
+        action_prefixes = (
+            "maintain", "fix", "troubleshoot", "debug", "inspect", "analyze", "verify", "lint", "check",
+            "维护", "排查", "修复", "调试", "分析", "检查", "校验", "模块"
+        )
+        for act in action_prefixes:
+            problem_desc = re.sub(rf'^\s*{re.escape(act)}\s*', ' ', problem_desc, flags=re.IGNORECASE)
+        problem_desc = " ".join(problem_desc.split()).strip()
+
+        return {
+            "module": target_mod,
+            "target_module": target_mod.name,
+            "problem_description": problem_desc,
+            "is_verify_only": is_verify_only,
+            "action": "verify" if is_verify_only else "maintain",
+            "matched_by": matched_by,
+            "confidence": "high",
+        }
+
+    def _find_target_module(self, request: str, ctx) -> Optional[Any]:
+        """Find a Module in workspace matching the request, or None."""
+        m_info = self._parse_maintenance_request(request, ctx)
+        if m_info:
+            return m_info["module"]
+
+        try:
+            snap = ctx.snapshot
+            if not snap or not snap.frameworks:
+                return None
+        except Exception:
+            return None
+
+        import re
+        m_matches = re.findall(r'([A-Za-z0-9_]+\.m)\b', request, re.IGNORECASE)
         for m_name in m_matches:
             mod = snap.get_module(m_name)
             if mod:
                 return mod
-            # Fallback: case-insensitive match
             for fw in snap.frameworks:
                 for m in fw.modules:
                     if m.name.lower() == m_name.lower():
                         return m
 
-        # 2. Look for explicit keyword preceding module: module <name>, maintain <name>
         kw_match = re.search(r'\b(?:module|maintain)\s+([A-Za-z0-9_]+(?:\.m)?)\b', request, re.IGNORECASE)
         if kw_match:
             candidate = kw_match.group(1)
@@ -1096,7 +1316,6 @@ class Kernel:
                         if m.name.lower() == m_name.lower() or m.bare_name.lower() == candidate.lower():
                             return m
 
-        # 3. If request has analyze/inspect/check/maintain/debug, test all words against existing module names
         if any(kw in request.lower() for kw in ("analyze", "inspect", "check", "maintain", "debug", "audit", "review")):
             words = re.findall(r'\b[A-Za-z0-9_]+\b', request)
             for w in words:
@@ -1108,6 +1327,145 @@ class Kernel:
                             return m
 
         return None
+
+    def _locate_relevant_code(self, mod, problem_desc: str, request: str) -> list:
+        """
+        Locate relevant files, symbols, callbacks and line numbers for the
+        problem description. If no problem description is provided, surface
+        key entry-point declarations and lifecycle methods.
+        """
+        locations = []
+        try:
+            search_files = []
+            if mod.src_dir_path().exists():
+                search_files.extend(sorted([f for f in mod.src_dir_path().glob("*") if f.is_file() and f.suffix.lower() in (".cpp", ".c", ".cxx")]))
+            if mod.local_interfaces_dir().exists():
+                search_files.extend(sorted([f for f in mod.local_interfaces_dir().glob("*") if f.is_file() and f.suffix.lower() in (".h", ".hpp")]))
+            if mod.public_interfaces_dir().exists():
+                search_files.extend(sorted([f for f in mod.public_interfaces_dir().glob("*") if f.is_file() and f.suffix.lower() in (".h", ".hpp")]))
+
+            if not search_files:
+                return []
+
+            import re
+            combined_text = f"{problem_desc} {request}"
+            ascii_words = [w for w in re.findall(r'[A-Za-z0-9_]+', combined_text) if len(w) >= 3 and w.lower() not in ("module", "the", "and", "for", "with", "this", "from")]
+            concept_patterns = []
+            combined_lower = combined_text.lower()
+            if any(k in combined_lower for k in ("dialog", "dlg", "panel", "对话框", "窗口", "面板")):
+                concept_patterns.extend(["CATDlgDialog", "CATDlgFrame", "BuildWindow", "Dlg"])
+            if any(k in combined_lower for k in ("close", "cancel", "关闭", "退出", "取消")):
+                concept_patterns.extend(["GetWindCloseNotification", "Cancel", "Desactivate", "Close", "Destroy"])
+            if any(k in combined_lower for k in ("ok", "apply", "确定", "应用")):
+                concept_patterns.extend(["GetDiaOKNotification", "GetDiaAPPLYNotification", "OkNotification"])
+            if any(k in combined_lower for k in ("crash", "leak", "dump", "崩溃", "闪退", "内存", "泄露", "卡死")):
+                concept_patterns.extend(["SetAccessChild", "SetHideStatus", "NULL", "Release", "delete", "Desactivate", "Cancel"])
+            if any(k in combined_lower for k in ("table", "list", "column", "表格", "列表", "列宽", "自适应")):
+                concept_patterns.extend(["CATDlgList", "CATDlgMultiList", "Column", "Item", "Editor", "Model"])
+            if any(k in combined_lower for k in ("button", "btn", "按钮")):
+                concept_patterns.extend(["CATDlgPushButton", "GetPushBActivateNotification", "PushButton"])
+            if any(k in combined_lower for k in ("export", "excel", "zip", "导出")):
+                concept_patterns.extend(["Export", "Excel", "Zip", "Save"])
+            if any(k in combined_lower for k in ("command", "cmd", "命令")):
+                concept_patterns.extend(["CATStateCommand", "CATCommand", "BuildGraph", "Activate", "Desactivate"])
+
+            all_search_terms = set(ascii_words + concept_patterns)
+
+            def _rel_or_str(p: Path) -> str:
+                try:
+                    return str(p.relative_to(self.workspace_root))
+                except Exception:
+                    return str(p)
+
+            scored_hits = []
+
+            for f in search_files:
+                f_name = f.name
+                f_rel = _rel_or_str(f)
+                try:
+                    lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
+                except OSError:
+                    continue
+
+                file_hit_score = 0
+                for term in all_search_terms:
+                    if term.lower() in f_name.lower():
+                        file_hit_score += 5
+
+                current_class = ""
+                current_method = ""
+
+                for idx, line in enumerate(lines, start=1):
+                    line_stripped = line.strip()
+                    if not line_stripped or line_stripped.startswith("//") or line_stripped.startswith("/*"):
+                        continue
+
+                    m_cls = re.match(r'class\s+([A-Za-z0-9_]+)\s*(?::\s*public\s+([A-Za-z0-9_]+))?', line_stripped)
+                    if m_cls:
+                        current_class = m_cls.group(1)
+
+                    m_mth = re.match(r'(?:[A-Za-z0-9_:]+\s+)?([A-Za-z0-9_]+::[A-Za-z0-9_]+)\s*\(', line_stripped)
+                    if m_mth:
+                        current_method = m_mth.group(1)
+
+                    enclosing_symbol = current_method or current_class or f_name
+
+                    matched_terms = []
+                    for term in all_search_terms:
+                        if term.lower() in line_stripped.lower():
+                            matched_terms.append(term)
+
+                    is_callback = "AddCallback" in line_stripped or "GetWindCloseNotification" in line_stripped or "Notification" in line_stripped
+                    is_lifecycle = any(k in line_stripped for k in ("BuildWindow", "BuildGraph", "Activate", "Cancel", "Desactivate", "Destructor"))
+                    is_class_decl = bool(m_cls)
+
+                    line_score = len(matched_terms) * 10
+                    if is_callback:
+                        line_score += 8
+                    if is_lifecycle:
+                        line_score += 6
+                    if is_class_decl:
+                        line_score += 4
+                    line_score += file_hit_score
+
+                    if matched_terms or ((is_callback or is_lifecycle or is_class_decl) and not problem_desc):
+                        reasons = []
+                        if matched_terms:
+                            reasons.append(f"matches {', '.join(matched_terms[:3])}")
+                        if is_callback:
+                            reasons.append("event callback")
+                        if is_lifecycle:
+                            reasons.append("lifecycle method")
+                        if is_class_decl:
+                            reasons.append("class declaration")
+
+                        snippet = line_stripped[:120]
+                        scored_hits.append((
+                            line_score,
+                            {
+                                "file": f_rel,
+                                "line": idx,
+                                "symbol": enclosing_symbol,
+                                "snippet": snippet,
+                                "reason": "; ".join(reasons) if reasons else "relevant structure",
+                            }
+                        ))
+
+            scored_hits.sort(key=lambda x: x[0], reverse=True)
+
+            seen = set()
+            for _, hit in scored_hits:
+                key = (hit["file"], hit["line"])
+                if key not in seen:
+                    seen.add(key)
+                    locations.append(hit)
+                    if len(locations) >= 12:
+                        break
+
+        except Exception:
+            pass
+
+        return locations
 
     @staticmethod
     def _parse_imakefile(imakefile_path: Path) -> dict:
@@ -1158,7 +1516,7 @@ class Kernel:
             "sys_libs": sys_libs,
         }
 
-    def _analyze_target_module(self, mod, ctx, request: str) -> dict:
+    def _analyze_target_module(self, mod, ctx, request: str, maintenance_info: Optional[dict] = None) -> dict:
         """Produce deep, read-only analysis of a specific existing module."""
         # 1. Source files and headers
         src_files = []
@@ -1207,7 +1565,6 @@ class Kernel:
             diag_summary = diagnose_workspace(ctx)
             all_diags = diag_summary.get("diagnostics", [])
 
-            # Names associated with this module
             mod_names = {mod.name.lower(), mod.bare_name.lower()}
             for c in mod.commands:
                 mod_names.add(c.name.lower())
@@ -1231,36 +1588,115 @@ class Kernel:
         except Exception:
             pass
 
-        # 5. Related Knowledge Retrieval
+        # 5. Problem description and critical code locations
+        problem_desc = maintenance_info.get("problem_description", "") if maintenance_info else ""
+        relevant_locations = self._locate_relevant_code(mod, problem_desc, request)
+
+        # 6. Problem-Aware Knowledge & Failure Patterns
         knowledge_refs = {}
+        failure_patterns = []
         try:
             q_terms = [mod.bare_name]
-            if mod.dialogs:
-                q_terms.append("Dialog UI")
+            if problem_desc:
+                q_terms.append(problem_desc)
+            if mod.dialogs or any("dlg" in f.lower() for f in files_info.get("src", [])):
+                q_terms.append("dialog")
             elif mod.commands:
-                q_terms.append("Command")
-            knowledge_refs = self._lookup_knowledge(" ".join(q_terms))
+                q_terms.append("command")
+
+            lookup_query = " ".join(q_terms)
+            knowledge_refs = self._lookup_knowledge(lookup_query)
+
+            refs = knowledge_refs.get("references", [])
+            for r in refs:
+                if "failure_patterns" in r or "fp_" in r:
+                    failure_patterns.append(r)
+
+            if problem_desc and not failure_patterns and self.catalog:
+                fp_query = f"failure pattern {problem_desc}"
+                fp_entries = self.catalog.search(fp_query, max_results=5)
+                for e in fp_entries:
+                    if getattr(e, "category", "") == "failure_pattern" or "failure_patterns" in getattr(e, "file", ""):
+                        if e.raw_line not in failure_patterns:
+                            failure_patterns.append(e.raw_line)
         except Exception:
             pass
 
+        # 7. Targeted Single-Module Verification (Static Code + UI Lint)
+        verification_data = {}
+        total_code_errors = 0
+        total_code_warnings = 0
+        total_ui_findings = 0
+        files_verified = 0
+        try:
+            from verifier import CodeVerifier
+            from ui_lint import UILinter
+
+            skill_root = Path(__file__).parent.parent
+            verifier = CodeVerifier(skill_root=skill_root)
+            code_res = verifier.verify_module(mod.path)
+
+            linter = UILinter()
+            ui_findings = linter.lint_module(Path(mod.path))
+
+            code_dict = code_res.to_dict()
+            ui_dict = [f.to_dict() for f in ui_findings]
+
+            total_code_errors = code_res.error_count
+            total_code_warnings = code_res.warning_count
+            total_ui_findings = len(ui_findings)
+            files_verified = code_res.files_checked
+
+            ui_errors = sum(1 for f in ui_findings if f.severity == "error")
+            ui_warnings = sum(1 for f in ui_findings if f.severity == "warning")
+
+            verification_data = {
+                "status": "clean" if (total_code_errors + ui_errors == 0 and total_code_warnings + ui_warnings == 0) else "has_issues",
+                "summary": {
+                    "files_checked": files_verified,
+                    "code_errors": total_code_errors,
+                    "code_warnings": total_code_warnings,
+                    "ui_findings": total_ui_findings,
+                    "ui_errors": ui_errors,
+                    "ui_warnings": ui_warnings,
+                    "total_issues": total_code_errors + total_code_warnings + total_ui_findings,
+                },
+                "code_issues": code_dict.get("issues", []),
+                "ui_findings": ui_dict,
+            }
+        except Exception as e:
+            verification_data = {"status": "error", "message": str(e)}
+
         self._state = KernelState.COMPLETED
+
+        if maintenance_info and maintenance_info.get("is_verify_only"):
+            msg = f"Targeted verification for module {mod.name}: {files_verified} files checked, {total_code_errors} error(s), {total_code_warnings} warning(s), {total_ui_findings} UI finding(s)."
+        elif problem_desc:
+            msg = f"Targeted maintenance analysis for module {mod.name} on '{problem_desc}': {len(src_files)} sources, {len(relevant_locations)} key location(s), {len(failure_patterns)} failure pattern(s)."
+        else:
+            msg = f"Targeted analysis for module {mod.name}: {len(src_files)} sources, {len(module_diags)} diagnostics, {total_code_errors + total_ui_findings} verification issue(s)."
+
         return KernelResult(
             status="ok",
             mode="analyze",
             state=self._state.value,
-            message=f"Targeted analysis for module {mod.name}: {len(src_files)} sources, {len(module_diags)} module-specific issues.",
+            message=msg,
             data={
                 "target_module": mod.name,
                 "framework": mod.framework.name if mod.framework else None,
                 "path": str(mod.path),
+                "problem_description": problem_desc,
                 "files": files_info,
                 "build_config": build_config,
                 "entities": entities_info,
+                "relevant_locations": relevant_locations,
+                "verification": verification_data,
                 "diagnostics": {
                     "module_specific": module_diags,
                     "workspace_scope": workspace_diags,
                 },
                 "knowledge": knowledge_refs,
+                "failure_patterns": failure_patterns,
             }
         ).to_dict()
 

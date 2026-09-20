@@ -34,6 +34,8 @@ Usage:
 
   cade diagnose [workspace]        # Diagnose issues
   cade fix [workspace]             # Diagnose + auto-fix
+  cade verify [module]             # Targeted code & UI verification for module
+  cade validate [workspace]        # Validate workspace
 
   cade docs [workspace]            # Generate documentation
   cade rv [workspace]              # Create Runtime View
@@ -116,8 +118,45 @@ def _print_kernel(r: dict):
                 print(f"  [{item.get('severity', 'info')}] {item.get('problem') or item.get('message', '')}")
     # Show verification results
     verify = r.get("verification", {})
-    if verify:
-        print(f"  Verification: {verify.get('error_count', 0)} errors, {verify.get('files_checked', 0)} files")
+    if not verify and isinstance(data, dict):
+        verify = data.get("verification", {})
+    if isinstance(verify, dict) and verify:
+        summary = verify.get("summary", {})
+        if summary:
+            print(f"  Verification: {summary.get('code_errors', 0)} error(s), {summary.get('code_warnings', 0)} warning(s), {summary.get('ui_findings', 0)} UI finding(s) across {summary.get('files_checked', 0)} file(s)")
+        elif "error_count" in verify:
+            print(f"  Verification: {verify.get('error_count', 0)} errors, {verify.get('files_checked', 0)} files")
+        for issue in verify.get("code_issues", verify.get("issues", []))[:5]:
+            if isinstance(issue, dict):
+                loc = f"{issue.get('file', '')}:{issue.get('line', '')}"
+                print(f"    [{issue.get('severity', 'warning')}] {loc} - {issue.get('message', '')}")
+        for f in verify.get("ui_findings", [])[:5]:
+            if isinstance(f, dict):
+                loc = f"{f.get('file', '')}:{f.get('line', '')}"
+                print(f"    [UI-{f.get('severity', 'warning')}] {loc} - {f.get('problem', '')} ({f.get('fix_hint', '')})")
+
+    # Show relevant code locations
+    locations = r.get("relevant_locations", data.get("relevant_locations", []) if isinstance(data, dict) else [])
+    if locations:
+        print("  Relevant Locations:")
+        for loc in locations[:5]:
+            if isinstance(loc, dict):
+                print(f"    • {loc.get('file', '')}:{loc.get('line', '')} [{loc.get('symbol', '')}] - {loc.get('snippet', '')}")
+
+    # Show failure patterns
+    fps = r.get("failure_patterns", data.get("failure_patterns", []) if isinstance(data, dict) else [])
+    if fps:
+        print("  Related Failure Patterns:")
+        for fp in fps[:3]:
+            print(f"    • {fp}")
+
+    # Show guidance
+    guidance = r.get("guidance", data.get("guidance", []) if isinstance(data, dict) else [])
+    if guidance:
+        print()
+        print("  Guidance:")
+        for g in guidance:
+            print(f"    {g}")
     # Show extras applied
     extras = r.get("extras_applied", {})
     if extras:
@@ -154,6 +193,8 @@ def main():
         cmd_fix(args)
     elif cmd == "validate":
         cmd_validate(args)
+    elif cmd == "verify":
+        cmd_verify(args)
     elif cmd == "docs":
         cmd_docs(args)
     elif cmd == "rv":
@@ -393,8 +434,26 @@ def cmd_analyze(args):
         entity = next((args[i + 1] for i, a in enumerate(args) if a == "--graph" and i + 1 < len(args) and not args[i + 1].startswith("--")), None)
         text = f"visualize dependency graph of {entity}" if entity else "visualize dependency graph"
     else:
-        text = "analyze the workspace"
-    result = _kernel("analyze", text, detail=detail)
+        ws = _parse_flag(args, "--workspace", "-w")
+        non_flags = []
+        skip_next = False
+        for a in args:
+            if skip_next:
+                skip_next = False
+                continue
+            if a in ("--workspace", "-w"):
+                skip_next = True
+                continue
+            if a.startswith("-"):
+                continue
+            non_flags.append(a)
+        if non_flags:
+            text = f"analyze module {non_flags[0]}"
+            if not ws and len(non_flags) > 1:
+                ws = non_flags[1]
+        else:
+            text = "analyze the workspace"
+    result = _kernel("analyze", text, workspace=ws, detail=detail)
     _print_kernel(result)
     # Print diagram if present
     data = result.get("data", {})
@@ -436,6 +495,37 @@ def cmd_fix(args):
 def cmd_validate(args):
     """Validate via Kernel — routes through analyze()."""
     result = _kernel("analyze", "validate workspace")
+    _print_kernel(result)
+
+
+def cmd_verify(args):
+    """Verify code standards and UI failure patterns via Kernel.
+    Usage: cade verify [module_name] [--workspace path]
+    """
+    ws = _parse_flag(args, "--workspace", "-w")
+    non_flags = []
+    skip_next = False
+    for a in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if a in ("--workspace", "-w"):
+            skip_next = True
+            continue
+        if a.startswith("-"):
+            continue
+        non_flags.append(a)
+
+    target = ""
+    if non_flags:
+        target = non_flags[0]
+        if not ws and len(non_flags) > 1:
+            ws = non_flags[1]
+    if not ws:
+        ws = _get_default_ws()
+
+    text = f"verify module {target}" if target else "verify workspace"
+    result = _kernel("analyze", text, workspace=ws)
     _print_kernel(result)
 
 
