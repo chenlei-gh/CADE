@@ -155,7 +155,7 @@ def _print_kernel(r: dict):
         for fb in rt_feedbacks[-3:]:
             if isinstance(fb, dict):
                 fb_time = fb.get("timestamp", "")[:19].replace("T", " ")
-                b_id = f" [Build: {fb.get('build_id')}]" if fb.get("build_id") else ""
+                b_id = f" [Build Ref: {fb.get('build_id')}]" if fb.get("build_id") else ""
                 print(f"    • [{fb_time}]{b_id} Symptom: {fb.get('symptom', '')}")
                 if fb.get("actual"):
                     print(f"      Actual:   {fb.get('actual')}")
@@ -625,7 +625,7 @@ def cmd_feedback(args):
         for fb in ctx.runtime_feedback:
             fb_time = fb.get("timestamp", "")[:19].replace("T", " ")
             fb_id = fb.get("feedback_id", "")
-            b_tag = f" [Build: {fb.get('build_id')}]" if fb.get("build_id") else ""
+            b_tag = f" [Build Ref: {fb.get('build_id')}]" if fb.get("build_id") else ""
             print(f"  • [{fb_id}] {fb_time}{b_tag}")
             print(f"    Symptom:  {fb.get('symptom', '')}")
             if fb.get("expected"):
@@ -668,7 +668,7 @@ def cmd_feedback(args):
     if expected:
         print(f"  Expected:    {expected}")
     if build_id:
-        print(f"  Build ID:    {build_id}")
+        print(f"  Build Ref:   {build_id} (developer-provided build reference)")
     print(f"  Task ID:     {res_ctx.task_id}")
     print("  Note: Recorded purely as subjective developer observation, distinct from L0 build evidence.")
     return 0

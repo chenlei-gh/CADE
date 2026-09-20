@@ -345,10 +345,11 @@ class TestMaintenanceContext(unittest.TestCase):
         # All 5 rapidly generated build_ids must be strictly distinct
         self.assertEqual(len(build_ids), 5)
         for bid in build_ids:
-            # Must match microsecond pattern b_YYYYMMDD_HHMMSS_ffffff
+            # Must match pattern b_YYYYMMDD_HHMMSS_ffffff_xxxxxx
             parts = bid.split("_")
-            self.assertEqual(len(parts), 4)  # ["b", "YYYYMMDD", "HHMMSS", "ffffff"]
+            self.assertEqual(len(parts), 5)  # ["b", "YYYYMMDD", "HHMMSS", "ffffff", "rand6"]
             self.assertEqual(len(parts[3]), 6)
+            self.assertEqual(len(parts[4]), 6)
 
     def test_record_runtime_feedback_basic_and_append(self):
         """
@@ -465,8 +466,27 @@ class TestMaintenanceContext(unittest.TestCase):
         self.assertEqual(len(fb_ids), 5)
         for fbid in fb_ids:
             parts = fbid.split("_")
-            self.assertEqual(len(parts), 4)  # ["fb", "YYYYMMDD", "HHMMSS", "ffffff"]
+            self.assertEqual(len(parts), 5)  # ["fb", "YYYYMMDD", "HHMMSS", "ffffff", "rand6"]
             self.assertEqual(len(parts[3]), 6)
+            self.assertEqual(len(parts[4]), 6)
+
+    def test_record_runtime_feedback_on_readonly_workspace_fails_cleanly(self):
+        """
+        P3-B Edge Case: When workspace cannot be written (read-only/permission error),
+        record_runtime_feedback must fail cleanly (return None), leaving zero corrupted state.
+        """
+        from unittest.mock import patch
+        with patch.object(Path, "mkdir", side_effect=PermissionError("Read-only file system")):
+            res = record_runtime_feedback(
+                workspace_root=self.workspace,
+                target_module="ReadOnlyMod.m",
+                symptom="UI freeze in CATIA",
+            )
+            self.assertIsNone(res)
+
+        # Confirm no phantom files created
+        reloaded = load_context(self.workspace, "ReadOnlyMod.m")
+        self.assertIsNone(reloaded)
 
 
 if __name__ == "__main__":

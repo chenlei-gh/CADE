@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import tempfile
 from typing import Dict, List, Optional, Any, Union
+import uuid
 
 logger = logging.getLogger("cade.maintenance_context")
 
@@ -192,6 +193,17 @@ class MaintenanceContext:
                 elif record.get("status") in ("failed", "error"):
                     return [e for e in record.get("errors", []) if e.get("associated", True)]
         return []
+
+
+def generate_unique_id(prefix: str) -> str:
+    """
+    Generate a collision-resistant identifier combining microsecond timestamp
+    and short random suffix. Eliminates collision risk under clock rollbacks,
+    concurrency, or mocked clocks.
+    """
+    now = datetime.now()
+    rand_suffix = uuid.uuid4().hex[:6]
+    return f"{prefix}_{now.strftime('%Y%m%d_%H%M%S_%f')}_{rand_suffix}"
 
 
 def generate_task_id(workspace: str, target_module: str, request: str = "") -> str:
@@ -435,8 +447,7 @@ def attach_build_result(
         else:
             association = "workspace_level"
 
-        now = datetime.now()
-        build_id = f"b_{now.strftime('%Y%m%d_%H%M%S_%f')}"
+        build_id = generate_unique_id("b")
         record = BuildRecord(
             build_id=build_id,
             timestamp=datetime.now().isoformat(),
@@ -486,17 +497,17 @@ def record_runtime_feedback(
 
         ctx = load_context(ws_path, resolved_module)
         if not ctx:
-            task_id = generate_task_id(str(ws_path), resolved_module, symptom)
+            task_id = generate_task_id(str(ws_path), resolved_module, f"feedback_{symptom}")
             ctx = MaintenanceContext(
                 task_id=task_id,
                 workspace=str(ws_path),
                 target_module=resolved_module,
-                original_request=symptom,
+                original_request=f"[Human Runtime Observation] {symptom}",
                 problem_description=symptom,
             )
 
         now = datetime.now()
-        fb_id = f"fb_{now.strftime('%Y%m%d_%H%M%S_%f')}"
+        fb_id = generate_unique_id("fb")
 
         norm_steps = []
         if isinstance(steps, list):
