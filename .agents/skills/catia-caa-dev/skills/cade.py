@@ -668,7 +668,11 @@ def cmd_feedback(args):
     if expected:
         print(f"  Expected:    {expected}")
     if build_id:
-        print(f"  Build Ref:   {build_id} (developer-provided build reference)")
+        known_bids = {b.get("build_id") for b in res_ctx.build_results if b.get("build_id")}
+        if build_id in known_bids:
+            print(f"  Build Ref:   {build_id} (recorded CADE build record)")
+        else:
+            print(f"  Build Ref:   {build_id} (unverified reference: not found in local build records)")
     print(f"  Task ID:     {res_ctx.task_id}")
     print("  Note: Recorded purely as subjective developer observation, distinct from L0 build evidence.")
     return 0

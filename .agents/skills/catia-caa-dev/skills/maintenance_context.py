@@ -62,6 +62,9 @@ class BuildRecord:
     error_count: int = 0
     errors: List[Dict[str, Any]] = field(default_factory=list)
     duration_seconds: float = 0.0
+    target_module: Optional[str] = None
+    association_source: str = "inferred"  # "caller" | "inferred"
+    association_confidence: str = "high"  # "declared" | "high" | "low"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -76,6 +79,9 @@ class BuildRecord:
             error_count=int(data.get("error_count", 0)),
             errors=data.get("errors", []),
             duration_seconds=float(data.get("duration_seconds", 0.0)),
+            target_module=data.get("target_module"),
+            association_source=data.get("association_source", "inferred"),
+            association_confidence=data.get("association_confidence", "high"),
         )
 
 
@@ -304,7 +310,11 @@ def save_context(ctx: MaintenanceContext) -> bool:
         return False
 
 
-def normalize_error(raw_err: Any, target_module: Optional[str] = None) -> StructuredError:
+def normalize_error(
+    raw_err: Any,
+    target_module: Optional[str] = None,
+    caller_target_module: Optional[str] = None,
+) -> StructuredError:
     """Normalize raw parser/compiler error objects into structured L0 evidence."""
     if isinstance(raw_err, dict):
         file_path = raw_err.get("file")
@@ -341,8 +351,11 @@ def normalize_error(raw_err: Any, target_module: Optional[str] = None) -> Struct
     associated = False
     if target_module:
         t_mod_clean = target_module.replace(".m", "").lower()
-        if mod and t_mod_clean == mod.replace(".m", "").lower():
-            associated = True
+        if mod:
+            if t_mod_clean == mod.replace(".m", "").lower():
+                associated = True
+            else:
+                associated = False
         elif file_path:
             fp_lower = str(file_path).lower().replace("\\", "/")
             if (f"/{t_mod_clean}.m/" in fp_lower or
@@ -350,6 +363,15 @@ def normalize_error(raw_err: Any, target_module: Optional[str] = None) -> Struct
                 fp_lower.startswith(f"{t_mod_clean}.m/") or
                 fp_lower.startswith(f"{t_mod_clean}/")):
                 associated = True
+            else:
+                associated = False
+        else:
+            # Error has neither explicit module nor file path (e.g. LNK2001, global framework error).
+            # If caller explicitly targeted this module in this build, associate it with this target context.
+            if caller_target_module:
+                caller_mod_clean = caller_target_module.replace(".m", "").lower()
+                if caller_mod_clean == t_mod_clean:
+                    associated = True
 
     return StructuredError(
         kind=kind,
@@ -389,6 +411,10 @@ def attach_build_result(
         raw_errors = build_result.get("errors", [])
         status = build_result.get("status", "unknown")
         duration = build_result.get("duration_seconds", 0.0)
+
+        # Ensure build_id is assigned and recorded in build_result dictionary for CLI display
+        build_id = build_result.get("build_id") or generate_unique_id("b")
+        build_result["build_id"] = build_id
 
         # P0 Fix: Strict target module inference (no blind fallback to active.json)
         resolved_module = target_module
@@ -430,7 +456,11 @@ def attach_build_result(
         has_module_specific_error = False
 
         for err in raw_errors:
-            struct_err = normalize_error(err, target_module=ctx.target_module)
+            struct_err = normalize_error(
+                err,
+                target_module=ctx.target_module,
+                caller_target_module=target_module,
+            )
             if struct_err.associated:
                 has_module_specific_error = True
             normalized_errors.append(struct_err.to_dict())
@@ -438,18 +468,34 @@ def attach_build_result(
         # Determine association type with strict verification (P0 fix)
         if has_module_specific_error:
             association = "explicit"
+            if target_module:
+                association_source = "caller"
+                association_confidence = "declared"
+            else:
+                association_source = "inferred"
+                association_confidence = "high"
         elif status == "success":
             # Check if this module was actually compiled/verified in this build
             verified_dlls = [d.get("name", "").lower() for d in build_result.get("verification", {}).get("dlls", [])]
             mod_dll = f"{ctx.target_module.replace('.m', '').lower()}.dll"
-            if target_module or (mod_dll in verified_dlls):
+            if target_module:
                 association = "explicit"
+                association_source = "caller"
+                association_confidence = "declared"
+            elif mod_dll in verified_dlls:
+                association = "explicit"
+                association_source = "inferred"
+                association_confidence = "high"
             else:
                 association = "workspace_level"
+                association_source = "inferred"
+                association_confidence = "low"
         else:
+            # Build failed, but no errors belong to this module (e.g. errors belong to other modules)
             association = "workspace_level"
+            association_source = "caller" if target_module else "inferred"
+            association_confidence = "low"
 
-        build_id = generate_unique_id("b")
         record = BuildRecord(
             build_id=build_id,
             timestamp=datetime.now().isoformat(),
@@ -458,6 +504,9 @@ def attach_build_result(
             error_count=len(normalized_errors),
             errors=normalized_errors,
             duration_seconds=duration,
+            target_module=ctx.target_module,
+            association_source=association_source,
+            association_confidence=association_confidence,
         )
 
         ctx.build_results.append(record.to_dict())

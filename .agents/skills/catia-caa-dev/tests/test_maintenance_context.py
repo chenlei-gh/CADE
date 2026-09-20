@@ -490,5 +490,124 @@ class TestMaintenanceContext(unittest.TestCase):
         self.assertIsNone(reloaded)
 
 
+    def test_caller_declared_target_module_associates_unscoped_linker_errors(self):
+        """
+        P0/P1 Requirement: When caller explicitly targets a module, unscoped errors
+        like LNK2001 or framework errors without file/module paths must be associated
+        with the declared module (association='explicit', source='caller', confidence='declared').
+        """
+        ctx = MaintenanceContext(
+            task_id="task_linker",
+            workspace=str(self.workspace),
+            target_module="LinkerMod.m",
+            original_request="Fix linker issue",
+        )
+        save_context(ctx)
+
+        linker_err = {
+            "file": None,
+            "line": None,
+            "code": "LNK2001",
+            "message": "unresolved external symbol '__imp_SomeCATIASymbol'",
+            "raw": "SomeLib.lib(SomeObj.obj) : error LNK2001: unresolved external symbol '__imp_SomeCATIASymbol'",
+        }
+        build_res = {
+            "status": "failed",
+            "duration_seconds": 4.2,
+            "errors": [linker_err],
+        }
+
+        # 1. With explicit target_module: associated!
+        res_explicit = attach_build_result(self.workspace, build_res, target_module="LinkerMod.m")
+        self.assertIsNotNone(res_explicit)
+        last_b = res_explicit.last_build
+        self.assertEqual(last_b["association"], "explicit")
+        self.assertEqual(last_b["association_source"], "caller")
+        self.assertEqual(last_b["association_confidence"], "declared")
+        self.assertTrue(last_b["errors"][0]["associated"])
+        self.assertEqual(len(res_explicit.unresolved_build_errors), 1)
+        self.assertEqual(res_explicit.unresolved_build_errors[0]["code"], "LNK2001")
+
+        # 2. build_res dictionary MUST have build_id populated back
+        self.assertIn("build_id", build_res)
+        self.assertEqual(build_res["build_id"], last_b["build_id"])
+
+    def test_unscoped_errors_without_caller_declaration_refuse_association(self):
+        """
+        Safety Boundary: When caller does NOT pass target_module, unscoped linker
+        errors must NOT be randomly attributed to an existing context.
+        """
+        ctx = MaintenanceContext(
+            task_id="task_unscoped",
+            workspace=str(self.workspace),
+            target_module="UnscopedMod.m",
+            original_request="Test unscoped",
+        )
+        save_context(ctx)
+
+        unscoped_err = {
+            "file": None,
+            "line": None,
+            "code": "LNK2001",
+            "message": "unresolved external symbol",
+        }
+        build_res = {
+            "status": "failed",
+            "errors": [unscoped_err],
+        }
+        # Without target_module, resolution cannot deduce module -> returns None, zero context mutation
+        res = attach_build_result(self.workspace, build_res, target_module=None)
+        self.assertIsNone(res)
+        reloaded = load_context(self.workspace, "UnscopedMod.m")
+        self.assertEqual(len(reloaded.build_results), 0)
+
+    def test_cmd_feedback_build_id_recorded_vs_unverified_warning(self):
+        """
+        P1 Verification: cmd_feedback checks whether --build-id is present in
+        context's build_results. Prints '(recorded CADE build record)' if matched,
+        or '(unverified reference: not found in local build records)' if unknown.
+        Never blocks recording or returns non-zero.
+        """
+        import io
+        from unittest.mock import patch
+        from cade import cmd_feedback
+
+        # Pre-seed context with one recorded build
+        ctx = MaintenanceContext(
+            task_id="task_cli_bid",
+            workspace=str(self.workspace),
+            target_module="CliBidMod.m",
+            original_request="Test feedback CLI",
+        )
+        save_context(ctx)
+        b_res = {"status": "failed", "errors": []}
+        attached = attach_build_result(self.workspace, b_res, target_module="CliBidMod.m")
+        recorded_bid = attached.last_build["build_id"]
+
+        # 1. Feedback with known recorded_bid
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc1 = cmd_feedback([
+                "CliBidMod.m",
+                "--symptom", "Known build observation",
+                "--build-id", recorded_bid,
+                "--workspace", str(self.workspace),
+            ])
+            out1 = fake_out.getvalue()
+            self.assertEqual(rc1, 0)
+            self.assertIn("recorded CADE build record", out1)
+
+        # 2. Feedback with unverified/foreign build_id
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc2 = cmd_feedback([
+                "CliBidMod.m",
+                "--symptom", "Unknown build observation",
+                "--build-id", "b_foreign_12345",
+                "--workspace", str(self.workspace),
+            ])
+            out2 = fake_out.getvalue()
+            self.assertEqual(rc2, 0)
+            self.assertIn("unverified reference: not found in local build records", out2)
+
+
 if __name__ == "__main__":
     unittest.main()
