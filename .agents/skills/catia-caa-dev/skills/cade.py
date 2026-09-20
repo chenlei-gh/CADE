@@ -35,6 +35,8 @@ Usage:
   cade diagnose [workspace]        # Diagnose issues
   cade fix [workspace]             # Diagnose + auto-fix
   cade verify [module]             # Targeted code & UI verification for module
+  cade feedback <module> --symptom "..." [--expected "..."] [--actual "..."]
+                                   # Record developer observation from CATIA runtime
   cade validate [workspace]        # Validate workspace
 
   cade docs [workspace]            # Generate documentation
@@ -146,6 +148,23 @@ def _print_kernel(r: dict):
                 c_code = f" [{err.get('code')}]" if err.get("code") else ""
                 print(f"    • [L0] {f_name}{l_num}{c_code} - {err.get('message', '')}")
 
+    # Show recorded human runtime feedback (distinct from compiler/build evidence)
+    rt_feedbacks = r.get("runtime_feedback", data.get("runtime_feedback", []) if isinstance(data, dict) else [])
+    if rt_feedbacks:
+        print("  Recorded Runtime Feedback (Human Observation - Not Compiler Fact):")
+        for fb in rt_feedbacks[-3:]:
+            if isinstance(fb, dict):
+                fb_time = fb.get("timestamp", "")[:19].replace("T", " ")
+                b_id = f" [Build: {fb.get('build_id')}]" if fb.get("build_id") else ""
+                print(f"    • [{fb_time}]{b_id} Symptom: {fb.get('symptom', '')}")
+                if fb.get("actual"):
+                    print(f"      Actual:   {fb.get('actual')}")
+                if fb.get("expected"):
+                    print(f"      Expected: {fb.get('expected')}")
+                if fb.get("steps"):
+                    steps_preview = "; ".join(fb.get("steps")[:2])
+                    print(f"      Steps:    {steps_preview}")
+
     # Show relevant code locations
     locations = r.get("relevant_locations", data.get("relevant_locations", []) if isinstance(data, dict) else [])
     if locations:
@@ -206,6 +225,8 @@ def main():
         cmd_validate(args)
     elif cmd == "verify":
         cmd_verify(args)
+    elif cmd == "feedback":
+        rc = cmd_feedback(args)
     elif cmd == "docs":
         cmd_docs(args)
     elif cmd == "rv":
@@ -548,6 +569,109 @@ def cmd_verify(args):
     text = f"verify module {target}" if target else "verify workspace"
     result = _kernel("analyze", text, workspace=ws)
     _print_kernel(result)
+
+
+def cmd_feedback(args):
+    """Record or inspect human runtime observations from CATIA for a maintenance module.
+    Usage:
+      cade feedback <module> --symptom "..." [--expected "..."] [--actual "..."] [--steps "..."] [--build-id "..."] [--workspace path]
+      cade feedback <module> --list [--workspace path]
+    """
+    from maintenance_context import record_runtime_feedback, load_context
+
+    ws = _parse_flag(args, "--workspace", "-w")
+    if not ws:
+        ws = _get_default_ws()
+
+    symptom = _parse_flag(args, "--symptom", "-s")
+    expected = _parse_flag(args, "--expected", "-e") or ""
+    actual = _parse_flag(args, "--actual", "-a") or ""
+    steps_raw = _parse_flag(args, "--steps") or ""
+    build_id = _parse_flag(args, "--build-id", "-b")
+    reporter = _parse_flag(args, "--reporter") or ""
+    list_mode = "--list" in args or "-l" in args
+
+    # Find positional module name
+    non_flags = []
+    skip_next = False
+    flag_keys = ("--workspace", "-w", "--symptom", "-s", "--expected", "-e", "--actual", "-a", "--steps", "--build-id", "-b", "--reporter")
+    for a in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if a in flag_keys:
+            skip_next = True
+            continue
+        if a in ("--list", "-l"):
+            continue
+        if a.startswith("-"):
+            continue
+        non_flags.append(a)
+
+    target = non_flags[0] if non_flags else ""
+    if not target:
+        print("Error: Target module is required for runtime feedback.")
+        print("Usage: cade feedback <module> --symptom \"...\" [--workspace path]")
+        return 1
+
+    resolved_module = target if target.endswith(".m") else f"{target}.m"
+
+    if list_mode:
+        ctx = load_context(ws, resolved_module)
+        if not ctx or not ctx.runtime_feedback:
+            print(f"No runtime feedback recorded for module {resolved_module}.")
+            return 0
+        print(f"Recorded Runtime Feedback for {resolved_module} ({len(ctx.runtime_feedback)} observation(s)):")
+        for fb in ctx.runtime_feedback:
+            fb_time = fb.get("timestamp", "")[:19].replace("T", " ")
+            fb_id = fb.get("feedback_id", "")
+            b_tag = f" [Build: {fb.get('build_id')}]" if fb.get("build_id") else ""
+            print(f"  • [{fb_id}] {fb_time}{b_tag}")
+            print(f"    Symptom:  {fb.get('symptom', '')}")
+            if fb.get("expected"):
+                print(f"    Expected: {fb.get('expected')}")
+            if fb.get("actual"):
+                print(f"    Actual:   {fb.get('actual')}")
+            if fb.get("steps"):
+                print(f"    Steps:    {'; '.join(fb.get('steps'))}")
+        return 0
+
+    if not symptom:
+        print("Error: --symptom is required when recording runtime feedback.")
+        print("Usage: cade feedback <module> --symptom \"...\" [--workspace path]")
+        return 1
+
+    steps = [s.strip() for s in steps_raw.split(";") if s.strip()] if steps_raw else []
+
+    res_ctx = record_runtime_feedback(
+        workspace_root=ws,
+        target_module=resolved_module,
+        symptom=symptom,
+        steps=steps,
+        expected=expected,
+        actual=actual,
+        build_id=build_id,
+        reporter=reporter,
+    )
+
+    if not res_ctx:
+        print(f"Failed to record runtime feedback for {resolved_module} (workspace inaccessible or invalid input).")
+        return 1
+
+    last_fb = res_ctx.last_feedback or {}
+    fb_id = last_fb.get("feedback_id", "")
+    print(f"[ok] Runtime feedback recorded for {resolved_module}:")
+    print(f"  Feedback ID: {fb_id}")
+    print(f"  Symptom:     {symptom}")
+    if actual:
+        print(f"  Actual:      {actual}")
+    if expected:
+        print(f"  Expected:    {expected}")
+    if build_id:
+        print(f"  Build ID:    {build_id}")
+    print(f"  Task ID:     {res_ctx.task_id}")
+    print("  Note: Recorded purely as subjective developer observation, distinct from L0 build evidence.")
+    return 0
 
 
 # ─── Docs ─────────────────────────────────────────────────────────

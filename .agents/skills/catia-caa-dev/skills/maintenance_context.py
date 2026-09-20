@@ -79,6 +79,43 @@ class BuildRecord:
 
 
 @dataclass
+class RuntimeFeedback:
+    """Historical observation of runtime behavior in CATIA entered by a developer."""
+    feedback_id: str
+    timestamp: str
+    symptom: str
+    steps: List[str] = field(default_factory=list)
+    expected: str = ""
+    actual: str = ""
+    build_id: Optional[str] = None
+    reporter: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "RuntimeFeedback":
+        raw_steps = data.get("steps", [])
+        if isinstance(raw_steps, list):
+            steps = [str(s) for s in raw_steps if str(s).strip()]
+        elif isinstance(raw_steps, str) and raw_steps.strip():
+            steps = [s.strip() for s in raw_steps.splitlines() if s.strip()]
+        else:
+            steps = []
+
+        return cls(
+            feedback_id=data.get("feedback_id", ""),
+            timestamp=data.get("timestamp", ""),
+            symptom=data.get("symptom", ""),
+            steps=steps,
+            expected=data.get("expected", ""),
+            actual=data.get("actual", ""),
+            build_id=data.get("build_id"),
+            reporter=data.get("reporter", ""),
+        )
+
+
+@dataclass
 class MaintenanceContext:
     """
     Contract for a targeted module maintenance session.
@@ -124,6 +161,18 @@ class MaintenanceContext:
         if not self.build_results:
             return None
         return self.build_results[-1]
+
+    @property
+    def last_feedback(self) -> Optional[dict]:
+        """Derived view of the most recent runtime observation."""
+        if not self.runtime_feedback:
+            return None
+        return self.runtime_feedback[-1]
+
+    def append_feedback(self, feedback: Union[RuntimeFeedback, dict]) -> None:
+        """Append runtime observation to history. Preserves existing entries and build results."""
+        entry = feedback.to_dict() if isinstance(feedback, RuntimeFeedback) else feedback
+        self.runtime_feedback.append(entry)
 
     @property
     def unresolved_build_errors(self) -> List[dict]:
@@ -403,4 +452,73 @@ def attach_build_result(
         return ctx
     except Exception as e:
         logger.warning(f"Non-blocking error in attach_build_result: {e}")
+        return None
+
+
+def record_runtime_feedback(
+    workspace_root: Union[str, Path],
+    target_module: str,
+    symptom: str,
+    steps: Optional[List[str]] = None,
+    expected: str = "",
+    actual: str = "",
+    build_id: Optional[str] = None,
+    reporter: str = "",
+) -> Optional[MaintenanceContext]:
+    """
+    Append a human runtime observation to the target module's maintenance context.
+
+    Safety and Boundary Principles (P3-B):
+    1. Human Observation != Compiler Fact: Recorded purely as subjective observations,
+       strictly segregated from L0 build errors in data schema and analysis display.
+    2. Non-destructive: Never modifies, purges, or resolves existing build_results or L0 errors.
+    3. Append-only: Preserves full history of prior feedback items.
+    4. Deterministic Identity: Assigns sub-second microsecond unique feedback_id.
+    5. Atomic disk persistence: Persisted via save_context().
+    """
+    if not target_module or not symptom or not str(symptom).strip():
+        logger.warning("record_runtime_feedback rejected: target_module and non-empty symptom required")
+        return None
+
+    try:
+        ws_path = Path(workspace_root).resolve()
+        resolved_module = target_module if target_module.endswith(".m") else f"{target_module}.m"
+
+        ctx = load_context(ws_path, resolved_module)
+        if not ctx:
+            task_id = generate_task_id(str(ws_path), resolved_module, symptom)
+            ctx = MaintenanceContext(
+                task_id=task_id,
+                workspace=str(ws_path),
+                target_module=resolved_module,
+                original_request=symptom,
+                problem_description=symptom,
+            )
+
+        now = datetime.now()
+        fb_id = f"fb_{now.strftime('%Y%m%d_%H%M%S_%f')}"
+
+        norm_steps = []
+        if isinstance(steps, list):
+            norm_steps = [str(s).strip() for s in steps if str(s).strip()]
+        elif isinstance(steps, str) and steps.strip():
+            norm_steps = [s.strip() for s in steps.splitlines() if s.strip()]
+
+        fb = RuntimeFeedback(
+            feedback_id=fb_id,
+            timestamp=now.isoformat(),
+            symptom=str(symptom).strip(),
+            steps=norm_steps,
+            expected=str(expected).strip(),
+            actual=str(actual).strip(),
+            build_id=str(build_id).strip() if build_id else None,
+            reporter=str(reporter).strip(),
+        )
+
+        ctx.append_feedback(fb)
+        if save_context(ctx):
+            return ctx
+        return None
+    except Exception as e:
+        logger.warning(f"Non-blocking error in record_runtime_feedback: {e}")
         return None

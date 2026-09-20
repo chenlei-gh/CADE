@@ -15,11 +15,13 @@ from maintenance_context import (
     MaintenanceContext,
     StructuredError,
     BuildRecord,
+    RuntimeFeedback,
     generate_task_id,
     get_context_path,
     load_context,
     save_context,
     attach_build_result,
+    record_runtime_feedback,
     normalize_error,
 )
 
@@ -346,6 +348,124 @@ class TestMaintenanceContext(unittest.TestCase):
             # Must match microsecond pattern b_YYYYMMDD_HHMMSS_ffffff
             parts = bid.split("_")
             self.assertEqual(len(parts), 4)  # ["b", "YYYYMMDD", "HHMMSS", "ffffff"]
+            self.assertEqual(len(parts[3]), 6)
+
+    def test_record_runtime_feedback_basic_and_append(self):
+        """
+        P3-B Requirement 1: Record human runtime feedback with symptom, steps, expected, actual.
+        Ensure successive feedbacks append to history and preserve prior entries.
+        """
+        ctx1 = record_runtime_feedback(
+            workspace_root=self.workspace,
+            target_module="FeedbackMod.m",
+            symptom="对话框点击导出无响应",
+            steps=["启动 CATIA", "点击工具栏按钮", "点击导出"],
+            expected="弹出保存路径选择框",
+            actual="鼠标漏斗转圈后消失，无弹窗",
+            build_id="b_20260920_120000_111111",
+            reporter="engineer_a",
+        )
+        self.assertIsNotNone(ctx1)
+        self.assertEqual(len(ctx1.runtime_feedback), 1)
+        fb1 = ctx1.runtime_feedback[0]
+        self.assertTrue(fb1["feedback_id"].startswith("fb_"))
+        self.assertEqual(fb1["symptom"], "对话框点击导出无响应")
+        self.assertEqual(len(fb1["steps"]), 3)
+        self.assertEqual(fb1["build_id"], "b_20260920_120000_111111")
+
+        # Append second feedback observation
+        ctx2 = record_runtime_feedback(
+            workspace_root=self.workspace,
+            target_module="FeedbackMod.m",
+            symptom="第二次观察：后台出现 CATDlgWindow 空指针日志",
+            steps=["复现导出步骤"],
+            expected="正常导出",
+            actual="Console 输出 access violation",
+            build_id="b_20260920_120000_111111",
+        )
+        self.assertIsNotNone(ctx2)
+        self.assertEqual(len(ctx2.runtime_feedback), 2)
+        # Verify persistence and reload
+        reloaded = load_context(self.workspace, "FeedbackMod.m")
+        self.assertIsNotNone(reloaded)
+        self.assertEqual(len(reloaded.runtime_feedback), 2)
+        self.assertEqual(reloaded.runtime_feedback[0]["symptom"], "对话框点击导出无响应")
+        self.assertEqual(reloaded.runtime_feedback[1]["symptom"], "第二次观察：后台出现 CATDlgWindow 空指针日志")
+
+    def test_runtime_feedback_strictly_isolated_from_l0_build_errors(self):
+        """
+        P3-B Safety Requirement: Human runtime observation MUST NOT overwrite,
+        clear, or alter L0 build errors in the maintenance context.
+        """
+        # Step 0: Initialize maintenance context for FeedbackMod.m
+        ctx_init = MaintenanceContext(
+            task_id="task_fb_test",
+            workspace=str(self.workspace),
+            target_module="FeedbackMod.m",
+            original_request="Fix Dialog issue",
+        )
+        save_context(ctx_init)
+
+        # Step 1: Record an explicit build failure with L0 error
+        raw_err = {
+            "file": "FeedbackMod.m/src/CAABomDlg.cpp",
+            "line": 42,
+            "code": "C2065",
+            "message": "'pUnknown': undeclared identifier",
+            "module": "FeedbackMod.m",
+        }
+        attach_build_result(
+            self.workspace,
+            {"status": "failed", "errors": [raw_err]},
+            target_module="FeedbackMod.m",
+        )
+
+        ctx_before = load_context(self.workspace, "FeedbackMod.m")
+        self.assertEqual(len(ctx_before.unresolved_build_errors), 1)
+        self.assertEqual(ctx_before.unresolved_build_errors[0]["code"], "C2065")
+
+        # Step 2: Record human runtime observation
+        record_runtime_feedback(
+            workspace_root=self.workspace,
+            target_module="FeedbackMod.m",
+            symptom="人工测试：UI界面没有刷新",
+            expected="刷新表格",
+            actual="表格为空",
+        )
+
+        # Step 3: Re-verify L0 build errors remain completely intact!
+        ctx_after = load_context(self.workspace, "FeedbackMod.m")
+        self.assertEqual(len(ctx_after.runtime_feedback), 1)
+        self.assertEqual(len(ctx_after.unresolved_build_errors), 1)
+        self.assertEqual(ctx_after.unresolved_build_errors[0]["code"], "C2065")
+        self.assertEqual(len(ctx_after.build_results), 1)
+
+    def test_record_runtime_feedback_validation_and_uniqueness(self):
+        """
+        P3-B Validation: Empty module or symptom must be rejected;
+        Multiple rapid entries must have unique microsecond feedback_ids.
+        """
+        # Rejected cases
+        self.assertIsNone(record_runtime_feedback(self.workspace, "", "symptom"))
+        self.assertIsNone(record_runtime_feedback(self.workspace, "Mod.m", ""))
+        self.assertIsNone(record_runtime_feedback(self.workspace, "Mod.m", "   "))
+
+        # Rapid succession uniqueness
+        fb_ids = set()
+        for i in range(5):
+            res = record_runtime_feedback(
+                self.workspace,
+                "RapidFeedbackMod.m",
+                f"Symptom {i}",
+            )
+            self.assertIsNotNone(res)
+            last = res.last_feedback
+            fb_ids.add(last["feedback_id"])
+
+        self.assertEqual(len(fb_ids), 5)
+        for fbid in fb_ids:
+            parts = fbid.split("_")
+            self.assertEqual(len(parts), 4)  # ["fb", "YYYYMMDD", "HHMMSS", "ffffff"]
             self.assertEqual(len(parts[3]), 6)
 
 

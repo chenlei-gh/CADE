@@ -287,8 +287,12 @@ class Kernel:
                 else:
                     guidance.append("3. Make necessary edits in source/header files (zero destructive changes applied by CADE).")
 
-                guidance.append("4. Trigger Kernel build via develop('build') or 'cade build'.")
-                guidance.append("5. Verify runtime behavior with CATIA runtime view.")
+                rt_feedbacks = analysis_data.get("runtime_feedback", [])
+                if rt_feedbacks:
+                    guidance.append(f"4. Consider {len(rt_feedbacks)} recorded developer observation(s) from CATIA runtime testing.")
+
+                guidance.append("5. Trigger Kernel build via develop('build') or 'cade build'.")
+                guidance.append("6. Verify runtime behavior with CATIA runtime view.")
 
                 return KernelResult(
                     status="ok",
@@ -302,6 +306,7 @@ class Kernel:
                         "analysis": analysis_data,
                         "relevant_locations": analysis_data.get("relevant_locations", []),
                         "active_build_errors": analysis_data.get("active_build_errors", []),
+                        "runtime_feedback": rt_feedbacks,
                         "task_id": analysis_data.get("task_id", ""),
                         "verification": analysis_data.get("verification", {}),
                         "failure_patterns": analysis_data.get("failure_patterns", []),
@@ -1739,6 +1744,7 @@ class Kernel:
                 "entities": entities_info,
                 "relevant_locations": relevant_locations,
                 "active_build_errors": active_build_errors,
+                "runtime_feedback": maint_ctx.runtime_feedback if maint_ctx else [],
                 "task_id": maint_ctx.task_id if maint_ctx else "",
                 "verification": verification_data,
                 "diagnostics": {
