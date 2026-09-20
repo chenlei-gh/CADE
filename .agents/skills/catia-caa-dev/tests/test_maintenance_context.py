@@ -23,6 +23,7 @@ from maintenance_context import (
     attach_build_result,
     record_runtime_feedback,
     normalize_error,
+    get_module_context_status,
 )
 
 
@@ -607,6 +608,171 @@ class TestMaintenanceContext(unittest.TestCase):
             out2 = fake_out.getvalue()
             self.assertEqual(rc2, 0)
             self.assertIn("unverified reference: not found in local build records", out2)
+
+    def test_get_module_context_status_scenarios(self):
+        """
+        Verify get_module_context_status:
+        - None module -> standalone (no_target_module)
+        - Non-existent context file -> standalone (no_context_file)
+        - Active context -> maintenance (with task_id)
+        - Inactive context -> standalone (task_inactive)
+        - Mismatched requested_task_id -> error
+        - Matching requested_task_id -> maintenance
+        """
+        # 1. None module
+        st1 = get_module_context_status(self.workspace, None)
+        self.assertEqual(st1["mode"], "standalone")
+        self.assertEqual(st1["reason"], "no_target_module")
+
+        # 2. Non-existent context file
+        st2 = get_module_context_status(self.workspace, "GhostMod.m")
+        self.assertEqual(st2["mode"], "standalone")
+        self.assertEqual(st2["reason"], "no_context_file")
+
+        # 3. Active context
+        ctx = MaintenanceContext(
+            task_id="task_active_123",
+            workspace=str(self.workspace),
+            target_module="ActiveMod.m",
+            original_request="Fix something",
+            status="active",
+        )
+        save_context(ctx)
+
+        st3 = get_module_context_status(self.workspace, "ActiveMod.m")
+        self.assertEqual(st3["mode"], "maintenance")
+        self.assertEqual(st3["task_id"], "task_active_123")
+        self.assertTrue(st3["context_path"].endswith("ActiveMod.json"))
+
+        # 4. Inactive context
+        ctx_done = MaintenanceContext(
+            task_id="task_done_456",
+            workspace=str(self.workspace),
+            target_module="DoneMod.m",
+            original_request="Completed task",
+            status="completed",
+        )
+        save_context(ctx_done)
+
+        st4 = get_module_context_status(self.workspace, "DoneMod.m")
+        self.assertEqual(st4["mode"], "standalone")
+        self.assertEqual(st4["reason"], "task_completed")
+
+        # 5. Mismatched task_id -> abort with error
+        st5 = get_module_context_status(self.workspace, "ActiveMod.m", requested_task_id="wrong_task_id")
+        self.assertEqual(st5["mode"], "error")
+        self.assertIn("does not match active task", st5["error"])
+
+        # 6. Matching task_id -> maintenance
+        st6 = get_module_context_status(self.workspace, "ActiveMod.m", requested_task_id="task_active_123")
+        self.assertEqual(st6["mode"], "maintenance")
+        self.assertEqual(st6["task_id"], "task_active_123")
+
+    def test_analyze_target_module_informational_vs_maintenance_creation(self):
+        """
+        Verify kernel._analyze_target_module:
+        - Pure informational query (maintenance_info is None) NEVER writes to disk, returns NOT_CREATED
+        - Maintenance request (maintenance_info is dict) creates context on disk, returns CREATED
+        - Second maintenance request updates context, returns UPDATED
+        """
+        from kernel import Kernel
+        from actions import ActionContext
+
+        # Create minimal workspace structure
+        fw = self.workspace / "MyFw"
+        (fw / "IdentityCard").mkdir(parents=True)
+        (fw / "IdentityCard" / "IdentityCard.h").write_text('AddPrereqComponent("System",Public);\n', encoding="utf-8")
+        mod_dir = fw / "TargetMod.m"
+        (mod_dir / "src").mkdir(parents=True)
+        (mod_dir / "LocalInterfaces").mkdir(parents=True)
+        (mod_dir / "Imakefile.mk").write_text("BUILT_OBJECT_TYPE=SHARED LIBRARY\n", encoding="utf-8")
+
+        act_ctx = ActionContext(str(self.workspace))
+        mod = act_ctx.snapshot.get_module("TargetMod.m")
+        self.assertIsNotNone(mod)
+
+        kernel = Kernel(workspace_root=str(self.workspace))
+        expected_json = self.workspace / ".cade" / "maintenance" / "TargetMod.json"
+
+        # 1. Pure informational query: MUST NOT create context file!
+        res_info = kernel._analyze_target_module(mod, act_ctx, "什么是 TargetMod 模块的结构？", maintenance_info=None)
+        self.assertFalse(expected_json.exists(), "Informational query must NOT write context to disk!")
+        data_info = res_info.get("data", {})
+        self.assertEqual(data_info.get("maintenance_context_status"), "NOT_CREATED")
+        self.assertEqual(data_info.get("maintenance_context_reason"), "informational_analysis")
+
+        # 2. Genuine maintenance request: MUST create context file!
+        m_info = {
+            "module": mod,
+            "target_module": "TargetMod.m",
+            "problem_description": "窗口跟随异常",
+            "is_verify_only": False,
+        }
+        res_maint = kernel._analyze_target_module(mod, act_ctx, "排查 TargetMod 窗口跟随异常", maintenance_info=m_info)
+        self.assertTrue(expected_json.exists(), "Maintenance request MUST write context to disk!")
+        data_maint = res_maint.get("data", {})
+        self.assertEqual(data_maint.get("maintenance_context_status"), "CREATED")
+        self.assertTrue(data_maint.get("task_id", "").startswith("maint_TargetMod_"))
+
+        # 3. Follow-up maintenance request: MUST update existing context!
+        m_info2 = {
+            "module": mod,
+            "target_module": "TargetMod.m",
+            "problem_description": "进一步排查窗口跟随抖动",
+            "is_verify_only": False,
+        }
+        res_maint2 = kernel._analyze_target_module(mod, act_ctx, "排查 TargetMod 进一步排查窗口跟随抖动", maintenance_info=m_info2)
+        data_maint2 = res_maint2.get("data", {})
+        self.assertEqual(data_maint2.get("maintenance_context_status"), "UPDATED")
+
+    def test_cmd_build_banners_and_mode_discrimination(self):
+        """
+        Verify cmd_build CLI output:
+        - With target module and active context: prints [MODE] MAINTENANCE
+        - With target module and no context: prints [MODE] STANDALONE with guidance
+        - With mismatched task-id: prints [ERROR] and returns exit code 1
+        """
+        import io
+        from unittest.mock import patch
+        from cade import cmd_build
+
+        # Case 1: Standalone build (no context for StandaloneMod.m)
+        with patch("sys.stdout", new=io.StringIO()) as fake_out, \
+             patch("build.incremental_build", return_value={"status": "success", "build_id": "b_test_1"}):
+            rc1 = cmd_build(["-m", "StandaloneMod.m", "--workspace", str(self.workspace)])
+            out1 = fake_out.getvalue()
+            self.assertEqual(rc1, 0)
+            self.assertIn("[MODE] STANDALONE", out1)
+            self.assertIn("No active maintenance context found for module 'StandaloneMod.m'", out1)
+            self.assertIn("cade analyze", out1)
+            self.assertIn("[BUILD] Build ID: b_test_1 (standalone build, not attached)", out1)
+
+        # Case 2: Maintenance build (context exists for MaintMod.m)
+        ctx = MaintenanceContext(
+            task_id="task_maint_banner",
+            workspace=str(self.workspace),
+            target_module="MaintMod.m",
+            original_request="Fix MaintMod",
+            status="active",
+        )
+        save_context(ctx)
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out, \
+             patch("build.incremental_build", return_value={"status": "success", "build_id": "b_maint_2"}):
+            rc2 = cmd_build(["-m", "MaintMod.m", "--workspace", str(self.workspace)])
+            out2 = fake_out.getvalue()
+            self.assertEqual(rc2, 0)
+            self.assertIn("[MODE] MAINTENANCE", out2)
+            self.assertIn("[TASK] task_maint_banner", out2)
+            self.assertIn("[BUILD] Build ID: b_maint_2 (attached to task task_maint_banner)", out2)
+
+        # Case 3: Mismatched task ID -> aborts with rc=1
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc3 = cmd_build(["-m", "MaintMod.m", "--task-id", "wrong_id", "--workspace", str(self.workspace)])
+            out3 = fake_out.getvalue()
+            self.assertEqual(rc3, 1)
+            self.assertIn("[ERROR]", out3)
+            self.assertIn("Build aborted", out3)
 
 
 if __name__ == "__main__":

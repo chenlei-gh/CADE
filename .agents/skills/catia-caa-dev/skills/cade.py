@@ -93,6 +93,38 @@ def _print_kernel(r: dict):
     status = r.get("status", "?")
     msg = r.get("message", "")
     print(f"[{status}] {msg}")
+
+    data = r.get("data", {})
+    if not isinstance(data, dict):
+        data = {}
+
+    maint_status = data.get("maintenance_context_status")
+    maint_reason = data.get("maintenance_context_reason")
+    task_id = data.get("task_id")
+    target_mod = data.get("target_module")
+    ctx_path = data.get("context_path")
+
+    if maint_status in ("CREATED", "UPDATED"):
+        print("======================================================================")
+        print(f"Maintenance Context: {maint_status}")
+        print(f"  Task ID:   {task_id}")
+        print(f"  Module:    {target_mod}")
+        if ctx_path:
+            print(f"  Storage:   {ctx_path}")
+        print("======================================================================")
+        print("Next Recommended Actions:")
+        print(f"  1. Verify code & UI rules:")
+        print(f"     cade verify {target_mod}")
+        print(f"  2. Build in maintenance mode:")
+        print(f"     cade build -m {target_mod}")
+        print(f"  3. Run and test in CATIA:")
+        print(f"     cade run")
+        print(f"  4. Record runtime feedback:")
+        print(f"     cade feedback {target_mod} --symptom \"<observation>\"")
+        print("======================================================================")
+    elif maint_status == "NOT_CREATED" and maint_reason:
+        print(f"Maintenance Context: NOT CREATED (Reason: {maint_reason})")
+
     # In preview mode, make it explicit how to proceed
     if status == "preview":
         data = r.get("data", {})
@@ -338,6 +370,7 @@ def cmd_build(args):
         full_build,
         incremental_build,
     )
+    from maintenance_context import get_module_context_status
 
     ws = _get_ws(args)
     opts = _get_flags(args)
@@ -352,6 +385,33 @@ def cmd_build(args):
         if idx + 1 < len(args):
             target_mod = args[idx + 1]
 
+    task_id = _parse_flag(args, "--task-id", "--task") or None
+
+    status_info = None
+    if target_mod:
+        status_info = get_module_context_status(ws, target_mod, requested_task_id=task_id)
+        if status_info.get("mode") == "error":
+            print(f"[ERROR] {status_info.get('error')}")
+            print("Build aborted to prevent attaching results to an incorrect task context.")
+            return 1
+        elif status_info.get("mode") == "maintenance":
+            print("======================================================================")
+            print("[MODE] MAINTENANCE")
+            print(f"[CONTEXT] {status_info.get('context_path')}")
+            print(f"[TASK] {status_info.get('task_id')}")
+            print(f"[MODULE] {status_info.get('target_module')}")
+            print("======================================================================")
+        else:
+            print("======================================================================")
+            print("[MODE] STANDALONE")
+            print(f"[WARN] No active maintenance context found for module '{target_mod}'.")
+            print("[WARN] Build result will NOT be attached to any maintenance history.")
+            print(f"[HINT] To track as a maintenance task, run first:")
+            print(f"       cade analyze \"排查/修复 {target_mod} <问题描述>\" --workspace \"{ws}\"")
+            print("======================================================================")
+    else:
+        print("[MODE] STANDALONE (workspace-level)")
+
     if "--full" in opts or "-a" in opts:
         result = full_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False, target_module=target_mod)
     elif "--clean" in opts or "-c" in opts:
@@ -364,6 +424,13 @@ def cmd_build(args):
         result = build_with_threads(Path(ws), n, entrypoint="cade_cli", orchestrated_by_kernel=False, target_module=target_mod)
     else:
         result = incremental_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False, target_module=target_mod)
+
+    bid = result.get("build_id") if isinstance(result, dict) else None
+    if bid:
+        if status_info and status_info.get("mode") == "maintenance":
+            print(f"\n[BUILD] Build ID: {bid} (attached to task {status_info.get('task_id')})")
+        else:
+            print(f"\n[BUILD] Build ID: {bid} (standalone build, not attached)")
 
     return _print_result(result)
 
@@ -490,9 +557,17 @@ def cmd_analyze(args):
                 continue
             non_flags.append(a)
         if non_flags:
-            text = f"analyze module {non_flags[0]}"
-            if not ws and len(non_flags) > 1:
-                ws = non_flags[1]
+            first = non_flags[0]
+            if " " in first or any('\u4e00' <= ch <= '\u9fff' for ch in first) or len(non_flags) > 1:
+                if not ws and len(non_flags) > 1 and (":" in non_flags[-1] or "/" in non_flags[-1] or "\\" in non_flags[-1]):
+                    ws = non_flags[-1]
+                    text = " ".join(non_flags[:-1])
+                else:
+                    text = " ".join(non_flags)
+            else:
+                text = f"analyze module {first}"
+                if not ws and len(non_flags) > 1:
+                    ws = non_flags[1]
         else:
             text = "analyze the workspace"
     result = _kernel("analyze", text, workspace=ws, detail=detail)
@@ -921,7 +996,18 @@ def _get_default_ws():
 
 def _get_ws(args) -> str:
     """Extract workspace path from args — first non-flag arg, or config default"""
+    ws = _parse_flag(args, "--workspace", "-w")
+    if ws:
+        return ws
+    skip_values = {"-m", "--module", "-j", "--threads", "--task-id", "--task", "-o", "--output", "--deps", "--graph"}
+    skip_next = False
     for a in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if a in skip_values:
+            skip_next = True
+            continue
         if not a.startswith("-"):
             return a
     return _get_default_ws()

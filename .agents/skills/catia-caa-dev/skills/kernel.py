@@ -144,6 +144,7 @@ class KernelResult:
         d = {"status": self.status, "mode": self.mode, "message": self.message}
         if self.state:
             d["state"] = self.state
+        d["data"] = self.data
         d.update(self.data)
         return {k: v for k, v in d.items() if v is False or v}  # strip empty but keep boolean False
 
@@ -308,6 +309,9 @@ class Kernel:
                         "active_build_errors": analysis_data.get("active_build_errors", []),
                         "runtime_feedback": rt_feedbacks,
                         "task_id": analysis_data.get("task_id", ""),
+                        "maintenance_context_status": analysis_data.get("maintenance_context_status", ""),
+                        "maintenance_context_reason": analysis_data.get("maintenance_context_reason", ""),
+                        "context_path": analysis_data.get("context_path", ""),
                         "verification": analysis_data.get("verification", {}),
                         "failure_patterns": analysis_data.get("failure_patterns", []),
                         "guidance": guidance,
@@ -1603,19 +1607,48 @@ class Kernel:
         
         maint_ctx = None
         active_build_errors = []
+        context_status = "NOT_CREATED"
+        context_reason = ""
+        context_path_str = ""
+
         try:
-            from maintenance_context import load_context, save_context, MaintenanceContext, generate_task_id
-            maint_ctx = load_context(ctx.workspace_root, mod.name)
-            if not maint_ctx:
-                task_id = generate_task_id(str(ctx.workspace_root), mod.name, request)
-                maint_ctx = MaintenanceContext(
-                    task_id=task_id,
-                    workspace=str(ctx.workspace_root),
-                    target_module=mod.name,
-                    original_request=request,
-                    problem_description=problem_desc,
-                )
-            active_build_errors = maint_ctx.unresolved_build_errors
+            from maintenance_context import (
+                load_context,
+                save_context,
+                MaintenanceContext,
+                generate_task_id,
+                get_context_path,
+            )
+            ctx_p = get_context_path(ctx.workspace_root, mod.name)
+            context_path_str = str(ctx_p) if ctx_p else ""
+
+            if maintenance_info is not None:
+                # Genuine maintenance request: load or create/update context
+                maint_ctx = load_context(ctx.workspace_root, mod.name)
+                if not maint_ctx:
+                    task_id = generate_task_id(str(ctx.workspace_root), mod.name, request)
+                    maint_ctx = MaintenanceContext(
+                        task_id=task_id,
+                        workspace=str(ctx.workspace_root),
+                        target_module=mod.name,
+                        original_request=request,
+                        problem_description=problem_desc,
+                        status="active",
+                    )
+                    context_status = "CREATED"
+                else:
+                    if problem_desc:
+                        maint_ctx.problem_description = problem_desc
+                    context_status = "UPDATED"
+                active_build_errors = maint_ctx.unresolved_build_errors
+            else:
+                # Pure informational query: read-only, NEVER create on disk
+                context_status = "NOT_CREATED"
+                context_reason = "informational_analysis"
+                existing = load_context(ctx.workspace_root, mod.name)
+                if existing:
+                    maint_ctx = existing
+                    active_build_errors = maint_ctx.unresolved_build_errors
         except Exception:
             maint_ctx = None
             active_build_errors = []
@@ -1713,8 +1746,8 @@ class Kernel:
 
         self._state = KernelState.COMPLETED
 
-        # Persist updated context snapshot
-        if maint_ctx:
+        # Persist updated context snapshot ONLY for genuine maintenance requests
+        if maint_ctx and maintenance_info is not None:
             try:
                 maint_ctx.candidate_locations = relevant_locations[:15]
                 maint_ctx.verification_findings = verification_data.get("code_issues", [])
@@ -1739,6 +1772,10 @@ class Kernel:
                 "framework": mod.framework.name if mod.framework else None,
                 "path": str(mod.path),
                 "problem_description": problem_desc,
+                "maintenance_context_status": context_status,
+                "maintenance_context_reason": context_reason,
+                "context_path": context_path_str,
+                "task_id": maint_ctx.task_id if maint_ctx else "",
                 "files": files_info,
                 "build_config": build_config,
                 "entities": entities_info,
