@@ -139,6 +139,7 @@ class MaintenanceContext:
     verification_findings: List[Dict[str, Any]] = field(default_factory=list)
     runtime_feedback: List[Dict[str, Any]] = field(default_factory=list)
     build_results: List[Dict[str, Any]] = field(default_factory=list)
+    follow_up_requests: List[Dict[str, Any]] = field(default_factory=list)
     context_type: str = "maintenance_task"
     status: str = "active"
     created_at: str = ""
@@ -160,6 +161,7 @@ class MaintenanceContext:
             verification_findings=data.get("verification_findings", []),
             runtime_feedback=data.get("runtime_feedback", []),
             build_results=data.get("build_results", []),
+            follow_up_requests=data.get("follow_up_requests", []),
             context_type=data.get("context_type", "maintenance_task"),
             status=data.get("status", "active"),
             created_at=data.get("created_at", ""),
@@ -281,14 +283,17 @@ def get_module_context_status(
     Query the maintenance session status for a target module.
     Deterministic decision rules:
       1. Missing target_module: returns mode 'standalone', reason 'no_target_module'
-      2. No context file exists on disk: returns mode 'standalone', reason 'no_context_file'
-      3. Context exists:
-         - If requested_task_id is specified but does not match context.task_id:
-           returns mode 'error' (aborts ambiguity, prevents attaching to wrong task)
-         - If status is 'active':
-           returns mode 'maintenance', context=ctx, task_id=ctx.task_id
+      2. If context file exists on disk but fails to parse/load:
+         returns mode 'error', reason 'context_load_error', aborting ambiguity.
+      3. No context file exists on disk: returns mode 'standalone', reason 'no_context_file'
+      4. Context exists:
          - If status is not 'active' (e.g. 'completed', 'archived'):
            returns mode 'standalone', context=ctx, reason f"task_{ctx.status}"
+           (Precedence fix: checks lifecycle status BEFORE checking task_id match).
+         - If status is 'active':
+           - If requested_task_id is specified but does not match context.task_id:
+             returns mode 'error' (aborts ambiguity, prevents attaching to wrong task)
+           - Otherwise: returns mode 'maintenance', context=ctx, task_id=ctx.task_id
     """
     if not target_module:
         return {
@@ -300,9 +305,24 @@ def get_module_context_status(
 
     ws = Path(workspace_root).resolve()
     resolved_module = target_module if target_module.endswith(".m") else f"{target_module}.m"
+    ctx_path = get_context_path(ws, resolved_module)
+    ctx_path_str = str(ctx_path) if ctx_path else ""
+
     ctx = load_context(ws, resolved_module)
 
     if not ctx:
+        if ctx_path and ctx_path.exists():
+            return {
+                "mode": "error",
+                "context": None,
+                "target_module": resolved_module,
+                "context_path": ctx_path_str,
+                "reason": "context_load_error",
+                "error": (
+                    f"Maintenance context file at '{ctx_path}' exists but failed to load "
+                    f"(corrupted or malformed JSON). Manual inspection or repair required."
+                ),
+            }
         return {
             "mode": "standalone",
             "context": None,
@@ -310,7 +330,19 @@ def get_module_context_status(
             "reason": "no_context_file",
         }
 
-    # If requested_task_id is given, verify exact match
+    # Precedence: check if task is active FIRST
+    if ctx.status != "active":
+        return {
+            "mode": "standalone",
+            "context": ctx,
+            "task_id": ctx.task_id,
+            "target_module": ctx.target_module,
+            "context_path": ctx_path_str,
+            "status": ctx.status,
+            "reason": f"task_{ctx.status}",
+        }
+
+    # Now verify requested_task_id against the active task
     if requested_task_id and ctx.task_id != requested_task_id:
         return {
             "mode": "error",
@@ -324,28 +356,14 @@ def get_module_context_status(
             ),
         }
 
-    ctx_path = get_context_path(ws, resolved_module)
-    ctx_path_str = str(ctx_path) if ctx_path else ""
-
-    if ctx.status == "active":
-        return {
-            "mode": "maintenance",
-            "context": ctx,
-            "task_id": ctx.task_id,
-            "target_module": ctx.target_module,
-            "context_path": ctx_path_str,
-            "status": ctx.status,
-        }
-    else:
-        return {
-            "mode": "standalone",
-            "context": ctx,
-            "task_id": ctx.task_id,
-            "target_module": ctx.target_module,
-            "context_path": ctx_path_str,
-            "status": ctx.status,
-            "reason": f"task_{ctx.status}",
-        }
+    return {
+        "mode": "maintenance",
+        "context": ctx,
+        "task_id": ctx.task_id,
+        "target_module": ctx.target_module,
+        "context_path": ctx_path_str,
+        "status": ctx.status,
+    }
 
 
 def save_context(ctx: MaintenanceContext) -> bool:

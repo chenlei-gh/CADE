@@ -714,7 +714,7 @@ class TestMaintenanceContext(unittest.TestCase):
         self.assertEqual(data_maint.get("maintenance_context_status"), "CREATED")
         self.assertTrue(data_maint.get("task_id", "").startswith("maint_TargetMod_"))
 
-        # 3. Follow-up maintenance request: MUST update existing context!
+        # 3. Follow-up maintenance request with different description: Scheme A MUST preserve original and return REUSED_ACTIVE!
         m_info2 = {
             "module": mod,
             "target_module": "TargetMod.m",
@@ -723,7 +723,78 @@ class TestMaintenanceContext(unittest.TestCase):
         }
         res_maint2 = kernel._analyze_target_module(mod, act_ctx, "排查 TargetMod 进一步排查窗口跟随抖动", maintenance_info=m_info2)
         data_maint2 = res_maint2.get("data", {})
-        self.assertEqual(data_maint2.get("maintenance_context_status"), "UPDATED")
+        self.assertEqual(data_maint2.get("maintenance_context_status"), "REUSED_ACTIVE")
+        self.assertIn("preserved original description", data_maint2.get("maintenance_context_reason", ""))
+
+        # Verify disk state preserves original problem description
+        reloaded_ctx = load_context(self.workspace, "TargetMod.m")
+        self.assertEqual(reloaded_ctx.problem_description, "窗口跟随异常")
+        self.assertEqual(len(reloaded_ctx.follow_up_requests), 1)
+        self.assertEqual(reloaded_ctx.follow_up_requests[0]["problem_description"], "进一步排查窗口跟随抖动")
+
+    def test_status_order_inactive_before_task_id_check(self):
+        """
+        Audit Requirement: get_module_context_status must check task lifecycle status
+        BEFORE verifying requested_task_id. If a task is completed, it should cleanly
+        report 'task_completed' standalone mode rather than 'mismatched task ID error'.
+        """
+        ctx_done = MaintenanceContext(
+            task_id="task_done_789",
+            workspace=str(self.workspace),
+            target_module="DoneOrderMod.m",
+            status="completed",
+        )
+        save_context(ctx_done)
+
+        # Even with an arbitrary or mismatched task_id, completed task returns standalone!
+        st = get_module_context_status(self.workspace, "DoneOrderMod.m", requested_task_id="wrong_id")
+        self.assertEqual(st["mode"], "standalone")
+        self.assertEqual(st["reason"], "task_completed")
+
+    def test_corrupted_context_reports_error_not_silent_standalone(self):
+        """
+        Audit Requirement: Corrupted/malformed context on disk must return mode 'error',
+        refusing to silently degrade to 'no_context_file' or overwrite corrupted data.
+        """
+        ctx_file = get_context_path(self.workspace, "BrokenMod.m")
+        ctx_file.parent.mkdir(parents=True, exist_ok=True)
+        ctx_file.write_text("{ unclosed json: [ ", encoding="utf-8")
+
+        # 1. get_module_context_status returns mode 'error'
+        st = get_module_context_status(self.workspace, "BrokenMod.m")
+        self.assertEqual(st["mode"], "error")
+        self.assertEqual(st["reason"], "context_load_error")
+        self.assertIn("corrupted or malformed", st["error"])
+
+        # 2. kernel._analyze_target_module marks maintenance_context_status as ERROR
+        from kernel import Kernel
+        from actions import ActionContext
+
+        fw = self.workspace / "BrokenFw"
+        (fw / "IdentityCard").mkdir(parents=True)
+        (fw / "IdentityCard" / "IdentityCard.h").write_text('AddPrereqComponent("System",Public);\n', encoding="utf-8")
+        mod_dir = fw / "BrokenMod.m"
+        (mod_dir / "src").mkdir(parents=True)
+        (mod_dir / "LocalInterfaces").mkdir(parents=True)
+        (mod_dir / "Imakefile.mk").write_text("BUILT_OBJECT_TYPE=SHARED LIBRARY\n", encoding="utf-8")
+
+        act_ctx = ActionContext(str(self.workspace))
+        mod = act_ctx.snapshot.get_module("BrokenMod.m")
+
+        kernel = Kernel(workspace_root=str(self.workspace))
+        m_info = {
+            "module": mod,
+            "target_module": "BrokenMod.m",
+            "problem_description": "Test broken context",
+            "is_verify_only": False,
+        }
+        res = kernel._analyze_target_module(mod, act_ctx, "排查 BrokenMod 问题", maintenance_info=m_info)
+        data = res.get("data", {})
+        self.assertEqual(data.get("maintenance_context_status"), "ERROR")
+        self.assertIn("corrupted_context_file", data.get("maintenance_context_reason", ""))
+        # File on disk must NOT have been overwritten by new JSON!
+        self.assertEqual(ctx_file.read_text(encoding="utf-8"), "{ unclosed json: [ ")
+
 
     def test_cmd_build_banners_and_mode_discrimination(self):
         """

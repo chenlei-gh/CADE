@@ -29,7 +29,10 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import time
+
+logger = logging.getLogger("cade.kernel")
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -1624,34 +1627,76 @@ class Kernel:
 
             if maintenance_info is not None:
                 # Genuine maintenance request: load or create/update context
-                maint_ctx = load_context(ctx.workspace_root, mod.name)
-                if not maint_ctx:
-                    task_id = generate_task_id(str(ctx.workspace_root), mod.name, request)
-                    maint_ctx = MaintenanceContext(
-                        task_id=task_id,
-                        workspace=str(ctx.workspace_root),
-                        target_module=mod.name,
-                        original_request=request,
-                        problem_description=problem_desc,
-                        status="active",
-                    )
-                    context_status = "CREATED"
+                if ctx_p and ctx_p.exists():
+                    maint_ctx = load_context(ctx.workspace_root, mod.name)
+                    if not maint_ctx:
+                        context_status = "ERROR"
+                        context_reason = f"corrupted_context_file: {ctx_p.name}"
+                        logger.warning(f"Maintenance context file at {ctx_p} is corrupted. Aborting overwrite.")
                 else:
-                    if problem_desc:
-                        maint_ctx.problem_description = problem_desc
-                    context_status = "UPDATED"
-                active_build_errors = maint_ctx.unresolved_build_errors
+                    maint_ctx = None
+
+                if context_status != "ERROR":
+                    if not maint_ctx:
+                        task_id = generate_task_id(str(ctx.workspace_root), mod.name, request)
+                        maint_ctx = MaintenanceContext(
+                            task_id=task_id,
+                            workspace=str(ctx.workspace_root),
+                            target_module=mod.name,
+                            original_request=request,
+                            problem_description=problem_desc,
+                            status="active",
+                        )
+                        context_status = "CREATED"
+                    else:
+                        # Existing context loaded
+                        if maint_ctx.status == "active":
+                            orig_desc = (maint_ctx.problem_description or "").strip()
+                            new_desc = problem_desc.strip()
+                            if orig_desc and new_desc and orig_desc != new_desc:
+                                # Scheme A: Do NOT silently overwrite original problem_description!
+                                # Preserve original description and record new request as follow_up
+                                from datetime import datetime
+                                if not hasattr(maint_ctx, "follow_up_requests") or maint_ctx.follow_up_requests is None:
+                                    maint_ctx.follow_up_requests = []
+                                maint_ctx.follow_up_requests.append({
+                                    "request": request,
+                                    "problem_description": new_desc,
+                                    "timestamp": datetime.now().isoformat(),
+                                })
+                                context_status = "REUSED_ACTIVE"
+                                context_reason = f"active_task_reused: preserved original description '{orig_desc}'"
+                            elif not orig_desc and new_desc:
+                                maint_ctx.problem_description = new_desc
+                                context_status = "UPDATED"
+                            else:
+                                context_status = "REUSED_ACTIVE"
+                                context_reason = "identical_active_task"
+                        else:
+                            # Task was completed/inactive: reactivate with new description
+                            maint_ctx.status = "active"
+                            maint_ctx.problem_description = problem_desc
+                            context_status = "UPDATED"
+
+                        active_build_errors = maint_ctx.unresolved_build_errors
             else:
                 # Pure informational query: read-only, NEVER create on disk
                 context_status = "NOT_CREATED"
                 context_reason = "informational_analysis"
-                existing = load_context(ctx.workspace_root, mod.name)
-                if existing:
-                    maint_ctx = existing
-                    active_build_errors = maint_ctx.unresolved_build_errors
-        except Exception:
+                if ctx_p and ctx_p.exists():
+                    existing = load_context(ctx.workspace_root, mod.name)
+                    if existing:
+                        maint_ctx = existing
+                        active_build_errors = maint_ctx.unresolved_build_errors
+                    else:
+                        context_status = "ERROR"
+                        context_reason = f"corrupted_context_file: {ctx_p.name}"
+        except Exception as e:
+            logger.warning(f"Error resolving maintenance context for {mod.name}: {e}")
             maint_ctx = None
             active_build_errors = []
+            context_status = "ERROR"
+            context_reason = f"context_load_error: {e}"
 
         relevant_locations = self._locate_relevant_code(mod, problem_desc, request)
 
@@ -1746,14 +1791,14 @@ class Kernel:
 
         self._state = KernelState.COMPLETED
 
-        # Persist updated context snapshot ONLY for genuine maintenance requests
-        if maint_ctx and maintenance_info is not None:
+        # Persist updated context snapshot ONLY for genuine maintenance requests (never on ERROR)
+        if maint_ctx and maintenance_info is not None and context_status != "ERROR":
             try:
                 maint_ctx.candidate_locations = relevant_locations[:15]
                 maint_ctx.verification_findings = verification_data.get("code_issues", [])
                 save_context(maint_ctx)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to save maintenance context snapshot: {e}")
 
         if maintenance_info and maintenance_info.get("is_verify_only"):
             msg = f"Targeted verification for module {mod.name}: {files_verified} files checked, {total_code_errors} error(s), {total_code_warnings} warning(s), {total_ui_findings} UI finding(s)."

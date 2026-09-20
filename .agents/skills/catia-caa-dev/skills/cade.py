@@ -104,24 +104,29 @@ def _print_kernel(r: dict):
     target_mod = data.get("target_module")
     ctx_path = data.get("context_path")
 
-    if maint_status in ("CREATED", "UPDATED"):
+    if maint_status in ("CREATED", "UPDATED", "REUSED_ACTIVE"):
         print("======================================================================")
-        print(f"Maintenance Context: {maint_status}")
+        status_label = "REUSED EXISTING ACTIVE TASK" if maint_status == "REUSED_ACTIVE" else maint_status
+        print(f"Maintenance Context: {status_label}")
         print(f"  Task ID:   {task_id}")
         print(f"  Module:    {target_mod}")
         if ctx_path:
             print(f"  Storage:   {ctx_path}")
+        if maint_status == "REUSED_ACTIVE" and maint_reason:
+            print(f"  Note:      {maint_reason}")
         print("======================================================================")
         print("Next Recommended Actions:")
         print(f"  1. Verify code & UI rules:")
         print(f"     cade verify {target_mod}")
-        print(f"  2. Build in maintenance mode:")
+        print(f"  2. Build in maintenance mode (Context-Aware Build):")
         print(f"     cade build -m {target_mod}")
         print(f"  3. Run and test in CATIA:")
         print(f"     cade run")
         print(f"  4. Record runtime feedback:")
         print(f"     cade feedback {target_mod} --symptom \"<observation>\"")
         print("======================================================================")
+    elif maint_status == "ERROR":
+        print(f"[WARN] Maintenance Context Error: {maint_reason}")
     elif maint_status == "NOT_CREATED" and maint_reason:
         print(f"Maintenance Context: NOT CREATED (Reason: {maint_reason})")
 
@@ -396,21 +401,22 @@ def cmd_build(args):
             return 1
         elif status_info.get("mode") == "maintenance":
             print("======================================================================")
-            print("[MODE] MAINTENANCE")
+            print("[MODE] MAINTENANCE (Context-Aware Build)")
             print(f"[CONTEXT] {status_info.get('context_path')}")
             print(f"[TASK] {status_info.get('task_id')}")
             print(f"[MODULE] {status_info.get('target_module')}")
+            print("[NOTE] Build outcome will be automatically associated with this active task.")
             print("======================================================================")
         else:
             print("======================================================================")
-            print("[MODE] STANDALONE")
+            print("[MODE] STANDALONE (Independent Build)")
             print(f"[WARN] No active maintenance context found for module '{target_mod}'.")
             print("[WARN] Build result will NOT be attached to any maintenance history.")
             print(f"[HINT] To track as a maintenance task, run first:")
             print(f"       cade analyze \"排查/修复 {target_mod} <问题描述>\" --workspace \"{ws}\"")
             print("======================================================================")
     else:
-        print("[MODE] STANDALONE (workspace-level)")
+        print("[MODE] STANDALONE (Independent Build, workspace-level)")
 
     if "--full" in opts or "-a" in opts:
         result = full_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False, target_module=target_mod)
