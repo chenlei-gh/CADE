@@ -108,10 +108,14 @@ class RepairLoop:
         workspace_root: Path,
         preview: bool = False,
         with_build: bool = False,
+        entrypoint: str = "repair_cli",
+        orchestrated_by_kernel: bool = False,
     ):
         self.workspace_root = Path(workspace_root)
         self._preview_mode = preview
         self._with_build = with_build  # New: run mkmk for real errors
+        self._entrypoint = entrypoint
+        self._orchestrated_by_kernel = orchestrated_by_kernel
         self._state = RepairState.IN_PROGRESS
         self._attempts = 0
         self._fixes_applied = 0
@@ -341,8 +345,11 @@ class RepairLoop:
             # one framework" even when .edu directories exist).
             # skip_gate: the repair loop needs RAW mkmk output to feed
             # parse_mkmk_output/FixPlan; a gate BLOCK would starve it.
+            ep = "kernel" if self._orchestrated_by_kernel else self._entrypoint
             result = build_workspace(self.workspace_root, options="-u -a",
-                                     timeout=300, skip_gate=True)
+                                     timeout=300, skip_gate=True,
+                                     entrypoint=ep,
+                                     orchestrated_by_kernel=self._orchestrated_by_kernel)
 
             # Diagnose exactly this invocation. Reading build.json here can
             # accidentally report errors from an older build.

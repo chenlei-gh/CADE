@@ -57,20 +57,34 @@ def _append_log(records: list):
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
 
-def run_gate(workspace, skip: bool = False) -> dict:
+def run_gate(
+    workspace,
+    skip: bool = False,
+    entrypoint: str = "python_cli",
+    orchestrated_by_kernel: bool = False,
+) -> dict:
     """Verify all *.m modules under workspace. Returns a result dict with
     decision PASS/WARN/BLOCK/SKIP. Fail-open on any internal error."""
     t0 = time.perf_counter()
     ws = Path(workspace)
     now = datetime.now().isoformat(timespec="seconds")
-    base = {"time": now, "workspace": str(ws)}
+    base = {
+        "time": now,
+        "workspace": str(ws),
+        "operation": "build_gate",
+        "entrypoint": entrypoint,
+        "orchestrated_by_kernel": orchestrated_by_kernel,
+    }
     try:
         if skip:
             _append_log([{**base, "kind": "run", "decision": "SKIP",
                           "duration_ms": 0}])
             return {"status": "success", "decision": "SKIP", "errors": 0,
                     "warnings": 0, "modules": 0, "files_checked": 0,
-                    "duration_ms": 0, "findings": [], "log": str(LOG_FILE)}
+                    "duration_ms": 0, "findings": [], "log": str(LOG_FILE),
+                    "entrypoint": entrypoint,
+                    "orchestrated_by_kernel": orchestrated_by_kernel,
+                    "operation": "build_gate"}
 
         from verifier import CodeVerifier
         verifier = CodeVerifier(SKILL_ROOT)
@@ -114,7 +128,10 @@ def run_gate(workspace, skip: bool = False) -> dict:
         return {"status": "blocked" if errors else "success",
                 "decision": decision, "errors": errors, "warnings": warnings,
                 "modules": len(modules), "files_checked": files_checked,
-                "duration_ms": ms, "findings": findings, "log": str(LOG_FILE)}
+                "duration_ms": ms, "findings": findings, "log": str(LOG_FILE),
+                "entrypoint": entrypoint,
+                "orchestrated_by_kernel": orchestrated_by_kernel,
+                "operation": "build_gate"}
     except Exception as e:
         # Fail-open: the gate is advisory infrastructure; a gate bug must
         # never prevent compilation. Logged so the failure is visible.
@@ -124,7 +141,10 @@ def run_gate(workspace, skip: bool = False) -> dict:
         return {"status": "success", "decision": "PASS", "errors": 0,
                 "warnings": 0, "modules": 0, "files_checked": 0,
                 "duration_ms": 0, "findings": [], "log": str(LOG_FILE),
-                "gate_error": str(e)}
+                "gate_error": str(e),
+                "entrypoint": entrypoint,
+                "orchestrated_by_kernel": orchestrated_by_kernel,
+                "operation": "build_gate"}
 
 
 def print_stats(days: int = 30, log_path=None) -> int:

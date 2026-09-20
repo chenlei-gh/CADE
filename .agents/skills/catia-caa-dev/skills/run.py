@@ -205,6 +205,8 @@ def start_catia_runtime(
     env_name: str = None,
     wait_for_exit: bool = False,
     timeout: int = 300,
+    entrypoint: str = "python_cli",
+    orchestrated_by_kernel: bool = False,
 ) -> dict:
     """
     Start CATIA Runtime View (CNEXT)
@@ -214,6 +216,8 @@ def start_catia_runtime(
         env_name: CATIA environment name (e.g., 'CATIA.P3.V5-6R2018.B28')
         wait_for_exit: Wait for CATIA to exit before returning
         timeout: Timeout in seconds for startup detection
+        entrypoint: Invocation source ("python_cli" | "cade_cli" | "kernel")
+        orchestrated_by_kernel: True iff invoked and controlled by Kernel
 
     Returns:
         Dictionary with runtime status
@@ -227,13 +231,20 @@ def start_catia_runtime(
 
     start_time = datetime.now()
     logger.write("Starting CATIA Runtime View")
+    logger.write(f"Entrypoint: {entrypoint} | Orchestrated by Kernel: {orchestrated_by_kernel}")
 
     if workspace_path:
         ws = Path(workspace_path)
         if not ws.exists():
             error_msg = f"Workspace path does not exist: {workspace_path}"
             logger.write(error_msg, "ERROR")
-            return {"status": "error", "message": error_msg}
+            return {
+                "status": "error",
+                "message": error_msg,
+                "entrypoint": entrypoint,
+                "orchestrated_by_kernel": orchestrated_by_kernel,
+                "operation": "start_runtime",
+            }
         logger.write(f"Workspace: {workspace_path}")
 
     # Initialize environment
@@ -409,6 +420,9 @@ def start_catia_runtime(
                 "duration_seconds": duration,
                 "timestamp": start_time.isoformat(),
                 "runtime_view_mounted": runtime_view_mounted,
+                "entrypoint": entrypoint,
+                "orchestrated_by_kernel": orchestrated_by_kernel,
+                "operation": "start_runtime",
             }
         else:
             # Use Popen with CREATE_NO_WINDOW to suppress cmd popup.
@@ -439,6 +453,9 @@ def start_catia_runtime(
                         "pid": running[0]["pid"],
                         "timestamp": start_time.isoformat(),
                         "runtime_view_mounted": runtime_view_mounted,
+                        "entrypoint": entrypoint,
+                        "orchestrated_by_kernel": orchestrated_by_kernel,
+                        "operation": "start_runtime",
                     }
                     break
 
@@ -449,6 +466,9 @@ def start_catia_runtime(
                     "message": "CATIA launch initiated (still initializing)",
                     "timestamp": start_time.isoformat(),
                     "runtime_view_mounted": runtime_view_mounted,
+                    "entrypoint": entrypoint,
+                    "orchestrated_by_kernel": orchestrated_by_kernel,
+                    "operation": "start_runtime",
                 }
 
         # Save to cache
@@ -459,15 +479,33 @@ def start_catia_runtime(
     except subprocess.TimeoutExpired:
         error_msg = f"CATIA startup timeout after {timeout} seconds"
         logger.write(error_msg, "ERROR")
-        return {"status": "timeout", "message": error_msg, "timeout_seconds": timeout}
+        return {
+            "status": "timeout",
+            "message": error_msg,
+            "timeout_seconds": timeout,
+            "entrypoint": entrypoint,
+            "orchestrated_by_kernel": orchestrated_by_kernel,
+            "operation": "start_runtime",
+        }
 
     except Exception as e:
         error_msg = f"Runtime exception: {str(e)}"
         logger.write(error_msg, "ERROR")
-        return {"status": "error", "message": error_msg, "exception": str(e)}
+        return {
+            "status": "error",
+            "message": error_msg,
+            "exception": str(e),
+            "entrypoint": entrypoint,
+            "orchestrated_by_kernel": orchestrated_by_kernel,
+            "operation": "start_runtime",
+        }
 
 
-def stop_catia(force: bool = False) -> dict:
+def stop_catia(
+    force: bool = False,
+    entrypoint: str = "python_cli",
+    orchestrated_by_kernel: bool = False,
+) -> dict:
     """
     Stop all running CATIA processes.
 
@@ -476,13 +514,21 @@ def stop_catia(force: bool = False) -> dict:
 
     Args:
         force: Skip graceful, force-kill immediately
+        entrypoint: Invocation source ("python_cli" | "cade_cli" | "kernel")
+        orchestrated_by_kernel: True iff invoked and controlled by Kernel
 
     Returns:
         Dictionary with stop result
     """
     running = check_process_running("CNEXT.exe")
     if not running:
-        return {"status": "not_running", "message": "CATIA is not running"}
+        return {
+            "status": "not_running",
+            "message": "CATIA is not running",
+            "entrypoint": entrypoint,
+            "orchestrated_by_kernel": orchestrated_by_kernel,
+            "operation": "stop_runtime",
+        }
 
     pids = [p["pid"] for p in running]
     stopped = []
@@ -550,6 +596,9 @@ def stop_catia(force: bool = False) -> dict:
         "message": message,
         "stopped": stopped,
         "failed": failed,
+        "entrypoint": entrypoint,
+        "orchestrated_by_kernel": orchestrated_by_kernel,
+        "operation": "stop_runtime",
     }
 
 
@@ -802,7 +851,7 @@ Examples:
 
     # Stop mode
     if args.stop:
-        result = stop_catia()
+        result = stop_catia(entrypoint="python_cli", orchestrated_by_kernel=False)
         output_json(
             result, exit_code=0 if result["status"] in ["stopped", "not_running"] else 1
         )
@@ -813,7 +862,11 @@ Examples:
         from build import build_workspace
         from pathlib import Path as _Path
         print("Building...", file=sys.stderr)
-        build_result = build_workspace(_Path(args.workspace))
+        build_result = build_workspace(
+            _Path(args.workspace),
+            entrypoint="python_cli",
+            orchestrated_by_kernel=False,
+        )
         if build_result.get("status") != "success":
             output_json(build_result, exit_code=1)
             return
@@ -825,6 +878,8 @@ Examples:
         env_name=args.env,
         wait_for_exit=args.wait,
         timeout=args.timeout,
+        entrypoint="python_cli",
+        orchestrated_by_kernel=False,
     )
 
     # Output JSON

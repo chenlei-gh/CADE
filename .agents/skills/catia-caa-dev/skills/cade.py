@@ -270,17 +270,17 @@ def cmd_build(args):
     opts = _get_flags(args)
 
     if "--full" in opts or "-a" in opts:
-        result = full_build(Path(ws))
+        result = full_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False)
     elif "--clean" in opts or "-c" in opts:
-        result = clean_build(Path(ws))
+        result = clean_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False)
     elif "--debug" in opts or "-g" in opts:
-        result = debug_build(Path(ws))
+        result = debug_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False)
     elif "--threads" in opts:
         idx = args.index("--threads") if "--threads" in args else args.index("-j")
         n = int(args[idx + 1]) if idx + 1 < len(args) else 8
-        result = build_with_threads(Path(ws), n)
+        result = build_with_threads(Path(ws), n, entrypoint="cade_cli", orchestrated_by_kernel=False)
     else:
-        result = incremental_build(Path(ws))
+        result = incremental_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False)
 
     return _print_result(result)
 
@@ -298,12 +298,12 @@ def cmd_dev(args):
         return 1
 
     print(f"[build] {ws}")
-    build_result = incremental_build(Path(ws))
+    build_result = incremental_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False)
     if build_result.get("status") != "success":
         _print_result(build_result)
         return 1
     print(f"[run] {ws}")
-    return _print_result(start_catia_runtime(workspace_path=ws))
+    return _print_result(start_catia_runtime(workspace_path=ws, entrypoint="cade_cli", orchestrated_by_kernel=False))
 
 
 # ─── Run ──────────────────────────────────────────────────────────
@@ -322,7 +322,7 @@ def cmd_run(args):
     opts = _get_flags(args)
 
     if "--stop" in opts:
-        result = stop_catia(force="--force" in opts)
+        result = stop_catia(force="--force" in opts, entrypoint="cade_cli", orchestrated_by_kernel=False)
     elif "--status" in opts:
         result = check_catia_running()
     elif "--macro" in opts:
@@ -332,7 +332,7 @@ def cmd_run(args):
     elif "--batch" in opts:
         result = run_catia_batch()
     else:
-        result = start_catia_runtime(workspace_path=ws)
+        result = start_catia_runtime(workspace_path=ws, entrypoint="cade_cli", orchestrated_by_kernel=False)
 
     return _print_result(result)
 

@@ -256,6 +256,35 @@ class Kernel:
         self._state = KernelState.CLARIFYING
         request_lower = request.lower()
 
+        # Phase 0.5: Brownfield Maintenance Routing (v3.2.2)
+        if any(kw in request_lower for kw in ("maintain", "fix issue in", "troubleshoot module")):
+            try:
+                from actions import ActionContext
+                ctx = ActionContext(str(self.workspace_root))
+                target_mod = self._find_target_module(request, ctx)
+                if target_mod:
+                    analysis_res = self._analyze_target_module(target_mod, ctx, request)
+                    self._state = KernelState.COMPLETED
+                    return KernelResult(
+                        status="ok",
+                        mode="develop",
+                        state=self._state.value,
+                        message=f"Identified brownfield maintenance for module {target_mod.name}. Provided source, build, diagnostic and knowledge analysis.",
+                        data={
+                            "task_type": "maintain_existing_module",
+                            "target_module": target_mod.name,
+                            "analysis": analysis_res.get("data", {}) or analysis_res,
+                            "guidance": [
+                                "1. Inspect files and diagnostic findings in the module.",
+                                "2. Make necessary manual edits in source/header files.",
+                                "3. Trigger Kernel build via develop('build') or 'cade build'.",
+                                "4. Verify runtime behavior with CATIA runtime view.",
+                            ]
+                        }
+                    ).to_dict()
+            except Exception:
+                pass
+
         # Phase 0: Multi-Intent Decomposition (v3.1) — BEFORE clarification
         # Split compound requests first so clarification doesn't short-circuit.
         try:
@@ -414,6 +443,18 @@ class Kernel:
             self._state = KernelState.COMPLETED
             return investigation_result
 
+        # ── Path 0.5: Module-scoped Deep Analysis (Brownfield Targeted View) ──
+        try:
+            from actions import ActionContext
+            ctx = ActionContext(str(self.workspace_root))
+            target_mod = self._find_target_module(request, ctx)
+            if target_mod:
+                mod_analysis = self._analyze_target_module(target_mod, ctx, request)
+                self._state = KernelState.COMPLETED
+                return mod_analysis
+        except Exception:
+            pass
+
         # ── Path 1: Diagnostics ──
         if any(kw in request_lower for kw in ("diagnos", "check", "inspect", "validate", "verify")):
             try:
@@ -558,6 +599,8 @@ class Kernel:
                 workspace_root=self.workspace_root,
                 preview=preview_mode,
                 with_build=with_build,
+                entrypoint="kernel",
+                orchestrated_by_kernel=True,
             )
             repair_result = loop.run()
             self._state = KernelState.COMPLETED
@@ -1014,6 +1057,211 @@ class Kernel:
                 },
                 "references": references,
             },
+        ).to_dict()
+
+    # ─── Targeted Module / Brownfield Analysis ─────────────────
+
+    def _find_target_module(self, request: str, ctx) -> Optional[Any]:
+        """Find a Module in workspace matching the request, or None."""
+        try:
+            snap = ctx.snapshot
+            if not snap or not snap.frameworks:
+                return None
+        except Exception:
+            return None
+
+        import re
+        # 1. Look for explicit *.m token (e.g., CAABOMToolCmd.m)
+        m_matches = re.findall(r'\b([A-Za-z0-9_]+\.m)\b', request, re.IGNORECASE)
+        for m_name in m_matches:
+            mod = snap.get_module(m_name)
+            if mod:
+                return mod
+            # Fallback: case-insensitive match
+            for fw in snap.frameworks:
+                for m in fw.modules:
+                    if m.name.lower() == m_name.lower():
+                        return m
+
+        # 2. Look for explicit keyword preceding module: module <name>, maintain <name>
+        kw_match = re.search(r'\b(?:module|maintain)\s+([A-Za-z0-9_]+(?:\.m)?)\b', request, re.IGNORECASE)
+        if kw_match:
+            candidate = kw_match.group(1)
+            for m_name in (candidate, candidate + ".m" if not candidate.endswith(".m") else candidate):
+                mod = snap.get_module(m_name)
+                if mod:
+                    return mod
+                for fw in snap.frameworks:
+                    for m in fw.modules:
+                        if m.name.lower() == m_name.lower() or m.bare_name.lower() == candidate.lower():
+                            return m
+
+        # 3. If request has analyze/inspect/check/maintain/debug, test all words against existing module names
+        if any(kw in request.lower() for kw in ("analyze", "inspect", "check", "maintain", "debug", "audit", "review")):
+            words = re.findall(r'\b[A-Za-z0-9_]+\b', request)
+            for w in words:
+                if len(w) < 3:
+                    continue
+                for fw in snap.frameworks:
+                    for m in fw.modules:
+                        if m.bare_name.lower() == w.lower() or m.name.lower() == w.lower():
+                            return m
+
+        return None
+
+    @staticmethod
+    def _parse_imakefile(imakefile_path: Path) -> dict:
+        """Extract basic build config from Imakefile.mk"""
+        if not imakefile_path or not imakefile_path.exists():
+            return {}
+        try:
+            content = imakefile_path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return {}
+
+        lines = content.splitlines()
+        unfolded = []
+        buf = ""
+        for line in lines:
+            line_str = line.strip()
+            if line_str.startswith("#"):
+                continue
+            if line_str.endswith("\\"):
+                buf += line_str[:-1] + " "
+            else:
+                buf += line_str
+                if buf:
+                    unfolded.append(buf.strip())
+                buf = ""
+        if buf:
+            unfolded.append(buf.strip())
+
+        built_type = None
+        link_with = []
+        sys_libs = []
+
+        import re
+        for entry in unfolded:
+            m_type = re.match(r'BUILT_OBJECT_TYPE\s*=\s*(.+)', entry, re.IGNORECASE)
+            if m_type:
+                built_type = m_type.group(1).strip()
+            m_link = re.match(r'LINK_WITH\s*=\s*(.+)', entry, re.IGNORECASE)
+            if m_link:
+                link_with = [item for item in m_link.group(1).split() if item]
+            m_sys = re.match(r'SYS_LIBS\s*=\s*(.+)', entry, re.IGNORECASE)
+            if m_sys:
+                sys_libs = [item for item in m_sys.group(1).split() if item]
+
+        return {
+            "built_object_type": built_type,
+            "link_with": link_with,
+            "sys_libs": sys_libs,
+        }
+
+    def _analyze_target_module(self, mod, ctx, request: str) -> dict:
+        """Produce deep, read-only analysis of a specific existing module."""
+        # 1. Source files and headers
+        src_files = []
+        if mod.src_dir_path().exists():
+            src_files = sorted([f for f in mod.src_dir_path().glob("*") if f.is_file() and f.suffix.lower() in (".cpp", ".c", ".cxx")])
+
+        local_headers = []
+        if mod.local_interfaces_dir().exists():
+            local_headers = sorted([f for f in mod.local_interfaces_dir().glob("*") if f.is_file() and f.suffix.lower() in (".h", ".hpp")])
+
+        pub_headers = []
+        if mod.public_interfaces_dir().exists():
+            pub_headers = sorted([f for f in mod.public_interfaces_dir().glob("*") if f.is_file() and f.suffix.lower() in (".h", ".hpp")])
+
+        imakefile_p = mod.imakefile_path()
+
+        def _rel_or_str(p: Path) -> str:
+            try:
+                return str(p.relative_to(self.workspace_root))
+            except Exception:
+                return str(p)
+
+        files_info = {
+            "src": [_rel_or_str(f) for f in src_files],
+            "local_interfaces": [_rel_or_str(f) for f in local_headers],
+            "public_interfaces": [_rel_or_str(f) for f in pub_headers],
+            "imakefile": _rel_or_str(imakefile_p) if imakefile_p.exists() else None,
+        }
+
+        # 2. Build configuration from Imakefile.mk
+        build_config = self._parse_imakefile(imakefile_p)
+
+        # 3. Entities
+        entities_info = {
+            "commands": [c.name for c in mod.commands],
+            "dialogs": [d.name for d in mod.dialogs],
+            "interfaces": [i.name for i in mod.interfaces],
+            "components": [c.name for c in mod.components],
+        }
+
+        # 4. Filter diagnostics
+        module_diags = []
+        workspace_diags = []
+        try:
+            from diagnostics import diagnose_workspace
+            diag_summary = diagnose_workspace(ctx)
+            all_diags = diag_summary.get("diagnostics", [])
+
+            # Names associated with this module
+            mod_names = {mod.name.lower(), mod.bare_name.lower()}
+            for c in mod.commands:
+                mod_names.add(c.name.lower())
+            for d in mod.dialogs:
+                mod_names.add(d.name.lower())
+            for i in mod.interfaces:
+                mod_names.add(i.name.lower())
+            for c in mod.components:
+                mod_names.add(c.name.lower())
+
+            for d in all_diags:
+                ent = (d.get("entity") or "").lower()
+                fix_file = ""
+                if d.get("fix_plan"):
+                    fix_file = str(d["fix_plan"].get("file") or "").lower()
+
+                if (ent and ent in mod_names) or (mod.name.lower() in fix_file):
+                    module_diags.append(d)
+                else:
+                    workspace_diags.append(d)
+        except Exception:
+            pass
+
+        # 5. Related Knowledge Retrieval
+        knowledge_refs = {}
+        try:
+            q_terms = [mod.bare_name]
+            if mod.dialogs:
+                q_terms.append("Dialog UI")
+            elif mod.commands:
+                q_terms.append("Command")
+            knowledge_refs = self._lookup_knowledge(" ".join(q_terms))
+        except Exception:
+            pass
+
+        self._state = KernelState.COMPLETED
+        return KernelResult(
+            status="ok",
+            mode="analyze",
+            state=self._state.value,
+            message=f"Targeted analysis for module {mod.name}: {len(src_files)} sources, {len(module_diags)} module-specific issues.",
+            data={
+                "target_module": mod.name,
+                "framework": mod.framework.name if mod.framework else None,
+                "path": str(mod.path),
+                "files": files_info,
+                "build_config": build_config,
+                "entities": entities_info,
+                "diagnostics": {
+                    "module_specific": module_diags,
+                    "workspace_scope": workspace_diags,
+                },
+                "knowledge": knowledge_refs,
+            }
         ).to_dict()
 
     def _execute_develop_plan(self, plan: dict, preview: bool = False) -> dict:
@@ -1607,10 +1855,10 @@ class Kernel:
             if any(kw in request for kw in ("build", "compile", "mkmk")):
                 import re
                 n = int(re.search(r'(\d+)\s*thread', request).group(1)) if re.search(r'(\d+)\s*thread', request) else 8
-                r = (full_build(ws) if "full" in request else
-                     clean_build(ws) if "clean" in request else
-                     build_with_threads(ws, n) if "thread" in request else
-                     incremental_build(ws))
+                r = (full_build(ws, entrypoint="kernel", orchestrated_by_kernel=True) if "full" in request else
+                     clean_build(ws, entrypoint="kernel", orchestrated_by_kernel=True) if "clean" in request else
+                     build_with_threads(ws, n, entrypoint="kernel", orchestrated_by_kernel=True) if "thread" in request else
+                     incremental_build(ws, entrypoint="kernel", orchestrated_by_kernel=True))
                 self._state = KernelState.COMPLETED
                 return KernelResult(status="ok", mode="develop", state=self._state.value,
                     message=r.get("message", "Build complete."), data=r if isinstance(r, dict) else {}).to_dict()
@@ -1626,7 +1874,7 @@ class Kernel:
         try:
             from run import start_catia_runtime, stop_catia, check_catia_running, run_catia_macro, run_catia_batch
             if "start catia" in request or "launch catia" in request:
-                r = start_catia_runtime(workspace_path=str(self.workspace_root))
+                r = start_catia_runtime(workspace_path=str(self.workspace_root), entrypoint="kernel", orchestrated_by_kernel=True)
                 self._state = KernelState.COMPLETED
                 return KernelResult(status="ok", mode="develop", state=self._state.value,
                     message="CATIA started.", data=r if isinstance(r, dict) else {}).to_dict()
@@ -1636,14 +1884,14 @@ class Kernel:
             # mkmk build + CATIA launch before intent detection could run.
             import re
             if re.search(r"\bdev\b", request) or ("build" in request and "run" in request):
-                r_build = incremental_build(ws)
-                r_run = start_catia_runtime(workspace_path=str(self.workspace_root)) if r_build.get("status") == "success" else None
+                r_build = incremental_build(ws, entrypoint="kernel", orchestrated_by_kernel=True)
+                r_run = start_catia_runtime(workspace_path=str(self.workspace_root), entrypoint="kernel", orchestrated_by_kernel=True) if r_build.get("status") == "success" else None
                 self._state = KernelState.COMPLETED
                 return KernelResult(status="ok", mode="develop", state=self._state.value,
                     message=f"Build: {r_build.get('message','')}; Run: {r_run.get('message','')}" if r_run else r_build.get('message',''),
                     data={"build": r_build, "run": r_run}).to_dict()
             if "stop catia" in request or "kill catia" in request:
-                r = stop_catia()
+                r = stop_catia(entrypoint="kernel", orchestrated_by_kernel=True)
                 self._state = KernelState.COMPLETED
                 return KernelResult(status="ok", mode="develop", state=self._state.value,
                     message="CATIA stopped.").to_dict()
