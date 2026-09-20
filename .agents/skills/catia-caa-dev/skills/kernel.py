@@ -1673,10 +1673,13 @@ class Kernel:
                                 context_status = "REUSED_ACTIVE"
                                 context_reason = "identical_active_task"
                         else:
-                            # Task was completed/inactive: reactivate with new description
-                            maint_ctx.status = "active"
-                            maint_ctx.problem_description = problem_desc
-                            context_status = "UPDATED"
+                            # Task was completed/inactive: do NOT silently reactivate or overwrite history!
+                            # Maintain immutable completed lifecycle contract
+                            context_status = "INACTIVE_TASK_EXISTS"
+                            context_reason = (
+                                f"module_task_{maint_ctx.status}: previous task '{maint_ctx.task_id}' is {maint_ctx.status}. "
+                                f"Please archive or remove it to start a new maintenance task."
+                            )
 
                         active_build_errors = maint_ctx.unresolved_build_errors
             else:
@@ -1791,8 +1794,8 @@ class Kernel:
 
         self._state = KernelState.COMPLETED
 
-        # Persist updated context snapshot ONLY for genuine maintenance requests (never on ERROR)
-        if maint_ctx and maintenance_info is not None and context_status != "ERROR":
+        # Persist updated context snapshot ONLY for genuine maintenance requests (never on ERROR or INACTIVE_TASK_EXISTS)
+        if maint_ctx and maintenance_info is not None and context_status not in ("ERROR", "INACTIVE_TASK_EXISTS"):
             try:
                 maint_ctx.candidate_locations = relevant_locations[:15]
                 maint_ctx.verification_findings = verification_data.get("code_issues", [])
@@ -1821,6 +1824,7 @@ class Kernel:
                 "maintenance_context_reason": context_reason,
                 "context_path": context_path_str,
                 "task_id": maint_ctx.task_id if maint_ctx else "",
+                "status": maint_ctx.status if maint_ctx else "",
                 "files": files_info,
                 "build_config": build_config,
                 "entities": entities_info,

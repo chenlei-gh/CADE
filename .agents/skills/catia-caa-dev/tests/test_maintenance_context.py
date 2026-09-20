@@ -732,6 +732,56 @@ class TestMaintenanceContext(unittest.TestCase):
         self.assertEqual(len(reloaded_ctx.follow_up_requests), 1)
         self.assertEqual(reloaded_ctx.follow_up_requests[0]["problem_description"], "进一步排查窗口跟随抖动")
 
+    def test_completed_task_is_not_silently_reactivated_or_overwritten(self):
+        """
+        Lifecycle Integrity: A maintenance request targeting a module with an existing
+        'completed' or 'archived' task MUST NOT silently reactivate it or overwrite its description.
+        It must report INACTIVE_TASK_EXISTS and preserve historical task records on disk.
+        """
+        from kernel import Kernel
+        from actions import ActionContext
+
+        fw = self.workspace / "DoneFw"
+        (fw / "IdentityCard").mkdir(parents=True)
+        (fw / "IdentityCard" / "IdentityCard.h").write_text('AddPrereqComponent("System",Public);\n', encoding="utf-8")
+        mod_dir = fw / "DoneMod.m"
+        (mod_dir / "src").mkdir(parents=True)
+        (mod_dir / "LocalInterfaces").mkdir(parents=True)
+        (mod_dir / "Imakefile.mk").write_text("BUILT_OBJECT_TYPE=SHARED LIBRARY\n", encoding="utf-8")
+
+        act_ctx = ActionContext(str(self.workspace))
+        mod = act_ctx.snapshot.get_module("DoneMod.m")
+
+        # Pre-seed a completed maintenance context
+        ctx_done = MaintenanceContext(
+            task_id="maint_done_task_original",
+            workspace=str(self.workspace),
+            target_module="DoneMod.m",
+            problem_description="旧的已解决性能问题",
+            status="completed",
+        )
+        save_context(ctx_done)
+
+        kernel = Kernel(workspace_root=str(self.workspace))
+        m_info = {
+            "module": mod,
+            "target_module": "DoneMod.m",
+            "problem_description": "尝试覆盖旧任务的新请求",
+            "is_verify_only": False,
+        }
+        res = kernel._analyze_target_module(mod, act_ctx, "排查 DoneMod 新问题", maintenance_info=m_info)
+        data = res.get("data", {})
+
+        # Status must be INACTIVE_TASK_EXISTS, NOT UPDATED or CREATED
+        self.assertEqual(data.get("maintenance_context_status"), "INACTIVE_TASK_EXISTS")
+        self.assertIn("previous task 'maint_done_task_original' is completed", data.get("maintenance_context_reason", ""))
+
+        # Disk state MUST remain completely untouched: status remains completed, problem_description preserved!
+        reloaded = load_context(self.workspace, "DoneMod.m")
+        self.assertEqual(reloaded.status, "completed")
+        self.assertEqual(reloaded.problem_description, "旧的已解决性能问题")
+        self.assertEqual(reloaded.task_id, "maint_done_task_original")
+
     def test_status_order_inactive_before_task_id_check(self):
         """
         Audit Requirement: get_module_context_status must check task lifecycle status

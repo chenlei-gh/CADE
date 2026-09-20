@@ -125,6 +125,17 @@ def _print_kernel(r: dict):
         print(f"  4. Record runtime feedback:")
         print(f"     cade feedback {target_mod} --symptom \"<observation>\"")
         print("======================================================================")
+    elif maint_status == "INACTIVE_TASK_EXISTS":
+        raw_st = str(data.get("status", "INACTIVE")).upper()
+        print("======================================================================")
+        print(f"[WARN] Maintenance Context: PREVIOUS TASK IS {raw_st}")
+        print(f"  Task ID:   {task_id}")
+        print(f"  Module:    {target_mod}")
+        print(f"  Note:      {maint_reason}")
+        print(f"  Action:    To start a new maintenance task on {target_mod}, archive or remove:")
+        if ctx_path:
+            print(f"             {ctx_path}")
+        print("======================================================================")
     elif maint_status == "ERROR":
         print(f"[WARN] Maintenance Context Error: {maint_reason}")
     elif maint_status == "NOT_CREATED" and maint_reason:
