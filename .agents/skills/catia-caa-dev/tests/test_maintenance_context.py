@@ -367,6 +367,7 @@ class TestMaintenanceContext(unittest.TestCase):
             reporter="engineer_a",
         )
         self.assertIsNotNone(ctx1)
+        self.assertEqual(ctx1.context_type, "runtime_observation")
         self.assertEqual(len(ctx1.runtime_feedback), 1)
         fb1 = ctx1.runtime_feedback[0]
         self.assertTrue(fb1["feedback_id"].startswith("fb_"))

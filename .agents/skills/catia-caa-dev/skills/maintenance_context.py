@@ -133,6 +133,7 @@ class MaintenanceContext:
     verification_findings: List[Dict[str, Any]] = field(default_factory=list)
     runtime_feedback: List[Dict[str, Any]] = field(default_factory=list)
     build_results: List[Dict[str, Any]] = field(default_factory=list)
+    context_type: str = "maintenance_task"
     created_at: str = ""
     updated_at: str = ""
 
@@ -152,6 +153,7 @@ class MaintenanceContext:
             verification_findings=data.get("verification_findings", []),
             runtime_feedback=data.get("runtime_feedback", []),
             build_results=data.get("build_results", []),
+            context_type=data.get("context_type", "maintenance_task"),
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
         )
@@ -198,8 +200,8 @@ class MaintenanceContext:
 def generate_unique_id(prefix: str) -> str:
     """
     Generate a collision-resistant identifier combining microsecond timestamp
-    and short random suffix. Eliminates collision risk under clock rollbacks,
-    concurrency, or mocked clocks.
+    and short random suffix. Substantially reduces collision probability under
+    clock rollbacks, concurrency, or mocked clocks.
     """
     now = datetime.now()
     rand_suffix = uuid.uuid4().hex[:6]
@@ -504,6 +506,7 @@ def record_runtime_feedback(
                 target_module=resolved_module,
                 original_request=f"[Human Runtime Observation] {symptom}",
                 problem_description=symptom,
+                context_type="runtime_observation",
             )
 
         now = datetime.now()
