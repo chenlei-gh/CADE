@@ -782,6 +782,26 @@ class TestMaintenanceContext(unittest.TestCase):
         self.assertEqual(reloaded.problem_description, "旧的已解决性能问题")
         self.assertEqual(reloaded.task_id, "maint_done_task_original")
 
+        # ── Test archived status explicitly ──
+        ctx_archived = MaintenanceContext(
+            task_id="maint_archived_task_original",
+            workspace=str(self.workspace),
+            target_module="DoneMod.m",
+            problem_description="已归档的历史维护任务",
+            status="archived",
+        )
+        save_context(ctx_archived)
+
+        res_arch = kernel._analyze_target_module(mod, act_ctx, "尝试重新针对归档任务排查", maintenance_info=m_info)
+        data_arch = res_arch.get("data", {})
+        self.assertEqual(data_arch.get("maintenance_context_status"), "INACTIVE_TASK_EXISTS")
+        self.assertIn("previous task 'maint_archived_task_original' is archived", data_arch.get("maintenance_context_reason", ""))
+
+        reloaded_arch = load_context(self.workspace, "DoneMod.m")
+        self.assertEqual(reloaded_arch.status, "archived")
+        self.assertEqual(reloaded_arch.problem_description, "已归档的历史维护任务")
+        self.assertEqual(reloaded_arch.task_id, "maint_archived_task_original")
+
     def test_status_order_inactive_before_task_id_check(self):
         """
         Audit Requirement: get_module_context_status must check task lifecycle status

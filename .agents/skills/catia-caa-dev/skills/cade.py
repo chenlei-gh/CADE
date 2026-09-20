@@ -194,7 +194,7 @@ def _print_kernel(r: dict):
                 f_name = err.get("file") or "linker"
                 l_num = f":{err.get('line')}" if err.get("line") else ""
                 c_code = f" [{err.get('code')}]" if err.get("code") else ""
-                print(f"    • [L0] {f_name}{l_num}{c_code} - {err.get('message', '')}")
+                print(f"    - [L0] {f_name}{l_num}{c_code} - {err.get('message', '')}")
 
     # Show recorded human runtime feedback (distinct from compiler/build evidence)
     rt_feedbacks = r.get("runtime_feedback", data.get("runtime_feedback", []) if isinstance(data, dict) else [])
@@ -204,7 +204,7 @@ def _print_kernel(r: dict):
             if isinstance(fb, dict):
                 fb_time = fb.get("timestamp", "")[:19].replace("T", " ")
                 b_id = f" [Build Ref: {fb.get('build_id')}]" if fb.get("build_id") else ""
-                print(f"    • [{fb_time}]{b_id} Symptom: {fb.get('symptom', '')}")
+                print(f"    - [{fb_time}]{b_id} Symptom: {fb.get('symptom', '')}")
                 if fb.get("actual"):
                     print(f"      Actual:   {fb.get('actual')}")
                 if fb.get("expected"):
@@ -219,14 +219,14 @@ def _print_kernel(r: dict):
         print("  Relevant Locations:")
         for loc in locations[:5]:
             if isinstance(loc, dict):
-                print(f"    • {loc.get('file', '')}:{loc.get('line', '')} [{loc.get('symbol', '')}] - {loc.get('snippet', '')}")
+                print(f"    - {loc.get('file', '')}:{loc.get('line', '')} [{loc.get('symbol', '')}] - {loc.get('snippet', '')}")
 
     # Show failure patterns
     fps = r.get("failure_patterns", data.get("failure_patterns", []) if isinstance(data, dict) else [])
     if fps:
         print("  Related Failure Patterns:")
         for fp in fps[:3]:
-            print(f"    • {fp}")
+            print(f"    - {fp}")
 
     # Show guidance
     guidance = r.get("guidance", data.get("guidance", []) if isinstance(data, dict) else [])
@@ -718,7 +718,7 @@ def cmd_feedback(args):
             fb_time = fb.get("timestamp", "")[:19].replace("T", " ")
             fb_id = fb.get("feedback_id", "")
             b_tag = f" [Build Ref: {fb.get('build_id')}]" if fb.get("build_id") else ""
-            print(f"  • [{fb_id}] {fb_time}{b_tag}")
+            print(f"  - [{fb_id}] {fb_time}{b_tag}")
             print(f"    Symptom:  {fb.get('symptom', '')}")
             if fb.get("expected"):
                 print(f"    Expected: {fb.get('expected')}")
