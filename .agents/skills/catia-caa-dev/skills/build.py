@@ -365,35 +365,47 @@ def build_workspace(
     cache = Cache("build.json", workspace_root=resolved_root)
     logger.clear()
 
+    from utils import verify_kernel_orchestration
+    verified_kernel, verified_ep, audit_warning = verify_kernel_orchestration(
+        orchestrated_by_kernel=orchestrated_by_kernel,
+        entrypoint=entrypoint,
+    )
+    orchestrated_by_kernel = verified_kernel
+    entrypoint = verified_ep
+
     start_time = datetime.now()
     logger.write(f"Starting build: {workspace_path}")
     logger.write(f"Options: {options}")
     logger.write(f"Entrypoint: {entrypoint} | Orchestrated by Kernel: {orchestrated_by_kernel}")
+    if audit_warning:
+        logger.write(f"TELEMETRY_AUDIT: {audit_warning}")
+
+    def _make_error(msg: str, stage: str = "validation", **extra) -> dict:
+        kwargs = {
+            "entrypoint": entrypoint,
+            "orchestrated_by_kernel": orchestrated_by_kernel,
+            "operation": "build",
+            "stage": stage,
+            **extra,
+        }
+        if audit_warning:
+            kwargs["telemetry_audit_warning"] = audit_warning
+        return error_result(msg, **kwargs)
 
     # --- Validate environment ---
     caa_env = CAAEnvironment()
     if not caa_env.load_config():
-        return error_result(
-            "Failed to load CAA configuration",
-            entrypoint=entrypoint,
-            orchestrated_by_kernel=orchestrated_by_kernel,
-            operation="build",
-        )
+        return _make_error("Failed to load CAA configuration", stage="env_validation")
 
     if not workspace_path.exists():
-        return error_result(
-            f"Workspace path does not exist: {workspace_path}",
-            entrypoint=entrypoint,
-            orchestrated_by_kernel=orchestrated_by_kernel,
-            operation="build",
-        )
+        return _make_error(f"Workspace path does not exist: {workspace_path}", stage="path_validation")
 
     # --- Pre-build health check ---
     health = validate_workspace(workspace_path)
     if health["issues"]:
         logger.write(f"Workspace issues: {health['issues']}")
         if not health.get("can_build", True):
-            return error_result(f"Workspace validation failed: {'; '.join(health['issues'])}")
+            return _make_error(f"Workspace validation failed: {'; '.join(health['issues'])}", stage="health_check")
 
     # --- Pre-build: check CATIA is not running (DLL lock prevention) ---
     # A running CATIA process locks .dll files, causing LNK1104 "拒绝访问".
@@ -411,7 +423,7 @@ def build_workspace(
                 "python run.py --stop, or close CATIA manually."
             )
             logger.write(f"BLOCKED: {msg}")
-            return error_result(msg, catia_running=True)
+            return _make_error(msg, stage="catia_lock", catia_running=True)
         logger.write("CATIA not running — DLLs are writable")
     except ImportError:
         pass  # run.py not available in this context
@@ -427,6 +439,8 @@ def build_workspace(
             skip=skip_gate,
             entrypoint=entrypoint,
             orchestrated_by_kernel=orchestrated_by_kernel,
+            operation="build",
+            stage="build_gate",
         )
         logger.write(
             f"Gate {gate['decision']}: {gate['errors']} error(s), "
@@ -443,14 +457,12 @@ def build_workspace(
                 + (f" → {f['suggestion']}" if f.get("suggestion") else "")
                 for f in gate["findings"] if f["severity"] == "error"
             )[:400]
-            return error_result(
+            return _make_error(
                 f"Build gate BLOCKED — {gate['errors']} error-level finding(s) "
                 f"(fabricated APIs; compile would fail anyway): {top}. "
                 f"Fix the code, or bypass with --skip-gate. Log: {gate['log']}",
+                stage="build_gate",
                 gate=gate,
-                entrypoint=entrypoint,
-                orchestrated_by_kernel=orchestrated_by_kernel,
-                operation="build",
             )
     except Exception as e:
         logger.write(f"Gate crashed (fail-open): {e}")
@@ -587,6 +599,7 @@ def build_workspace(
             "entrypoint": entrypoint,
             "orchestrated_by_kernel": orchestrated_by_kernel,
             "operation": "build",
+            "stage": "mkmk",
             "error_count": parsed["error_count"],
             "cascade_count": parsed.get("cascade_count", 0),
             "warning_count": parsed["warning_count"],
@@ -614,6 +627,8 @@ def build_workspace(
             build_result["output_log"] = str(log_path)
         if tck_guidance:
             build_result["tck_guidance"] = tck_guidance
+        if audit_warning:
+            build_result["telemetry_audit_warning"] = audit_warning
 
         # Preserve prerequisite state in the final cache entry. The completed
         # build result is cached only after post-build verification has had a
@@ -718,6 +733,8 @@ def error_result(message: str, **kwargs) -> dict:
         "error_count": 0,
         "warning_count": 0,
         "errors": [],
+        "operation": kwargs.pop("operation", "build"),
+        "stage": kwargs.pop("stage", "error"),
         **kwargs,
     }
 

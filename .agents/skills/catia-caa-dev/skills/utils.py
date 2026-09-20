@@ -399,6 +399,62 @@ def render_template(content: str, replacements: Optional[Dict[str, str]] = None)
     return content
 
 
+def verify_kernel_orchestration(
+    orchestrated_by_kernel: bool,
+    entrypoint: str = "python_cli",
+) -> tuple:
+    """
+    Verify invocation claims against the actual Python call stack.
+
+    Ensures that telemetry truthfulness is upheld:
+    - If orchestrated_by_kernel is declared True, inspect the current call stack
+      to confirm that at least one frame originated from `kernel.py` or an instance
+      of the `Kernel` class.
+    - If no Kernel frame exists in the stack, downgrade orchestrated_by_kernel
+      to False and return an explanatory audit warning so external/standalone
+      callers cannot fabricate a Kernel orchestration claim.
+
+    Args:
+        orchestrated_by_kernel: Declared orchestration state.
+        entrypoint: Declared entrypoint identifier.
+
+    Returns:
+        tuple of (verified_orchestrated_by_kernel, effective_entrypoint, audit_warning_or_none)
+    """
+    import inspect
+
+    if not orchestrated_by_kernel:
+        return False, entrypoint, None
+
+    # Inspect call stack for kernel.py or Kernel class
+    kernel_found = False
+    for frame_info in inspect.stack():
+        filename = frame_info.filename.replace("\\", "/").lower()
+        if filename.endswith("/kernel.py") or filename == "kernel.py":
+            kernel_found = True
+            break
+        for val in frame_info.frame.f_locals.values():
+            if (
+                val is not None
+                and getattr(val, "__class__", None)
+                and getattr(val.__class__, "__name__", "") == "Kernel"
+            ):
+                kernel_found = True
+                break
+        if kernel_found:
+            break
+
+    if kernel_found:
+        return True, entrypoint, None
+
+    warning_msg = (
+        f"Telemetry audit warning: orchestrated_by_kernel was declared True with entrypoint '{entrypoint}', "
+        "but no Kernel frame was detected in the active Python call stack. Downgraded to False."
+    )
+    effective_entrypoint = entrypoint if entrypoint != "kernel" else "unverified_kernel"
+    return False, effective_entrypoint, warning_msg
+
+
 if __name__ == "__main__":
     # Test utilities
     print("Testing utilities...")

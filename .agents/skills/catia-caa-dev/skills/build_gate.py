@@ -62,29 +62,48 @@ def run_gate(
     skip: bool = False,
     entrypoint: str = "python_cli",
     orchestrated_by_kernel: bool = False,
+    operation: str = "gate",
+    stage: str = "build_gate",
 ) -> dict:
     """Verify all *.m modules under workspace. Returns a result dict with
     decision PASS/WARN/BLOCK/SKIP. Fail-open on any internal error."""
+    from utils import verify_kernel_orchestration
+
+    verified_kernel, verified_ep, audit_warning = verify_kernel_orchestration(
+        orchestrated_by_kernel=orchestrated_by_kernel,
+        entrypoint=entrypoint,
+    )
+    orchestrated_by_kernel = verified_kernel
+    entrypoint = verified_ep
+
     t0 = time.perf_counter()
     ws = Path(workspace)
     now = datetime.now().isoformat(timespec="seconds")
     base = {
         "time": now,
         "workspace": str(ws),
-        "operation": "build_gate",
+        "operation": operation,
+        "stage": stage,
         "entrypoint": entrypoint,
         "orchestrated_by_kernel": orchestrated_by_kernel,
     }
+    if audit_warning:
+        base["telemetry_audit_warning"] = audit_warning
+
     try:
         if skip:
             _append_log([{**base, "kind": "run", "decision": "SKIP",
                           "duration_ms": 0}])
-            return {"status": "success", "decision": "SKIP", "errors": 0,
+            res = {"status": "success", "decision": "SKIP", "errors": 0,
                     "warnings": 0, "modules": 0, "files_checked": 0,
                     "duration_ms": 0, "findings": [], "log": str(LOG_FILE),
                     "entrypoint": entrypoint,
                     "orchestrated_by_kernel": orchestrated_by_kernel,
-                    "operation": "build_gate"}
+                    "operation": operation,
+                    "stage": stage}
+            if audit_warning:
+                res["telemetry_audit_warning"] = audit_warning
+            return res
 
         from verifier import CodeVerifier
         verifier = CodeVerifier(SKILL_ROOT)
@@ -125,26 +144,34 @@ def run_gate(
                         "duration_ms": ms})
         _append_log(records)
 
-        return {"status": "blocked" if errors else "success",
+        res = {"status": "blocked" if errors else "success",
                 "decision": decision, "errors": errors, "warnings": warnings,
                 "modules": len(modules), "files_checked": files_checked,
                 "duration_ms": ms, "findings": findings, "log": str(LOG_FILE),
                 "entrypoint": entrypoint,
                 "orchestrated_by_kernel": orchestrated_by_kernel,
-                "operation": "build_gate"}
+                "operation": operation,
+                "stage": stage}
+        if audit_warning:
+            res["telemetry_audit_warning"] = audit_warning
+        return res
     except Exception as e:
         # Fail-open: the gate is advisory infrastructure; a gate bug must
         # never prevent compilation. Logged so the failure is visible.
         _append_log([{**base, "kind": "run", "decision": "PASS",
                       "gate_error": str(e),
                       "duration_ms": round((time.perf_counter() - t0) * 1000)}])
-        return {"status": "success", "decision": "PASS", "errors": 0,
+        res = {"status": "success", "decision": "PASS", "errors": 0,
                 "warnings": 0, "modules": 0, "files_checked": 0,
                 "duration_ms": 0, "findings": [], "log": str(LOG_FILE),
                 "gate_error": str(e),
                 "entrypoint": entrypoint,
                 "orchestrated_by_kernel": orchestrated_by_kernel,
-                "operation": "build_gate"}
+                "operation": operation,
+                "stage": stage}
+        if audit_warning:
+            res["telemetry_audit_warning"] = audit_warning
+        return res
 
 
 def print_stats(days: int = 30, log_path=None) -> int:

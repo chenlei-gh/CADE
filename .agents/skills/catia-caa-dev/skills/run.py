@@ -226,25 +226,39 @@ def start_catia_runtime(
     logger = Logger("runtime.log")
     cache = Cache("runtime.json")
 
+    from utils import verify_kernel_orchestration
+    verified_kernel, verified_ep, audit_warning = verify_kernel_orchestration(
+        orchestrated_by_kernel=orchestrated_by_kernel,
+        entrypoint=entrypoint,
+    )
+    orchestrated_by_kernel = verified_kernel
+    entrypoint = verified_ep
+
     # Clear previous logs
     logger.clear()
 
     start_time = datetime.now()
     logger.write("Starting CATIA Runtime View")
     logger.write(f"Entrypoint: {entrypoint} | Orchestrated by Kernel: {orchestrated_by_kernel}")
+    if audit_warning:
+        logger.write(f"TELEMETRY_AUDIT: {audit_warning}")
 
     if workspace_path:
         ws = Path(workspace_path)
         if not ws.exists():
             error_msg = f"Workspace path does not exist: {workspace_path}"
             logger.write(error_msg, "ERROR")
-            return {
+            err_res = {
                 "status": "error",
                 "message": error_msg,
                 "entrypoint": entrypoint,
                 "orchestrated_by_kernel": orchestrated_by_kernel,
                 "operation": "start_runtime",
+                "stage": "runtime_start",
             }
+            if audit_warning:
+                err_res["telemetry_audit_warning"] = audit_warning
+            return err_res
         logger.write(f"Workspace: {workspace_path}")
 
     # Initialize environment
@@ -423,6 +437,7 @@ def start_catia_runtime(
                 "entrypoint": entrypoint,
                 "orchestrated_by_kernel": orchestrated_by_kernel,
                 "operation": "start_runtime",
+                "stage": "runtime_start",
             }
         else:
             # Use Popen with CREATE_NO_WINDOW to suppress cmd popup.
@@ -456,6 +471,7 @@ def start_catia_runtime(
                         "entrypoint": entrypoint,
                         "orchestrated_by_kernel": orchestrated_by_kernel,
                         "operation": "start_runtime",
+                        "stage": "runtime_start",
                     }
                     break
 
@@ -469,7 +485,11 @@ def start_catia_runtime(
                     "entrypoint": entrypoint,
                     "orchestrated_by_kernel": orchestrated_by_kernel,
                     "operation": "start_runtime",
+                    "stage": "runtime_start",
                 }
+
+        if audit_warning:
+            runtime_result["telemetry_audit_warning"] = audit_warning
 
         # Save to cache
         cache.save(runtime_result)
@@ -479,26 +499,34 @@ def start_catia_runtime(
     except subprocess.TimeoutExpired:
         error_msg = f"CATIA startup timeout after {timeout} seconds"
         logger.write(error_msg, "ERROR")
-        return {
+        res = {
             "status": "timeout",
             "message": error_msg,
             "timeout_seconds": timeout,
             "entrypoint": entrypoint,
             "orchestrated_by_kernel": orchestrated_by_kernel,
             "operation": "start_runtime",
+            "stage": "runtime_start",
         }
+        if audit_warning:
+            res["telemetry_audit_warning"] = audit_warning
+        return res
 
     except Exception as e:
         error_msg = f"Runtime exception: {str(e)}"
         logger.write(error_msg, "ERROR")
-        return {
+        res = {
             "status": "error",
             "message": error_msg,
             "exception": str(e),
             "entrypoint": entrypoint,
             "orchestrated_by_kernel": orchestrated_by_kernel,
             "operation": "start_runtime",
+            "stage": "runtime_start",
         }
+        if audit_warning:
+            res["telemetry_audit_warning"] = audit_warning
+        return res
 
 
 def stop_catia(
@@ -520,15 +548,27 @@ def stop_catia(
     Returns:
         Dictionary with stop result
     """
+    from utils import verify_kernel_orchestration
+    verified_kernel, verified_ep, audit_warning = verify_kernel_orchestration(
+        orchestrated_by_kernel=orchestrated_by_kernel,
+        entrypoint=entrypoint,
+    )
+    orchestrated_by_kernel = verified_kernel
+    entrypoint = verified_ep
+
     running = check_process_running("CNEXT.exe")
     if not running:
-        return {
+        not_running_res = {
             "status": "not_running",
             "message": "CATIA is not running",
             "entrypoint": entrypoint,
             "orchestrated_by_kernel": orchestrated_by_kernel,
             "operation": "stop_runtime",
+            "stage": "runtime_stop",
         }
+        if audit_warning:
+            not_running_res["telemetry_audit_warning"] = audit_warning
+        return not_running_res
 
     pids = [p["pid"] for p in running]
     stopped = []
@@ -591,7 +631,7 @@ def stop_catia(
     message = f"Stopped {len(stopped)} process(es) [{method}]"
     if failed:
         message += f" — {len(failed)} still running (pid={failed})"
-    return {
+    res = {
         "status": status,
         "message": message,
         "stopped": stopped,
@@ -599,7 +639,11 @@ def stop_catia(
         "entrypoint": entrypoint,
         "orchestrated_by_kernel": orchestrated_by_kernel,
         "operation": "stop_runtime",
+        "stage": "runtime_stop",
     }
+    if audit_warning:
+        res["telemetry_audit_warning"] = audit_warning
+    return res
 
 
 def check_catia_running() -> dict:
