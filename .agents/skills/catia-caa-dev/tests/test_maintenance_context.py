@@ -301,6 +301,53 @@ class TestMaintenanceContext(unittest.TestCase):
         reloaded_a = load_context(self.workspace, "ModA.m")
         self.assertEqual(len(reloaded_a.build_results), 0)
 
+    def test_readonly_workspace_fails_cleanly_without_fake_success(self):
+        """
+        Audit Requirement 1: Read-only workspace failure must return False cleanly.
+        Must NOT write to temp fallback directory and create fake persistence illusions.
+        """
+        from unittest.mock import patch
+        ctx = MaintenanceContext(
+            task_id="task_ro",
+            workspace=str(self.workspace),
+            target_module="ReadOnlyMod.m",
+            original_request="Test RO",
+        )
+        with patch.object(Path, "mkdir", side_effect=PermissionError("Access denied")):
+            ok = save_context(ctx)
+            self.assertFalse(ok)
+
+        # Confirm nothing was loaded from any phantom fallback
+        reloaded = load_context(self.workspace, "ReadOnlyMod.m")
+        self.assertIsNone(reloaded)
+
+    def test_build_id_microsecond_uniqueness(self):
+        """
+        Audit Requirement 2: Successive rapid builds must generate unique build_ids
+        with sub-second microsecond precision.
+        """
+        ctx = MaintenanceContext(
+            task_id="task_rapid",
+            workspace=str(self.workspace),
+            target_module="RapidMod.m",
+            original_request="Test rapid builds",
+        )
+        save_context(ctx)
+
+        build_ids = set()
+        for _ in range(5):
+            res = attach_build_result(self.workspace, {"status": "success"}, target_module="RapidMod.m")
+            self.assertIsNotNone(res)
+            build_ids.add(res.last_build["build_id"])
+
+        # All 5 rapidly generated build_ids must be strictly distinct
+        self.assertEqual(len(build_ids), 5)
+        for bid in build_ids:
+            # Must match microsecond pattern b_YYYYMMDD_HHMMSS_ffffff
+            parts = bid.split("_")
+            self.assertEqual(len(parts), 4)  # ["b", "YYYYMMDD", "HHMMSS", "ffffff"]
+            self.assertEqual(len(parts[3]), 6)
+
 
 if __name__ == "__main__":
     unittest.main()

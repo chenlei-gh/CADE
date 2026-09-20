@@ -217,12 +217,9 @@ def save_context(ctx: MaintenanceContext) -> bool:
         # Ensure parent directory exists only at write time
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-        except (OSError, PermissionError):
-            # Fallback to temp storage if workspace is read-only
-            ws_hash = hashlib.md5(str(Path(ctx.workspace).resolve()).encode()).hexdigest()[:8]
-            fallback_dir = Path(tempfile.gettempdir()) / "cade_cache" / ws_hash / "maintenance"
-            fallback_dir.mkdir(parents=True, exist_ok=True)
-            path = fallback_dir / path.name
+        except (OSError, PermissionError) as e:
+            logger.warning(f"Failed to persist maintenance context: workspace is read-only or inaccessible: {e}")
+            return False
 
         ctx.updated_at = datetime.now().isoformat()
         if not ctx.created_at:
@@ -389,7 +386,8 @@ def attach_build_result(
         else:
             association = "workspace_level"
 
-        build_id = f"b_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        now = datetime.now()
+        build_id = f"b_{now.strftime('%Y%m%d_%H%M%S_%f')}"
         record = BuildRecord(
             build_id=build_id,
             timestamp=datetime.now().isoformat(),
