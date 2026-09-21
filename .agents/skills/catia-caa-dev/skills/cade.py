@@ -404,6 +404,7 @@ def cmd_build(args):
     task_id = _parse_flag(args, "--task-id", "--task") or None
 
     status_info = None
+    is_maintenance = False
     if target_mod:
         status_info = get_module_context_status(ws, target_mod, requested_task_id=task_id)
         if status_info.get("mode") == "error":
@@ -411,6 +412,7 @@ def cmd_build(args):
             print("Build aborted to prevent attaching results to an incorrect task context.")
             return 1
         elif status_info.get("mode") == "maintenance":
+            is_maintenance = True
             print("======================================================================")
             print("[MODE] MAINTENANCE (Context-Aware Build)")
             print(f"[CONTEXT] {status_info.get('context_path')}")
@@ -429,22 +431,29 @@ def cmd_build(args):
     else:
         print("[MODE] STANDALONE (Independent Build, workspace-level)")
 
+    build_kwargs = {
+        "entrypoint": "cade_cli",
+        "orchestrated_by_kernel": False,
+        "target_module": target_mod,
+        "attach_to_maintenance": is_maintenance,
+    }
+
     if "--full" in opts or "-a" in opts:
-        result = full_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False, target_module=target_mod)
+        result = full_build(Path(ws), **build_kwargs)
     elif "--clean" in opts or "-c" in opts:
-        result = clean_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False, target_module=target_mod)
+        result = clean_build(Path(ws), **build_kwargs)
     elif "--debug" in opts or "-g" in opts:
-        result = debug_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False, target_module=target_mod)
+        result = debug_build(Path(ws), **build_kwargs)
     elif "--threads" in opts:
         idx = args.index("--threads") if "--threads" in args else args.index("-j")
         n = int(args[idx + 1]) if idx + 1 < len(args) else 8
-        result = build_with_threads(Path(ws), n, entrypoint="cade_cli", orchestrated_by_kernel=False, target_module=target_mod)
+        result = build_with_threads(Path(ws), n, **build_kwargs)
     else:
-        result = incremental_build(Path(ws), entrypoint="cade_cli", orchestrated_by_kernel=False, target_module=target_mod)
+        result = incremental_build(Path(ws), **build_kwargs)
 
     bid = result.get("build_id") if isinstance(result, dict) else None
     if bid:
-        if status_info and status_info.get("mode") == "maintenance":
+        if is_maintenance:
             print(f"\n[BUILD] Build ID: {bid} (attached to task {status_info.get('task_id')})")
         else:
             print(f"\n[BUILD] Build ID: {bid} (standalone build, not attached)")

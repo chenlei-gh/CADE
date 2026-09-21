@@ -208,7 +208,7 @@ void TestModPanelDlg::BuildWindow() {
             mock_env.load_config.return_value = True
             mock_env.build_time_command.return_value = (["cmd", "/c"], "cmd /c")
 
-            res = build_workspace(self.workspace, timeout=10, target_module="TestMod.m")
+            res = build_workspace(self.workspace, timeout=10, target_module="TestMod.m", attach_to_maintenance=True)
             self.assertEqual(res["status"], "error")
             self.assertIn("timeout", res["message"].lower())
 
@@ -242,7 +242,7 @@ void TestModPanelDlg::BuildWindow() {
             mock_env.load_config.return_value = True
             mock_env.build_time_command.return_value = (["cmd", "/c"], "cmd /c")
 
-            res = build_workspace(self.workspace, target_module="TestMod.m")
+            res = build_workspace(self.workspace, target_module="TestMod.m", attach_to_maintenance=True)
             self.assertEqual(res["status"], "error")
             self.assertIn("Simulated build crash", res["message"])
 
@@ -321,7 +321,7 @@ void TestModPanelDlg::BuildWindow() {
             mock_env.load_config.return_value = True
             mock_env.build_time_command.return_value = (["cmd", "/c"], "cmd /c")
 
-            b_res = build_workspace(self.workspace, target_module="TestMod.m", skip_gate=True)
+            b_res = build_workspace(self.workspace, target_module="TestMod.m", skip_gate=True, attach_to_maintenance=True)
             self.assertEqual(b_res["status"], "failed")
 
         # Step 3: Inspect TestMod.m context
@@ -342,6 +342,85 @@ void TestModPanelDlg::BuildWindow() {
         # Step 5: Verify zero active.json created on disk
         active_json_path = self.workspace / ".cade" / "maintenance" / "active.json"
         self.assertFalse(active_json_path.exists())
+
+    def test_standalone_build_does_not_attach_to_maintenance_context(self):
+        """
+        P0 Security Requirement: An unattached/standalone build (attach_to_maintenance=False)
+        must NEVER pollute or modify the maintenance context history, even if an active
+        context for the module exists.
+        """
+        from unittest.mock import patch
+        from build import build_workspace
+
+        ctx = MaintenanceContext(
+            task_id="task_pristine",
+            workspace=str(self.workspace),
+            target_module="TestMod.m",
+            original_request="Pristine context",
+        )
+        save_context(ctx)
+
+        with patch("build.CAAEnvironment") as mock_env_cls, \
+             patch("build.validate_workspace", return_value={"ok": True, "issues": [], "can_build": True}), \
+             patch("build.setup_prerequisite_path", return_value={"status": "success"}), \
+             patch("build.subprocess.run", side_effect=RuntimeError("Simulated crash")):
+            mock_env = mock_env_cls.return_value
+            mock_env.load_config.return_value = True
+            mock_env.build_time_command.return_value = (["cmd", "/c"], "cmd /c")
+
+            # Standalone build (attach_to_maintenance=False by default)
+            res = build_workspace(self.workspace, target_module="TestMod.m")
+            self.assertEqual(res["status"], "error")
+            self.assertFalse(res.get("attached_to_maintenance", True))
+
+            # Verify context history remains completely pristine (0 build results attached)
+            reloaded = load_context(self.workspace, "TestMod.m")
+            self.assertIsNotNone(reloaded)
+            self.assertEqual(len(reloaded.build_results), 0)
+
+    def test_mkmk_relative_path_error_association_end_to_end(self):
+        """
+        P0 Fix: mkmk outputs relative paths like 'src/TestModPanelDlg.cpp' without 'module' field.
+        When build targets TestMod.m, normalize_error must associate this error with TestMod.m,
+        marking association='explicit' and populating unresolved_build_errors.
+        """
+        # Initialize maintenance context for TestMod.m
+        ctx = MaintenanceContext(
+            task_id="task_relpath",
+            workspace=str(self.workspace),
+            target_module="TestMod.m",
+            original_request="Test relative path error association",
+        )
+        save_context(ctx)
+
+        # Raw error as output by mkmk: relative path, no module field
+        mock_mkmk_error = {
+            "status": "failed",
+            "duration_seconds": 3.5,
+            "errors": [
+                {
+                    "file": "src/TestModPanelDlg.cpp",
+                    "line": 1434,
+                    "code": "C3861",
+                    "message": "'GetPartNumber': identifier not found",
+                    "module": None,  # mkmk compiler output does NOT populate module
+                    "raw": "src/TestModPanelDlg.cpp(1434) : error C3861: 'GetPartNumber': identifier not found",
+                }
+            ],
+        }
+
+        attached_ctx = attach_build_result(self.workspace, mock_mkmk_error, target_module="TestMod.m")
+        self.assertIsNotNone(attached_ctx)
+        self.assertEqual(attached_ctx.last_build["association"], "explicit")
+        self.assertEqual(attached_ctx.last_build["association_source"], "caller")
+        self.assertEqual(attached_ctx.last_build["association_confidence"], "declared")
+
+        # unresolved_build_errors must return the normalized error
+        unresolved = attached_ctx.unresolved_build_errors
+        self.assertEqual(len(unresolved), 1)
+        self.assertEqual(unresolved[0]["code"], "C3861")
+        self.assertEqual(unresolved[0]["line"], 1434)
+        self.assertTrue(unresolved[0]["associated"])
 
 
 if __name__ == "__main__":

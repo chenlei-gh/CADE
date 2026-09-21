@@ -43,21 +43,14 @@ TOOLS = [
     {
         "name": "develop",
         "description": (
-            "Create, generate, build, or deploy CAA components from natural language (EN/CN). "
-            "Use for: creating commands, features, dialogs (auto-generated with command), "
-            "workbenches, interfaces, extensions, modules, frameworks. "
-            "Also handles: builds, CATIA startup, documentation, workspace prerequisites. "
-            "The Kernel handles requirement clarification, intent detection (CN+EN), "
-            "planning, code generation, AUTO-APPLY to disk, static verification, and "
-            "IdentityCard setup — files are written in this single call, with an "
-            "automatic backup taken first (see result.apply_result.rollback_id) so the "
-            "change can be undone via the 'repair' tool's rollback if needed. "
-            "A final status of 'ok' means files now exist on disk; 'pending' only occurs "
-            "if the intent could not be resolved (e.g. module not found) and nothing was "
-            "written. Do not expect or wait for a separate confirm/apply step. "
-            'Examples: "create command ExportBOM in MyModule.m", '
-            '"创建一个设置命令SettingsCmd，放在TestModule模块中", '
-            '"build the workspace", "start CATIA".'
+            "Create, generate, build, or deploy CATIA CAA V5/B28 components from natural language (EN/CN). "
+            "Use for: creating CAA commands, dialogs (CATDlgDialog/CATDlgNotify), workbenches, "
+            "features, interfaces, extensions, modules, and frameworks. "
+            "Also handles: full/incremental workspace builds, CATIA (CNEXT) runtime startup, and prerequisite setup. "
+            "Kernel automatically generates compliant CAA C++ source/headers, Imakefile.mk, and IdentityCard, "
+            "with automatic rollback snapshots before applying changes. "
+            'Examples: "create command ExportBOM in CAABOMToolCmd.m", '
+            '"在 CAABOMToolCmd.m 中创建对话框面板", "build workspace", "start CATIA".'
         ),
         "inputSchema": {
             "type": "object",
@@ -85,15 +78,13 @@ TOOLS = [
     {
         "name": "analyze",
         "description": (
-            "Query, diagnose, or inspect the workspace. READ-ONLY — never modifies files. "
-            "Use for: workspace analysis, listing modules/commands, dependency analysis, "
-            "diagnostics, validation, impact analysis. Supports EN and CN requests. "
-            "For CAA knowledge/API/pattern questions, set detail=true to get the actual "
-            "knowledge file CONTENT inlined in one call — this avoids a separate read/grep "
-            "round trip and guarantees you read the top-ranked file, not a wrong one. "
-            'Examples: "analyze the workspace", "list all modules", '
-            '"列出所有模块", "show dependencies of MyCmd", '
-            '"diagnose module TestModule.m", "如何创建对话框 (detail=true)".'
+            "Query, diagnose, or inspect CATIA CAA V5/B28 workspaces and API knowledge. READ-ONLY — never modifies files. "
+            "Use for: (1) Official CAA API/interfaces/patterns retrieval (CATIProduct, CATCommand, undo/redo, topological operators). "
+            "(2) Active build error (L0 compiler/linker evidence) and brownfield maintenance analysis. "
+            "(3) Workspace structure, module dependency, and IdentityCard diagnostics. "
+            "Set detail=true for CAA knowledge queries to inline authoritative documentation and code examples. "
+            'Examples: "what is CATIProduct and how to traverse assembly (detail=true)", '
+            '"排查 CAABOMToolCmd.m 中列宽刷新与构建错误", "list all modules and dependencies", "diagnose workspace".'
         ),
         "inputSchema": {
             "type": "object",
@@ -118,12 +109,12 @@ TOOLS = [
     {
         "name": "repair",
         "description": (
-            "Fix, refactor, or rollback workspace issues. May modify files (with safety net). "
-            "Use for: fixing diagnostics, renaming commands/interfaces/modules, "
-            "moving commands between modules, rollback operations, creating snapshots. "
-            "The Kernel runs diagnose -> fix -> verify loop (max 3 attempts). "
-            'Examples: "fix dictionary entries", "rename command OldName to NewName in MyModule", '
-            '"修复工作区问题", "rollback to latest".'
+            "Fix, refactor, or rollback CATIA CAA V5/B28 workspace issues with safety snapshots. May modify files. "
+            "Use for: fixing mkmk compiler/linker errors, resolving missing dictionary (.dico) entries, "
+            "safe renaming or moving of CAA commands/interfaces/modules, and rolling back prior modifications. "
+            "The Kernel runs diagnose -> fix -> verify loop with byte-level rollback protection. "
+            'Examples: "fix dictionary entries for BOMTool", "rename command OldCmd to NewCmd in CAABOMToolCmd.m", '
+            '"修复编译错误 C2065", "rollback to latest".'
         ),
         "inputSchema": {
             "type": "object",

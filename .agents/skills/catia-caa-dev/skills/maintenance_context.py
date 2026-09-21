@@ -410,6 +410,7 @@ def normalize_error(
     raw_err: Any,
     target_module: Optional[str] = None,
     caller_target_module: Optional[str] = None,
+    workspace_root: Optional[Union[str, Path]] = None,
 ) -> StructuredError:
     """Normalize raw parser/compiler error objects into structured L0 evidence."""
     if isinstance(raw_err, dict):
@@ -453,12 +454,61 @@ def normalize_error(
             else:
                 associated = False
         elif file_path:
-            fp_lower = str(file_path).lower().replace("\\", "/")
+            fp_raw = str(file_path).strip()
+            fp_lower = fp_raw.lower().replace("\\", "/")
+            if fp_lower.startswith("./"):
+                fp_lower = fp_lower[2:]
+
+            # 1. Direct path match containing the target module directory
             if (f"/{t_mod_clean}.m/" in fp_lower or
                 f"/{t_mod_clean}/" in fp_lower or
                 fp_lower.startswith(f"{t_mod_clean}.m/") or
                 fp_lower.startswith(f"{t_mod_clean}/")):
                 associated = True
+            # 2. Path explicitly belongs to a DIFFERENT module (e.g. other_mod.m/...)
+            elif ".m/" in fp_lower:
+                associated = False
+            # 3. Relative source paths within caller-targeted module build (P0 mkmk relative path fix)
+            # When caller explicitly targeted this module (caller_target_module == target_module),
+            # mkmk executes within module context and outputs relative paths like 'src/CAABOMPanelDlg.cpp'
+            # or 'LocalInterfaces/CAABOMPanelDlg.h'.
+            elif caller_target_module:
+                caller_mod_clean = caller_target_module.replace(".m", "").lower()
+                if caller_mod_clean == t_mod_clean:
+                    standard_subdirs = (
+                        "src/",
+                        "localinterfaces/",
+                        "cnext/",
+                        "protectedinterfaces/",
+                        "publicinterfaces/",
+                    )
+                    is_candidate = any(fp_lower.startswith(sub) for sub in standard_subdirs) or (
+                        "/" not in fp_lower and fp_lower.endswith((".cpp", ".c", ".h", ".scpp", ".hpp"))
+                    )
+                    if is_candidate:
+                        if workspace_root:
+                            ws_path = Path(workspace_root).resolve()
+                            clean_name = target_module.replace(".m", "")
+                            mod_dirs = list(ws_path.glob(f"**/{target_module}")) or list(ws_path.glob(f"**/{clean_name}.m"))
+                            if mod_dirs:
+                                in_target = any((md / fp_raw).exists() or (md / fp_lower).exists() for md in mod_dirs)
+                                if in_target:
+                                    associated = True
+                                else:
+                                    # File not in target module: check if it belongs to another module in workspace
+                                    other_matches = list(ws_path.glob(f"**/{fp_raw}")) or list(ws_path.glob(f"**/{fp_lower}"))
+                                    if other_matches:
+                                        associated = False
+                                    else:
+                                        associated = True
+                            else:
+                                associated = True
+                        else:
+                            associated = True
+                    else:
+                        associated = False
+                else:
+                    associated = False
             else:
                 associated = False
         else:
@@ -556,6 +606,7 @@ def attach_build_result(
                 err,
                 target_module=ctx.target_module,
                 caller_target_module=target_module,
+                workspace_root=workspace_root,
             )
             if struct_err.associated:
                 has_module_specific_error = True

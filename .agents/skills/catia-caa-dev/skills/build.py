@@ -354,6 +354,7 @@ def build_workspace(
     entrypoint: str = "python_cli",
     orchestrated_by_kernel: bool = False,
     target_module: Optional[str] = None,
+    attach_to_maintenance: bool = False,
 ) -> dict:
     """
     Build CAA workspace using mkmk with full Build Time environment.
@@ -378,9 +379,21 @@ def build_workspace(
     start_time = datetime.now()
     logger.write(f"Starting build: {workspace_path}")
     logger.write(f"Options: {options}")
-    logger.write(f"Entrypoint: {entrypoint} | Orchestrated by Kernel: {orchestrated_by_kernel}")
+    logger.write(f"Entrypoint: {entrypoint} | Orchestrated by Kernel: {orchestrated_by_kernel} | Attach to Maintenance: {attach_to_maintenance}")
     if audit_warning:
         logger.write(f"TELEMETRY_AUDIT: {audit_warning}")
+
+    def _should_attach_maintenance() -> bool:
+        """
+        Only attach build outcomes to maintenance context if explicitly authorized
+        (e.g., cade_cli in verified maintenance mode) or strictly orchestrated by Kernel.
+        Standalone builds and direct python_cli invocations must NEVER pollute maintenance history.
+        """
+        if attach_to_maintenance:
+            return True
+        if orchestrated_by_kernel:
+            return True
+        return False
 
     def _make_error(msg: str, stage: str = "validation", **extra) -> dict:
         kwargs = {
@@ -393,11 +406,15 @@ def build_workspace(
         if audit_warning:
             kwargs["telemetry_audit_warning"] = audit_warning
         err_res = error_result(msg, **kwargs)
-        try:
-            from maintenance_context import attach_build_result
-            attach_build_result(resolved_root, err_res, target_module=effective_target_module)
-        except Exception:
-            pass
+        if _should_attach_maintenance():
+            try:
+                from maintenance_context import attach_build_result
+                attach_build_result(resolved_root, err_res, target_module=effective_target_module)
+                err_res["attached_to_maintenance"] = True
+            except Exception:
+                pass
+        else:
+            err_res["attached_to_maintenance"] = False
         return err_res
 
     # --- Validate environment ---
@@ -703,12 +720,17 @@ def build_workspace(
             # 不能静默：同步失败 = 按钮消失/无图标/旧 dico，必须留痕 (FP-13)
             logger.write(f"WARNING: Runtime View sync failed: {e}")
         cache.save(build_result)
-        # Associate build result with active maintenance context if present (P3-A.1 / P3-A.2)
-        try:
-            from maintenance_context import attach_build_result
-            attach_build_result(verify_root, build_result, target_module=effective_target_module)
-        except Exception as e:
-            logger.write(f"Maintenance context association non-blocking warning: {e}")
+        # Associate build result with active maintenance context if present and authorized (P3-A.1 / P3-A.2)
+        if _should_attach_maintenance():
+            try:
+                from maintenance_context import attach_build_result
+                attach_build_result(verify_root, build_result, target_module=effective_target_module)
+                build_result["attached_to_maintenance"] = True
+            except Exception as e:
+                logger.write(f"Maintenance context association non-blocking warning: {e}")
+        else:
+            build_result["attached_to_maintenance"] = False
+            logger.write("Maintenance context association skipped (standalone / unattached build).")
 
         logger.write(
             f"Status: {build_result['status']} | Errors: {parsed['error_count']} | Duration: {format_duration(duration)}"
@@ -723,11 +745,16 @@ def build_workspace(
             orchestrated_by_kernel=orchestrated_by_kernel,
             operation="build",
         )
-        try:
-            from maintenance_context import attach_build_result
-            attach_build_result(resolved_root, res, target_module=effective_target_module)
-        except Exception as e:
-            logger.write(f"Maintenance context association non-blocking warning: {e}")
+        if _should_attach_maintenance():
+            try:
+                from maintenance_context import attach_build_result
+                attach_build_result(resolved_root, res, target_module=effective_target_module)
+                res["attached_to_maintenance"] = True
+            except Exception as e:
+                logger.write(f"Maintenance context association non-blocking warning: {e}")
+        else:
+            res["attached_to_maintenance"] = False
+            logger.write("Maintenance context association skipped (standalone / unattached build).")
         return res
     except Exception as e:
         res = error_result(
@@ -737,11 +764,16 @@ def build_workspace(
             orchestrated_by_kernel=orchestrated_by_kernel,
             operation="build",
         )
-        try:
-            from maintenance_context import attach_build_result
-            attach_build_result(resolved_root, res, target_module=effective_target_module)
-        except Exception as e:
-            logger.write(f"Maintenance context association non-blocking warning: {e}")
+        if _should_attach_maintenance():
+            try:
+                from maintenance_context import attach_build_result
+                attach_build_result(resolved_root, res, target_module=effective_target_module)
+                res["attached_to_maintenance"] = True
+            except Exception as e:
+                logger.write(f"Maintenance context association non-blocking warning: {e}")
+        else:
+            res["attached_to_maintenance"] = False
+            logger.write("Maintenance context association skipped (standalone / unattached build).")
         return res
     finally:
         # Clean up temp .bat generated by build_time_command
@@ -795,12 +827,14 @@ def incremental_build(
     entrypoint: str = "python_cli",
     orchestrated_by_kernel: bool = False,
     target_module: Optional[str] = None,
+    attach_to_maintenance: bool = False,
 ) -> dict:
     """Incremental build (mkmk -u -a) — most common"""
     return build_workspace(
         workspace_path, "-u -a", timeout,
         entrypoint=entrypoint, orchestrated_by_kernel=orchestrated_by_kernel,
         target_module=target_module,
+        attach_to_maintenance=attach_to_maintenance,
     )
 
 
@@ -810,12 +844,14 @@ def full_build(
     entrypoint: str = "python_cli",
     orchestrated_by_kernel: bool = False,
     target_module: Optional[str] = None,
+    attach_to_maintenance: bool = False,
 ) -> dict:
     """Full rebuild (mkmk -a)"""
     return build_workspace(
         workspace_path, "-a", timeout,
         entrypoint=entrypoint, orchestrated_by_kernel=orchestrated_by_kernel,
         target_module=target_module,
+        attach_to_maintenance=attach_to_maintenance,
     )
 
 
@@ -825,12 +861,14 @@ def clean_build(
     entrypoint: str = "python_cli",
     orchestrated_by_kernel: bool = False,
     target_module: Optional[str] = None,
+    attach_to_maintenance: bool = False,
 ) -> dict:
     """Clean then build (mkmk -a -u) — '-u' resets persistent compile options"""
     return build_workspace(
         workspace_path, "-a -u", timeout,
         entrypoint=entrypoint, orchestrated_by_kernel=orchestrated_by_kernel,
         target_module=target_module,
+        attach_to_maintenance=attach_to_maintenance,
     )
 
 
@@ -840,12 +878,14 @@ def debug_build(
     entrypoint: str = "python_cli",
     orchestrated_by_kernel: bool = False,
     target_module: Optional[str] = None,
+    attach_to_maintenance: bool = False,
 ) -> dict:
     """Debug mode build (mkmk -a -g)"""
     return build_workspace(
         workspace_path, "-a -g", timeout,
         entrypoint=entrypoint, orchestrated_by_kernel=orchestrated_by_kernel,
         target_module=target_module,
+        attach_to_maintenance=attach_to_maintenance,
     )
 
 
@@ -855,6 +895,7 @@ def dry_run_build(
     entrypoint: str = "python_cli",
     orchestrated_by_kernel: bool = False,
     target_module: Optional[str] = None,
+    attach_to_maintenance: bool = False,
 ) -> dict:
     """Dry run — update mkmk data/graph without compiling (mkmk -a -nobuild).
     mkmk has no '-n' flag; '-nobuild' is the real equivalent."""
@@ -862,6 +903,7 @@ def dry_run_build(
         workspace_path, "-a -nobuild", timeout,
         entrypoint=entrypoint, orchestrated_by_kernel=orchestrated_by_kernel,
         target_module=target_module,
+        attach_to_maintenance=attach_to_maintenance,
     )
 
 
@@ -1045,12 +1087,14 @@ def build_with_threads(
     entrypoint: str = "python_cli",
     orchestrated_by_kernel: bool = False,
     target_module: Optional[str] = None,
+    attach_to_maintenance: bool = False,
 ) -> dict:
     """Multi-threaded build (mkmk -a -j N) — '-a' is the mandatory target selector"""
     return build_workspace(
         workspace_path, f"-a -j {threads}", timeout,
         entrypoint=entrypoint, orchestrated_by_kernel=orchestrated_by_kernel,
         target_module=target_module,
+        attach_to_maintenance=attach_to_maintenance,
     )
 
 

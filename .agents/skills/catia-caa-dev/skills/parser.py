@@ -159,8 +159,18 @@ class MkmkParser:
 
                 # Clean up file path (keep relative path when possible)
                 if error.file:
-                    # Remove common prefixes but keep relative structure
                     file_path = error.file.replace("\\", "/")
+
+                    # Infer module/framework from file path if not already set by context headers
+                    if not error.module:
+                        mod_match = re.search(r"(?:^|/)([\w\-]+\.m)(?:/|$)", file_path)
+                        if mod_match:
+                            error.module = mod_match.group(1)
+                    if not error.framework:
+                        fw_match = re.search(r"(?:^|/)([\w\-]+\.(?:edu|dext|ext|tst|feat))(?:/|$)", file_path)
+                        if fw_match:
+                            error.framework = fw_match.group(1)
+
                     # If it contains a framework-like structure, trim to meaningful part
                     for sep in ["/src/", "/LocalInterfaces/", "/PublicInterfaces/"]:
                         if sep in file_path:
