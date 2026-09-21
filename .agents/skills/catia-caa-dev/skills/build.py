@@ -515,8 +515,9 @@ def build_workspace(
                 # P2-004 fix: Don't silently continue — report and abort
                 prereq_err = prereq_result.get("message", "Unknown prereq error")
                 logger.write(f"Prerequisite setup failed: {prereq_err}")
-                return error_result(
+                return _make_error(
                     f"Prerequisite setup failed: {prereq_err}",
+                    stage="prereq_setup",
                     prereq=prereq_result,
                 )
         else:
@@ -527,7 +528,7 @@ def build_workspace(
         cmd, cmd_display = caa_env.build_time_command(str(workspace_path), options)
         logger.write(f"Command: {cmd_display}")
     except FileNotFoundError as e:
-        return error_result(str(e))
+        return _make_error(str(e), stage="command_generation")
 
     # --- Execute mkmk via cmd.exe ---
     # build_time_command now writes a complete .bat to caa_env._build_bat

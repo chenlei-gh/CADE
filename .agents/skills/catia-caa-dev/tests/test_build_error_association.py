@@ -422,6 +422,113 @@ void TestModPanelDlg::BuildWindow() {
         self.assertEqual(unresolved[0]["line"], 1434)
         self.assertTrue(unresolved[0]["associated"])
 
+    def test_build_workspace_prereq_setup_failure_contract(self):
+        """
+        Contract Consistency: When setup_prerequisite_path fails:
+          - Standalone build returns attached_to_maintenance=False, stage='prereq_setup', and does NOT modify context.
+          - Maintenance build returns attached_to_maintenance=True and attaches error result to context.
+        """
+        from unittest.mock import patch
+        from build import build_workspace
+
+        ctx = MaintenanceContext(
+            task_id="task_prereq_fail",
+            workspace=str(self.workspace),
+            target_module="TestMod.m",
+            original_request="Test prereq failure contract",
+        )
+        save_context(ctx)
+
+        # 1. Standalone build
+        with patch("build.CAAEnvironment") as mock_env_cls, \
+             patch("build.validate_workspace", return_value={"ok": True, "issues": [], "can_build": True}), \
+             patch("build.setup_prerequisite_path", return_value={"status": "failed", "message": "Simulated mkGetPreq failure"}):
+            mock_env = mock_env_cls.return_value
+            mock_env.load_config.return_value = True
+
+            res = build_workspace(self.workspace, target_module="TestMod.m", attach_to_maintenance=False)
+            self.assertEqual(res["status"], "error")
+            self.assertEqual(res.get("stage"), "prereq_setup")
+            self.assertIn("Simulated mkGetPreq failure", res["message"])
+            self.assertIn("prereq", res)
+            self.assertFalse(res.get("attached_to_maintenance", True))
+
+            # Verify context history is not polluted
+            reloaded = load_context(self.workspace, "TestMod.m")
+            self.assertIsNotNone(reloaded)
+            self.assertEqual(len(reloaded.build_results), 0)
+
+        # 2. Maintenance build
+        with patch("build.CAAEnvironment") as mock_env_cls, \
+             patch("build.validate_workspace", return_value={"ok": True, "issues": [], "can_build": True}), \
+             patch("build.setup_prerequisite_path", return_value={"status": "failed", "message": "Simulated mkGetPreq failure"}):
+            mock_env = mock_env_cls.return_value
+            mock_env.load_config.return_value = True
+
+            res_maint = build_workspace(self.workspace, target_module="TestMod.m", attach_to_maintenance=True)
+            self.assertEqual(res_maint["status"], "error")
+            self.assertEqual(res_maint.get("stage"), "prereq_setup")
+            self.assertTrue(res_maint.get("attached_to_maintenance", False))
+
+            # Verify context history recorded the failure
+            reloaded_maint = load_context(self.workspace, "TestMod.m")
+            self.assertIsNotNone(reloaded_maint)
+            self.assertEqual(len(reloaded_maint.build_results), 1)
+            self.assertEqual(reloaded_maint.last_build["status"], "error")
+
+    def test_build_workspace_command_generation_failure_contract(self):
+        """
+        Contract Consistency: When build_time_command raises FileNotFoundError:
+          - Standalone build returns attached_to_maintenance=False, stage='command_generation', and does NOT modify context.
+          - Maintenance build returns attached_to_maintenance=True and attaches error result to context.
+        """
+        from unittest.mock import patch
+        from build import build_workspace
+
+        ctx = MaintenanceContext(
+            task_id="task_cmd_fail",
+            workspace=str(self.workspace),
+            target_module="TestMod.m",
+            original_request="Test command generation failure contract",
+        )
+        save_context(ctx)
+
+        # 1. Standalone build
+        with patch("build.CAAEnvironment") as mock_env_cls, \
+             patch("build.validate_workspace", return_value={"ok": True, "issues": [], "can_build": True}), \
+             patch("build.setup_prerequisite_path", return_value={"status": "success"}):
+            mock_env = mock_env_cls.return_value
+            mock_env.load_config.return_value = True
+            mock_env.build_time_command.side_effect = FileNotFoundError("mkmk executable not found in PATH")
+
+            res = build_workspace(self.workspace, target_module="TestMod.m", attach_to_maintenance=False)
+            self.assertEqual(res["status"], "error")
+            self.assertEqual(res.get("stage"), "command_generation")
+            self.assertIn("mkmk executable not found", res["message"])
+            self.assertFalse(res.get("attached_to_maintenance", True))
+
+            reloaded = load_context(self.workspace, "TestMod.m")
+            self.assertIsNotNone(reloaded)
+            self.assertEqual(len(reloaded.build_results), 0)
+
+        # 2. Maintenance build
+        with patch("build.CAAEnvironment") as mock_env_cls, \
+             patch("build.validate_workspace", return_value={"ok": True, "issues": [], "can_build": True}), \
+             patch("build.setup_prerequisite_path", return_value={"status": "success"}):
+            mock_env = mock_env_cls.return_value
+            mock_env.load_config.return_value = True
+            mock_env.build_time_command.side_effect = FileNotFoundError("mkmk executable not found in PATH")
+
+            res_maint = build_workspace(self.workspace, target_module="TestMod.m", attach_to_maintenance=True)
+            self.assertEqual(res_maint["status"], "error")
+            self.assertEqual(res_maint.get("stage"), "command_generation")
+            self.assertTrue(res_maint.get("attached_to_maintenance", False))
+
+            reloaded_maint = load_context(self.workspace, "TestMod.m")
+            self.assertIsNotNone(reloaded_maint)
+            self.assertEqual(len(reloaded_maint.build_results), 1)
+            self.assertEqual(reloaded_maint.last_build["status"], "error")
+
 
 if __name__ == "__main__":
     unittest.main()
