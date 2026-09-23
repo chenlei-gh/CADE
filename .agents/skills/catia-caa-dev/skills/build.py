@@ -355,6 +355,9 @@ def build_workspace(
     orchestrated_by_kernel: bool = False,
     target_module: Optional[str] = None,
     attach_to_maintenance: bool = False,
+    baseline_snapshot: Optional[Dict[str, str]] = None,
+    expected_changes: Optional[List[Any]] = None,
+    pre_existing_dirty: Optional[List[str]] = None,
 ) -> dict:
     """
     Build CAA workspace using mkmk with full Build Time environment.
@@ -406,6 +409,11 @@ def build_workspace(
         if audit_warning:
             kwargs["telemetry_audit_warning"] = audit_warning
         err_res = error_result(msg, **kwargs)
+        from provenance_guard import ProvenanceAuditState, build_audit_summary
+        err_res["provenance_audit"] = build_audit_summary(
+            audit_state=ProvenanceAuditState.NOT_EVALUATED,
+            reason=f"build_aborted_at_{stage}",
+        )
         if _should_attach_maintenance():
             try:
                 from maintenance_context import attach_build_result
@@ -720,6 +728,52 @@ def build_workspace(
         except Exception as e:
             # 不能静默：同步失败 = 按钮消失/无图标/旧 dico，必须留痕 (FP-13)
             logger.write(f"WARNING: Runtime View sync failed: {e}")
+
+        # --- Change Provenance Guard Audit Hook (Step 2-D.1) ---
+        try:
+            from provenance_guard import (
+                ProvenanceAuditState,
+                build_audit_summary,
+                capture_source_snapshot,
+                compute_change_provenance,
+                validate_provenance_inputs,
+            )
+
+            is_valid, err_reason = validate_provenance_inputs(
+                baseline_snapshot=baseline_snapshot,
+                expected_changes=expected_changes,
+                pre_existing_dirty=pre_existing_dirty,
+            )
+            if not is_valid:
+                # 零 I/O：输入不合法或缺失时直接生成 NOT_EVALUATED 摘要，不扫描磁盘
+                build_result["provenance_audit"] = build_audit_summary(
+                    audit_state=ProvenanceAuditState.NOT_EVALUATED,
+                    reason=err_reason,
+                )
+            else:
+                # 仅在输入结构完整有效时才采集物理磁盘快照并执行比对
+                current_snap = capture_source_snapshot(verify_root)
+                prov_res = compute_change_provenance(
+                    baseline_snapshot=baseline_snapshot,
+                    current_snapshot=current_snap,
+                    expected_changes=expected_changes,
+                    pre_existing_dirty=pre_existing_dirty,
+                )
+                build_result["provenance_audit"] = build_audit_summary(
+                    audit_state=ProvenanceAuditState.EVALUATED,
+                    reason="evaluation_completed",
+                    prov_result=prov_res,
+                )
+        except Exception as e:
+            # 异常隔离：绝不破坏构建主干，仅在审计字典标为 FAILED
+            logger.write(f"WARNING: Provenance audit evaluation failed: {e}")
+            from provenance_guard import ProvenanceAuditState, build_audit_summary
+            build_result["provenance_audit"] = build_audit_summary(
+                audit_state=ProvenanceAuditState.FAILED,
+                reason="internal_audit_exception",
+                error_type=type(e).__name__,
+            )
+
         cache.save(build_result)
         # Associate build result with active maintenance context if present and authorized (P3-A.1 / P3-A.2)
         if _should_attach_maintenance():
@@ -746,6 +800,11 @@ def build_workspace(
             orchestrated_by_kernel=orchestrated_by_kernel,
             operation="build",
         )
+        from provenance_guard import ProvenanceAuditState, build_audit_summary
+        res["provenance_audit"] = build_audit_summary(
+            audit_state=ProvenanceAuditState.NOT_EVALUATED,
+            reason="build_timeout",
+        )
         if _should_attach_maintenance():
             try:
                 from maintenance_context import attach_build_result
@@ -764,6 +823,11 @@ def build_workspace(
             entrypoint=entrypoint,
             orchestrated_by_kernel=orchestrated_by_kernel,
             operation="build",
+        )
+        from provenance_guard import ProvenanceAuditState, build_audit_summary
+        res["provenance_audit"] = build_audit_summary(
+            audit_state=ProvenanceAuditState.NOT_EVALUATED,
+            reason="build_exception",
         )
         if _should_attach_maintenance():
             try:
@@ -829,6 +893,9 @@ def incremental_build(
     orchestrated_by_kernel: bool = False,
     target_module: Optional[str] = None,
     attach_to_maintenance: bool = False,
+    baseline_snapshot: Optional[Dict[str, str]] = None,
+    expected_changes: Optional[List[Any]] = None,
+    pre_existing_dirty: Optional[List[str]] = None,
 ) -> dict:
     """Incremental build (mkmk -u -a) — most common"""
     return build_workspace(
@@ -836,6 +903,9 @@ def incremental_build(
         entrypoint=entrypoint, orchestrated_by_kernel=orchestrated_by_kernel,
         target_module=target_module,
         attach_to_maintenance=attach_to_maintenance,
+        baseline_snapshot=baseline_snapshot,
+        expected_changes=expected_changes,
+        pre_existing_dirty=pre_existing_dirty,
     )
 
 
@@ -846,6 +916,9 @@ def full_build(
     orchestrated_by_kernel: bool = False,
     target_module: Optional[str] = None,
     attach_to_maintenance: bool = False,
+    baseline_snapshot: Optional[Dict[str, str]] = None,
+    expected_changes: Optional[List[Any]] = None,
+    pre_existing_dirty: Optional[List[str]] = None,
 ) -> dict:
     """Full rebuild (mkmk -a)"""
     return build_workspace(
@@ -853,6 +926,9 @@ def full_build(
         entrypoint=entrypoint, orchestrated_by_kernel=orchestrated_by_kernel,
         target_module=target_module,
         attach_to_maintenance=attach_to_maintenance,
+        baseline_snapshot=baseline_snapshot,
+        expected_changes=expected_changes,
+        pre_existing_dirty=pre_existing_dirty,
     )
 
 
@@ -863,6 +939,9 @@ def clean_build(
     orchestrated_by_kernel: bool = False,
     target_module: Optional[str] = None,
     attach_to_maintenance: bool = False,
+    baseline_snapshot: Optional[Dict[str, str]] = None,
+    expected_changes: Optional[List[Any]] = None,
+    pre_existing_dirty: Optional[List[str]] = None,
 ) -> dict:
     """Clean then build (mkmk -a -u) — '-u' resets persistent compile options"""
     return build_workspace(
@@ -870,6 +949,9 @@ def clean_build(
         entrypoint=entrypoint, orchestrated_by_kernel=orchestrated_by_kernel,
         target_module=target_module,
         attach_to_maintenance=attach_to_maintenance,
+        baseline_snapshot=baseline_snapshot,
+        expected_changes=expected_changes,
+        pre_existing_dirty=pre_existing_dirty,
     )
 
 
@@ -880,6 +962,9 @@ def debug_build(
     orchestrated_by_kernel: bool = False,
     target_module: Optional[str] = None,
     attach_to_maintenance: bool = False,
+    baseline_snapshot: Optional[Dict[str, str]] = None,
+    expected_changes: Optional[List[Any]] = None,
+    pre_existing_dirty: Optional[List[str]] = None,
 ) -> dict:
     """Debug mode build (mkmk -a -g)"""
     return build_workspace(
@@ -887,6 +972,9 @@ def debug_build(
         entrypoint=entrypoint, orchestrated_by_kernel=orchestrated_by_kernel,
         target_module=target_module,
         attach_to_maintenance=attach_to_maintenance,
+        baseline_snapshot=baseline_snapshot,
+        expected_changes=expected_changes,
+        pre_existing_dirty=pre_existing_dirty,
     )
 
 
@@ -897,6 +985,9 @@ def dry_run_build(
     orchestrated_by_kernel: bool = False,
     target_module: Optional[str] = None,
     attach_to_maintenance: bool = False,
+    baseline_snapshot: Optional[Dict[str, str]] = None,
+    expected_changes: Optional[List[Any]] = None,
+    pre_existing_dirty: Optional[List[str]] = None,
 ) -> dict:
     """Dry run — update mkmk data/graph without compiling (mkmk -a -nobuild).
     mkmk has no '-n' flag; '-nobuild' is the real equivalent."""
@@ -905,6 +996,9 @@ def dry_run_build(
         entrypoint=entrypoint, orchestrated_by_kernel=orchestrated_by_kernel,
         target_module=target_module,
         attach_to_maintenance=attach_to_maintenance,
+        baseline_snapshot=baseline_snapshot,
+        expected_changes=expected_changes,
+        pre_existing_dirty=pre_existing_dirty,
     )
 
 
@@ -1089,6 +1183,9 @@ def build_with_threads(
     orchestrated_by_kernel: bool = False,
     target_module: Optional[str] = None,
     attach_to_maintenance: bool = False,
+    baseline_snapshot: Optional[Dict[str, str]] = None,
+    expected_changes: Optional[List[Any]] = None,
+    pre_existing_dirty: Optional[List[str]] = None,
 ) -> dict:
     """Multi-threaded build (mkmk -a -j N) — '-a' is the mandatory target selector"""
     return build_workspace(
@@ -1096,6 +1193,9 @@ def build_with_threads(
         entrypoint=entrypoint, orchestrated_by_kernel=orchestrated_by_kernel,
         target_module=target_module,
         attach_to_maintenance=attach_to_maintenance,
+        baseline_snapshot=baseline_snapshot,
+        expected_changes=expected_changes,
+        pre_existing_dirty=pre_existing_dirty,
     )
 
 

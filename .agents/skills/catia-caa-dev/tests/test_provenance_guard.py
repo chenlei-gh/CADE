@@ -677,17 +677,17 @@ class TestProvenanceGuard(unittest.TestCase):
             ("Mod.m/../outside.cpp", "invalid_baseline_path: Mod.m/../outside.cpp"),
             ("", "invalid_baseline_path: "),
         ]
-        for p, expected_prefix in bad_paths:
+        for p, _ in bad_paths:
             ok, reason = validate_provenance_inputs({p: valid_sha}, [])
             self.assertFalse(ok)
-            self.assertIn("invalid_baseline_path", reason)
+            self.assertEqual(reason, "invalid_baseline_path")
 
         # Invalid SHA-256 format (not 64 hex characters)
         bad_hashes = ["short", "g" * 64, "a" * 63, "a" * 65, 12345]
         for h in bad_hashes:
             ok, reason = validate_provenance_inputs({"Mod.m/src/A.cpp": h}, [])
             self.assertFalse(ok)
-            self.assertIn("invalid_baseline_sha256", reason)
+            self.assertEqual(reason, "invalid_baseline_sha256")
 
     # ── 26. Input Validation: ExpectedChanges Structure ──────────────
 
@@ -708,18 +708,23 @@ class TestProvenanceGuard(unittest.TestCase):
         bad_op = [{"path": "Mod.m/src/C.cpp", "op_type": "destroy"}]
         ok, reason = validate_provenance_inputs(base, bad_op)
         self.assertFalse(ok)
-        self.assertIn("invalid_expected_change_op_at_0", reason)
+        self.assertEqual(reason, "invalid_expected_change_op")
 
         # Invalid path in expected_changes
         bad_path = [{"path": "../C.cpp", "op_type": "create"}]
         ok, reason = validate_provenance_inputs(base, bad_path)
         self.assertFalse(ok)
-        self.assertIn("invalid_expected_change_path_at_0", reason)
+        self.assertEqual(reason, "invalid_expected_change_path")
 
         # Invalid pre_existing_dirty
         ok, reason = validate_provenance_inputs(base, valid_exp, pre_existing_dirty=["/abs/path"])
         self.assertFalse(ok)
-        self.assertIn("invalid_pre_existing_dirty_path", reason)
+        self.assertEqual(reason, "invalid_pre_existing_dirty_path")
+
+        # Empty expected_changes is valid (explicitly declared zero modifications)
+        ok_empty, reason_empty = validate_provenance_inputs(base, [])
+        self.assertTrue(ok_empty)
+        self.assertEqual(reason_empty, "")
 
     # ── 27. Build Audit Summary: NOT_EVALUATED (Zero I/O) ────────────
 

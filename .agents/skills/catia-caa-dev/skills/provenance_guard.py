@@ -679,20 +679,24 @@ def validate_provenance_inputs(
     expected_changes: Any,
     pre_existing_dirty: Optional[Any] = None,
 ) -> Tuple[bool, str]:
-    """Strictly validate inputs before attempting provenance evaluation.
+    """Strictly validate input structure and format before provenance evaluation.
 
-    Rules:
-      1. baseline_snapshot must be a dict where keys are valid relative POSIX paths
-         and values are 64-character hex SHA-256 strings.
-      2. expected_changes must be a list of ExpectedChange or valid dicts containing
-         'path' (relative POSIX) and 'op_type' in ('create', 'modify', 'patch', 'delete').
-         If 'expected_sha256' is present and not None, it must be 64-char hex.
-      3. pre_existing_dirty (if present) must be a list of valid relative POSIX paths.
-      4. Missing inputs (None) or non-matching structures return (False, reason).
+    Scope & Boundaries:
+      This is a structural and format validator, NOT a whole-disk provenance authenticator.
+      It verifies data types, POSIX path normalization, 64-char hex SHA-256 format,
+      and valid operation types.
+
+    Semantic Contract for expected_changes:
+      - None: Inputs are missing or extraction failed -> evaluated as invalid/missing.
+      - []: Explicit declaration by caller that ZERO source modifications are expected
+            (any physical delta will be flagged as untracked_changes).
+
+    Security:
+      Returns stable, sanitized error codes without echoing back unescaped user/disk paths.
 
     Returns:
-        (True, "") if all inputs are structurally valid.
-        (False, reason_code) if inputs are missing or invalid.
+        (True, "") if all inputs are structurally and syntactically valid.
+        (False, stable_reason_code) if inputs are missing or malformed.
     """
     if baseline_snapshot is None or expected_changes is None:
         return False, "missing_baseline_or_expected_changes"
@@ -702,15 +706,15 @@ def validate_provenance_inputs(
 
     for path_key, sha_val in baseline_snapshot.items():
         if not _is_valid_relative_posix_path(path_key):
-            return False, f"invalid_baseline_path: {path_key}"
+            return False, "invalid_baseline_path"
         if not isinstance(sha_val, str) or not _SHA256_PATTERN.fullmatch(sha_val):
-            return False, f"invalid_baseline_sha256: {path_key}"
+            return False, "invalid_baseline_sha256"
 
     if not isinstance(expected_changes, list):
         return False, "invalid_expected_changes_type_not_list"
 
     valid_ops = {"create", "modify", "patch", "delete"}
-    for idx, exp in enumerate(expected_changes):
+    for exp in expected_changes:
         if isinstance(exp, ExpectedChange):
             p = exp.path
             op = exp.op_type
@@ -720,22 +724,22 @@ def validate_provenance_inputs(
             op = exp.get("op_type")
             sha = exp.get("expected_sha256")
         else:
-            return False, f"invalid_expected_change_item_at_{idx}"
+            return False, "invalid_expected_change_item"
 
         if not _is_valid_relative_posix_path(p):
-            return False, f"invalid_expected_change_path_at_{idx}: {p}"
+            return False, "invalid_expected_change_path"
         if op not in valid_ops:
-            return False, f"invalid_expected_change_op_at_{idx}: {op}"
+            return False, "invalid_expected_change_op"
         if sha is not None:
             if not isinstance(sha, str) or not _SHA256_PATTERN.fullmatch(sha):
-                return False, f"invalid_expected_change_sha256_at_{idx}: {sha}"
+                return False, "invalid_expected_change_sha256"
 
     if pre_existing_dirty is not None:
         if not isinstance(pre_existing_dirty, list):
             return False, "invalid_pre_existing_dirty_type_not_list"
         for p in pre_existing_dirty:
             if not _is_valid_relative_posix_path(p):
-                return False, f"invalid_pre_existing_dirty_path: {p}"
+                return False, "invalid_pre_existing_dirty_path"
 
     return True, ""
 
