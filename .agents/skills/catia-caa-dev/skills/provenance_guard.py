@@ -98,6 +98,7 @@ class AssetCategoryConfig:
             "win_b64",
             ".git",
             ".cade",
+            ".caa_backups",
             ".agents",
             "__pycache__",
             ".vscode",

@@ -794,6 +794,27 @@ class TestProvenanceGuard(unittest.TestCase):
         self.assertNotIn("\\", summary["error_type"])
         self.assertNotIn("/", summary["error_type"])
 
+    # ── 30. Backup Directory (.caa_backups) Excluded ─────────────────
+
+    def test_backup_directory_excluded(self):
+        ws = self.workspace
+        backup_src = ws / ".caa_backups" / "20260923_120000" / "modified" / "Fw.edu" / "Mod.m"
+        backup_src.mkdir(parents=True)
+        (backup_src / "Imakefile.mk").write_text("BUILT_OBJECT_TYPE=SHARED LIBRARY")
+        (backup_src / "Test.cpp").write_text("int backup = 1;")
+
+        # Active workspace source
+        act_src = ws / "Fw.edu" / "Mod.m" / "src"
+        act_src.mkdir(parents=True)
+        (act_src / "Real.cpp").write_text("int real = 1;")
+
+        snapshot, stats = capture_source_snapshot_detailed(ws)
+        self.assertIn("Fw.edu/Mod.m/src/Real.cpp", snapshot)
+        # Files inside .caa_backups must NOT be captured as controlled source assets
+        for path_key in snapshot:
+            self.assertFalse(path_key.startswith(".caa_backups"))
+        self.assertIn(".caa_backups", stats.excluded_directories)
+
 
 if __name__ == "__main__":
     unittest.main()
