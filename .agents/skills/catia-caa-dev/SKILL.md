@@ -728,6 +728,21 @@ Repair Loop (repair.py) / Rollback (backup.py)
 9. **Diagnostics Before Fix** — 问题诊断输出结构化 FixPlan，不输出字符串
 10. **Safe Modification** — 预览→确认→备份→应用→可回滚
 
+### 🛡️ 生产变更契约与来源准入规范（Change Provenance Contract）
+
+为保证生产工作区状态的可追溯性，防止外部旁路修改冒充受控维护成果，确立以下最小约束边界：
+
+1. **强制登记 ChangeSet 的操作范围**：
+   所有对受控资产（C++ 源码 `.cpp`/`.cxx`/`.h`/`.hpp`、构建定义 `Imakefile.mk`、架构注册 `IdentityCard.xml`、字典 `.dico`、国际化资源 `.CATNls`、命令图标定义 `.CATRsc` 等）的创建、修改、打补丁或删除，必须通过 CADE 的 `ChangeSet` 进行原子登记与事务写入。严禁绕过 ChangeSet 直接写入生产文件后触发受控构建。
+
+2. **外部工具、Zed Agent 和手工修改后的重新校验要求**：
+   若工作区发生外部编辑、第三方工具写入或未登记修改，构建前必须进行状态核验。未被当前任务 `ExpectedChange` 显式登记的受控资产差异，Provenance Guard 将准确识别为 `UNTRACKED_EXTERNAL` 并**阻断维护账本附着**（独立构建继续执行，但绝不记入维护上下文）。如需将外部修改正式纳入受控维护生命周期，必须在受控任务中重新捕获基线并完成变更登记，绝不静默吸收。
+
+3. **审计状态的使用边界**：
+   - `NOT_EVALUATED`：独立裸构建、未传入基线或缺少预期变更集时的正常降级状态。执行 0 扫描、对维护账本 0 污染；绝不推断为来源受控通过。
+   - `FAILED`：审计流程本身发生异常时的 Fail-Open 安全隔离状态。构建允许正常返回，但绝对禁止标记为验证通过，严禁将未审计结果附着到维护账本。
+   - `provenance_verified`：只有输入合法、受控资产比对 100% 吻合预期且无任何未登记差异时方可赋予，作为维护成果入账与受控背书的充要前提。
+
 ---
 
 ## 🔧 Python API
