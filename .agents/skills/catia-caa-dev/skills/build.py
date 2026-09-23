@@ -18,7 +18,7 @@ import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 # Make this importable as `from build import build_workspace` regardless of
 # caller cwd/sys.path (a bare relative `from env import ...` below only
@@ -766,7 +766,7 @@ def build_workspace(
                 )
         except Exception as e:
             # 异常隔离：绝不破坏构建主干，仅在审计字典标为 FAILED
-            logger.write(f"WARNING: Provenance audit evaluation failed: {e}")
+            logger.write(f"WARNING: Provenance audit evaluation failed with {type(e).__name__}")
             from provenance_guard import ProvenanceAuditState, build_audit_summary
             build_result["provenance_audit"] = build_audit_summary(
                 audit_state=ProvenanceAuditState.FAILED,
@@ -774,7 +774,6 @@ def build_workspace(
                 error_type=type(e).__name__,
             )
 
-        cache.save(build_result)
         # Associate build result with active maintenance context if present and authorized (P3-A.1 / P3-A.2)
         if _should_attach_maintenance():
             try:
@@ -786,6 +785,8 @@ def build_workspace(
         else:
             build_result["attached_to_maintenance"] = False
             logger.write("Maintenance context association skipped (standalone / unattached build).")
+
+        cache.save(build_result)
 
         logger.write(
             f"Status: {build_result['status']} | Errors: {parsed['error_count']} | Duration: {format_duration(duration)}"
