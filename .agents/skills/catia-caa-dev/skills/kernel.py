@@ -2089,6 +2089,13 @@ class Kernel:
             }
 
         elif action == "start_catia":
+            env_name = params.get("env_name")
+            if env_name is not None and not isinstance(env_name, str):
+                return {"status": "error", "message": "env_name must be a string or null"}
+            wait_for_exit = params.get("wait_for_exit", False)
+            if not isinstance(wait_for_exit, bool):
+                return {"status": "error", "message": "wait_for_exit must be a boolean"}
+
             try:
                 from run import check_catia_running
                 catia_status = check_catia_running()
@@ -2103,6 +2110,8 @@ class Kernel:
             from run import start_catia_runtime
             res = start_catia_runtime(
                 workspace_path=str(self.workspace_root),
+                env_name=env_name,
+                wait_for_exit=wait_for_exit,
                 orchestrated_by_kernel=True,
                 entrypoint="kernel"
             )
@@ -2152,9 +2161,21 @@ class Kernel:
             return {"status": "ok", "message": "Macro executed"}
 
         elif action == "batch":
+            batch_script = params.get("batch_script")
+            if batch_script is not None and not isinstance(batch_script, str):
+                return {"status": "error", "message": "batch_script must be a string or null"}
+            if batch_script:
+                if ".." in batch_script or batch_script.startswith("/") or batch_script.startswith("\\"):
+                    return {"status": "error", "message": "batch_script traversal is forbidden"}
+                target_script = (curr_ws / batch_script).resolve()
+                if not str(target_script).lower().startswith(str(curr_ws).lower()):
+                    return {"status": "error", "message": "batch_script must be within workspace"}
+                if not target_script.is_file():
+                    return {"status": "error", "message": f"Batch script does not exist: {batch_script}"}
+
             from run import run_catia_batch
-            res = run_catia_batch()
-            return {"status": "ok", "message": "Batch executed"}
+            res = run_catia_batch(batch_script=batch_script)
+            return {"status": "ok", "message": "Batch executed", "data": res if isinstance(res, dict) else {}}
 
         elif action == "runtime_view":
             from build import create_runtime_view
@@ -2177,16 +2198,10 @@ class Kernel:
             }
 
         elif action == "dev":
-            if params.get("skip_gate") is True:
-                return {"status": "error", "message": "skip_gate=True is forbidden in authorized execution"}
-
-            options = params.get("options", "-u -a")
-            if not isinstance(options, str):
-                return {"status": "error", "message": "options must be a string"}
-            if options not in ALLOWED_BUILD_OPTIONS:
+            if params:
                 return {
                     "status": "error",
-                    "message": f"options '{options}' is not in allowed build options: {sorted(ALLOWED_BUILD_OPTIONS)}"
+                    "message": f"dev action expects no extra parameters, got: {list(params.keys())}"
                 }
 
             # Dynamic lock check before build
@@ -2885,7 +2900,7 @@ class Kernel:
                         "version": 1,
                         "action": "dev",
                         "workspace_root": str(self.workspace_root),
-                        "parameters": {"options": "-u -a", "target_module": None, "skip_gate": False},
+                        "parameters": {},
                         "command_preview": "mkmk -u -a && start_catia_runtime",
                         "preflight": {
                             "workspace_valid": bool(self.workspace_root.exists()),

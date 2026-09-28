@@ -388,6 +388,17 @@ def main():
             check("Test 14g: dev execution fails on build failure", res_dev_fail.get("status") == "error")
             check("Test 14h: start_catia_runtime not called on build failure", mock_start.call_count == 0)
 
+            # Test 14i: dev rejects extra parameters even if digest matches
+            tampered_dev_plan = dict(dev_plan)
+            tampered_dev_plan["parameters"] = {"options": "-a"}
+            tampered_dev_plan["plan_digest"] = compute_plan_digest(tampered_dev_plan)
+            res_dev_extra = mcp_server.handle_tool("develop", {
+                "workspace": str(ws),
+                "execute_plan": tampered_dev_plan,
+            })
+            check("Test 14i: dev rejects extra parameters fail-closed", res_dev_extra.get("status") == "error")
+            check("Test 14i detail: mentions no extra parameters", "no extra parameters" in res_dev_extra.get("message", ""))
+
         # ── Test 15: Build Mode Preview Options Parity ────────────────
         clean_prev = mcp_server.handle_tool("develop", {"workspace": str(ws), "request": "clean build", "preview": True})
         check("Test 15a: clean build options is -a -u", clean_prev.get("execute_plan", {}).get("parameters", {}).get("options") == "-a -u")
@@ -400,6 +411,100 @@ def main():
 
         inc_prev = mcp_server.handle_tool("develop", {"workspace": str(ws), "request": "incremental build", "preview": True})
         check("Test 15d: incremental build options is -u -a", inc_prev.get("execute_plan", {}).get("parameters", {}).get("options") == "-u -a")
+
+        # ── Test 16: Parameter Parity - start_catia ───────────────────
+        catia_plan_custom = {
+            "type": "execution_plan",
+            "version": 1,
+            "action": "start_catia",
+            "workspace_root": str(ws),
+            "parameters": {"env_name": "MyCustomEnv", "wait_for_exit": True},
+            "command_preview": "start_catia_runtime",
+            "preflight": {},
+            "planned_steps": ["launch_cnext"],
+            "file_preconditions": {},
+        }
+        catia_plan_custom["plan_digest"] = compute_plan_digest(catia_plan_custom)
+
+        with mock.patch("run.start_catia_runtime") as mock_start_custom:
+            mock_start_custom.return_value = {"status": "ok"}
+            res_sc = mcp_server.handle_tool("develop", {
+                "workspace": str(ws),
+                "execute_plan": catia_plan_custom,
+            })
+            check("Test 16a: start_catia executes successfully with custom params", res_sc.get("status") == "ok")
+            check("Test 16b: env_name passed through to start_catia_runtime", mock_start_custom.call_args[1].get("env_name") == "MyCustomEnv")
+            check("Test 16c: wait_for_exit passed through to start_catia_runtime", mock_start_custom.call_args[1].get("wait_for_exit") is True)
+
+        # 16d: Invalid param type (wait_for_exit not bool) rejected
+        catia_plan_bad = dict(catia_plan_custom)
+        catia_plan_bad["parameters"] = {"env_name": None, "wait_for_exit": "not_a_bool"}
+        catia_plan_bad["plan_digest"] = compute_plan_digest(catia_plan_bad)
+        res_sc_bad = mcp_server.handle_tool("develop", {
+            "workspace": str(ws),
+            "execute_plan": catia_plan_bad,
+        })
+        check("Test 16d: non-boolean wait_for_exit rejected", res_sc_bad.get("status") == "error")
+
+        # ── Test 17: Parameter Parity - batch ─────────────────────────
+        # 17a: default batch with batch_script=None
+        batch_plan_none = {
+            "type": "execution_plan",
+            "version": 1,
+            "action": "batch",
+            "workspace_root": str(ws),
+            "parameters": {"batch_script": None},
+            "command_preview": "run_catia_batch",
+            "preflight": {},
+            "planned_steps": ["execute_batch"],
+            "file_preconditions": {},
+        }
+        batch_plan_none["plan_digest"] = compute_plan_digest(batch_plan_none)
+
+        with mock.patch("run.run_catia_batch") as mock_batch:
+            mock_batch.return_value = {"status": "ok"}
+            res_b_none = mcp_server.handle_tool("develop", {
+                "workspace": str(ws),
+                "execute_plan": batch_plan_none,
+            })
+            check("Test 17a: batch with batch_script=None executes", res_b_none.get("status") == "ok")
+            check("Test 17b: run_catia_batch received batch_script=None", mock_batch.call_args[1].get("batch_script") is None)
+
+        # 17c: valid batch script inside workspace
+        batch_file = ws / "test_job.bat"
+        batch_file.write_text("@echo off\nexit /b 0", encoding="utf-8")
+        batch_plan_valid = dict(batch_plan_none)
+        batch_plan_valid["parameters"] = {"batch_script": "test_job.bat"}
+        batch_plan_valid["plan_digest"] = compute_plan_digest(batch_plan_valid)
+
+        with mock.patch("run.run_catia_batch") as mock_batch:
+            mock_batch.return_value = {"status": "ok"}
+            res_b_valid = mcp_server.handle_tool("develop", {
+                "workspace": str(ws),
+                "execute_plan": batch_plan_valid,
+            })
+            check("Test 17c: batch with valid script executes", res_b_valid.get("status") == "ok")
+            check("Test 17d: run_catia_batch received batch_script path", mock_batch.call_args[1].get("batch_script") == "test_job.bat")
+
+        # 17e: path traversal in batch_script rejected
+        batch_plan_trav = dict(batch_plan_none)
+        batch_plan_trav["parameters"] = {"batch_script": "../../outside.bat"}
+        batch_plan_trav["plan_digest"] = compute_plan_digest(batch_plan_trav)
+        res_b_trav = mcp_server.handle_tool("develop", {
+            "workspace": str(ws),
+            "execute_plan": batch_plan_trav,
+        })
+        check("Test 17e: batch script path traversal rejected", res_b_trav.get("status") == "error")
+
+        # 17f: non-existent script in batch_script rejected
+        batch_plan_missing = dict(batch_plan_none)
+        batch_plan_missing["parameters"] = {"batch_script": "missing_script.bat"}
+        batch_plan_missing["plan_digest"] = compute_plan_digest(batch_plan_missing)
+        res_b_missing = mcp_server.handle_tool("develop", {
+            "workspace": str(ws),
+            "execute_plan": batch_plan_missing,
+        })
+        check("Test 17f: non-existent batch script rejected", res_b_missing.get("status") == "error")
 
     finally:
         shutil.rmtree(ws, ignore_errors=True)
