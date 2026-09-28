@@ -506,6 +506,160 @@ def main():
         })
         check("Test 17f: non-existent batch script rejected", res_b_missing.get("status") == "error")
 
+        # ── Test 18: Parameter Parity & Dispatch - stop_catia ─────────
+        # 18a: preview for "stop catia" produces force=False
+        stop_prev = mcp_server.handle_tool("develop", {"workspace": str(ws), "request": "stop catia", "preview": True})
+        check("Test 18a: stop catia preview status pending_execution", stop_prev.get("status") == "pending_execution")
+        check("Test 18a detail: action is stop_catia", stop_prev.get("execute_plan", {}).get("action") == "stop_catia")
+        check("Test 18a detail: force is False", stop_prev.get("execute_plan", {}).get("parameters", {}).get("force") is False)
+
+        # 18b: preview for "force stop catia" produces force=True
+        fstop_prev = mcp_server.handle_tool("develop", {"workspace": str(ws), "request": "force stop catia", "preview": True})
+        check("Test 18b: force stop catia preview force is True", fstop_prev.get("execute_plan", {}).get("parameters", {}).get("force") is True)
+
+        # 18c: preview for "kill catia" produces force=True
+        kill_prev = mcp_server.handle_tool("develop", {"workspace": str(ws), "request": "kill catia", "preview": True})
+        check("Test 18c: kill catia preview force is True", kill_prev.get("execute_plan", {}).get("parameters", {}).get("force") is True)
+
+        # 18d: stop_catia execution passes force=True through to run.stop_catia
+        stop_plan_force = {
+            "type": "execution_plan",
+            "version": 1,
+            "action": "stop_catia",
+            "workspace_root": str(ws),
+            "parameters": {"force": True},
+            "command_preview": "stop_catia(force=True)",
+            "preflight": {},
+            "planned_steps": ["check_catia_running", "terminate_cnext"],
+            "file_preconditions": {},
+        }
+        stop_plan_force["plan_digest"] = compute_plan_digest(stop_plan_force)
+
+        with mock.patch("run.stop_catia") as mock_stop:
+            mock_stop.return_value = {"status": "stopped", "killed_pids": [1234]}
+            res_stop_f = mcp_server.handle_tool("develop", {
+                "workspace": str(ws),
+                "execute_plan": stop_plan_force,
+            })
+            check("Test 18d: stop_catia with force=True executes", res_stop_f.get("status") == "ok")
+            check("Test 18d detail: run.stop_catia called with force=True", mock_stop.call_args[1].get("force") is True)
+
+        # 18e: stop_catia execution passes force=False through to run.stop_catia
+        stop_plan_graceful = dict(stop_plan_force)
+        stop_plan_graceful["parameters"] = {"force": False}
+        stop_plan_graceful["plan_digest"] = compute_plan_digest(stop_plan_graceful)
+
+        with mock.patch("run.stop_catia") as mock_stop:
+            mock_stop.return_value = {"status": "stopped", "killed_pids": [1234]}
+            res_stop_g = mcp_server.handle_tool("develop", {
+                "workspace": str(ws),
+                "execute_plan": stop_plan_graceful,
+            })
+            check("Test 18e: stop_catia with force=False executes", res_stop_g.get("status") == "ok")
+            check("Test 18e detail: run.stop_catia called with force=False", mock_stop.call_args[1].get("force") is False)
+
+        # 18f: stop_catia execution rejects non-boolean force
+        stop_plan_bad = dict(stop_plan_force)
+        stop_plan_bad["parameters"] = {"force": "yes"}
+        stop_plan_bad["plan_digest"] = compute_plan_digest(stop_plan_bad)
+        res_stop_bad = mcp_server.handle_tool("develop", {
+            "workspace": str(ws),
+            "execute_plan": stop_plan_bad,
+        })
+        check("Test 18f: non-boolean force rejected fail-closed", res_stop_bad.get("status") == "error")
+
+        # ── Test 19: Strict Parameter Schema & Unknown Key Rejection ──
+        # 19a: build with unknown parameter
+        build_plan_extra = dict(plan_sample)
+        build_plan_extra["parameters"] = {"options": "-u -a", "target_module": None, "skip_gate": False, "extra_arg": 1}
+        build_plan_extra["plan_digest"] = compute_plan_digest(build_plan_extra)
+        res_bp_extra = mcp_server.handle_tool("develop", {"workspace": str(ws), "execute_plan": build_plan_extra})
+        check("Test 19a: build rejects unknown parameter fail-closed", res_bp_extra.get("status") == "error")
+        check("Test 19a detail: mentions unexpected extra parameters", "extra parameters" in res_bp_extra.get("message", ""))
+
+        # 19b: build with non-string target_module
+        build_plan_bad_tm = dict(plan_sample)
+        build_plan_bad_tm["parameters"] = {"options": "-u -a", "target_module": 12345, "skip_gate": False}
+        build_plan_bad_tm["plan_digest"] = compute_plan_digest(build_plan_bad_tm)
+        res_bp_bad_tm = mcp_server.handle_tool("develop", {"workspace": str(ws), "execute_plan": build_plan_bad_tm})
+        check("Test 19b: build rejects non-string target_module fail-closed", res_bp_bad_tm.get("status") == "error")
+
+        # 19c: build with non-boolean skip_gate
+        build_plan_bad_sg = dict(plan_sample)
+        build_plan_bad_sg["parameters"] = {"options": "-u -a", "target_module": None, "skip_gate": "false"}
+        build_plan_bad_sg["plan_digest"] = compute_plan_digest(build_plan_bad_sg)
+        res_bp_bad_sg = mcp_server.handle_tool("develop", {"workspace": str(ws), "execute_plan": build_plan_bad_sg})
+        check("Test 19c: build rejects non-boolean skip_gate fail-closed", res_bp_bad_sg.get("status") == "error")
+
+        # 19d: start_catia with unknown parameter
+        catia_plan_extra = dict(catia_plan_custom)
+        catia_plan_extra["parameters"] = {"env_name": None, "wait_for_exit": False, "rogue_key": True}
+        catia_plan_extra["plan_digest"] = compute_plan_digest(catia_plan_extra)
+        res_cp_extra = mcp_server.handle_tool("develop", {"workspace": str(ws), "execute_plan": catia_plan_extra})
+        check("Test 19d: start_catia rejects unknown parameter fail-closed", res_cp_extra.get("status") == "error")
+
+        # 19e: stop_catia with unknown parameter
+        stop_plan_extra = dict(stop_plan_force)
+        stop_plan_extra["parameters"] = {"force": False, "unrecognized": "val"}
+        stop_plan_extra["plan_digest"] = compute_plan_digest(stop_plan_extra)
+        res_sp_extra = mcp_server.handle_tool("develop", {"workspace": str(ws), "execute_plan": stop_plan_extra})
+        check("Test 19e: stop_catia rejects unknown parameter fail-closed", res_sp_extra.get("status") == "error")
+
+        # 19f: macro with unknown parameter
+        macro_plan_extra = {
+            "type": "execution_plan",
+            "version": 1,
+            "action": "macro",
+            "workspace_root": str(ws),
+            "parameters": {"macro_path": "test.CATScript", "spurious_key": "val"},
+            "command_preview": "run_catia_macro",
+            "preflight": {},
+            "planned_steps": ["execute_macro"],
+            "file_preconditions": {},
+        }
+        macro_plan_extra["plan_digest"] = compute_plan_digest(macro_plan_extra)
+        res_mp_extra = mcp_server.handle_tool("develop", {"workspace": str(ws), "execute_plan": macro_plan_extra})
+        check("Test 19f: macro rejects unknown parameter fail-closed", res_mp_extra.get("status") == "error")
+
+        # 19g: batch with unknown parameter
+        batch_plan_extra = dict(batch_plan_none)
+        batch_plan_extra["parameters"] = {"batch_script": None, "unexpected_opt": 42}
+        batch_plan_extra["plan_digest"] = compute_plan_digest(batch_plan_extra)
+        res_batch_extra = mcp_server.handle_tool("develop", {"workspace": str(ws), "execute_plan": batch_plan_extra})
+        check("Test 19g: batch rejects unknown parameter fail-closed", res_batch_extra.get("status") == "error")
+
+        # 19h: runtime_view with unexpected parameter
+        rv_plan_extra = {
+            "type": "execution_plan",
+            "version": 1,
+            "action": "runtime_view",
+            "workspace_root": str(ws),
+            "parameters": {"extra_arg": "invalid"},
+            "command_preview": "create_runtime_view",
+            "preflight": {},
+            "planned_steps": ["sync_runtime_view"],
+            "file_preconditions": {},
+        }
+        rv_plan_extra["plan_digest"] = compute_plan_digest(rv_plan_extra)
+        res_rv_extra = mcp_server.handle_tool("develop", {"workspace": str(ws), "execute_plan": rv_plan_extra})
+        check("Test 19h: runtime_view rejects extra parameters fail-closed", res_rv_extra.get("status") == "error")
+
+        # 19i: setup_prerequisites with unexpected parameter
+        sp_plan_extra = {
+            "type": "execution_plan",
+            "version": 1,
+            "action": "setup_prerequisites",
+            "workspace_root": str(ws),
+            "parameters": {"extra_arg": "invalid"},
+            "command_preview": "setup_prerequisite_path",
+            "preflight": {},
+            "planned_steps": ["setup_prerequisites"],
+            "file_preconditions": {},
+        }
+        sp_plan_extra["plan_digest"] = compute_plan_digest(sp_plan_extra)
+        res_sp_extra = mcp_server.handle_tool("develop", {"workspace": str(ws), "execute_plan": sp_plan_extra})
+        check("Test 19i: setup_prerequisites rejects extra parameters fail-closed", res_sp_extra.get("status") == "error")
+
     finally:
         shutil.rmtree(ws, ignore_errors=True)
 

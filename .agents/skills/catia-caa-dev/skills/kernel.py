@@ -2045,9 +2045,33 @@ class Kernel:
         if not isinstance(params, dict):
             return {"status": "error", "message": "parameters must be a dictionary"}
 
+        allowed_params = {
+            "build": {"options", "target_module", "skip_gate"},
+            "start_catia": {"env_name", "wait_for_exit"},
+            "stop_catia": {"force"},
+            "macro": {"macro_path"},
+            "batch": {"batch_script"},
+            "runtime_view": set(),
+            "setup_prerequisites": set(),
+            "dev": set(),
+        }
+        unknown_keys = set(params.keys()) - allowed_params.get(action, set())
+        if unknown_keys:
+            return {
+                "status": "error",
+                "message": f"Action '{action}' expects no extra parameters, got unexpected: {sorted(unknown_keys)}",
+            }
+
         if action == "build":
-            if params.get("skip_gate") is True:
+            skip_gate = params.get("skip_gate", False)
+            if not isinstance(skip_gate, bool):
+                return {"status": "error", "message": "skip_gate must be a boolean"}
+            if skip_gate is True:
                 return {"status": "error", "message": "skip_gate=True is forbidden in authorized execution"}
+
+            target_module = params.get("target_module")
+            if target_module is not None and not isinstance(target_module, str):
+                return {"status": "error", "message": "target_module must be a string or null"}
 
             options = params.get("options", "-u -a")
             if not isinstance(options, str):
@@ -2077,7 +2101,7 @@ class Kernel:
             res = build_workspace(
                 self.workspace_root,
                 options=options,
-                target_module=params.get("target_module"),
+                target_module=target_module,
                 orchestrated_by_kernel=True,
                 entrypoint="kernel"
             )
@@ -2122,9 +2146,16 @@ class Kernel:
             }
 
         elif action == "stop_catia":
+            force = params.get("force", False)
+            if not isinstance(force, bool):
+                return {"status": "error", "message": "force must be a boolean"}
             from run import stop_catia
-            res = stop_catia(orchestrated_by_kernel=True, entrypoint="kernel")
-            return {"status": "ok", "message": "CATIA stopped"}
+            res = stop_catia(force=force, orchestrated_by_kernel=True, entrypoint="kernel")
+            return {
+                "status": "ok",
+                "data": res if isinstance(res, dict) else {},
+                "message": "CATIA stopped",
+            }
 
         elif action == "macro":
             macro_path = params.get("macro_path")
@@ -2925,14 +2956,15 @@ class Kernel:
                     data={"build": r_build, "run": r_run}).to_dict()
 
             if "stop catia" in request or "kill catia" in request:
+                force_val = True if ("force" in request or "kill" in request) else False
                 if preview:
                     plan = {
                         "type": "execution_plan",
                         "version": 1,
                         "action": "stop_catia",
                         "workspace_root": str(self.workspace_root),
-                        "parameters": {"force": False},
-                        "command_preview": "stop_catia",
+                        "parameters": {"force": force_val},
+                        "command_preview": f"stop_catia(force={force_val})",
                         "preflight": {},
                         "planned_steps": ["check_catia_running", "terminate_cnext"],
                         "file_preconditions": {},
@@ -2944,10 +2976,10 @@ class Kernel:
                         message="Execution plan generated for action 'stop_catia'. Explicit authorization required via develop(execute_plan=...).",
                         data={"execute_plan": plan, "preview": True},
                     ).to_dict()
-                r = stop_catia(entrypoint="kernel", orchestrated_by_kernel=True)
+                r = stop_catia(force=force_val, entrypoint="kernel", orchestrated_by_kernel=True)
                 self._state = KernelState.COMPLETED
                 return KernelResult(status="ok", mode="develop", state=self._state.value,
-                    message="CATIA stopped.").to_dict()
+                    message="CATIA stopped.", data=r if isinstance(r, dict) else {}).to_dict()
 
             if "catia running" in request or "check catia" in request:
                 # Read-only probe: executes directly even in preview mode
