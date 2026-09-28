@@ -369,6 +369,11 @@ class Kernel:
         except ImportError:
             pass
 
+        # Phase 0.5: Build / Run / Setup operations (external processes / probes)
+        build_run_result = self._handle_build_run(request_lower, preview=preview)
+        if build_run_result:
+            return build_run_result
+
         # Phase 1: Requirement Analysis
         clarification = None
         try:
@@ -396,11 +401,6 @@ class Kernel:
             except ImportError:
                 pass
 
-
-        # Phase 1.5: Build / Run / Setup operations (no plan needed)
-        build_run_result = self._handle_build_run(request_lower, preview=preview)
-        if build_run_result:
-            return build_run_result
 
         # Phase 2: Intent → Plan → Generate
         self._state = KernelState.PLANNING
@@ -2006,7 +2006,16 @@ class Kernel:
             return {"status": "error", "message": "Invalid or unsupported ExecutionPlan type/version"}
 
         action = plan.get("action")
-        allowed_actions = ("build", "start_catia", "stop_catia", "macro", "batch")
+        allowed_actions = (
+            "build",
+            "start_catia",
+            "stop_catia",
+            "macro",
+            "batch",
+            "runtime_view",
+            "setup_prerequisites",
+            "dev",
+        )
         if action not in allowed_actions:
             return {"status": "error", "message": f"Action '{action}' is not in allowed actions: {allowed_actions}"}
 
@@ -2146,6 +2155,81 @@ class Kernel:
             from run import run_catia_batch
             res = run_catia_batch()
             return {"status": "ok", "message": "Batch executed"}
+
+        elif action == "runtime_view":
+            from build import create_runtime_view
+            res = create_runtime_view(self.workspace_root)
+            is_ok = res.get("status") in ("ok", "success") if isinstance(res, dict) else bool(res)
+            return {
+                "status": "ok" if is_ok else "error",
+                "data": res if isinstance(res, dict) else {},
+                "message": res.get("message", "Runtime view created.") if isinstance(res, dict) else "Runtime view created.",
+            }
+
+        elif action == "setup_prerequisites":
+            from build import setup_prerequisite_path
+            res = setup_prerequisite_path(self.workspace_root)
+            is_ok = res.get("status") in ("ok", "success") if isinstance(res, dict) else bool(res)
+            return {
+                "status": "ok" if is_ok else "error",
+                "data": res if isinstance(res, dict) else {},
+                "message": res.get("message", "Workspace prerequisites configured.") if isinstance(res, dict) else "Workspace prerequisites configured.",
+            }
+
+        elif action == "dev":
+            if params.get("skip_gate") is True:
+                return {"status": "error", "message": "skip_gate=True is forbidden in authorized execution"}
+
+            options = params.get("options", "-u -a")
+            if not isinstance(options, str):
+                return {"status": "error", "message": "options must be a string"}
+            if options not in ALLOWED_BUILD_OPTIONS:
+                return {
+                    "status": "error",
+                    "message": f"options '{options}' is not in allowed build options: {sorted(ALLOWED_BUILD_OPTIONS)}"
+                }
+
+            # Dynamic lock check before build
+            try:
+                from run import check_catia_running
+                catia_status = check_catia_running()
+                if catia_status.get("status") == "running" or catia_status.get("running"):
+                    return {
+                        "status": "error",
+                        "message": "CATIA is running (DLL lock prevention). Stop CATIA before building."
+                    }
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "message": f"Unable to verify CATIA runtime state: {e}"
+                }
+
+            from build import incremental_build
+            from run import start_catia_runtime
+
+            r_build = incremental_build(
+                self.workspace_root,
+                entrypoint="kernel",
+                orchestrated_by_kernel=True
+            )
+            is_build_ok = r_build.get("status") in ("ok", "success")
+            if not is_build_ok:
+                return {
+                    "status": "error",
+                    "data": {"build": r_build},
+                    "message": f"Dev build failed: {r_build.get('message', 'Build failed')}"
+                }
+
+            r_run = start_catia_runtime(
+                workspace_path=str(self.workspace_root),
+                entrypoint="kernel",
+                orchestrated_by_kernel=True
+            )
+            return {
+                "status": "ok",
+                "data": {"build": r_build, "run": r_run},
+                "message": f"Dev complete. Build: {r_build.get('message', '')}; Run: {r_run.get('message', '') if isinstance(r_run, dict) else 'CATIA started'}"
+            }
 
         return {"status": "error", "message": f"Unhandled action: {action}"}
 
@@ -2674,9 +2758,9 @@ class Kernel:
                     plan = {
                         "type": "execution_plan",
                         "version": 1,
-                        "action": "build",
+                        "action": "setup_prerequisites",
                         "workspace_root": str(self.workspace_root),
-                        "parameters": {"options": "-u -a", "target_module": None, "skip_gate": False},
+                        "parameters": {},
                         "command_preview": "setup_prerequisite_path",
                         "preflight": {"workspace_valid": bool(self.workspace_root.exists())},
                         "planned_steps": ["setup_prerequisites"],
@@ -2686,7 +2770,7 @@ class Kernel:
                     self._state = KernelState.COMPLETED
                     return KernelResult(
                         status="pending_execution", mode="develop", state=self._state.value,
-                        message="Execution plan generated for setup prerequisites. Authorization required.",
+                        message="Execution plan generated for action 'setup_prerequisites'. Explicit authorization required via develop(execute_plan=...).",
                         data={"execute_plan": plan, "preview": True},
                     ).to_dict()
                 r = setup_prerequisite_path(ws)
@@ -2696,7 +2780,7 @@ class Kernel:
 
             if any(kw in request for kw in ("build", "compile", "mkmk")):
                 n = int(re.search(r'(\d+)\s*thread', request).group(1)) if re.search(r'(\d+)\s*thread', request) else 8
-                options = "-a" if "full" in request else ("-u -a" if "clean" in request else "-u -a")
+                options = "-a -g" if "debug" in request else ("-a" if "full" in request else ("-a -u" if "clean" in request else "-u -a"))
                 if preview:
                     plan = {
                         "type": "execution_plan",
@@ -2740,9 +2824,9 @@ class Kernel:
                     plan = {
                         "type": "execution_plan",
                         "version": 1,
-                        "action": "build",
+                        "action": "runtime_view",
                         "workspace_root": str(self.workspace_root),
-                        "parameters": {"options": "-u -a", "target_module": None, "skip_gate": False},
+                        "parameters": {},
                         "command_preview": "create_runtime_view",
                         "preflight": {"workspace_valid": bool(self.workspace_root.exists())},
                         "planned_steps": ["sync_runtime_view"],
@@ -2752,7 +2836,7 @@ class Kernel:
                     self._state = KernelState.COMPLETED
                     return KernelResult(
                         status="pending_execution", mode="develop", state=self._state.value,
-                        message="Execution plan generated for runtime view synchronization. Authorization required.",
+                        message="Execution plan generated for action 'runtime_view'. Explicit authorization required via develop(execute_plan=...).",
                         data={"execute_plan": plan, "preview": True},
                     ).to_dict()
                 r = create_runtime_view(ws)
@@ -2799,22 +2883,26 @@ class Kernel:
                     plan = {
                         "type": "execution_plan",
                         "version": 1,
-                        "action": "build",
+                        "action": "dev",
                         "workspace_root": str(self.workspace_root),
                         "parameters": {"options": "-u -a", "target_module": None, "skip_gate": False},
                         "command_preview": "mkmk -u -a && start_catia_runtime",
-                        "preflight": {"workspace_valid": bool(self.workspace_root.exists())},
-                        "planned_steps": ["verify_env", "mkmk", "sync_runtime_view", "launch_cnext"],
+                        "preflight": {
+                            "workspace_valid": bool(self.workspace_root.exists()),
+                            "catia_not_running": True,
+                        },
+                        "planned_steps": ["verify_env", "check_catia_lock", "mkmk", "sync_runtime_view", "launch_cnext"],
                         "file_preconditions": {},
                     }
                     plan["plan_digest"] = compute_plan_digest(plan)
                     self._state = KernelState.COMPLETED
                     return KernelResult(
                         status="pending_execution", mode="develop", state=self._state.value,
-                        message="Execution plan generated for dev (build + run). Explicit authorization required via develop(execute_plan=...).",
+                        message="Execution plan generated for action 'dev'. Explicit authorization required via develop(execute_plan=...).",
                         data={"execute_plan": plan, "preview": True},
                     ).to_dict()
-                r_build = incremental_build(ws, entrypoint="kernel", orchestrated_by_kernel=True)
+                from build import incremental_build
+                r_build = incremental_build(self.workspace_root, entrypoint="kernel", orchestrated_by_kernel=True)
                 r_run = start_catia_runtime(workspace_path=str(self.workspace_root), entrypoint="kernel", orchestrated_by_kernel=True) if r_build.get("status") == "success" else None
                 self._state = KernelState.COMPLETED
                 return KernelResult(status="ok", mode="develop", state=self._state.value,

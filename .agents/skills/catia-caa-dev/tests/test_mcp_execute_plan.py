@@ -316,6 +316,91 @@ def main():
             check("Test 11b: drifted macro rejected before execution", res_macro_drift.get("status") == "error")
             check("Test 11c: error message specifies drift", "has drifted since preview" in res_macro_drift.get("message", ""))
 
+        # ── Test 12: Action Parity - setup_prerequisites ──────────────
+        res_sp_prev = mcp_server.handle_tool("develop", {
+            "workspace": str(ws),
+            "request": "setup prereq",
+            "preview": True,
+        })
+        check("Test 12a: setup prereq preview status pending_execution", res_sp_prev.get("status") == "pending_execution")
+        sp_plan = res_sp_prev.get("execute_plan", {})
+        check("Test 12b: setup prereq preview action is setup_prerequisites", sp_plan.get("action") == "setup_prerequisites")
+
+        with mock.patch("build.setup_prerequisite_path") as mock_spp, mock.patch("build.build_workspace") as mock_bw:
+            mock_spp.return_value = {"status": "ok", "message": "prereq linked"}
+            res_sp_exec = mcp_server.handle_tool("develop", {
+                "workspace": str(ws),
+                "execute_plan": sp_plan,
+            })
+            check("Test 12c: setup prereq execution status ok", res_sp_exec.get("status") == "ok")
+            check("Test 12d: setup_prerequisite_path called", mock_spp.call_count == 1)
+            check("Test 12e: build_workspace NOT called", mock_bw.call_count == 0)
+
+        # ── Test 13: Action Parity - runtime_view ─────────────────────
+        res_rv_prev = mcp_server.handle_tool("develop", {
+            "workspace": str(ws),
+            "request": "create runtime view",
+            "preview": True,
+        })
+        check("Test 13a: runtime view preview status pending_execution", res_rv_prev.get("status") == "pending_execution")
+        rv_plan = res_rv_prev.get("execute_plan", {})
+        check("Test 13b: runtime view preview action is runtime_view", rv_plan.get("action") == "runtime_view")
+
+        with mock.patch("build.create_runtime_view") as mock_crv, mock.patch("build.build_workspace") as mock_bw:
+            mock_crv.return_value = {"status": "ok", "message": "runtime view created"}
+            res_rv_exec = mcp_server.handle_tool("develop", {
+                "workspace": str(ws),
+                "execute_plan": rv_plan,
+            })
+            check("Test 13c: runtime view execution status ok", res_rv_exec.get("status") == "ok")
+            check("Test 13d: create_runtime_view called", mock_crv.call_count == 1)
+            check("Test 13e: build_workspace NOT called", mock_bw.call_count == 0)
+
+        # ── Test 14: Action Parity - dev (composite build + run) ──────
+        res_dev_prev = mcp_server.handle_tool("develop", {
+            "workspace": str(ws),
+            "request": "dev",
+            "preview": True,
+        })
+        check("Test 14a: dev preview status pending_execution", res_dev_prev.get("status") == "pending_execution")
+        dev_plan = res_dev_prev.get("execute_plan", {})
+        check("Test 14b: dev preview action is dev", dev_plan.get("action") == "dev")
+
+        with mock.patch("build.incremental_build") as mock_inc, mock.patch("run.start_catia_runtime") as mock_start, mock.patch("build.build_workspace") as mock_bw:
+            mock_inc.return_value = {"status": "success", "message": "mkmk ok"}
+            mock_start.return_value = {"status": "ok", "message": "cnext ok"}
+            res_dev_exec = mcp_server.handle_tool("develop", {
+                "workspace": str(ws),
+                "execute_plan": dev_plan,
+            })
+            check("Test 14c: dev execution status ok", res_dev_exec.get("status") == "ok")
+            check("Test 14d: incremental_build called", mock_inc.call_count == 1)
+            check("Test 14e: start_catia_runtime called on build success", mock_start.call_count == 1)
+            check("Test 14f: build_workspace NOT called directly", mock_bw.call_count == 0)
+
+            # Test short-circuit on build failure
+            mock_inc.return_value = {"status": "error", "message": "compilation failed"}
+            mock_start.reset_mock()
+            res_dev_fail = mcp_server.handle_tool("develop", {
+                "workspace": str(ws),
+                "execute_plan": dev_plan,
+            })
+            check("Test 14g: dev execution fails on build failure", res_dev_fail.get("status") == "error")
+            check("Test 14h: start_catia_runtime not called on build failure", mock_start.call_count == 0)
+
+        # ── Test 15: Build Mode Preview Options Parity ────────────────
+        clean_prev = mcp_server.handle_tool("develop", {"workspace": str(ws), "request": "clean build", "preview": True})
+        check("Test 15a: clean build options is -a -u", clean_prev.get("execute_plan", {}).get("parameters", {}).get("options") == "-a -u")
+
+        full_prev = mcp_server.handle_tool("develop", {"workspace": str(ws), "request": "full build", "preview": True})
+        check("Test 15b: full build options is -a", full_prev.get("execute_plan", {}).get("parameters", {}).get("options") == "-a")
+
+        debug_prev = mcp_server.handle_tool("develop", {"workspace": str(ws), "request": "debug build", "preview": True})
+        check("Test 15c: debug build options is -a -g", debug_prev.get("execute_plan", {}).get("parameters", {}).get("options") == "-a -g")
+
+        inc_prev = mcp_server.handle_tool("develop", {"workspace": str(ws), "request": "incremental build", "preview": True})
+        check("Test 15d: incremental build options is -u -a", inc_prev.get("execute_plan", {}).get("parameters", {}).get("options") == "-u -a")
+
     finally:
         shutil.rmtree(ws, ignore_errors=True)
 
