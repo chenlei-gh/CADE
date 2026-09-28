@@ -191,10 +191,10 @@ def _result(cs: ChangeSet, workspace_root: Path) -> Dict:
     # call apply() directly do not pass through here.
     try:
         cs.capture_preconditions(workspace_root)
-    except Exception:
+    except Exception as e:
         # A ChangeSet that cannot record its baseline is not an authorization
-        # object. Leave preconditions empty rather than inventing one.
-        cs.preconditions = {}
+        # object. Fail closed: return error rather than an applicable pending object.
+        return _error(f"Failed to capture authorization preconditions: {e}")
     return {"status": "pending", "message": cs.description, "changeset": cs.to_dict()}
 
 

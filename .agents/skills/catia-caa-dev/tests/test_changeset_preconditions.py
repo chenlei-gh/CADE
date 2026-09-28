@@ -15,6 +15,7 @@ sys.path.insert(0, str(SKILL / "skills"))
 
 from changeset import ChangeSet, Patch
 from provenance_guard import compute_file_sha256
+from actions import _result
 
 total = passed = 0
 
@@ -91,6 +92,57 @@ def main():
         bare_result = bare.apply(workspace_root=ws)
         check("absent preconditions still apply", bare_result.get("status") == "applied")
         check("bare file written", (ws / "Bare.cpp").is_file())
+
+        # Hole 1: _result fail-closed when capture fails.
+        class BrokenCS(ChangeSet):
+            def capture_preconditions(self, workspace_root):
+                raise RuntimeError("simulated capture explosion")
+
+        borked = BrokenCS(action="borked", description="fail to capture")
+        borked_res = _result(borked, ws)
+        check("capture failure returns error status", borked_res.get("status") == "error")
+        check("capture failure omits changeset", borked_res.get("changeset") is None)
+        check("capture failure message explains reason", "simulated capture explosion" in borked_res.get("message", ""))
+
+        # Hole 2: Pre-existing created/binary target (e.g. .bmp) refused at capture.
+        bmp_file = ws / "Conflict.bmp"
+        bmp_file.write_bytes(b"original bmp")
+        cs_bmp = ChangeSet(action="bmp-create", description="create on top of existing bmp")
+        cs_bmp.add_create_binary(bmp_file, b"new bmp bytes")
+        bmp_captured_raised = False
+        try:
+            cs_bmp.capture_preconditions(ws)
+        except ValueError as e:
+            bmp_captured_raised = True
+            check("capture raises ValueError on existing bmp", "already exists" in str(e))
+        check("bmp capture raised", bmp_captured_raised)
+
+        bmp_result = _result(cs_bmp, ws)
+        check("_result returns error when bmp exists", bmp_result.get("status") == "error")
+        check("existing bmp untouched", bmp_file.read_bytes() == b"original bmp")
+
+        # Invariant: Old unbaselined binary apply still overwrites (preserves legacy semantics).
+        cs_old_binary = ChangeSet(action="old-bmp", description="unbaselined binary overwrite")
+        cs_old_binary.add_create_binary(bmp_file, b"legacy overwritten bytes")
+        old_apply_res = cs_old_binary.apply(workspace_root=ws)
+        check("unbaselined binary apply succeeds", old_apply_res.get("status") == "applied")
+        check("unbaselined binary overwrites file", bmp_file.read_bytes() == b"legacy overwritten bytes")
+
+        # Hole 3: Precondition path outside workspace_root rejected before read.
+        outside_file = ws.parent / "outside_probe.txt"
+        outside_file.write_bytes(b"sensitive")
+        try:
+            cs_traversal = ChangeSet(action="traversal", description="traversal in preconditions")
+            cs_traversal.preconditions = {
+                "../outside_probe.txt": {"exists": True, "sha256": "fakehash"}
+            }
+            res_traversal = cs_traversal.apply(workspace_root=ws)
+            check("traversal precondition rejected", res_traversal.get("status") == "rejected")
+            check("mismatch reports invalid path", any("Invalid precondition path" in err for err in res_traversal.get("errors", [])))
+            check("outside file untouched", outside_file.read_bytes() == b"sensitive")
+        finally:
+            if outside_file.exists():
+                outside_file.unlink()
     finally:
         shutil.rmtree(ws, ignore_errors=True)
 

@@ -824,7 +824,11 @@ class ChangeSet:
             # Create/binary paths record absence, even if a patch also names them.
             # Do not compare by the raw string: callers mix absolute and relative.
             if rel in created_rels:
-                observed[rel] = {"exists": path.exists(), "sha256": None}
+                if path.exists():
+                    raise ValueError(
+                        f"Created target already exists at authorization capture: {rel}"
+                    )
+                observed[rel] = {"exists": False, "sha256": None}
             elif path.is_file():
                 observed[rel] = {"exists": True, "sha256": compute_file_sha256(path)}
             else:
@@ -839,18 +843,23 @@ class ChangeSet:
         ws = Path(workspace_root).resolve()
         mismatches = []
         for rel, expected in self.preconditions.items():
-            path = ws / rel
+            try:
+                norm_rel = normalize_rel_posix_path(rel, ws, strict=True)
+            except Exception as e:
+                mismatches.append(f"Invalid precondition path '{rel}': {e}")
+                continue
+            path = ws / norm_rel
             exists = path.is_file()
             if bool(expected.get("exists")) != exists:
                 mismatches.append(
-                    f"{rel}: expected exists={bool(expected.get('exists'))}, now {exists}"
+                    f"{norm_rel}: expected exists={bool(expected.get('exists'))}, now {exists}"
                 )
                 continue
             expected_sha = expected.get("sha256")
             if exists and expected_sha:
                 actual = compute_file_sha256(path)
                 if actual != expected_sha:
-                    mismatches.append(f"{rel}: content changed since authorization")
+                    mismatches.append(f"{norm_rel}: content changed since authorization")
         return mismatches
 
     def to_dict(self) -> Dict:
