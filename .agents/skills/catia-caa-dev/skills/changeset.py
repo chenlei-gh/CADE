@@ -125,6 +125,10 @@ class ChangeSet:
     _applied_modified: List[str] = field(default_factory=list, repr=False)
     _applied_deleted: List[str] = field(default_factory=list, repr=False)
     _applied_patched: List[str] = field(default_factory=list, repr=False)
+    # Apply preconditions captured when this object became an authorization
+    # ChangeSet. Absent means "not an authorized object" — apply() does not
+    # invent a baseline. Present means every touched path must still match.
+    preconditions: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     # ── Add helpers ────────────────────────────────────────────────
 
@@ -435,6 +439,26 @@ class ChangeSet:
                 "Unresolved ChangeSet merge conflicts: " + "; ".join(merge_conflicts)
             ]
             return result
+
+        # 0a2. Authorization baseline. Only when this ChangeSet was captured
+        # as an authorization object. A mismatch rejects before any write,
+        # including the backup. Absent preconditions keep the old apply path.
+        if self.preconditions:
+            if workspace_root is None:
+                result["status"] = "rejected"
+                result["errors"] = [
+                    "Authorized ChangeSet requires workspace_root to check preconditions"
+                ]
+                return result
+            mismatches = self.check_preconditions(workspace_root)
+            if mismatches:
+                result["status"] = "rejected"
+                result["errors"] = [
+                    "Workspace no longer matches ChangeSet preconditions: "
+                    + "; ".join(mismatches)
+                ]
+                result["precondition_mismatches"] = mismatches
+                return result
 
         # 0b. Path validation against workspace_root (P0-001)
         if workspace_root:
@@ -761,8 +785,76 @@ class ChangeSet:
 
     # ── Serialization ──────────────────────────────────────────────
 
+    def touched_paths(self) -> List[str]:
+        """Paths this ChangeSet will read or write. Includes binary creates."""
+        paths = list(self.created.keys())
+        paths.extend(self.modified.keys())
+        paths.extend(str(p) for p in self.deleted)
+        paths.extend(str(p.file) for p in self.patches)
+        paths.extend(self._binary.keys())
+        seen = set()
+        ordered = []
+        for path in paths:
+            if path not in seen:
+                seen.add(path)
+                ordered.append(path)
+        return ordered
+
+    def capture_preconditions(self, workspace_root: Path) -> Dict[str, Dict[str, Any]]:
+        """Record exists+sha256 for touched paths. Does not serialize.
+
+        created and _binary paths are expected to be absent. modified, deleted,
+        and patch targets are expected to exist, with the bytes observed now.
+        A created path that also appears as a patch target is still absent:
+        the patch runs against the file this ChangeSet will create.
+        """
+        from provenance_guard import compute_file_sha256, normalize_rel_posix_path
+
+        ws = Path(workspace_root).resolve()
+        created_rels = {
+            normalize_rel_posix_path(raw, ws, strict=True)
+            for raw in list(self.created.keys()) + list(self._binary.keys())
+        }
+        observed: Dict[str, Dict[str, Any]] = {}
+        for raw in self.touched_paths():
+            rel = normalize_rel_posix_path(raw, ws, strict=True)
+            path = Path(raw)
+            if not path.is_absolute():
+                path = ws / path
+            # Create/binary paths record absence, even if a patch also names them.
+            # Do not compare by the raw string: callers mix absolute and relative.
+            if rel in created_rels:
+                observed[rel] = {"exists": path.exists(), "sha256": None}
+            elif path.is_file():
+                observed[rel] = {"exists": True, "sha256": compute_file_sha256(path)}
+            else:
+                observed[rel] = {"exists": False, "sha256": None}
+        self.preconditions = observed
+        return observed
+
+    def check_preconditions(self, workspace_root: Path) -> List[str]:
+        """Return mismatch messages. Empty means the baseline still holds."""
+        from provenance_guard import compute_file_sha256, normalize_rel_posix_path
+
+        ws = Path(workspace_root).resolve()
+        mismatches = []
+        for rel, expected in self.preconditions.items():
+            path = ws / rel
+            exists = path.is_file()
+            if bool(expected.get("exists")) != exists:
+                mismatches.append(
+                    f"{rel}: expected exists={bool(expected.get('exists'))}, now {exists}"
+                )
+                continue
+            expected_sha = expected.get("sha256")
+            if exists and expected_sha:
+                actual = compute_file_sha256(path)
+                if actual != expected_sha:
+                    mismatches.append(f"{rel}: content changed since authorization")
+        return mismatches
+
     def to_dict(self) -> Dict:
-        return {
+        payload = {
             "action": self.action,
             "description": self.description,
             "created": dict(self.created),
@@ -784,6 +876,11 @@ class ChangeSet:
                 for path, data in self._binary.items()
             },
         }
+        if self.preconditions:
+            payload["preconditions"] = {
+                path: dict(state) for path, state in self.preconditions.items()
+            }
+        return payload
 
     @classmethod
     def from_dict(cls, d: Dict) -> "ChangeSet":
@@ -800,6 +897,10 @@ class ChangeSet:
         cs._binary = {
             path: base64.b64decode(b64)
             for path, b64 in d.get("_binary", {}).items()
+        }
+        raw_pre = d.get("preconditions") or {}
+        cs.preconditions = {
+            path: dict(state) for path, state in raw_pre.items() if isinstance(state, dict)
         }
         return cs
 

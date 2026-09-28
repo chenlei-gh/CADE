@@ -185,7 +185,16 @@ def _error(msg: str) -> Dict:
     return {"status": "error", "message": msg, "changeset": None}
 
 
-def _result(cs: ChangeSet) -> Dict:
+def _result(cs: ChangeSet, workspace_root: Path) -> Dict:
+    # Authorization-object exit. Capture touched-path baseline here, not inside
+    # to_dict(), so ordinary serialization stays pure. Repair/FixPlan paths that
+    # call apply() directly do not pass through here.
+    try:
+        cs.capture_preconditions(workspace_root)
+    except Exception:
+        # A ChangeSet that cannot record its baseline is not an authorization
+        # object. Leave preconditions empty rather than inventing one.
+        cs.preconditions = {}
     return {"status": "pending", "message": cs.description, "changeset": cs.to_dict()}
 
 
@@ -518,7 +527,7 @@ def create_framework(
     # apply() to reject with "Created file already exists" (P0-004 class bug).
     # build_workspace() already calls setup_prerequisite_path() itself before
     # invoking mkmk, so no explicit setup is needed here.
-    return _result(cs)
+    return _result(cs, ctx.workspace_root)
 
 
 def create_module(ctx: ActionContext, framework_name: str, module_name: str) -> Dict:
@@ -542,7 +551,7 @@ def create_module(ctx: ActionContext, framework_name: str, module_name: str) -> 
             content=f"\nMODULES += {mod_base}",
         ))
     cs.metadata = {"framework": framework_name, "module": mod_name}
-    return _result(cs)
+    return _result(cs, ctx.workspace_root)
 
 
 def _module_cs(ctx: ActionContext, fw_path: Path, module_name: str) -> ChangeSet:
@@ -1020,7 +1029,7 @@ def create_command(
         is_stateful=is_stateful,
         dialog=dialog_name,
     )
-    return _result(cs)
+    return _result(cs, ctx.workspace_root)
 
 
 def create_workbench(
@@ -1172,7 +1181,7 @@ def create_workbench(
         plan=plan,
     )
 
-    return _result(master_cs)
+    return _result(master_cs, ctx.workspace_root)
 
 
 def create_dialog(
@@ -1248,7 +1257,7 @@ def create_dialog(
             )
 
     cs.merge_metadata(dialog=name, module=module)
-    return _result(cs)
+    return _result(cs, ctx.workspace_root)
 
 
 def create_interface(
@@ -1285,7 +1294,7 @@ def create_interface(
         )
 
     cs.metadata = {"interface": name, "module": module, "use_idl": use_idl}
-    return _result(cs)
+    return _result(cs, ctx.workspace_root)
 
 
 def create_component(
@@ -1312,7 +1321,7 @@ def create_component(
     cs.add_create_file(src / f"{name}.cpp", ctx.tpl("Component.cpp"), _r(name, **extra))
 
     cs.metadata = {"component": name, "module": module, "implements": implements}
-    return _result(cs)
+    return _result(cs, ctx.workspace_root)
 
 
 def strip_c_comments_and_strings(code: str) -> str:
@@ -1864,7 +1873,7 @@ def add_command_to_workbench(
         load_name=target_load_name,
         class_name=target_class_name,
     )
-    return _result(cs)
+    return _result(cs, ctx.workspace_root)
 
 
 def _mask_comments_and_strings(code: str) -> str:
@@ -2403,7 +2412,7 @@ def attach_command_to_toolbar(
         starter_var=plan["new_starter_var"],
         is_idempotent=plan["is_idempotent"],
     )
-    return _result(cs)
+    return _result(cs, ctx.workspace_root)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -3131,7 +3140,7 @@ def delete_command(
         }
     )
 
-    return _result(master_cs)
+    return _result(master_cs, ctx.workspace_root)
 
 
 def _rename_imakefile_content(content: str, old_name: str, new_name: str) -> str:
@@ -3803,7 +3812,7 @@ def rename_command(
         }
     )
 
-    res = _result(master_cs)
+    res = _result(master_cs, ctx.workspace_root)
     res["plan"] = plan
     return res
 
@@ -5019,7 +5028,7 @@ def delete_module(ctx: ActionContext, name: str, framework: str = None) -> Dict:
 
     cs.add_warning(f"Module directory '{mod.path}' will be removed recursively")
     cs.metadata = {"module": name, "deleted_files_count": len(cs.deleted)}
-    return _result(cs)
+    return _result(cs, ctx.workspace_root)
 
 
 def _delete_command_to_cs(cmd: Command, cs: ChangeSet):
