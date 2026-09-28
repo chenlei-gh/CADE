@@ -49,28 +49,44 @@ TOOLS = [
             "Also handles: full/incremental workspace builds, CATIA (CNEXT) runtime startup, and prerequisite setup. "
             "Kernel automatically generates compliant CAA C++ source/headers, Imakefile.mk, and IdentityCard, "
             "with automatic rollback snapshots before applying changes. "
+            "To apply one already-generated ChangeSet, pass that object as changeset and omit request. "
+            "request and changeset are mutually exclusive. "
             'Examples: "create command ExportBOM in CAABOMToolCmd.m", '
             '"在 CAABOMToolCmd.m 中创建对话框面板", "build workspace", "start CATIA".'
         ),
         "inputSchema": {
             "type": "object",
-            "required": ["request"],
+            # request XOR changeset is enforced in handle_tool. JSON Schema
+            # draft used here cannot express that mutual exclusion.
+            "required": [],
             "properties": {
                 "request": {
                     "type": "string",
-                    "description": "What you want to create, in natural language.",
+                    "description": (
+                        "What you want to create, in natural language. "
+                        "Mutually exclusive with changeset."
+                    ),
                 },
                 "workspace": {"type": "string", "description": "Optional workspace path override"},
                 "preview": {
                     "type": "boolean",
                     "description": (
                         "If true, generate the ChangeSet but do NOT apply it to disk. "
-                        "Inspect the returned data.changeset / data.preview, then either "
-                        "re-call with preview=false (or omit preview) to actually apply, "
-                        "or discard. Enables a review-then-apply workflow that makes "
-                        "rollback usable in practice."
+                        "The returned changeset is the authorization object for this "
+                        "generation. To apply that exact object, call develop again with "
+                        "changeset set to it and without request. Do not re-run the "
+                        "natural-language request and treat that as confirmation. "
+                        "Ignored when changeset is set."
                     ),
                     "default": False,
+                },
+                "changeset": {
+                    "type": "object",
+                    "description": (
+                        "A serialized ChangeSet previously returned by develop(preview=true). "
+                        "Applies that object only. Does not re-enter Kernel.execute, and does "
+                        "not run extras, IdentityCard, or build. Mutually exclusive with request."
+                    ),
                 },
             },
         },
@@ -131,9 +147,48 @@ TOOLS = [
 ]
 
 
+def _reject(operation: str, message: str) -> dict:
+    return {"status": "error", "operation": operation, "message": message}
+
+
+def _apply_authorized_changeset(ws: str, changeset) -> dict:
+    """Apply one serialized ChangeSet. Never re-enters Kernel.execute.
+
+    P1 only. Does not check workspace baseline (P2), fold extras into the
+    ChangeSet (P3a), authorize IdentityCard (P3b), or authorize a build (P4).
+    """
+    if not isinstance(changeset, dict):
+        return _reject("apply", "changeset must be the serialized ChangeSet object")
+    kernel = Kernel(workspace_root=ws)
+    applied = kernel._apply_changeset_dict(changeset)
+    if applied.get("status") == "applied":
+        result = {
+            "status": "ok",
+            "operation": "apply",
+            "apply_status": "applied",
+            "message": "Applied the supplied ChangeSet",
+        }
+        if applied.get("rollback_id"):
+            result["rollback_id"] = applied["rollback_id"]
+        # optimize() keeps status/message/rollback_id but drops unknown keys.
+        # Stamp the apply contract after it so this is not reported as develop.
+        optimized = optimize(result)
+        optimized["operation"] = "apply"
+        optimized["apply_status"] = "applied"
+        return optimized
+    errors = applied.get("errors") or [applied.get("message") or applied.get("status") or "apply failed"]
+    return {
+        "status": "error",
+        "operation": "apply",
+        "apply_status": applied.get("status", "error"),
+        "message": "; ".join(str(e) for e in errors),
+        "errors": errors,
+    }
+
+
 def handle_tool(name: str, args: dict) -> dict:
     ws = args.get("workspace", WORKSPACE)
-    request = args.get("request", "")
+    has_changeset = "changeset" in args and args.get("changeset") is not None
 
     mode_map = {
         "develop": KernelMode.DEVELOP,
@@ -144,6 +199,19 @@ def handle_tool(name: str, args: dict) -> dict:
     if name not in mode_map:
         return {"status": "error", "message": f"Unknown tool: {name}. Available: develop, analyze, repair"}
 
+    if has_changeset and name != "develop":
+        return _reject("apply", "changeset is only accepted by develop")
+
+    if name == "develop":
+        has_request = isinstance(args.get("request"), str) and bool(args.get("request").strip())
+        if has_request and has_changeset:
+            return _reject("apply", "request and changeset are mutually exclusive")
+        if not has_request and not has_changeset:
+            return _reject("develop", "develop requires request or changeset, not both and not neither")
+        if has_changeset:
+            return _apply_authorized_changeset(ws, args.get("changeset"))
+
+    request = args.get("request", "")
     kernel = Kernel(workspace_root=ws)
     preview = bool(args.get("preview", False)) if name == "develop" else False
     detail = bool(args.get("detail", False)) if name == "analyze" else False
