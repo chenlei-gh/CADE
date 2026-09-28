@@ -181,12 +181,18 @@ def _extract_level1(d: dict) -> dict:
     if d.get("knowledge_content"):
         summary["knowledge_content"] = d["knowledge_content"]
 
-    # Preview workflow: the caller explicitly asked for the plan — surface
-    # the manifest (file lists), not the full file bodies.
+    # Preview workflow: status="preview" is an authorization object, not a
+    # summary. The caller must get the same serialized ChangeSet the kernel
+    # produced (bodies, patches, _binary) so a later apply can target this
+    # object. Non-preview results still get the manifest only.
     if d.get("preview"):
         summary["preview"] = d["preview"]
     if d.get("changeset"):
-        summary["changeset"] = _compact_changeset(d["changeset"])
+        cs = d["changeset"]
+        if d.get("status") == "preview" and isinstance(cs, dict):
+            summary["changeset"] = cs
+        else:
+            summary["changeset"] = _compact_changeset(cs)
 
     return summary
 
