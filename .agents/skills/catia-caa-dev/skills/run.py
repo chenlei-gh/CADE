@@ -488,6 +488,64 @@ def start_catia_runtime(
                     "stage": "runtime_start",
                 }
 
+        # P5.3 Envelope attachment (branch-driven, preserving raw fields)
+        raw_snapshot = dict(runtime_result)
+        cur_status = runtime_result.get("status")
+        if cur_status == "exited":
+            runtime_result["execution"] = {
+                "status": "completed",
+                "action_result": "exited",
+                "raw": raw_snapshot,
+            }
+            runtime_result["verification"] = {
+                "status": "not_run",
+                "check": "none",
+                "evidence": {
+                    "reason": "launcher_exit_code_does_not_prove_cnext_lifecycle"
+                },
+            }
+        elif cur_status == "started":
+            runtime_result["execution"] = {
+                "status": "completed",
+                "action_result": "started",
+                "raw": raw_snapshot,
+            }
+            runtime_result["verification"] = {
+                "status": "observed",
+                "check": "cnext_process_scan",
+                "evidence": {
+                    "target_image": "CNEXT.exe",
+                    "observed_process": "CNEXT.exe",
+                    "pid": runtime_result.get("pid"),
+                    "match_found": True,
+                },
+            }
+        elif cur_status == "launching":
+            runtime_result["execution"] = {
+                "status": "completed",
+                "action_result": "launching",
+                "raw": raw_snapshot,
+            }
+            runtime_result["verification"] = {
+                "status": "not_run",
+                "check": "catia_start_pending",
+                "evidence": {
+                    "reason": "launch_initiated_polling_window_expired",
+                    "v1_classification": "not_specified_in_v1",
+                },
+            }
+        else:
+            runtime_result["execution"] = {
+                "status": "completed",
+                "action_result": cur_status,
+                "raw": raw_snapshot,
+            }
+            runtime_result["verification"] = {
+                "status": "not_run",
+                "check": "none",
+                "evidence": {"reason": f"unhandled_status_{cur_status}"},
+            }
+
         if audit_warning:
             runtime_result["telemetry_audit_warning"] = audit_warning
 
@@ -510,6 +568,17 @@ def start_catia_runtime(
         }
         if audit_warning:
             res["telemetry_audit_warning"] = audit_warning
+        raw_snapshot = dict(res)
+        res["execution"] = {
+            "status": "timeout",
+            "action_result": "timeout",
+            "raw": raw_snapshot,
+        }
+        res["verification"] = {
+            "status": "not_run",
+            "check": "none",
+            "evidence": {"reason": "startup_timeout"},
+        }
         return res
 
     except Exception as e:
@@ -526,6 +595,17 @@ def start_catia_runtime(
         }
         if audit_warning:
             res["telemetry_audit_warning"] = audit_warning
+        raw_snapshot = dict(res)
+        res["execution"] = {
+            "status": "error",
+            "action_result": "error",
+            "raw": raw_snapshot,
+        }
+        res["verification"] = {
+            "status": "not_run",
+            "check": "none",
+            "evidence": {"reason": "startup_exception"},
+        }
         return res
 
 
@@ -568,6 +648,20 @@ def stop_catia(
         }
         if audit_warning:
             not_running_res["telemetry_audit_warning"] = audit_warning
+        not_running_res["execution"] = {
+            "status": "completed",
+            "action_result": "not_running",
+            "raw": dict(not_running_res),
+        }
+        not_running_res["verification"] = {
+            "status": "observed",
+            "check": "cnext_process_scan",
+            "evidence": {
+                "target_image": "CNEXT.exe",
+                "match_found": False,
+                "instance_scope": "single_query_snapshot_only",
+            },
+        }
         return not_running_res
 
     pids = [p["pid"] for p in running]
@@ -643,6 +737,22 @@ def stop_catia(
     }
     if audit_warning:
         res["telemetry_audit_warning"] = audit_warning
+    raw_snapshot = dict(res)
+    res["execution"] = {
+        "status": "completed",
+        "action_result": status,
+        "raw": raw_snapshot,
+    }
+    res["verification"] = {
+        "status": "observed",
+        "check": "cnext_process_scan",
+        "evidence": {
+            "target_image": "CNEXT.exe",
+            "stopped_pids": stopped,
+            "failed_pids": failed,
+            "instance_scope": "post_stop_process_scan",
+        },
+    }
     return res
 
 

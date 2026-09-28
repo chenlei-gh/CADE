@@ -288,18 +288,69 @@ def check_runtime_view(workspace_path: Path) -> dict:
                 {"architecture": arch, "path": str(runtime_path), "exists": True}
             )
 
+    try:
+        configured_arch = CAAEnvironment().get_architecture() or "win_b64"
+    except Exception:
+        configured_arch = "win_b64"
+
     if runtime_dirs:
-        return {
+        res = {
             "status": "found",
             "message": f"Found {len(runtime_dirs)} Runtime View(s)",
             "runtime_views": runtime_dirs,
         }
+        raw_snapshot = dict(res)
+        if len(runtime_dirs) == 1:
+            target_arch = runtime_dirs[0]["architecture"]
+            target_path = runtime_dirs[0]["path"]
+            arch_matched = (target_arch == configured_arch)
+        else:
+            target_arch = [d["architecture"] for d in runtime_dirs]
+            target_path = [d["path"] for d in runtime_dirs]
+            arch_matched = any(d["architecture"] == configured_arch for d in runtime_dirs)
+
+        res["execution"] = {
+            "status": "completed",
+            "action_result": "found",
+            "raw": raw_snapshot,
+        }
+        res["verification"] = {
+            "status": "passed",
+            "check": "runtime_candidate_path_exists",
+            "evidence": {
+                "target_architecture": target_arch,
+                "target_path": target_path,
+                "configured_architecture": configured_arch,
+                "architecture_matched": arch_matched,
+                "exists": True,
+                "instance_scope": "path_existence_predicate_only",
+            },
+        }
+        return res
     else:
-        return {
+        res = {
             "status": "not_found",
             "message": "No Runtime View found",
             "runtime_views": [],
         }
+        raw_snapshot = dict(res)
+        res["execution"] = {
+            "status": "completed",
+            "action_result": "not_found",
+            "raw": raw_snapshot,
+        }
+        res["verification"] = {
+            "status": "failed",
+            "check": "runtime_candidate_path_exists",
+            "evidence": {
+                "configured_architecture": configured_arch,
+                "architecture_matched": False,
+                "exists": False,
+                "reason": "no_candidate_path_exists",
+                "instance_scope": "path_existence_predicate_only",
+            },
+        }
+        return res
 
 
 def main():
