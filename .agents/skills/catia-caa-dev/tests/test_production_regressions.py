@@ -429,6 +429,11 @@ try:
         def build_time_command(self, _workspace, _options):
             return ["fake-build"], "fake-build"
 
+        def run_command(self, command, _workspace=None):
+            # IdentityCard preparation calls CAAEnvironment.run_command before mkmk.
+            # This fixture only exists to reach post-build verification.
+            return ["fake-ic"], command
+
     # Real subprocess.run without text=True yields bytes — the mock must too,
     # otherwise build output decoding is exercised against the wrong type.
     # C4819 lines ride along to prove build_result quarantines them (P2).
@@ -454,13 +459,20 @@ try:
         mocked_build = build_module.build_workspace(build_ws, skip_gate=True)
 
     final_cache = MemoryCache.instances[-1].data
-    final_log = MemoryLogger.instances[-1].lines
+    final_log = [line for logger in MemoryLogger.instances for line in logger.lines]
     check("verification failure changes returned build status", mocked_build["status"] == "failed_verification", str(mocked_build))
+    check(
+        "verification failure keeps compile success separate",
+        mocked_build.get("execution", {}).get("status") == "success"
+        and mocked_build.get("verification", {}).get("envelope_status") == "failed",
+        str(mocked_build.get("execution")) + " " + str(mocked_build.get("verification")),
+    )
     check("final cache stores verification failure", final_cache.get("status") == "failed_verification", str(final_cache))
     check("final cache preserves prerequisite workspace", final_cache.get("prereq_workspace") == str(build_ws), str(final_cache))
     check("final build log stores verification failure", any("Status: failed_verification" in line for line in final_log), str(final_log))
 
     successful_verification = {"ok": True, "issues": [], "dll_count": 1, "dlls": [{"name": "MockModule.dll"}]}
+    expected_verification = dict(successful_verification)
     MemoryLogger.instances.clear()
     MemoryCache.instances.clear()
     with patch.object(build_module, "Logger", MemoryLogger), \
@@ -472,12 +484,52 @@ try:
             patch.object(build_module, "sync_runtime_view", return_value={"synced": [], "errors": [], "ok": True}):
         # skip_gate: intentionally minimal fixture (see above).
         successful_build = build_module.build_workspace(build_ws, skip_gate=True)
-    check("successful build returns verification evidence", successful_build.get("verification") == successful_verification, str(successful_build))
-    check("successful cache stores verification evidence", MemoryCache.instances[-1].data.get("verification") == successful_verification, str(MemoryCache.instances[-1].data))
+    check("successful build returns verification evidence", successful_build.get("verification", {}).get("dlls") == successful_verification["dlls"] and successful_build.get("verification", {}).get("ok") is True, str(successful_build.get("verification")))
+    check(
+        "successful build envelope separates execution and verification",
+        successful_build.get("execution", {}).get("status") == "success"
+        and successful_build.get("verification", {}).get("envelope_status") == "passed",
+        str(successful_build.get("execution")) + " " + str(successful_build.get("verification")),
+    )
+    cached_verification = MemoryCache.instances[-1].data.get("verification", {})
+    check(
+        "successful cache stores verification evidence",
+        cached_verification.get("dlls") == expected_verification["dlls"]
+        and cached_verification.get("ok") is True,
+        str(cached_verification),
+    )
     check("build result quarantines C4819 noise",
           successful_build.get("codepage_warning_count") == 2
           and successful_build.get("codepage_warning_files") == ["src/Noise.cpp"]
           and successful_build.get("warning_count") == 0, str(successful_build))
+
+    failed_process = SimpleNamespace(
+        returncode=1,
+        stdout=b"mkmk-ERROR: compile failed\n",
+        stderr=b"",
+    )
+
+    def fake_run(cmd, **_kwargs):
+        # mkCreateIC shares subprocess.run. Only the mkmk command should fail.
+        if isinstance(cmd, list) and cmd and cmd[0] == "fake-build":
+            return failed_process
+        return SimpleNamespace(returncode=0, stdout=b"EXIT_CODE=0\n", stderr=b"")
+
+    with patch.object(build_module, "Logger", MemoryLogger), \
+            patch.object(build_module, "Cache", MemoryCache), \
+            patch.object(build_module, "CAAEnvironment", FakeEnvironment), \
+            patch.object(build_module, "setup_prerequisite_path", return_value={"status": "success"}), \
+            patch.object(build_module.subprocess, "run", side_effect=fake_run), \
+            patch.object(build_module, "verify_build", return_value=failed_verification), \
+            patch.object(build_module, "sync_runtime_view", return_value={"synced": [], "errors": [], "ok": True}):
+        compile_failed = build_module.build_workspace(build_ws, skip_gate=True)
+    check(
+        "compile failure does not report post-build verification",
+        compile_failed.get("status") == "failed"
+        and compile_failed.get("execution", {}).get("status") == "failed"
+        and compile_failed.get("verification", {}).get("envelope_status") == "not_run",
+        str(compile_failed.get("status")) + " " + str(compile_failed.get("execution")) + " " + str(compile_failed.get("verification")),
+    )
 
     # Repair must diagnose the output returned by this build, not stale cache data.
     repair_ws = workspace / "repair"

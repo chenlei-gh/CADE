@@ -57,6 +57,7 @@ class TestBuildProvenanceIntegration(unittest.TestCase):
         mock_env = mock_env_cls.return_value
         mock_env.load_config.return_value = True
         mock_env.build_time_command.return_value = (["cmd", "/c"], "cmd /c")
+        mock_env.run_command.return_value = (["cmd", "/c"], "mkCreateIC")
 
         mock_proc = MagicMock()
         mock_proc.returncode = 0
@@ -89,6 +90,7 @@ class TestBuildProvenanceIntegration(unittest.TestCase):
         mock_env = mock_env_cls.return_value
         mock_env.load_config.return_value = True
         mock_env.build_time_command.return_value = (["cmd", "/c"], "cmd /c")
+        mock_env.run_command.return_value = (["cmd", "/c"], "mkCreateIC")
 
         mock_proc = MagicMock()
         mock_proc.returncode = 0
@@ -122,6 +124,7 @@ class TestBuildProvenanceIntegration(unittest.TestCase):
         mock_env = mock_env_cls.return_value
         mock_env.load_config.return_value = True
         mock_env.build_time_command.return_value = (["cmd", "/c"], "cmd /c")
+        mock_env.run_command.return_value = (["cmd", "/c"], "mkCreateIC")
 
         mock_proc = MagicMock()
         mock_proc.returncode = 0
@@ -173,6 +176,7 @@ class TestBuildProvenanceIntegration(unittest.TestCase):
         mock_env = mock_env_cls.return_value
         mock_env.load_config.return_value = True
         mock_env.build_time_command.return_value = (["cmd", "/c"], "cmd /c")
+        mock_env.run_command.return_value = (["cmd", "/c"], "mkCreateIC")
 
         mock_proc = MagicMock()
         mock_proc.returncode = 0
@@ -223,6 +227,7 @@ class TestBuildProvenanceIntegration(unittest.TestCase):
         mock_env = mock_env_cls.return_value
         mock_env.load_config.return_value = True
         mock_env.build_time_command.return_value = (["cmd", "/c"], "cmd /c")
+        mock_env.run_command.return_value = (["cmd", "/c"], "mkCreateIC")
 
         mock_proc = MagicMock()
         mock_proc.returncode = 0
