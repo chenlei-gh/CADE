@@ -335,6 +335,14 @@ class RepairLoop:
         Run mkmk build and parse compilation errors.
         Returns diagnostics in the same format as _diagnose_static().
         """
+        if self._preview_mode:
+            # P4: Preview mode strictly forbids external process execution.
+            return {
+                "total": 0,
+                "auto_fixable": 0,
+                "diagnostics": [],
+                "note": "Build diagnosis skipped in preview mode to prevent unauthorized subprocess spawn.",
+            }
         try:
             from build import build_workspace
             from parser import parse_mkmk_output

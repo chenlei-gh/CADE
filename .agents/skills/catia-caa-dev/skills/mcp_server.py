@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 SKILL_ROOT = Path(__file__).parent
 sys.path.insert(0, str(SKILL_ROOT))
@@ -50,7 +51,8 @@ TOOLS = [
             "Kernel automatically generates compliant CAA C++ source/headers, Imakefile.mk, and IdentityCard, "
             "with automatic rollback snapshots before applying changes. "
             "To apply one already-generated ChangeSet, pass that object as changeset and omit request. "
-            "request and changeset are mutually exclusive. "
+            "To execute an authorized build, run, macro, or batch, pass execute_plan and omit request. "
+            "request, changeset, and execute_plan are mutually exclusive. "
             'Examples: "create command ExportBOM in CAABOMToolCmd.m", '
             '"在 CAABOMToolCmd.m 中创建对话框面板", "build workspace", "start CATIA".'
         ),
@@ -86,6 +88,14 @@ TOOLS = [
                         "A serialized ChangeSet previously returned by develop(preview=true). "
                         "Applies that object only. Does not re-enter Kernel.execute, and does "
                         "not run extras, IdentityCard, or build. Mutually exclusive with request."
+                    ),
+                },
+                "execute_plan": {
+                    "type": "object",
+                    "description": (
+                        "A serialized ExecutionPlan previously returned by develop(preview=true). "
+                        "Authorizes and executes an external process (build, start_catia, stop_catia, macro, batch). "
+                        "Does not re-enter Kernel.execute. Mutually exclusive with request and changeset."
                     ),
                 },
             },
@@ -186,9 +196,44 @@ def _apply_authorized_changeset(ws: str, changeset) -> dict:
     }
 
 
+def _execute_authorized_plan(ws: str, execute_plan: Any) -> dict:
+    """Execute one serialized ExecutionPlan. Never re-enters Kernel.execute."""
+    if not isinstance(execute_plan, dict):
+        return _reject("execute", "execute_plan must be the serialized ExecutionPlan object")
+    kernel = Kernel(workspace_root=ws)
+    executed = kernel._execute_plan_dict(execute_plan)
+    action = execute_plan.get("action", "")
+    if executed.get("status") in ("ok", "success"):
+        result = {
+            "status": "ok",
+            "operation": "execute",
+            "execution_status": executed.get("status", "ok"),
+            "action": action,
+            "message": executed.get("message", "Execution complete"),
+            "data": executed.get("data", {}),
+        }
+        optimized = optimize(result)
+        optimized["operation"] = "execute"
+        optimized["execution_status"] = executed.get("status", "ok")
+        optimized["action"] = action
+        return optimized
+    errors = executed.get("errors") or [executed.get("message") or executed.get("status") or "execution failed"]
+    return {
+        "status": "error",
+        "operation": "execute",
+        "execution_status": executed.get("status", "error"),
+        "action": action,
+        "message": "; ".join(str(e) for e in errors),
+        "errors": errors,
+    }
+
+
 def handle_tool(name: str, args: dict) -> dict:
     ws = args.get("workspace", WORKSPACE)
+    request_val = args.get("request")
+    has_request = isinstance(request_val, str) and bool(request_val.strip())
     has_changeset = "changeset" in args and args.get("changeset") is not None
+    has_execute_plan = "execute_plan" in args and args.get("execute_plan") is not None
 
     mode_map = {
         "develop": KernelMode.DEVELOP,
@@ -201,21 +246,33 @@ def handle_tool(name: str, args: dict) -> dict:
 
     if has_changeset and name != "develop":
         return _reject("apply", "changeset is only accepted by develop")
+    if has_execute_plan and name != "develop":
+        return _reject("execute", "execute_plan is only accepted by develop")
 
     if name == "develop":
-        has_request = isinstance(args.get("request"), str) and bool(args.get("request").strip())
-        if has_request and has_changeset:
-            return _reject("apply", "request and changeset are mutually exclusive")
-        if not has_request and not has_changeset:
-            return _reject("develop", "develop requires request or changeset, not both and not neither")
+        count = sum(1 for x in (has_request, has_changeset, has_execute_plan) if x)
+        if count == 0:
+            return _reject("develop", "develop requires exactly one of request, changeset, or execute_plan")
+        if count > 1:
+            op = "execute" if has_execute_plan else "apply"
+            return _reject(op, "request, changeset, and execute_plan are mutually exclusive")
         if has_changeset:
             return _apply_authorized_changeset(ws, args.get("changeset"))
+        if has_execute_plan:
+            return _execute_authorized_plan(ws, args.get("execute_plan"))
 
     request = args.get("request", "")
     kernel = Kernel(workspace_root=ws)
     preview = bool(args.get("preview", False)) if name == "develop" else False
     detail = bool(args.get("detail", False)) if name == "analyze" else False
     result = kernel.execute(mode_map[name], request, preview=preview, detail=detail)
+
+    if isinstance(result, dict) and result.get("status") == "pending_execution":
+        optimized = optimize(result)
+        optimized["status"] = "pending_execution"
+        if "execute_plan" in result:
+            optimized["execute_plan"] = result["execute_plan"]
+        return optimized
 
     # A knowledge query with detail=true inlines file content that must reach
     # the caller verbatim. Knowledge results are FLATTENED (content at top

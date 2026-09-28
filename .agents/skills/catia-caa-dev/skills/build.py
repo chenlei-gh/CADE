@@ -348,6 +348,31 @@ def diagnose_environment() -> dict:
     return result
 
 
+def _ensure_identity_cards_for_build(workspace_path: Path, logger=None) -> None:
+    """Ensure IdentityCard is created (mkCreateIC) for frameworks before mkmk build."""
+    try:
+        resolved = _resolve_workspace_root(workspace_path)
+        fws = [p for p in resolved.iterdir() if p.is_dir() and p.name.endswith(".edu")]
+        for fw in fws:
+            ic_xml = fw / "IdentityCard" / "IdentityCard.xml"
+            ic_h = fw / "IdentityCard" / "IdentityCard.h"
+            if not (ic_xml.exists() or ic_h.exists()):
+                continue
+            ic_dir = fw / "IdentityCard"
+            has_binary = ic_dir.exists() and any(
+                f.suffix in (".obj", "") and "IdentityCard" in f.name
+                for f in ic_dir.iterdir()
+            )
+            if not has_binary:
+                base = fw.name.replace(".edu", "")
+                if logger:
+                    logger.write(f"Auto-creating IdentityCard for {base} via mkCreateIC")
+                create_identity_card(resolved, base)
+    except Exception as e:
+        if logger:
+            logger.write(f"IdentityCard check skipped or failed: {e}")
+
+
 def build_workspace(
     workspace_path: Path, options: str = "-u -a", timeout: int = 600,
     skip_gate: bool = False,
@@ -432,6 +457,9 @@ def build_workspace(
 
     if not workspace_path.exists():
         return _make_error(f"Workspace path does not exist: {workspace_path}", stage="path_validation")
+
+    # --- Pre-build: ensure IdentityCard is compiled (mkCreateIC) if needed ---
+    _ensure_identity_cards_for_build(resolved_root, logger)
 
     # --- Pre-build health check ---
     health = validate_workspace(workspace_path)
