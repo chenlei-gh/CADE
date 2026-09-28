@@ -77,7 +77,10 @@ ck("has playbooks", len(extras["playbooks"]) > 0)
 ck("has capabilities", len(extras["capabilities"]) > 0)
 mod = ws / "TestFW.edu" / "TestModule.m"
 if mod.exists():
-    applied = k._apply_extras({"intent": {"name": "ExportBOM", "module": "TestModule.m", "framework": "TestFW.edu"}}, extras)
+    from changeset import ChangeSet
+    cs = ChangeSet(action="test_extras", description="Test extras")
+    applied = k._apply_extras({"intent": {"name": "ExportBOM", "module": "TestModule.m", "framework": "TestFW.edu"}}, extras, cs=cs)
+    cs.apply(workspace_root=ws)
     ck("extras applied", isinstance(applied, dict))
 shutil.rmtree(ws, ignore_errors=True)
 

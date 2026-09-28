@@ -146,7 +146,11 @@ extras_test = {
     "capabilities": ["cap.assembly_tree"],
 }
 plan = {"intent": {"name": "MyCmd", "module": "MyModule.m", "framework": "MyFramework"}}
-applied = k._apply_extras(plan, extras_test)
+from changeset import ChangeSet
+cs = ChangeSet(action="test_extras", description="Test extras")
+applied = k._apply_extras(plan, extras_test, cs=cs)
+# P3a: Explicitly apply ChangeSet to test on-disk effects
+cs.apply(workspace_root=ws)
 ck("imakefile dep applied",
    "CATAssemblyInterfaces" in applied.get("deps_added", []))
 ck("playbook ref injected",

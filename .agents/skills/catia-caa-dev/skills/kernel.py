@@ -379,7 +379,7 @@ class Kernel:
             ).to_dict()
 
         self._state = KernelState.GENERATING
-        result = self._execute_develop_plan(plan, preview=preview)
+        result = self._execute_develop_plan(plan, preview=preview, extras=extras)
 
         if isinstance(result, dict) and result.get("status") in ("error", "blocked"):
             self._state = KernelState.FAILED
@@ -414,11 +414,8 @@ class Kernel:
                 except Exception:
                     pass  # grounding is best-effort, never blocks develop
 
-        # Phase 2.5: Apply cross-domain extras (data_extension, imakefile deps)
-        if not preview and extras and any(extras.values()):
-            apply_result = self._apply_extras(plan, extras)
-            if apply_result:
-                result["extras_applied"] = apply_result
+        # Phase 2.5: Cross-domain extras are now incorporated in-memory into the ChangeSet
+        # during _execute_develop_plan before apply/preview (P3a).
 
         # Phase 3: Static verification of generated code (skip in preview mode
         # since no files exist yet)
@@ -704,22 +701,19 @@ class Kernel:
                     })
                     continue
 
-                self._state = KernelState.GENERATING
-                result = self._execute_develop_plan(plan, preview=preview)
+                # Phase 1.3: extract cross-domain extras for this sub-intent
+                sub_extras = {}
+                try:
+                    from requirements import RequirementsClarifier, RequirementsDecomposer
+                    clarifier = RequirementsClarifier()
+                    sub_clarification = clarifier.analyze(sub_request)
+                    decomposer = RequirementsDecomposer()
+                    sub_extras = decomposer.enhance(sub_clarification)
+                except ImportError:
+                    pass
 
-                # Apply extras for this sub-intent (skip in preview mode)
-                if not preview:
-                    try:
-                        from requirements import RequirementsClarifier, RequirementsDecomposer
-                        clarifier = RequirementsClarifier()
-                        sub_clarification = clarifier.analyze(sub_request)
-                        decomposer = RequirementsDecomposer()
-                        extras = decomposer.enhance(sub_clarification)
-                        if extras and any(extras.values()):
-                            self._apply_extras(plan, extras)
-                            result["extras_applied"] = True
-                    except ImportError:
-                        pass
+                self._state = KernelState.GENERATING
+                result = self._execute_develop_plan(plan, preview=preview, extras=sub_extras)
 
                 # Verify & ensure IdentityCard (skip in preview mode)
                 if not preview:
@@ -1842,7 +1836,9 @@ class Kernel:
             }
         ).to_dict()
 
-    def _execute_develop_plan(self, plan: dict, preview: bool = False) -> dict:
+    def _execute_develop_plan(
+        self, plan: dict, preview: bool = False, extras: Optional[dict] = None
+    ) -> dict:
         """Execute a development plan via existing actions"""
         intent_data = plan.get("intent", {})
         intent_type = intent_data.get("type", "")
@@ -1896,6 +1892,20 @@ class Kernel:
                 return result
             if not isinstance(result, dict):
                 return {"status": "ok", "message": str(result)}
+
+            # P3a: Enrich ChangeSet with cross-domain extras (pure in-memory, before apply/preview)
+            if result.get("status") == "pending" and result.get("changeset") and extras and any(extras.values()):
+                from changeset import ChangeSet
+                from actions import finalize_authorization_object
+                cs = ChangeSet.from_dict(result["changeset"])
+                applied = self._apply_extras(plan, extras, cs=cs)
+                if applied and any(applied.values()):
+                    # Re-finalize authorization object so preconditions cover all enriched files
+                    finalized = finalize_authorization_object(cs, self.workspace_root)
+                    if finalized.get("status") == "error":
+                        return finalized
+                    result["changeset"] = finalized["changeset"]
+                    result["extras_applied"] = applied
 
             # DEVELOP mode auto-applies by default (same safety model as REPAIR:
             # backup-then-apply, see backup.BackupManager). Actions return
@@ -2107,16 +2117,19 @@ class Kernel:
 
         return name, module, framework
 
-    def _apply_extras(self, plan: dict, extras: dict) -> dict:
+    def _apply_extras(self, plan: dict, extras: dict, cs: Any) -> dict:
         """
-        Apply cross-domain extras: generate extra components and update dependencies.
+        Apply cross-domain extras to a ChangeSet in memory: update dependencies and code refs.
 
-        Handles:
-          - extra_components: data_extension → create context menu extension files
-          - imakefile_deps: add frameworks to LINK_WITH
-          - playbooks: inject as code comments for AI reference
-          - capabilities: inject as code comments for AI reference
+        Strictly pure in-memory: mutates cs.created or cs.modified. Never writes to disk.
+        Requires a valid ChangeSet instance.
         """
+        from changeset import ChangeSet
+        if not isinstance(cs, ChangeSet):
+            raise TypeError(
+                f"_apply_extras requires a ChangeSet instance, got {type(cs).__name__}"
+            )
+
         applied = {"components": [], "deps_added": [], "refs_added": []}
         intent_data = plan.get("intent", {})
         name = intent_data.get("name", "")
@@ -2126,22 +2139,49 @@ class Kernel:
         if not name or not module:
             return applied
 
-        module_path = self.workspace_root / module
-        if not module_path.exists():
-            return applied
+        # --- Helper for finding or preparing file content in cs ---
+        def _get_target_entry(filename: str, subfolder: str = ""):
+            # 1. Look in cs.created
+            for k, val in cs.created.items():
+                p = Path(k)
+                if p.name == filename and (not subfolder or subfolder in p.parts):
+                    if module in p.parts or not module:
+                        return "created", k, val
+            # 2. Look in cs.modified
+            for k, val in cs.modified.items():
+                p = Path(k)
+                if p.name == filename and (not subfolder or subfolder in p.parts):
+                    if module in p.parts or not module:
+                        return "modified", k, val
+            # 3. Not in cs, check workspace disk
+            candidates = [
+                self.workspace_root / framework / module / subfolder / filename if subfolder else self.workspace_root / framework / module / filename,
+                self.workspace_root / f"{framework}.edu" / module / subfolder / filename if subfolder else self.workspace_root / f"{framework}.edu" / module / filename,
+                self.workspace_root / module / subfolder / filename if subfolder else self.workspace_root / module / filename,
+            ]
+            for cand in candidates:
+                if cand.is_file():
+                    content = cand.read_text(encoding="utf-8", errors="replace")
+                    return "disk", cand, content
+            # Fallback search by module name on disk (excluding backups)
+            pattern = f"**/{module}/{subfolder}/{filename}" if subfolder else f"**/{module}/{filename}"
+            for found in self.workspace_root.glob(pattern):
+                if found.is_file() and ".caa_backups" not in found.parts:
+                    content = found.read_text(encoding="utf-8", errors="replace")
+                    return "disk", found, content
+            return None, None, None
 
-        # Apply imakefile dependencies
+        # 1. Apply imakefile dependencies
         if extras.get("imakefile_deps"):
-            imakefile = module_path / "Imakefile.mk"
-            if imakefile.exists():
-                content = imakefile.read_text(encoding="utf-8", errors="replace")
+            target_type, target_ref, content = _get_target_entry("Imakefile.mk")
+            if content is not None:
+                new_content = content
                 for dep in extras["imakefile_deps"]:
-                    if dep not in content:
-                        # Add to LINK_WITH or append new deps
-                        if "LINK_WITH" in content:
-                            new_content = content.replace(
+                    if dep not in new_content:
+                        if "LINK_WITH" in new_content:
+                            new_content = new_content.replace(
                                 "LINK_WITH =", f"LINK_WITH = {dep}"
-                            ) if "LINK_WITH =" in content and "LINK_WITH = " not in content.split("LINK_WITH =")[-1].split("\n")[0].strip() else content
+                            ) if "LINK_WITH =" in new_content and "LINK_WITH = " not in new_content.split("LINK_WITH =")[-1].split("\n")[0].strip() else new_content
                             if dep not in new_content:
                                 lines = new_content.split("\n")
                                 for i, line in enumerate(lines):
@@ -2149,10 +2189,16 @@ class Kernel:
                                         lines[i] = line.rstrip() + " " + dep
                                         break
                                 new_content = "\n".join(lines)
-                            imakefile.write_text(new_content, encoding="utf-8")
                             applied["deps_added"].append(dep)
+                if new_content != content:
+                    if target_type == "created":
+                        cs.created[target_ref] = new_content
+                    elif target_type == "modified":
+                        cs.modified[target_ref] = new_content
+                    elif target_type == "disk":
+                        cs.add_modify(target_ref, new_content)
 
-        # Inject playbook/capability references as comments in the main .cpp
+        # 2. Inject playbook/capability references as comments in the main .cpp
         refs = []
         if extras.get("playbooks"):
             refs.append(f"// CADE Playbooks: {', '.join(extras['playbooks'])}")
@@ -2166,23 +2212,29 @@ class Kernel:
             refs.append(f"// CADE Extra Components: {', '.join(extras['extra_components'])}")
 
         if refs and name:
-            src_dir = module_path / "src"
-            cpp_file = src_dir / f"{name}.cpp"
-            if cpp_file.exists():
-                content = cpp_file.read_text(encoding="utf-8", errors="replace")
-                if "CADE Playbooks" not in content:
-                    for r in refs:
-                        if r not in content:
-                            # Insert after the last #include
-                            lines = content.split("\n")
-                            last_include = 0
-                            for i, line in enumerate(lines):
-                                if line.strip().startswith("#include"):
-                                    last_include = i
-                            if last_include >= 0:
-                                lines.insert(last_include + 1, r)
-                                cpp_file.write_text("\n".join(lines), encoding="utf-8")
-                                applied["refs_added"].append(r)
+            target_type, target_ref, content = _get_target_entry(f"{name}.cpp", subfolder="src")
+            if content is not None and "CADE Playbooks" not in content:
+                lines = content.split("\n")
+                last_include = -1
+                for i, line in enumerate(lines):
+                    if line.strip().startswith("#include"):
+                        last_include = i
+                for r in refs:
+                    if r not in content:
+                        if last_include >= 0:
+                            lines.insert(last_include + 1, r)
+                            last_include += 1
+                        else:
+                            lines.insert(0, r)
+                        applied["refs_added"].append(r)
+                new_content = "\n".join(lines)
+                if new_content != content:
+                    if target_type == "created":
+                        cs.created[target_ref] = new_content
+                    elif target_type == "modified":
+                        cs.modified[target_ref] = new_content
+                    elif target_type == "disk":
+                        cs.add_modify(target_ref, new_content)
 
         return applied
 

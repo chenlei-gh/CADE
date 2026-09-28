@@ -185,7 +185,7 @@ def _error(msg: str) -> Dict:
     return {"status": "error", "message": msg, "changeset": None}
 
 
-def _result(cs: ChangeSet, workspace_root: Path) -> Dict:
+def finalize_authorization_object(cs: ChangeSet, workspace_root: Path) -> Dict:
     # Authorization-object exit. Capture touched-path baseline here, not inside
     # to_dict(), so ordinary serialization stays pure. Repair/FixPlan paths that
     # call apply() directly do not pass through here.
@@ -196,6 +196,9 @@ def _result(cs: ChangeSet, workspace_root: Path) -> Dict:
         # object. Fail closed: return error rather than an applicable pending object.
         return _error(f"Failed to capture authorization preconditions: {e}")
     return {"status": "pending", "message": cs.description, "changeset": cs.to_dict()}
+
+
+_result = finalize_authorization_object
 
 
 # NLS assignment lines look like `Key = "value";` (optionally indented).
