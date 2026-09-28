@@ -429,6 +429,8 @@ class ChangeSet:
                 "deleted": [str(d) for d in self.deleted],
                 "patches": [p.to_dict() for p in self.patches],
             }
+            result["execution"] = {"status": "not_run"}
+            result["verification"] = {"status": "not_run", "checks": []}
             return result
 
         # 0a. A merged ChangeSet with unresolved conflicts is never applicable.
@@ -438,6 +440,8 @@ class ChangeSet:
             result["errors"] = [
                 "Unresolved ChangeSet merge conflicts: " + "; ".join(merge_conflicts)
             ]
+            result["execution"] = {"status": "failed"}
+            result["verification"] = {"status": "not_run", "checks": []}
             return result
 
         # 0a2. Authorization baseline. Only when this ChangeSet was captured
@@ -449,6 +453,8 @@ class ChangeSet:
                 result["errors"] = [
                     "Authorized ChangeSet requires workspace_root to check preconditions"
                 ]
+                result["execution"] = {"status": "failed"}
+                result["verification"] = {"status": "not_run", "checks": []}
                 return result
             mismatches = self.check_preconditions(workspace_root)
             if mismatches:
@@ -458,6 +464,8 @@ class ChangeSet:
                     + "; ".join(mismatches)
                 ]
                 result["precondition_mismatches"] = mismatches
+                result["execution"] = {"status": "failed"}
+                result["verification"] = {"status": "not_run", "checks": []}
                 return result
 
         # 0b. Path validation against workspace_root (P0-001)
@@ -466,6 +474,8 @@ class ChangeSet:
             if violations:
                 result["status"] = "rejected"
                 result["errors"] = violations
+                result["execution"] = {"status": "failed"}
+                result["verification"] = {"status": "not_run", "checks": []}
                 return result
 
         # 0c. Pre-validate file states (P0-003)
@@ -473,6 +483,8 @@ class ChangeSet:
         if file_errors:
             result["status"] = "rejected"
             result["errors"] = file_errors
+            result["execution"] = {"status": "failed"}
+            result["verification"] = {"status": "not_run", "checks": []}
             return result
 
         # 0d. Create backup if workspace_root provided
@@ -569,9 +581,116 @@ class ChangeSet:
             )
             result["status"] = "failed"
             result["errors"].append(last_error)
+            result["execution"] = {"status": "failed"}
+            result["verification"] = {
+                "status": "not_run",
+                "checks": [],
+            }
             return result
 
+        result["execution"] = {"status": "success"}
+        result["verification"] = self._verify_postconditions(
+            applied_created, applied_modified, applied_deleted, applied_patched
+        )
         return result
+
+    def _expected_text_bytes(self, path: Path, content: str) -> bytes:
+        """Bytes apply() emits for text. Must match the writer exactly."""
+        enc = _text_encoding_for(path)
+        errors = "replace" if enc == "gbk" else "strict"
+        return content.encode(enc, errors=errors).replace(b"\n", b"\r\n").replace(
+            b"\r\r\n", b"\r\n"
+        )
+
+    def _verify_postconditions(
+        self,
+        created_paths: List[str],
+        modified_paths: List[str],
+        deleted_paths: List[str],
+        patched_paths: List[str],
+    ) -> Dict[str, Any]:
+        """Prove the applied ChangeSet landed. Does not infer a new expected state.
+
+        Text and binary creates/modifies are compared to the exact bytes the
+        writer emitted. Patched files are existence-only: patch.content is not
+        a file image, and v1 does not invent one.
+        """
+        from provenance_guard import compute_file_sha256
+
+        checks: List[Dict[str, Any]] = []
+
+        def add(name: str, path: str, status: str, detail: str = "") -> None:
+            item = {"name": name, "path": path, "status": status}
+            if detail:
+                item["detail"] = detail
+            checks.append(item)
+
+        for path_str in created_paths:
+            path = Path(path_str)
+            if not path.is_file():
+                add("created_exists", path_str, "failed", "file missing after apply")
+                continue
+            if path_str in self._binary:
+                expected = self._binary[path_str]
+            elif self.created.get(path_str) == "[BINARY]":
+                add("created_bytes", path_str, "failed", "binary payload missing")
+                continue
+            else:
+                expected = self._expected_text_bytes(path, self.created.get(path_str, ""))
+            actual = path.read_bytes()
+            if actual != expected:
+                add(
+                    "created_bytes",
+                    path_str,
+                    "failed",
+                    "disk bytes differ from bytes emitted by apply",
+                )
+                continue
+            disk_sha = compute_file_sha256(path)
+            add("created_sha256", path_str, "passed", disk_sha)
+
+        for path_str in modified_paths:
+            path = Path(path_str)
+            if not path.is_file():
+                add("modified_exists", path_str, "failed", "file missing after apply")
+                continue
+            expected = self._expected_text_bytes(path, self.modified.get(path_str, ""))
+            actual = path.read_bytes()
+            if actual != expected:
+                add(
+                    "modified_bytes",
+                    path_str,
+                    "failed",
+                    "disk bytes differ from bytes emitted by apply",
+                )
+                continue
+            disk_sha = compute_file_sha256(path)
+            add("modified_sha256", path_str, "passed", disk_sha)
+
+        for path_str in deleted_paths:
+            path = Path(path_str)
+            if path.exists():
+                add("deleted_absent", path_str, "failed", "file still exists after delete")
+            else:
+                add("deleted_absent", path_str, "passed")
+
+        for path_str in patched_paths:
+            path = Path(path_str)
+            if path.is_file():
+                add(
+                    "patched_exists",
+                    path_str,
+                    "passed",
+                    "content hash not_run: patch image is not an authorization input",
+                )
+            else:
+                add("patched_exists", path_str, "failed", "patch target missing after apply")
+
+        failed = [c for c in checks if c["status"] == "failed"]
+        return {
+            "status": "failed" if failed else "passed",
+            "checks": checks,
+        }
 
     def _rollback_operations(
         self,
