@@ -348,7 +348,7 @@ def diagnose_environment() -> dict:
     return result
 
 
-def _ensure_identity_cards_for_build(workspace_path: Path, logger=None) -> None:
+def _ensure_identity_cards_for_build(workspace_path: Path, logger=None) -> dict:
     """Ensure IdentityCard is created (mkCreateIC) for frameworks before mkmk build."""
     try:
         resolved = _resolve_workspace_root(workspace_path)
@@ -367,10 +367,17 @@ def _ensure_identity_cards_for_build(workspace_path: Path, logger=None) -> None:
                 base = fw.name.replace(".edu", "")
                 if logger:
                     logger.write(f"Auto-creating IdentityCard for {base} via mkCreateIC")
-                create_identity_card(resolved, base)
+                res = create_identity_card(resolved, base)
+                if isinstance(res, dict) and res.get("status") in ("error", "failed"):
+                    err_msg = res.get("message", "mkCreateIC failed")
+                    if logger:
+                        logger.write(f"mkCreateIC error for {base}: {err_msg}")
+                    return {"status": "error", "message": f"mkCreateIC failed for {base}: {err_msg}"}
+        return {"status": "ok"}
     except Exception as e:
         if logger:
-            logger.write(f"IdentityCard check skipped or failed: {e}")
+            logger.write(f"IdentityCard check failed: {e}")
+        return {"status": "error", "message": f"IdentityCard preparation error: {e}"}
 
 
 def build_workspace(
@@ -458,9 +465,6 @@ def build_workspace(
     if not workspace_path.exists():
         return _make_error(f"Workspace path does not exist: {workspace_path}", stage="path_validation")
 
-    # --- Pre-build: ensure IdentityCard is compiled (mkCreateIC) if needed ---
-    _ensure_identity_cards_for_build(resolved_root, logger)
-
     # --- Pre-build health check ---
     health = validate_workspace(workspace_path)
     if health["issues"]:
@@ -474,7 +478,7 @@ def build_workspace(
     try:
         from run import check_catia_running
         catia_status = check_catia_running()
-        if catia_status.get("running"):
+        if catia_status.get("status") == "running" or catia_status.get("running"):
             proc_list = ", ".join(
                 p.get("pid", "?") for p in catia_status.get("processes", [])
             )
@@ -558,6 +562,11 @@ def build_workspace(
                 )
         else:
             logger.write("Prerequisites already configured (cached)")
+
+    # --- Pre-build: ensure IdentityCard is compiled (mkCreateIC) if needed ---
+    ic_res = _ensure_identity_cards_for_build(resolved_root, logger)
+    if ic_res.get("status") == "error":
+        return _make_error(ic_res.get("message", "IdentityCard preparation failed"), stage="identity_card")
 
     # --- Get Build Time command ---
     try:

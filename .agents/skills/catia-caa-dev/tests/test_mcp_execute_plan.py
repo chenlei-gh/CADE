@@ -151,13 +151,23 @@ def main():
 
         # ── Test 5: Dynamic Lock Revalidation (TOCTOU Defense) ────────
         with mock.patch("run.check_catia_running") as mock_catia:
-            mock_catia.return_value = {"running": True, "processes": [{"pid": 1234}]}
+            # 5a: Real structure returned by check_catia_running()
+            mock_catia.return_value = {"status": "running", "message": "Found 1 CATIA process(es)", "processes": [{"pid": 1234}]}
             res = mcp_server.handle_tool("develop", {
                 "workspace": str(ws),
                 "execute_plan": plan_sample,
             })
-            check("Test 5: running CATIA dynamically blocks build execution", res.get("status") == "error")
-            check("Test 5 detail: mentions DLL lock or CATIA running", "CATIA is running" in res.get("message", ""))
+            check("Test 5a: real status=running dynamically blocks build execution", res.get("status") == "error")
+            check("Test 5a detail: mentions DLL lock or CATIA running", "CATIA is running" in res.get("message", ""))
+
+            # 5b: Lock check exception fails-closed (no bypass on error)
+            mock_catia.side_effect = RuntimeError("Process query failed")
+            res_fail_closed = mcp_server.handle_tool("develop", {
+                "workspace": str(ws),
+                "execute_plan": plan_sample,
+            })
+            check("Test 5b: lock check exception fails-closed", res_fail_closed.get("status") == "error")
+            check("Test 5b detail: mentions unable to verify", "Unable to verify" in res_fail_closed.get("message", ""))
 
         # ── Test 6: IdentityCard On-Demand in Build Pipeline ───────────
         fw_dir = ws / "TestFW.edu"
@@ -255,6 +265,17 @@ def main():
         })
         check("Test 10b: skip_gate=True rejected in authorized execution", res.get("status") == "error")
         check("Test 10b detail: mentions skip_gate forbidden", "skip_gate=True is forbidden" in res.get("message", ""))
+
+        # 10c: Non-whitelisted build options (arbitrary flags) rejected
+        bad_options_plan = dict(plan_sample)
+        bad_options_plan["parameters"] = {"options": "-foobar", "skip_gate": False}
+        bad_options_plan["plan_digest"] = compute_plan_digest(bad_options_plan)
+        res = mcp_server.handle_tool("develop", {
+            "workspace": str(ws),
+            "execute_plan": bad_options_plan,
+        })
+        check("Test 10c: non-whitelisted options rejected by strict allowlist", res.get("status") == "error")
+        check("Test 10c detail: mentions allowed build options", "not in allowed build options" in res.get("message", ""))
 
         # ── Test 11: Macro Script Drift Detection ──────────────────────
         macro_file = ws / "MyScript.CATScript"

@@ -174,6 +174,19 @@ def compute_plan_digest(plan: dict) -> str:
     return f"sha256:{hashlib.sha256(dumped).hexdigest()}"
 
 
+ALLOWED_BUILD_OPTIONS = {
+    "-u -a",
+    "-a",
+    "-a -u",
+    "-a -g",
+    "-a -nobuild",
+    "-u",
+    "-c",
+    "-g",
+    "-n",
+}
+
+
 # ─── Kernel ───────────────────────────────────────────────────────
 
 
@@ -2030,23 +2043,26 @@ class Kernel:
             options = params.get("options", "-u -a")
             if not isinstance(options, str):
                 return {"status": "error", "message": "options must be a string"}
-            disallowed = set("&|;><$`\n\r()")
-            if any(c in disallowed for c in options):
-                return {"status": "error", "message": f"options contains disallowed characters: {options}"}
-            if not re.match(r"^[-a-zA-Z0-9\s_.]*$", options):
-                return {"status": "error", "message": f"options fails whitelist validation: {options}"}
+            if options not in ALLOWED_BUILD_OPTIONS:
+                return {
+                    "status": "error",
+                    "message": f"options '{options}' is not in allowed build options: {sorted(ALLOWED_BUILD_OPTIONS)}"
+                }
 
             # 5. Dynamic lock check (CATIA running)
             try:
                 from run import check_catia_running
                 catia_status = check_catia_running()
-                if catia_status.get("running"):
+                if catia_status.get("status") == "running" or catia_status.get("running"):
                     return {
                         "status": "error",
                         "message": "CATIA is running (DLL lock prevention). Stop CATIA before building."
                     }
-            except Exception:
-                pass
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "message": f"Unable to verify CATIA runtime state: {e}"
+                }
 
             from build import build_workspace
             res = build_workspace(
@@ -2067,10 +2083,13 @@ class Kernel:
             try:
                 from run import check_catia_running
                 catia_status = check_catia_running()
-                if catia_status.get("running"):
+                if catia_status.get("status") == "running" or catia_status.get("running"):
                     return {"status": "error", "message": "CATIA is already running."}
-            except Exception:
-                pass
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "message": f"Unable to verify CATIA runtime state: {e}"
+                }
 
             from run import start_catia_runtime
             res = start_catia_runtime(
