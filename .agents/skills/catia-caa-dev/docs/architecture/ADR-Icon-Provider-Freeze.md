@@ -118,7 +118,7 @@ S1–S4 的审计链证明了三个关键事实：
 7. **Generated Base**（2026-08-18 PartToAsm 试点闭环）：官方确无等价的
    CADE 自有语义，可按 `ICON_GENERATION_SPEC` 生成图标——LLM 像素设计
    （主路径，`icon_design_lib` 官方语素）或外部文生图（可选），一律过
-   后处理管线门禁（22×22 / ≤16 色 / 四角纯 / fg∈[15,70]）+ 人工验收 +
+   后处理管线门禁（22×22 / ≤256 色 / 四角纯 / fg∈[15,70]）+ 人工验收 +
    CATIA 实机。资产入库 `assets/icons/generated/`：`I_CADE*` 前缀 BMP +
    provenance JSON + 设计源 .py（资产可从代码确定性重建）。这是
    “无自有图标库”原则的唯一例外；官方 BMP 原件仍永不入库。规则 6 的

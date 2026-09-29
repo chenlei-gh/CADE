@@ -135,7 +135,7 @@ Negative: text, letters, watermark, gradient, blur, photorealistic,
 模型输出 PNG 丢入 `tmp/gen_inbox/`，管线执行：
 
 1. 中心裁方 → LANCZOS 缩到 22×22
-2. MedianCut 量化 ≤16 色（无抖动）
+2. MedianCut 量化至 8-bit 索引 BMP 的调色板容量（256 色，无抖动）；**不强制降色**
 3. 背景吸附：四角采样，容差 36 内的像素强制归一 `(192,192,192)`
 4. `_save_palette_bmp`：背景钉调色板索引 0 → 8-bit BMP（CNEXT 透明机制）
 5. 出 8× 放大预览 PNG + 门禁报告 + provenance 草稿 JSON
@@ -165,7 +165,7 @@ Negative: text, letters, watermark, gradient, blur, photorealistic,
 | **四角背景** | **Hard Gate（必检）** | 22×22 画布四个角点像素必须完全为背景色（无溢出脏边） | 不通过则打回 |
 | **画布硬截断** | **Hard Gate（必检）** | 主体任何一边在画布边缘截断比例不得 > 60%（严禁机械零件被切掉边缘） | 不通过则打回 |
 | **BMP 格式与透明索引** | **Hard Gate（必检）** | 必须为 22×22、8-bit indexed BMP；调色板索引 0 严格为 `CATIA_BG (192,192,192)`；四角及背景像素原始调色板索引值严格为 0 | 不通过则打回 |
-| **BMP 色数上限** | **Hard Gate（必检）** | 22×22 运行时 BMP 色数不得超过 16 色 | 不通过则打回 |
+| **BMP 色数上限** | **Soft Lint（指导）** | 受 8-bit indexed 格式约束，色数 ≤256（调色板物理上限）；**禁止为满足历史 16 色约定而强制降色** | 报告实际色数；>256 或格式错则打回 |
 | **Alpha 纯净度（PNG）** | **Hard Gate（必检）** | 覆盖全尺度 PNG：四角 Alpha 严格为 0，且 A=0 像素零 RGB 污染（杜绝重采样脏边） | 不通过则打回 |
 | **前景比例** | **Soft Lint（指导）** | 全局有效区间 [15%, 70%]；居中块状零件推荐 [68%, 72%] | 报告占比，提供优化建议 |
 | **孤立噪点** | **Soft Lint（报告）** | 统计孤立漂移像素点（连通度为 0 的像素） | 报告噪点数供人工复核，不作为当前硬失败条件 |
@@ -221,7 +221,7 @@ Negative: text, letters, watermark, gradient, blur, photorealistic,
 CADE Semantic (parttoasm)
   → Official Pool 证明无合适官方图（S5 已完成）
   → LLM 像素设计 ×6 隐喻候选（插入/环抱/包容/落位/附着/箭头）
-  → 管线门禁（22×22 / ≤16 色 / 背景吸附 / 调色板 BMP）
+  → 管线门禁（22×22 / ≤256 色 / 背景吸附 / 调色板 BMP）
   → 对比 sheet 人工 Visual QA → 用户指出官方齿轮词汇（关键转折）
   → 官方词汇提取（I_Part/I_Product）+ 采样原色 + 铺满修正
   → CATIA 22×22 Toolbar 实机 → **PASS（2026-08-18 用户验收）**

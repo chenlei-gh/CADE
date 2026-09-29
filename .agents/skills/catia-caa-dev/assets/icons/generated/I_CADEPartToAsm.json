@@ -17,8 +17,8 @@
       22
     ],
     "bmp_mode": "8-bit indexed (palette 0 = CATIA_BG)",
-    "bmp_colors": 14,
-    "bmp_used_colors": 14,
+    "bmp_colors": 157,
+    "bmp_used_colors": 157,
     "hard_checks": {
       "colors_ceiling_ok": true,
       "corners_pure": true,
@@ -26,7 +26,7 @@
       "no_edge_collision": true,
       "bmp_format_ok": true
     },
-    "fg_ratio": 0.24,
+    "fg_ratio": 0.283,
     "fg_in_guidance": true,
     "isolated_noise_px": 1,
     "alpha_clean": true,

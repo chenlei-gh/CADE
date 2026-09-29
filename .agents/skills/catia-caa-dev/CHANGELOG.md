@@ -10,6 +10,44 @@
 
 ## [未发布]
 
+### 🎨 图标真高清：解除 16 色自加约束 (2026-09-29)
+
+**用户诉求**：「实际生产的图标都要是高清的，不论大小」，且明确指出「22px 上限是老版 CATIA 的约束」。
+
+**实测取证**（本地 B28 安装 + 仓库，均为机械统计）：
+
+| 证据 | 结果 |
+|------|------|
+| 官方 `Icon.Normal` 槽位是否只能 22×22 | **否**。54 个官方 `*CmdHeader.CATRsc` 引用的 `Icon.Normal` 底图大于 22×22，共 107 处：24×24×74、23×22×7、30×30×4、32×32×2 …（如 `CATCommandHeaderWithEditor` → `i_commitcmd` 32×32） |
+| 官方图标是否受 16 色限制 | **否**。官方 22×22 图标 10.9%（904/8293）超过 16 色，最高 404 色；24×24 有 41.9% 超限 |
+| 16 色上限来源 | CADE 自加。`433d361`（2026-08-18）在引入 spec 的同一次提交写入 `MAX_COLORS = 16` |
+| 本机是否高 DPI 放大 | **否**。`LogPixels` 未设置，`PerMonitorSettings` DpiValue=0 ⇒ 100%，1:1 显示 |
+
+**改动**（`MAX_COLORS: 16 → 256`，即 8-bit 索引 BMP 的调色板物理上限，索引 0 保留给背景）：
+
+| 文件 | 变更 |
+|------|------|
+| `tools/icon_gen_pipeline.py` | `MAX_COLORS` 16→256（新增 `CATIA_MAX_COLORS`）；色数检查不再强制降色；文档字符串同步 |
+| `assets/icons/generated/I_CADEPartToAsm.py` | 22×22 BMP 量化 16→256 色 |
+| `docs/architecture/ICON_GENERATION_SPEC.md` | §4 步骤 2、§5 D「BMP 色数上限」由 **Hard Gate(≤16)** 改为 **Soft Lint(≤256)**，禁用「为历史 16 色约定强制降色」 |
+| `docs/architecture/ADR-Icon-Provider-Freeze.md` | §3 规则 7 门禁串 16→256 |
+| `assets/icons/generated/README.md` | 入库门禁串 16→256 |
+
+**实测收益**（`I_CADEPartToAsm`，唯一带 512 母版的图标）：
+
+```
+出厂 16 色量化 : 14 色，MAE 10.3，最大单通道偏差 101
+本次 256 色    : 157 色，MAE ≈ 0
+```
+
+**范围诚实说明**：`I_CADEAutoColor` / `I_CADEAutoRename` / `I_CADEBOMTool` 的设计源原生画在 22×22 画布上（`icon_design_lib.py CANVAS=22`，原始色数 9/4/5），**本次改动对它们零收益**；它们需要重绘画布才能高清化，不在本次范围。命令按钮的画布尺寸问题（可否用 24/32px）已有官方先例支撑，但 CATIA 显示期缩放行为未实机观察，**按 JEV 裁定暂不动**，留待实机实验。
+
+**已部署**：`CAAPartToAsm.edu/CNext/.../normal/` 与 `win_b64/.../normal/` 均已替换为 157 色版本，两者字节一致。
+
+**验证**：`test_icons.py` **147/147**、`test_changeset_preconditions.py` **37/37**、`test_cross_reference.py` **256/256**、`test_deep_audit.py` **11/11**、`check_capabilities.py` **CAPABILITY CONTRACT OK**、`static_audit.py` **2/2**、`test_production_regressions.py` **1014/1014**、`test_master.py --quick` **42/42（100%）**。
+
+**未触碰**：`kernel.py`、`cade.py`、`mcp_server.py`、`capabilities.yaml`、`lifecycle.yaml`、`ICON_HASH`（默认 22 路径保留官方像素，缓存键不涉及生成基图标）。
+
 ### 🧹 文档事实漂移清理 (2026-09-29，纯文档，零代码变更)
 
 以当前源码/索引实测值覆盖「断言当前状态但已失真」的活数字。所有新数字均由 CADE 自身工具复现：

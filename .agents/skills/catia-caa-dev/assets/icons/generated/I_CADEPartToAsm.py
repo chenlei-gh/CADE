@@ -193,9 +193,11 @@ def export_multi_scale_assets(master: Image.Image, out_dir: Path) -> Tuple[dict,
         if size == 22:
             canvas_bg = Image.new("RGB", (22, 22), CATIA_BG)
             canvas_bg.paste(resampled, (0, 0), resampled)
-            # 量化到 <= 16 色以严格对齐 CATIA 8-bit palettized 资源上限
+            # 量化到 8-bit 索引 BMP 的调色板容量（256 色，索引 0 保留给背景）。
+            # 旧版此处硬卡 16 色，是 CADE 自加约束而非 CATIA 限制；
+            # 官方 B28 的 22x22 图标有 10.9% 超过 16 色（最高 404 色）。
             canvas_bg_quant = canvas_bg.quantize(
-                colors=16, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE
+                colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE
             ).convert("RGB")
             bmp_path = out_dir / f"{STEM}.bmp"
             _save_palette_bmp(canvas_bg_quant, bmp_path)

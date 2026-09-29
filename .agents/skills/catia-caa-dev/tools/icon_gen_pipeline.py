@@ -11,7 +11,7 @@ Usage:
   python icon_gen_pipeline.py <input.png> <stem> [--out DIR]
 
 Gate thresholds (spec §5):
-  22x22, <=16 colors, pure four corners, fg% in [15%, 70%].
+  22x22, <=256 colors, pure four corners, fg% in [15%, 70%].
 """
 
 import json, sys
@@ -28,7 +28,13 @@ from icon_provider import (  # noqa: E402
 
 # ── Spec constants (§2, §5) ──────────────────────────────────────────
 CANVAS = 22                     # final canvas edge
-MAX_COLORS = 16                 # MedianCut ceiling
+# 8-bit indexed BMPs hold at most 256 palette entries and entry 0 is reserved
+# for CATIA_BG, so 256 means "do not reduce" — the renderer's own color count
+# becomes the ceiling. The former 16-color cap (introduced with the spec in
+# 433d361, 2026-08-18) was CADE's own invention, not a CATIA limit: 10.9% of
+# official B28 22x22 icons use more than 16 colors (max observed 404).
+CATIA_MAX_COLORS = 256          # hard ceiling of an 8-bit indexed BMP
+MAX_COLORS = CATIA_MAX_COLORS   # MedianCut ceiling (no forced reduction)
 BG_TOLERANCE = 36               # corner-snap tolerance (per channel)
 FG_MIN, FG_MAX = 0.15, 0.70    # foreground ratio gate
 PREVIEW_SCALE = 8               # 8x preview for human review
@@ -171,7 +177,7 @@ def lint_bmp_asset(bmp_path: Path) -> dict:
         noise_px = _detect_isolated_noise(rgb)
 
     hard_checks = {
-        "colors_ceiling_ok": used_colors <= MAX_COLORS,
+        "colors_ceiling_ok": used_colors <= CATIA_MAX_COLORS,
         "corners_pure": corners_pure,
         "corners_palette_index_zero": corners_idx_zero,
         "no_edge_collision": no_collision,
@@ -284,7 +290,7 @@ def process(src: Path, stem: str, out_dir: Path) -> dict:
     img = _center_crop_square(img)
     img = img.resize((CANVAS, CANVAS), Image.LANCZOS)
 
-    # 2. MedianCut quantize ≤16 colors (no dithering)
+    # 2. MedianCut quantize to the BMP palette ceiling (no dithering)
     img = img.quantize(colors=MAX_COLORS, method=Image.Quantize.MEDIANCUT,
                        dither=Image.Dither.NONE).convert("RGB")
 
