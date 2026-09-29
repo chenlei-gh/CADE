@@ -922,14 +922,26 @@ class ChangeSet:
     def capture_preconditions(self, workspace_root: Path) -> Dict[str, Dict[str, Any]]:
         """Record exists+sha256 for touched paths. Does not serialize.
 
-        created and _binary paths are expected to be absent. modified, deleted,
-        and patch targets are expected to exist, with the bytes observed now.
-        A created path that also appears as a patch target is still absent:
-        the patch runs against the file this ChangeSet will create.
+        Text create paths are expected to be absent: authorizing a create over
+        an existing file is refused, because apply() would overwrite something
+        this ChangeSet never claimed to own. Binary create paths (_binary) are
+        the deliberate exception — overwriting a stale/foreign render is their
+        intended semantics (see _pre_validate_files), so an existing target is
+        baselined by hash instead of refused. The payload is still written, but
+        a later change to that file is caught by check_preconditions().
+
+        modified, deleted, and patch targets are expected to exist, with the
+        bytes observed now. A created path that also appears as a patch target
+        is still absent: the patch runs against the file this ChangeSet will
+        create.
         """
         from provenance_guard import compute_file_sha256, normalize_rel_posix_path
 
         ws = Path(workspace_root).resolve()
+        binary_rels = {
+            normalize_rel_posix_path(raw, ws, strict=True)
+            for raw in self._binary.keys()
+        }
         created_rels = {
             normalize_rel_posix_path(raw, ws, strict=True)
             for raw in list(self.created.keys()) + list(self._binary.keys())
@@ -943,11 +955,16 @@ class ChangeSet:
             # Create/binary paths record absence, even if a patch also names them.
             # Do not compare by the raw string: callers mix absolute and relative.
             if rel in created_rels:
-                if path.exists():
+                if rel in binary_rels and path.is_file():
+                    # Overwriting an existing binary is the intended semantics;
+                    # baseline its current bytes so drift is still detected.
+                    observed[rel] = {"exists": True, "sha256": compute_file_sha256(path)}
+                elif path.exists():
                     raise ValueError(
                         f"Created target already exists at authorization capture: {rel}"
                     )
-                observed[rel] = {"exists": False, "sha256": None}
+                else:
+                    observed[rel] = {"exists": False, "sha256": None}
             elif path.is_file():
                 observed[rel] = {"exists": True, "sha256": compute_file_sha256(path)}
             else:

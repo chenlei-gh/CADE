@@ -104,22 +104,55 @@ def main():
         check("capture failure omits changeset", borked_res.get("changeset") is None)
         check("capture failure message explains reason", "simulated capture explosion" in borked_res.get("message", ""))
 
-        # Hole 2: Pre-existing created/binary target (e.g. .bmp) refused at capture.
+        # Hole 2: Pre-existing binary create target (e.g. .bmp) is baselined,
+        # not refused: overwriting a stale render is the intended semantics of a
+        # queued binary payload (_pre_validate_files says so explicitly). The
+        # recorded baseline is what makes the overwrite safe — drift after
+        # authorization still rejects at apply().
         bmp_file = ws / "Conflict.bmp"
         bmp_file.write_bytes(b"original bmp")
         cs_bmp = ChangeSet(action="bmp-create", description="create on top of existing bmp")
         cs_bmp.add_create_binary(bmp_file, b"new bmp bytes")
-        bmp_captured_raised = False
-        try:
-            cs_bmp.capture_preconditions(ws)
-        except ValueError as e:
-            bmp_captured_raised = True
-            check("capture raises ValueError on existing bmp", "already exists" in str(e))
-        check("bmp capture raised", bmp_captured_raised)
+        bmp_captured = cs_bmp.capture_preconditions(ws)
+        check(
+            "existing bmp baselined by hash, not refused",
+            bmp_captured.get("Conflict.bmp", {}).get("exists") is True
+            and bmp_captured["Conflict.bmp"].get("sha256") == compute_file_sha256(bmp_file),
+            str(bmp_captured.get("Conflict.bmp")),
+        )
+        check("existing bmp untouched at capture", bmp_file.read_bytes() == b"original bmp")
 
         bmp_result = _result(cs_bmp, ws)
-        check("_result returns error when bmp exists", bmp_result.get("status") == "error")
-        check("existing bmp untouched", bmp_file.read_bytes() == b"original bmp")
+        check("existing bmp still authorizes", bmp_result.get("status") == "pending", str(bmp_result.get("status")))
+
+        bmp_applied = ChangeSet.from_dict(bmp_result["changeset"]).apply(workspace_root=ws)
+        check("baselined bmp apply succeeds", bmp_applied.get("status") == "applied", str(bmp_applied.get("errors")))
+        check("baselined bmp overwritten", bmp_file.read_bytes() == b"new bmp bytes")
+        shutil.rmtree(ws / ".caa_backups", ignore_errors=True)
+
+        # Same object, but the file changes between authorization and apply:
+        # the recorded hash no longer holds, so the overwrite is refused.
+        bmp_file.write_bytes(b"actor bytes")
+        bmp_drift = ChangeSet.from_dict(bmp_result["changeset"]).apply(workspace_root=ws)
+        check("bmp drift rejected", bmp_drift.get("status") == "rejected", str(bmp_drift.get("errors")))
+        check("bmp drift not written", bmp_file.read_bytes() == b"actor bytes")
+
+        # Text create targets keep the fail-closed rule: only binary payloads are
+        # exempt, so an existing file cannot be silently overwritten as text.
+        text_file = ws / "Conflict.cpp"
+        text_file.write_bytes(b"int original = 1;\n")
+        cs_text = ChangeSet(action="text-create", description="create over existing text")
+        cs_text.add_create(text_file, "int replacement = 2;\n")
+        text_raised = False
+        try:
+            cs_text.capture_preconditions(ws)
+        except ValueError as e:
+            text_raised = True
+            check("text capture raises ValueError on existing file", "already exists" in str(e))
+        check("text capture raised", text_raised)
+        text_result = _result(cs_text, ws)
+        check("_result returns error when text exists", text_result.get("status") == "error")
+        check("existing text untouched", text_file.read_bytes() == b"int original = 1;\n")
 
         # Invariant: Old unbaselined binary apply still overwrites (preserves legacy semantics).
         cs_old_binary = ChangeSet(action="old-bmp", description="unbaselined binary overwrite")

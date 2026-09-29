@@ -409,7 +409,17 @@ try:
 
         from changeset import ChangeSet
         cs = ChangeSet.from_dict(result["changeset"]) if isinstance(result["changeset"], dict) else result["changeset"]
-        cs.apply()
+        # An authorized ChangeSet carries a touched-path baseline, so apply()
+        # refuses to run without a workspace_root to verify it against
+        # (changeset.py step 0a2). Production always supplies one
+        # (kernel._apply_changeset_dict); a bare apply() would be rejected here
+        # and silently leave the stale icon on disk.
+        unrooted = cs.apply()
+        check("authorized changeset refuses bare apply",
+              unrooted.get("status") == "rejected", str(unrooted.get("status")))
+        applied = cs.apply(workspace_root=tmp)
+        check("authorized changeset applies with workspace_root",
+              applied.get("status") == "applied", str(applied.get("errors")))
 
         new_bytes = stale.read_bytes()
         check("stale icon overwritten", new_bytes != b"STALE-GARBAGE-ICON"
@@ -439,7 +449,9 @@ try:
         ctx3.refresh()
         r3 = create_command(ctx3, "ZzzCmd", "TestMod.m", category="hole")
         cs3 = ChangeSet.from_dict(r3["changeset"]) if isinstance(r3["changeset"], dict) else r3["changeset"]
-        cs3.apply()
+        applied3 = cs3.apply(workspace_root=tmp)
+        check("entity-hint changeset applies with workspace_root",
+              applied3.get("status") == "applied", str(applied3.get("errors")))
         hinted = icons_dir / "I_zzzcmd.bmp"
         check("entity-hint icon written", hinted.exists(),
               f"{hinted.name} {hinted.stat().st_size if hinted.exists() else 0}B")
