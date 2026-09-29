@@ -1344,6 +1344,7 @@ python tests/test_master.py --quick
 │   ├── verifier.py                   # Code Verifier — static + mkmk (v3.0)
 │   ├── icon_provider.py              # Official-Only icons (CATIA BMP runtime ref), semantic resolver, 22px CATIA + HD PNG (v4.0)
 │   ├── maintenance_context.py        # 维护任务轻量上下文与构建证据持久化（P3-A）
+│   ├── provenance_guard.py           # 变更来源审计（Provenance Guard；未登记变更入账阻断）
 │   ├── repair.py                     # Repair Loop (v3.0)
 │   ├── token_optimizer.py            # AI Token 优化器
 │   ├── docgen.py                     # 文档生成器

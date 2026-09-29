@@ -10,14 +10,16 @@
 
 ## [未发布]
 
-### ⚠️ 已知问题：`provenance_guard.py` 未登记进 SKILL.md 文件树 (2026-09-29, **OPEN — 未修复**)
+### ✅ 修复：`provenance_guard.py` 未登记进 SKILL.md 文件树 (2026-09-29, **FIXED**)
 
 - **症状**：`tests/test_cross_reference.py` 的唯一 FAIL —— `[FAIL] skills/provenance_guard.py in SKILL.md tree`，导致该套件 `exit=1`，Pass rate 99.6%（**254 PASS / 1 FAIL**）。
 - **根因**：commit `03ee034`「Add change provenance guard and input validator」新增 `skills/provenance_guard.py`（806 行）与 `tests/test_provenance_guard.py`（794 行）时，**未同步把该模块登记进 `SKILL.md` 的「📁 文件结构」树**。`git log -S"provenance_guard" -- SKILL.md` 返回空 ⇒ 该模块自诞生起从未出现在 `SKILL.md` 中。
-- **范围精确**：`skills/` 下共 **35** 个 `.py`（排除 `__init__` / `test_skills` / `intents` 包），`SKILL.md` 树中登记 **34** 个；**`provenance_guard` 是唯一遗漏项**。
+- **范围精确**：`skills/` 下共 **35** 个 `.py`（排除 `__init__` / `test_skills` / `intents` 包），修复前 `SKILL.md` 树中登记 **34** 个；**`provenance_guard` 是唯一遗漏项**。
 - **不是死代码**：该模块被 `skills/build.py`（5 处）与 `skills/changeset.py`（3 处）实际 `import`；其专属测试 `tests/test_provenance_guard.py` **32 tests OK**。⇒ 属**文档登记缺口**，非功能缺陷。
-- **未修复原因**：按「既有问题不在无关改动中顺手修」的变更最小化约定，本次仅登记不入修。
-- **修复方式**（待办，未执行）：在 `SKILL.md` 文件树的 `skills/` 区块补一行，例如 `│   ├── provenance_guard.py          # 变更来源审计（生产变更契约）`。修完应使该套件回到 100%。
+- **修复**：在 `SKILL.md`「📁 文件结构」树的 `skills/` 区块补入 `provenance_guard.py` 条目（依字母序置于 `maintenance_context.py` 与 `repair.py` 之间），与 `49f9cdf` 已写入的 Change Provenance Contract 对齐。
+- **验证**：`tests/test_cross_reference.py` **exit=0，100.0%，0 FAIL**；`tests/test_deep_audit.py` **11/11，100.0%**。
+
+### 📋 Skill 自动激活调查报告 (2026-09-29, CLOSED — 文档记录，无代码变更)
 
 ### 📋 Skill 自动激活调查报告 (2026-09-29, CLOSED — 文档记录，无代码变更)
 
