@@ -24,6 +24,34 @@ from kernel import Kernel, KernelMode
 from token_optimizer import optimize
 
 
+def _force_utf8_stdio() -> None:
+    """Pin the stdio JSON-RPC channel to UTF-8 in both directions.
+
+    MCP over stdio is UTF-8, but Windows Python defaults stdin/stdout to the
+    console code page (cp936/GBK). That produced two failures for CJK input:
+    a request was rejected outright (``'gbk' codec can't decode byte ...``),
+    or — worse — silently decoded as mojibake (``分析当前工作区`` became
+    ``鍒嗘瀽褰撳墠宸ヤ綔鍖`` plus a lone surrogate) while ``json.loads`` still
+    succeeded, so the Kernel ran on a corrupted request. Output was affected
+    too: the ``ensure_ascii=False`` response raised ``'gbk' codec can't
+    encode character`` for any glyph outside cp936 (e.g. an emoji in a
+    diagnostic), which killed the reply.
+
+    stdin is strict so a protocol violation fails loudly instead of being
+    acted on as garbage. stdout/stderr use ``replace`` because a response
+    must still be emitted whatever the payload contains. Idempotent, and a
+    no-op where ``reconfigure`` is unavailable (very old Python or streams
+    a host has already wrapped).
+    """
+    for stream, errors in ((sys.stdin, "strict"),
+                           (sys.stdout, "replace"),
+                           (sys.stderr, "replace")):
+        try:
+            stream.reconfigure(encoding="utf-8", errors=errors)
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def _get_default_workspace():
     """Read workspace: env CADE_WORKSPACE > config > cwd"""
     import os
@@ -324,7 +352,9 @@ def handle_tool(name: str, args: dict) -> dict:
 
 def main():
     """MCP stdio server entry point"""
+    _force_utf8_stdio()
     while True:
+        msg_id = None
         try:
             line = sys.stdin.readline()
             if not line:
@@ -373,10 +403,28 @@ def main():
 
         except json.JSONDecodeError:
             continue
+        except UnicodeDecodeError as e:
+            # stdin is strict UTF-8 (see _force_utf8_stdio). Reaching here means
+            # the host sent bytes that are not valid UTF-8 — previously this
+            # either crashed the read or, under GBK, decoded into mojibake that
+            # json.loads happily accepted. Report it instead of guessing.
+            response = {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {
+                    "code": -32700,
+                    "message": f"Request is not valid UTF-8: {e}",
+                },
+            }
+            try:
+                sys.stdout.write(json.dumps(response) + "\n")
+                sys.stdout.flush()
+            except Exception:
+                pass
         except Exception as e:
             response = {
                 "jsonrpc": "2.0",
-                "id": msg.get("id") if 'msg' in dir() else None,
+                "id": msg_id,
                 "error": {"code": -32603, "message": str(e)},
             }
             try:

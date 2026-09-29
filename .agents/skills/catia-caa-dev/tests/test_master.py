@@ -79,6 +79,8 @@ SUITES = {
     # ── UseCase presence index (official example evidence) ──
     "UseCase Index": "test_usecase_index.py",
     "UI Clarifier": "test_ui_generator_clarifier.py",
+    # ── MCP stdio contract (spawns the real server on a GBK code page) ──
+    "MCP Stdio Encoding": "test_mcp_stdio_encoding.py",
     }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
@@ -127,6 +129,7 @@ VERIFY_STRINGS = {
     "test_retrieval_benchmark.py": "passed",
     "test_usecase_index.py": "USECASE INDEX OK",
     "test_ui_generator_clarifier.py": "passed",
+    "test_mcp_stdio_encoding.py": "passed",
     }
 
 

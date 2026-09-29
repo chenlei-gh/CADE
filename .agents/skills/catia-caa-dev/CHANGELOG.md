@@ -10,6 +10,40 @@
 
 ## [未发布]
 
+### 🐛 MCP stdio 编码：修复 CJK 请求静默乱码 / 崩溃 (2026-09-30)
+
+**现象**：`analyze` 工具在 Windows 上因编码问题失败。
+
+**根因**（实测复现，非推测）：MCP 的 stdio 通道按协议是 UTF-8，但 Windows 上 Python 的 stdin/stdout 默认跟随控制台代码页（cp936/GBK），而 `mcp_server.py` 从未重配，导致**双向**两个独立缺陷：
+
+| 方向 | 症状 | 严重度 |
+|------|------|--------|
+| 读 stdin | CJK 请求被按 GBK 解码。最坏情况**不报错**：`分析当前工作区` 被解成 `鍒嗘瀽褰撳墠宸ヤ綔鍖` + 孤立代理字符，`json.loads` 依然成功，Kernel 拿着**损坏的请求**继续执行 | 静默错误（最危险） |
+| 读 stdin | 或在 `['gbk' codec can't decode byte 0xba]` 处直接抛 `UnicodeDecodeError`，请求被拒 | 崩溃 |
+| 写 stdout | `json.dumps(..., ensure_ascii=False)` 写出 cp936 无法表示的字符（emoji、`→`）时抛 `['gbk' codec can't encode character]`，回复丢失 | 崩溃 |
+
+**为何长期潜伏**：`mcp_server.py` 的 `except Exception` 把解码失败包成 `-32603` 返回，且既有测试**全部只调 `handle_tool()`（进程内）**，从未以子进程方式驱动 stdio 服务器。
+
+**修复**（`skills/mcp_server.py`）：
+
+- 新增 `_force_utf8_stdio()`，在 `main()` 入口把 `stdin` 固定为 **UTF-8 + strict**（协议违规必须显式失败，不得当作乱码执行），`stdout`/`stderr` 固定为 **UTF-8 + replace**（无论 payload 含什么都不许丢回复）。幂等，`reconfigure` 不可用时静默跳过。
+- 错误路径新增 `except UnicodeDecodeError`，返回 `-32700` 且**明确说明“请求不是合法 UTF-8”**，不再与内部错误混淆。
+- 顺带修正错误响应中的 `msg.get("id") if 'msg' in dir() else None`：该写法会拿到上一轮循环的 `msg`；解码失败恰好发生在 `msg` 绑定之前，故改为循环顶部初始化 `msg_id = None`。
+
+**修复后实测**：
+
+```
+GBK 控制台 + CJK 请求          回复正确，stdin 编码 = utf-8
+Kernel 收到的请求              '分析当前工作区 CAAPartToAsm 模块'（内容完整，非乱码）
+含 emoji 的回复               正常写出，stdout 编码 = utf-8
+继承 PYTHONIOENCODING=cp936   仍正常（修复覆盖环境变量，而非依赖它）
+非法 UTF-8 字节               返回 -32700 并说明原因，不再静默乱码
+```
+
+**回归测试**：新增 `tests/test_mcp_stdio_encoding.py`（12 项），以**子进程 + 管道**驱动真实服务器，且**不注入** `PYTHONIOENCODING`（对齐 `setup_mcp.py` 生成的 `{"command": "python", ...}` 无 env 的真实 spawn 方式）。已做反向验证：对未修复的 `mcp_server.py` 跑为 **8/12**（4 项干净失败，含乱码与 cp936 崩溃的精确复现），修复后 **12/12**。已接入 `test_master.py`（`MCP Stdio Encoding`）。
+
+**未触碰**：`kernel.py`、`cade.py`、`capabilities.yaml`、`lifecycle.yaml`、`utils.ensure_utf8_stdio()`（仅覆盖 stdout/stderr，语义不同，未改动以保持最小变更）。
+
 ### 🎨 图标真高清：解除 16 色自加约束 (2026-09-29)
 
 **用户诉求**：「实际生产的图标都要是高清的，不论大小」，且明确指出「22px 上限是老版 CATIA 的约束」。
