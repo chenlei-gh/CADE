@@ -117,6 +117,10 @@ python test_master.py --audit
 # 单文件（已注册套件也可单独跑）
 python test_knowledge_system.py
 python test_deep_audit.py
+
+# 仓库根目录的静态漂移门禁（不启动 CATIA）
+python scripts/static_audit.py
+sh scripts/install-git-hooks.sh   # 每个 clone 装一次 pre-push
 ```
 
 ---

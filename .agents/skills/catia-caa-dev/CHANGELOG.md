@@ -10,6 +10,13 @@
 
 ## [未发布]
 
+### 🛡 静态漂移门禁 (2026-09-29)
+
+- **问题**：全仓无 CI、无 git hook。`tests/test_cross_reference.py` 的 FAIL 能潜伏到下一次有人手动跑测试。
+- **本次不做**：不加 GitHub Actions。当前 GitHub API 认证不可用，无法验证 Actions 是否可跑。
+- **做了什么**：新增 `scripts/static_audit.py`，只跑 `test_cross_reference.py` 与 `test_deep_audit.py`（不启动 CATIA、不编译）。新增可分发的 `scripts/git-hooks/pre-push`，以及 `scripts/install-git-hooks.sh`。
+- **边界**：`.git/hooks` 不随仓库分发。新 clone 必须自己跑一次安装脚本，否则门禁不生效。`git push --no-verify` 仍可绕过。
+
 ### ✅ 修复：`provenance_guard.py` 未登记进 SKILL.md 文件树 (2026-09-29, **FIXED**)
 
 - **症状**：`tests/test_cross_reference.py` 的唯一 FAIL —— `[FAIL] skills/provenance_guard.py in SKILL.md tree`，导致该套件 `exit=1`，Pass rate 99.6%（**254 PASS / 1 FAIL**）。

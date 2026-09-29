@@ -297,7 +297,18 @@ python .agents/skills/catia-caa-dev/tests/test_master.py --quick
 
 # Full regression suite (includes CATIA lifecycle)
 python .agents/skills/catia-caa-dev/tests/test_master.py
+
+# Static drift gate only (cross-reference + deep audit; no CATIA)
+python scripts/static_audit.py
 ```
+
+There is no hosted CI in this repository. The two static suites above are the ones that catch documentation drift (for example an unregistered `skills/*.py`). Install the local push gate once per clone:
+
+```bash
+sh scripts/install-git-hooks.sh
+```
+
+That copies `scripts/git-hooks/pre-push` into `.git/hooks/`. `.git/hooks` is not distributed with the repo, so a fresh clone does not get the gate until the installer is run. Bypass a single push with `git push --no-verify`.
 
 > **Test baseline**: 43 suites (42 fast suites + 1 CATIA lifecycle suite) · Fast regression: 42/42 passing.
 
@@ -598,7 +609,18 @@ python .agents/skills/catia-caa-dev/tests/test_master.py --quick
 
 # 完整回归验证（含 CATIA 运行时生命周期套件）
 python .agents/skills/catia-caa-dev/tests/test_master.py
+
+# 仅跑静态漂移门禁（交叉引用 + 深度审计；不启动 CATIA）
+python scripts/static_audit.py
 ```
+
+本仓库没有托管 CI。上面两个秒级静态套件用来拦文档漂移（例如 `skills/*.py` 未登记进 `SKILL.md` 文件树）。每个 clone 装一次本机 push 门禁：
+
+```bash
+sh scripts/install-git-hooks.sh
+```
+
+它把 `scripts/git-hooks/pre-push` 复制到 `.git/hooks/`。`.git/hooks` 不随仓库分发，新 clone 不跑安装脚本就没有这道门禁。单次绕过用 `git push --no-verify`。
 
 > **测试基线**：43 套件（42 快速套件 + 1 CATIA 生命周期套件）· 快速回归通过：42/42。
 

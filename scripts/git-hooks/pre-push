@@ -1,0 +1,19 @@
+#!/bin/sh
+# CADE static audit gate.
+# Blocks a push when the two documentation-drift suites fail.
+# Does not start CATIA, compile, or run the full master suite.
+#
+# Install (once per clone; .git/hooks is not distributed):
+#   sh scripts/install-git-hooks.sh
+
+root=$(git rev-parse --show-toplevel) || exit 1
+cd "$root" || exit 1
+
+echo "pre-push: static audit (cross-reference + deep audit)"
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python scripts/static_audit.py
+status=$?
+if [ "$status" -ne 0 ]; then
+    echo "pre-push: blocked. Fix the audit, or skip once with: git push --no-verify" >&2
+    exit "$status"
+fi
+exit 0
