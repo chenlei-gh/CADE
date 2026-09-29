@@ -115,8 +115,41 @@ class TestRuntimeVerification(unittest.TestCase):
         self.assertTrue(res["verification"]["evidence"]["match_found"])
         self.assertEqual(res["verification"]["evidence"]["observed_process"], "CNEXT.exe")
         self.assertEqual(res["verification"]["evidence"]["pid"], 8888)
+        self.assertEqual(
+            res["verification"]["evidence"]["instance_scope"],
+            "global_image_name_snapshot_only",
+        )
         # Negative constraint: observed is neither passed nor failed
         self.assertNotIn(res["verification"]["status"], ["passed", "failed"])
+
+    def test_start_catia_preexisting_process_scope_boundary(self):
+        """Pre-existing CNEXT.exe detection records snapshot evidence without proving invocation causality."""
+        mock_popen = MagicMock()
+        # Pre-existing PID 1234 returned by global tasklist
+        mock_running = [{"pid": 1234, "name": "CNEXT.exe"}]
+
+        with patch("subprocess.Popen", return_value=mock_popen), \
+             patch("run.check_process_running", return_value=mock_running):
+            res = start_catia_runtime(
+                workspace_path=self.workspace,
+                wait_for_exit=False,
+            )
+
+        self.assertEqual(res["status"], "started")
+        self.assertEqual(res["pid"], 1234)
+        self.assertEqual(res["verification"]["status"], "observed")
+        self.assertEqual(res["verification"]["check"], "cnext_process_scan")
+        self.assertEqual(
+            res["verification"]["evidence"]["instance_scope"],
+            "global_image_name_snapshot_only",
+        )
+        # Crucial negative boundaries:
+        # 1. Observed status MUST NOT claim causality or verification passed
+        self.assertNotEqual(res["verification"]["status"], "passed")
+        self.assertNotEqual(res["verification"]["status"], "failed")
+        # 2. Execution status is completed, NEVER success
+        self.assertEqual(res["execution"]["status"], "completed")
+        self.assertNotEqual(res["execution"]["status"], "success")
 
     def test_start_catia_polling_exhausted_launching(self):
         """wait_for_exit=False when polling exhausted: status launching, v1_classification not_specified_in_v1."""
@@ -287,7 +320,7 @@ class TestRuntimeVerification(unittest.TestCase):
         )
 
     def test_runtime_view_not_found(self):
-        """Empty workspace: verification failed, exists=False, architecture_matched=False."""
+        """Empty workspace: verification not_run, check=none, exists=False, architecture_matched=False."""
         with patch("runtime_view.CAAEnvironment.get_architecture", return_value="win_b64"):
             res = check_runtime_view(self.workspace)
 
@@ -297,11 +330,13 @@ class TestRuntimeVerification(unittest.TestCase):
         self.assertEqual(res["execution"]["action_result"], "not_found")
         self.assertEqual(res["execution"]["raw"]["status"], "not_found")
 
-        self.assertEqual(res["verification"]["status"], "failed")
-        self.assertEqual(res["verification"]["check"], "runtime_candidate_path_exists")
+        # Crucial P5.3 semantic: no candidate tested => not_run, check=none
+        self.assertEqual(res["verification"]["status"], "not_run")
+        self.assertEqual(res["verification"]["check"], "none")
         self.assertFalse(res["verification"]["evidence"]["exists"])
         self.assertFalse(res["verification"]["evidence"]["architecture_matched"])
         self.assertEqual(res["verification"]["evidence"]["reason"], "no_candidate_path_exists")
+        self.assertNotIn(res["verification"]["status"], ["passed", "failed"])
 
     # =========================================================================
     # 4. Backward Compatibility tests

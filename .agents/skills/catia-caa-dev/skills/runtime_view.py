@@ -340,14 +340,13 @@ def check_runtime_view(workspace_path: Path) -> dict:
             "raw": raw_snapshot,
         }
         res["verification"] = {
-            "status": "failed",
-            "check": "runtime_candidate_path_exists",
+            "status": "not_run",
+            "check": "none",
             "evidence": {
+                "reason": "no_candidate_path_exists",
                 "configured_architecture": configured_arch,
                 "architecture_matched": False,
                 "exists": False,
-                "reason": "no_candidate_path_exists",
-                "instance_scope": "path_existence_predicate_only",
             },
         }
         return res

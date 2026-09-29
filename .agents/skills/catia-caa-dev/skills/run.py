@@ -518,6 +518,7 @@ def start_catia_runtime(
                     "observed_process": "CNEXT.exe",
                     "pid": runtime_result.get("pid"),
                     "match_found": True,
+                    "instance_scope": "global_image_name_snapshot_only",
                 },
             }
         elif cur_status == "launching":
