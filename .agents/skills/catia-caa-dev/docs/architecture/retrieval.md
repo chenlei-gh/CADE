@@ -52,8 +52,8 @@ authoritative data source and a single lifecycle:
 
 | Index | Authoritative source | What it answers | Snapshot (2026-07) |
 |---|---|---|---|
-| **CatalogIndex** | `catalog/index.yaml` (hand-listed) + `knowledge/frameworks/*.md` (auto-scanned, `_scan_frameworks`) | "Which knowledge file matches this intent?" | 239 entries (91 hand-listed + 148 auto-scanned), 34 aliases |
-| **ApiRegistry** | `capabilities/*.md` + `templates/**` + `knowledge/frameworks/*.md` + `knowledge/failure_patterns/*.md` | "Is this API name real?" | 342 APIs |
+| **CatalogIndex** | `catalog/index.yaml` (hand-listed) + `knowledge/frameworks/*.md` (auto-scanned, `_scan_frameworks`) | "Which knowledge file matches this intent?" | 250 entries (102 hand-listed + 148 auto-scanned), 37 aliases |
+| **ApiRegistry** | `capabilities/*.md` + `templates/**` + `knowledge/frameworks/*.md` + `knowledge/failure_patterns/*.md` | "Is this API name real?" | 349 APIs |
 | **HeaderMap** | B28 install `<FW>/PublicInterfaces/*.h` scan → `cache/header_map_<ver>.json` | "Does this class/header exist in CATIA?" | 5500 headers, 503 frameworks |
 | **MethodIndex** | `cache/caadoc_index.json` (pre-parsed SDK headers) → `cache/method_index.pickle` | "Does type X really have method M?" | 2655 types |
 | **UseCaseIndex** | CAADoc use-case `.cpp` scan + official resources (Imakefile/LocalInterfaces/CATNls/CATRsc) → `cache/usecase_index.json` (builder: `tools/build_usecase_index.py`) | "Has CAA officially used X this way?" | 1233 examples + 1674 resource files |

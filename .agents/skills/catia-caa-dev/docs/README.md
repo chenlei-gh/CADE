@@ -12,7 +12,7 @@ docs/
 ├── guides/              # 使用指南
 ├── references/          # 技术参考
 ├── examples/            # 示例代码
-└── reports/             # 测试和发布报告
+└── validation/          # 验证证据（审计 JSON / 截图 / 物理验证记录）
 ```
 
 ---
@@ -25,6 +25,7 @@ CADE 的架构级约束，定义"什么是权威来源、什么入口必须走�
 - **[ADR-CADE-UI-Semantic-Layer.md](architecture/ADR-CADE-UI-Semantic-Layer.md)** - CADE UI Semantic Layer 架构决策（所有权边界、create/regen 变更语义、roadmap）
 - **[UI_GENERATOR_CLARIFICATION_POLICY.md](architecture/UI_GENERATOR_CLARIFICATION_POLICY.md)** - UI Generator 澄清策略（四轴不可安全推断边界、触发条件、Non-Goals）
 - **[ADR-Icon-Provider-Freeze.md](architecture/ADR-Icon-Provider-Freeze.md)** - Icon Provider v4.0：Official-Only（71 Primitive 已删除），CATIA 官方 BMP 运行时引用（本机 B28 `I_*.bmp` 只读、不入库）+ Badge Overlay + 官方兜底图
+- **[ICON_GENERATION_SPEC.md](architecture/ICON_GENERATION_SPEC.md)** - 生成式图标规范（官方 BMP 无法语义匹配时的 Generated Base 管线，v3）
 
 ---
 
@@ -83,6 +84,7 @@ CADE 的架构级约束，定义"什么是权威来源、什么入口必须走�
 - **[CAPABILITY_HISTORY.md](CAPABILITY_HISTORY.md)** - 能力治理与变更历史
 - **[AI_SKILL_ACTIVATION_FINDINGS.md](AI_SKILL_ACTIVATION_FINDINGS.md)** - Skill 自动激活调查报告（**调查记录，非架构契约**；宿主机制、实测数据、已推翻假说、禁止推断）
 - **[WIKI_HOME.md](WIKI_HOME.md)** - Wiki 跳转页（GitHub Wiki 入口）
+- **[validation/provenance_guard_physical_verification.md](validation/provenance_guard_physical_verification.md)** - provenance_guard 物理验证记录（**证据材料，非契约**）
 
 ---
 

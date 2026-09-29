@@ -10,6 +10,28 @@
 
 ## [未发布]
 
+### 🧹 文档事实漂移清理 (2026-09-29，纯文档，零代码变更)
+
+以当前源码/索引实测值覆盖「断言当前状态但已失真」的活数字。所有新数字均由 CADE 自身工具复现：
+`tools/count_knowledge_assets.py`（**244 = 33K+15P+13C+13PB+148FW+1E+6PH+15FP**）、
+`CatalogIndex.load()`（**250 entries = 102 curated + 148 auto-scanned，37 aliases**）、
+`ApiRegistry.load()`（**349 APIs**）、`test_master.py` 的 `SUITES`（**43**，`--quick` 42）、
+磁盘 `tests/test_*.py`（**58**）、`templates/` 非 md 文件（**74**）。
+
+| 文件 | 修正 |
+|------|------|
+| `SKILL.md`（frontmatter） | 括号串改为 count tool 口径；删除不存在的 `3DecisionTree`；`75模板`→**74**；`42测试套件`→**43套件**（后者现受 `test_cross_reference.py` §2b 门禁校验） |
+| `SKILL.md`（MCP 覆盖声明） | 删除写死的「其余 22 个」——`capabilities.yaml` 能力数已从 25 变为 24，改用不写死个数的表述 |
+| `docs/architecture/retrieval.md` | `239 entries (91+148)`→**250 (102+148)**；`34 aliases`→**37**；`342 APIs`→**349** |
+| `tests/README.md` | `44 个 test_*.py`→**58**；「未注册进 SUITES 的文件」表补全 14 个实际未注册文件（原只列 `test_master.py`） |
+| `docs/README.md` | 目录树 `reports/`（不存在）→ `validation/`；补 `ICON_GENERATION_SPEC.md` 与 `validation/provenance_guard_physical_verification.md` 索引项；修正 `references/` 条缩进 |
+
+**判定为“不动”**（带日期/自声明快照，非活断言）：`docs/KNOWLEDGE_SYSTEM_ARCHITECTURE.md`（v2.2.0 / 2026-07-10 落款）、`docs/TEST_DOCUMENTATION.md` 验证日期段、`docs/references/ARCHITECTURE.md`（头部已声明“数字会漂移，勿引用”）、`KNOWLEDGE_AUDIT_STATUS.md`、`docs/architecture/ADR-Icon-Provider-Freeze.md`。
+
+**未触碰**：`kernel.py`、`cade.py`、`mcp_server.py`、`capabilities.yaml`、`lifecycle.yaml`、`skills/*.py`、根 `README.md`。
+
+**验证**：`tests/test_cross_reference.py` **256/256（100%）**、`tests/test_deep_audit.py` **11/11（100%）**、`tools/check_capabilities.py` **CAPABILITY CONTRACT OK**。
+
 ### 🛡 静态漂移门禁 (2026-09-29)
 
 - **问题**：全仓无 CI、无 git hook。`tests/test_cross_reference.py` 的 FAIL 能潜伏到下一次有人手动跑测试。

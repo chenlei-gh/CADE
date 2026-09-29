@@ -2,7 +2,7 @@
 
 套件数以 `test_master.py` 的 `SUITES` 为准（当前 **43** 个注册套件；`--quick` 跳过 `SKIP_SLOW = {Int-1 Build & Run}`，执行 42 套）。
 
-磁盘上另有 `test_*.py` 文件（当前 44 个，含本 runner）。**不要用文件个数覆盖套件数。** 未注册进 `SUITES` 的文件不算 master 套件。
+磁盘上另有 `test_*.py` 文件（当前 58 个，含本 runner）。**不要用文件个数覆盖套件数。** 未注册进 `SUITES` 的文件不算 master 套件。
 
 知识资产计数会漂移；以知识目录与 Catalog 为准，不要用本节数字结案。
 
@@ -99,6 +99,20 @@
 | 文件 | 说明 |
 |------|------|
 | `test_master.py` | runner 本身 |
+| `test_brownfield_analysis.py` | P1 Brownfield 模块分析 |
+| `test_build_error_association.py` | 构建错误关联 + 恢复生命周期（P3-A.1） |
+| `test_build_provenance_integration.py` | Change Provenance Guard 集成 `build_workspace`（P3-B） |
+| `test_changeset_preconditions.py` | ChangeSet touched-path 前置条件（P2） |
+| `test_changeset_postconditions.py` | ChangeSet 应用后后置条件（P5.1） |
+| `test_invocation_telemetry.py` | 调用遥测（P0-A） |
+| `test_maintenance_context.py` | Maintenance Context Manager（P3-A.1） |
+| `test_mcp_apply_changeset.py` | MCP `develop(changeset=)`（P1） |
+| `test_mcp_execute_plan.py` | MCP `develop(execute_plan=)` 外部执行授权（P4） |
+| `test_p3a_extras_changeset.py` | ChangeSet `_apply_extras`（P3-A） |
+| `test_p54_boundary_exposure.py` | 边界暴露 / 结果传播（P5.4） |
+| `test_provenance_guard.py` | Change Provenance Guard（P3-B） |
+| `test_runtime_feedback.py` | 人工运行时反馈（P3-B） |
+| `test_runtime_verification.py` | 运行时验证信封（P5.3） |
 
 
 ---
@@ -131,4 +145,4 @@ sh scripts/install-git-hooks.sh   # 每个 clone 装一次 pre-push
 
 ---
 
-**最后更新**: 2026-08-28
+**最后更新**: 2026-09-29

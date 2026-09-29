@@ -1,6 +1,6 @@
 ---
 name: catia-caa-dev
-description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（8 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（32K+14P+13Capability+15Playbook+148Framework+6Philosophy+15Failure+3DecisionTree），官方图标运行时引用+语义解析+HD PNG、75模板(16类型)、42测试套件、cade dev一键闭环。"
+description: "CATIA CAA V5 Development Engine (CADE) v3.2.1 — Kernel 架构（3 Mode: develop/analyze/repair）、Generate → Build（tck_init→tck_profile→mkinit→mkGetPreq→mkmk）→ Run（mkrun）闭环。Rich Domain Model（8 实体）、依赖图分析、级联删除、操作回滚、智能推荐、Diagnostics+FixPlan+RepairLoop+AutoSuggest、Refactor、静态代码验证。动态 CATIA 检测（零硬编码）、Prerequisites 管理。CAA 知识系统（244 资产 = 33K+15P+13C+13PB+148FW+1E+6PH+15FP，口径见 tools/count_knowledge_assets.py），官方图标运行时引用+语义解析+HD PNG、74模板(16类型)、43套件、cade dev一键闭环。"
 triggers:
   - CAA component
   - CATIA component
@@ -628,7 +628,7 @@ AI Agent 有需求
 
 > ⚠️ **AI Agent 优先用 MCP**：AI Agent 可通过 CADE MCP 的 `develop` / `analyze` / `repair` 入口访问相应能力，**无需为每个能力单独声明 MCP binding**。未配置 MCP 时按 [`capabilities.yaml`](capabilities.yaml) 的 `cli`/`python` binding 用**绝对路径**直跑。**用户显式指定入口时以用户为准**（见「🔀 入口仲裁」）。CLI 和 Python API 主要给人类和脚本用。
 >
-> **MCP 覆盖范围声明**：`mcp_server.py` 暴露 3 个 kernel 模式（`develop`/`analyze`/`repair`），其余 22 个 `capabilities.yaml` 能力没有单独的 mcp binding。这是设计内决定，不是遗漏：这些能力是开发/构建/诊断类操作，**AI Agent 仍经 `develop`/`analyze`/`repair` 抵达，不因此要求改用 CLI**——不要求逐能力 mcp binding；其余属于人类/CI 场景。若以后真需要（例如某个 cli-only 能力频繁被 AI 误触发），再补 mcp binding，不要现在预先补齐。
+> **MCP 覆盖范围声明**：`mcp_server.py` 暴露 3 个 kernel 模式（`develop`/`analyze`/`repair`），其余 `capabilities.yaml` 能力没有单独的 mcp binding。这是设计内决定，不是遗漏：这些能力是开发/构建/诊断类操作，**AI Agent 仍经 `develop`/`analyze`/`repair` 抵达，不因此要求改用 CLI**——不要求逐能力 mcp binding；其余属于人类/CI 场景。若以后真需要（例如某个 cli-only 能力频繁被 AI 误触发），再补 mcp binding，不要现在预先补齐。
 
 ---
 
