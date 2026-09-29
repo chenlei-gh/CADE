@@ -2139,11 +2139,24 @@ class Kernel:
                 orchestrated_by_kernel=True,
                 entrypoint="kernel"
             )
-            return {
-                "status": "ok",
+            exec_status = res.get("execution", {}).get("status") if isinstance(res, dict) and isinstance(res.get("execution"), dict) else None
+            if exec_status is not None:
+                # P5.3 execution.status domain: completed | error | timeout.
+                # Only "completed" maps to Kernel ok; timeout/error must not be
+                # reported as a successful launch.
+                is_ok = (exec_status == "completed")
+            else:
+                is_ok = res.get("status") not in ("error", "timeout") if isinstance(res, dict) else True
+            ret = {
+                "status": "ok" if is_ok else "error",
                 "data": res if isinstance(res, dict) else {},
-                "message": "CATIA started"
+                "message": res.get("message", "CATIA started") if isinstance(res, dict) else "CATIA started",
             }
+            if isinstance(res, dict) and "execution" in res:
+                ret["execution"] = res["execution"]
+            if isinstance(res, dict) and "verification" in res:
+                ret["verification"] = res["verification"]
+            return ret
 
         elif action == "stop_catia":
             force = params.get("force", False)
@@ -2151,11 +2164,22 @@ class Kernel:
                 return {"status": "error", "message": "force must be a boolean"}
             from run import stop_catia
             res = stop_catia(force=force, orchestrated_by_kernel=True, entrypoint="kernel")
-            return {
-                "status": "ok",
+            exec_status = res.get("execution", {}).get("status") if isinstance(res, dict) and isinstance(res.get("execution"), dict) else None
+            if exec_status is not None:
+                # See start_catia above: only "completed" is a successful call.
+                is_ok = (exec_status == "completed")
+            else:
+                is_ok = res.get("status") not in ("error", "timeout") if isinstance(res, dict) else True
+            ret = {
+                "status": "ok" if is_ok else "error",
                 "data": res if isinstance(res, dict) else {},
-                "message": "CATIA stopped",
+                "message": res.get("message", "CATIA stopped") if isinstance(res, dict) else "CATIA stopped",
             }
+            if isinstance(res, dict) and "execution" in res:
+                ret["execution"] = res["execution"]
+            if isinstance(res, dict) and "verification" in res:
+                ret["verification"] = res["verification"]
+            return ret
 
         elif action == "macro":
             macro_path = params.get("macro_path")
@@ -2209,6 +2233,9 @@ class Kernel:
             return {"status": "ok", "message": "Batch executed", "data": res if isinstance(res, dict) else {}}
 
         elif action == "runtime_view":
+            # Kernel's runtime_view action is a BUILD action (create/mkCreateRuntimeView),
+            # not the P5.3 check_runtime_view() verification probe. create_runtime_view()
+            # emits no execution/verification envelope, so no envelope is hoisted here.
             from build import create_runtime_view
             res = create_runtime_view(self.workspace_root)
             is_ok = res.get("status") in ("ok", "success") if isinstance(res, dict) else bool(res)

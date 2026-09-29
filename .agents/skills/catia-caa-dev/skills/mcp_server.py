@@ -196,6 +196,38 @@ def _apply_authorized_changeset(ws: str, changeset) -> dict:
     }
 
 
+# Actions whose Kernel result carries a P5.3 runtime verification envelope
+# (execution/verification) at top level. Deliberately NOT "runtime_view": the
+# Kernel runtime_view action is a build action (create_runtime_view) that emits
+# no P5.3 envelope. "execution"/"verification" are also used as top-level keys
+# by build.py with a DIFFERENT status domain, so forwarding is gated by action
+# AND by envelope shape to avoid pulling a build envelope into the execute
+# result (see _forward_p53_envelopes).
+_P53_ENVELOPE_ACTIONS = ("start_catia", "stop_catia")
+_P53_EXECUTION_STATUSES = ("completed", "error", "timeout")
+_P53_VERIFICATION_STATUSES = ("not_run", "observed", "passed", "failed")
+
+
+def _forward_p53_envelopes(executed: dict, action: str) -> dict:
+    """Return the P5.3 envelopes to forward, or {} if none qualify.
+
+    Restricted to P5.3 envelope-enabled actions, and additionally validated by
+    status domain so a same-named build.py envelope (execution.status in
+    success/failed/error) is never forwarded as a P5.3 envelope.
+    """
+    if not isinstance(executed, dict) or action not in _P53_ENVELOPE_ACTIONS:
+        return {}
+    exec_env = executed.get("execution")
+    ver_env = executed.get("verification")
+    if not isinstance(exec_env, dict) or not isinstance(ver_env, dict):
+        return {}
+    if exec_env.get("status") not in _P53_EXECUTION_STATUSES:
+        return {}
+    if ver_env.get("status") not in _P53_VERIFICATION_STATUSES:
+        return {}
+    return {"execution": exec_env, "verification": ver_env}
+
+
 def _execute_authorized_plan(ws: str, execute_plan: Any) -> dict:
     """Execute one serialized ExecutionPlan. Never re-enters Kernel.execute."""
     if not isinstance(execute_plan, dict):
@@ -203,6 +235,7 @@ def _execute_authorized_plan(ws: str, execute_plan: Any) -> dict:
     kernel = Kernel(workspace_root=ws)
     executed = kernel._execute_plan_dict(execute_plan)
     action = execute_plan.get("action", "")
+    forwarded = _forward_p53_envelopes(executed, action)
     if executed.get("status") in ("ok", "success"):
         result = {
             "status": "ok",
@@ -216,9 +249,13 @@ def _execute_authorized_plan(ws: str, execute_plan: Any) -> dict:
         optimized["operation"] = "execute"
         optimized["execution_status"] = executed.get("status", "ok")
         optimized["action"] = action
+        # optimize() strips top-level keys not in _PASSTHROUGH_KEYS, so the P5.3
+        # envelopes are re-attached here rather than added to that global set
+        # (which would also leak build.py's differently-shaped envelopes).
+        optimized.update(forwarded)
         return optimized
     errors = executed.get("errors") or [executed.get("message") or executed.get("status") or "execution failed"]
-    return {
+    res_err = {
         "status": "error",
         "operation": "execute",
         "execution_status": executed.get("status", "error"),
@@ -226,6 +263,8 @@ def _execute_authorized_plan(ws: str, execute_plan: Any) -> dict:
         "message": "; ".join(str(e) for e in errors),
         "errors": errors,
     }
+    res_err.update(forwarded)
+    return res_err
 
 
 def handle_tool(name: str, args: dict) -> dict:
