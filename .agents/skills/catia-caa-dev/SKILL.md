@@ -214,7 +214,7 @@ triggers:
 
 > ## ⛔ 强制工作流（AI 必读，不可跳过）
 >
-> 0. **意图路由** → 先查 [`capabilities.yaml`](capabilities.yaml)（25 个能力的触发词与 binding）。意图命中能力后按其 binding 调用（优先级 mcp > cli > python）；**能力未声明的入口 = 不可用，不是“可以猜”**；`forbidden` 列出的路径禁止。**触发词零命中** → 禁止猜测/直接 shell/自行发挥，退回 develop/analyze/repair 三个 kernel 兜底模式或询问用户；**命中多个能力** → 报告候选列表交由用户消歧。契约与实现的一致性由 `tools/check_capabilities.py` 对账。
+> 0. **意图路由** → 先查 [`capabilities.yaml`](capabilities.yaml) 的触发词**定位能力**（25 个能力）。**入口选择**按下方「🔀 入口仲裁」规则处理：MCP 工具（`develop`/`analyze`/`repair`）可用时优先 MCP；未配置 MCP 时按 binding 表用 cli/python **绝对路径**。**未匹配到能力时不得自行虚构能力**（不猜能力，但入口可按规则选择）；`forbidden` 列出的路径禁止。**触发词零命中** → 禁止猜测/直接 shell/自行发挥，退回 develop/analyze/repair 三个 kernel 兜底模式或询问用户；**命中多个能力** → 报告候选列表交由用户消歧。契约与实现的一致性由 `tools/check_capabilities.py` 对账。
 > 0.5 **无状态 shell 调用** → 若你（AI）通过 terminal/shell 工具直接执行命令（而不是经 MCP），你没有持久 cwd/PATH：调用任何 capabilities.yaml 的 cli/python binding 前先解析一次本技能的 SKILL_ROOT 绝对路径，之后一律用绝对路径调用，禁止裸相对路径、禁止假设 PATH 上有 cade。详见下方“Agent Shell 调用契约”。
 > 1. **创建/生成** → 调 `develop()`。它**自动注入相关知识内容**（`knowledge_content`）并**自动静态验证**。**先读响应里的 `knowledge_content` 再写代码**；若出现 `verification_failed: true`，**必须先修复 `verification_errors` 再继续**。
 > 2. **知识/API 问题** → 调 `analyze(request, detail=true)`，一次返回排序后的知识**文件内容**，不要再 grep / 多轮读文件。
@@ -299,14 +299,14 @@ AI 只知道 3 个 Mode:
 | 规则 | 说明 |
 |------|------|
 | 🎯 **MCP 只有 3 个工具** | **MCP 面**只暴露三个 kernel 模式：`develop`（创建/生成）、`analyze`（查询/诊断）、`repair`（修复/重构）。CLI 面另有 `build.py`/`cade.py` 等入口，见 [`capabilities.yaml`](capabilities.yaml) 的 bindings。 |
-| 🔌 **有 MCP 用 MCP，没有就走 CLI** | 配置了 CADE MCP 时所有功能通过 MCP 工具调用（响应已自动 Token 优化）。**当前环境没有 MCP 时**，按 [`capabilities.yaml`](capabilities.yaml) 的 `cli`/`python` binding 用**绝对路径**直跑——例如编译 = `python <SKILL_ROOT>/skills/build.py <workspace>`，修复 = `python <SKILL_ROOT>/skills/cade.py fix <workspace>`。详见下方「Agent Shell 调用契约」。 |
+| 🔌 **有 MCP 用 MCP，没有就走 CLI** | 配置了 CADE MCP 时所有功能通过 MCP 工具调用（响应已自动 Token 优化）。**当前环境没有 MCP 时**，按 [`capabilities.yaml`](capabilities.yaml) 的 `cli`/`python` binding 用**绝对路径**直跑——例如编译 = `python <SKILL_ROOT>/skills/build.py <workspace>`，修复 = `python <SKILL_ROOT>/skills/cade.py fix <workspace>`。**例外：用户显式指定入口时以用户为准**（见下方「🔀 入口仲裁」）。详见下方「Agent Shell 调用契约」。 |
 | 📊 **信 status 不信 output** | API 返回 `{"status": "ok", "error_count": 0}` 就够了。CLI 默认已剔除原始 mkmk 日志（只留 `output_tail` 尾部片段），完整日志在 `output_log` 指向的 build.log；需要全文用 `build.py --full-output`。 |
 | 🆕 **模糊需求用 develop()** | 用户说"我想做一个..."、"能不能..."时直接调用 `develop()`。Kernel 自动做需求澄清 → 分解增强（Playbook/Capability/依赖）→ 规划 → 生成 → **自动写入磁盘（auto-apply）** → 代码验证。如果返回 `needs_clarification`，把问题展示给用户。 |
 | ✅ **develop() 一次调用即完成，不要等"确认"** | `develop()` 会自动把生成结果写入磁盘并自带备份（`result.apply_result.rollback_id`），不存在"生成预览 → 再手动 apply"的第二步。返回 `status: "ok"` 就代表文件已经真实存在；意图无法解析或底层报错（如模块不存在、能力不可用）时返回 `status: "error"`，此时没有文件被写入。需要撤销时用 `repair()` 的 rollback，而不是去找一个不存在的 confirm 接口。 |
 | 🔍 **只读操作用 analyze()** | 所有查询、诊断、分析用 `analyze()`。它永不会修改文件，无需确认。 |
 | 📄 **知识问题加 detail=true** | 问 CAA API/Pattern/做法类问题时调 `analyze(request, detail=true)`，一次调用直接返回排序后的知识**文件内容**，不要再 analyze → read 文件 → grep 定位的多轮往返。返回已按相关性排序并带 reading_guide。 |
 | 🔧 **修复用 repair()** | 修复诊断问题、重构（重命名/移动）、回滚用 `repair()`。Kernel 内部运行 diagnose → fix → verify 最多重试 3 次。 |
-| ⚡ **两层路由，都不靠猜** | **Tier 1 意图**（3 Mode）："创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`——动词分类。**Tier 2 能力**（25 个）：查 [`capabilities.yaml`](capabilities.yaml) 的触发词定能力、按 binding 调用——受约束查表，不自由发挥。 |
+| ⚡ **两层路由，都不靠猜** | **Tier 1 意图**（3 Mode）："创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`——动词分类。**Tier 2 能力**（25 个）：查 [`capabilities.yaml`](capabilities.yaml) 的触发词**定能力**；**入口按「🔀 入口仲裁」选择**（MCP 优先，除非用户显式指定）——不自由发挥。 |
 | 🚫 **新工具禁止复制旧工具骨架** | 创建新命令/对话框/工作台时，必须调 `develop()` 走模板生成器，**不要**把工作区里现有工具的 .cpp/.h/.CATNls/.CATRsc 复制一份再改名。旧工具可能还带着已修复的历史 bug（如硬编码 `SetTitle`、错误的 `_Chinese.CATNls` 约定），复制 = 把 bug 克隆进新工具，还会错过模板/图标/双语 NLS 的持续更新。已有工具**只可参考业务逻辑**（API 组合、算法、项目命名习惯）；文件骨架、资源文件、注册代码永远以生成器输出为准。 |
 | 🎨 **图标是 develop() 的自动产物，不要手动补** | `develop()` 创建命令时图标已连同骨架一起生成（verb-object 解析自动匹配 CATIA 官方图标 + 角标，如 `CreateHoleCmd` → I_Hole+plus），无需再调 `icon_provider.py`。只有**换图标风格**时才单独调：`from icon_provider import get_icon; get_icon("CmdName")`（自动解析，不要先列图案库人工挑）。首次编译时图标会随 Runtime View 同步自动生效。 |
 | 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架 → 再精准打开 `<CATIA_INSTALL>/CAADoc/` 对应页面。不要跳过 Framework 直接全文搜 CAADoc。 |
@@ -319,6 +319,20 @@ AI 只知道 3 个 Mode:
 | 🏆 **查“组件实现了哪些接口”信随产品发布的字典** | `--query <接口名>` 会自动扫描 CATIA 安装目录下 `<arch>/code/dictionary/*.dic`（比 CAADoc 自带的 44 个教学 `.dico` 大得多，约 885 个文件/7.3 万条），列出真正发布产品里哪个组件真实实现了该接口，标记为 "ground truth"。遇到“接口真实存在但不知道怎么获取实例”的情况时，先用它反查实现组件，往往能发现真实获取方式是对该组件做 `QueryInterface`（如 `CATTPSSet` 实现了 `CATITPSFactoryElementary`/`CATITPSCaptureFactory`/`CATITPSViewFactory` 三个工厂接口，都需对 Set 实例 QI 获取）。 |
 | 📋 **手写知识文档已完成核实，仍建议查审计表** | `capabilities/`（13）、`playbooks/`（15）、`knowledge/`、`patterns/` 里的手写教学文档已全部核实完毕（见 [`KNOWLEDGE_AUDIT_STATUS.md`](KNOWLEDGE_AUDIT_STATUS.md)）。对于 `frameworks/` 148 个自动生成的 API 索引文件，具体签名以 `--query` 实时核对头文件为准。 |
 | 🧠 **跨项目记忆库** | 遇到疑难问题（编译、运行时、工具链），先查 `D:/Vault/Memory/BestPractices.md`。症状速查表见下方 **故障排查** 章节。 |
+
+### 🔀 入口仲裁：用户提供的 CLI 命令
+
+> **核心契约：用户给出的 CLI 命令本身不构成执行入口指定。**
+
+| 用户陈述 | 处理 |
+|---------|------|
+| 明确要求"用 / 运行 / 执行"某个具体命令、脚本或工具 | 按用户指定的入口执行（CLI） |
+| 明确禁止某入口（如"不要用 MCP"） | 遵从该约束 |
+| 仅在"工具链 / 环境 / 路径 / 示例"中给出命令 | **不构成入口指定** → 走 CADE 路由 |
+
+任务匹配 CADE 能力、且用户未显式指定入口时：**MCP 可用（`develop`/`analyze`/`repair`）则优先 MCP**，否则用文档化的 CLI fallback。**不要求用户显式说出 "CADE"**——任务匹配 CADE 能力即可。
+
+本位规则**不覆盖**用户对具体工具 / 命令 / 脚本 / 执行方式的直接指定。
 
 ### ✨ 核心优势
 
@@ -612,9 +626,9 @@ AI Agent 有需求
 | 调试一个错误 | CLI | MCP | 开发者需要看完整输出 |
 | 重构影响分析 | Python `intent.impact` | MCP | 需要编程式评估结果 |
 
-> ⚠️ **AI Agent 优先用 MCP**；某能力未声明 MCP binding 时，按 [`capabilities.yaml`](capabilities.yaml) 中该能力已声明的最高优先级 binding 调用（mcp > cli > python），未声明 = 不可用。CLI 和 Python API 主要给人类和脚本用。
+> ⚠️ **AI Agent 优先用 MCP**：AI Agent 可通过 CADE MCP 的 `develop` / `analyze` / `repair` 入口访问相应能力，**无需为每个能力单独声明 MCP binding**。未配置 MCP 时按 [`capabilities.yaml`](capabilities.yaml) 的 `cli`/`python` binding 用**绝对路径**直跑。**用户显式指定入口时以用户为准**（见「🔀 入口仲裁」）。CLI 和 Python API 主要给人类和脚本用。
 >
-> **MCP 覆盖范围声明**：`mcp_server.py` 目前只暴露 3 个 kernel 模式（`develop`/`analyze`/`repair`），其余 22 个 `capabilities.yaml` 能力没有 mcp binding。这是设计内决定，不是遗漏：这 22 个能力是开发/构建/诊断类操作，经由 kernel 三模式间接貆达或属于人类/CI 场景，不需要为它们单独开 MCP 入口。若以后真需要（例如某个 cli-only 能力频繁被 AI 误触发），再补 mcp binding，不要现在预先补齐。
+> **MCP 覆盖范围声明**：`mcp_server.py` 暴露 3 个 kernel 模式（`develop`/`analyze`/`repair`），其余 22 个 `capabilities.yaml` 能力没有单独的 mcp binding。这是设计内决定，不是遗漏：这些能力是开发/构建/诊断类操作，**AI Agent 仍经 `develop`/`analyze`/`repair` 抵达，不因此要求改用 CLI**——不要求逐能力 mcp binding；其余属于人类/CI 场景。若以后真需要（例如某个 cli-only 能力频繁被 AI 误触发），再补 mcp binding，不要现在预先补齐。
 
 ---
 
