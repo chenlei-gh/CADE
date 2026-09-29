@@ -28,8 +28,6 @@
 
 ### 📋 Skill 自动激活调查报告 (2026-09-29, CLOSED — 文档记录，无代码变更)
 
-### 📋 Skill 自动激活调查报告 (2026-09-29, CLOSED — 文档记录，无代码变更)
-
 - **背景**：一次 CATIA/CAA 请求未触发 `catia-caa-dev` skill 自动激活。调查从 CADE 正文规则逐层上溯至宿主（Zed）平台机制。
 - **宿主源码事实**：
   - `SKILL.md` frontmatter 仅解析 `name` / `description` / `disable-model-invocation` 三字段，**`triggers:` 无任何消费者**；

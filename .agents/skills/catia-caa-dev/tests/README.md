@@ -107,12 +107,8 @@
 
 ```bash
 # Master runner（推荐）
-python test_master.py             # 全量（43 套）
-python test_master.py --quick     # 快速（42 套，跳过 Int-1 Build & Run）
-
-# 按层级（以 test_master.py 实现为准）
-python test_master.py --layers
-python test_master.py --audit
+python test_master.py             # 全量（套件数以 SUITES 为准）
+python test_master.py --quick     # 快速（跳过 SKIP_SLOW，当前为 Int-1 Build & Run）
 
 # 单文件（已注册套件也可单独跑）
 python test_knowledge_system.py

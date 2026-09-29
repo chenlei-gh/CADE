@@ -214,7 +214,7 @@ triggers:
 
 > ## ⛔ 强制工作流（AI 必读，不可跳过）
 >
-> 0. **意图路由** → 先查 [`capabilities.yaml`](capabilities.yaml) 的触发词**定位能力**（25 个能力）。**入口选择**按下方「🔀 入口仲裁」规则处理：MCP 工具（`develop`/`analyze`/`repair`）可用时优先 MCP；未配置 MCP 时按 binding 表用 cli/python **绝对路径**。**未匹配到能力时不得自行虚构能力**（不猜能力，但入口可按规则选择）；`forbidden` 列出的路径禁止。**触发词零命中** → 禁止猜测/直接 shell/自行发挥，退回 develop/analyze/repair 三个 kernel 兜底模式或询问用户；**命中多个能力** → 报告候选列表交由用户消歧。契约与实现的一致性由 `tools/check_capabilities.py` 对账。
+> 0. **意图路由** → 先查 [`capabilities.yaml`](capabilities.yaml) 的触发词**定位能力**（以该文件登记的能力为准，不写死个数）。**入口选择**按下方「🔀 入口仲裁」规则处理：MCP 工具（`develop`/`analyze`/`repair`）可用时优先 MCP；未配置 MCP 时按 binding 表用 cli/python **绝对路径**。**未匹配到能力时不得自行虚构能力**（不猜能力，但入口可按规则选择）；`forbidden` 列出的路径禁止。**触发词零命中** → 禁止猜测/直接 shell/自行发挥，退回 develop/analyze/repair 三个 kernel 兜底模式或询问用户；**命中多个能力** → 报告候选列表交由用户消歧。契约与实现的一致性由 `tools/check_capabilities.py` 对账。
 > 0.5 **无状态 shell 调用** → 若你（AI）通过 terminal/shell 工具直接执行命令（而不是经 MCP），你没有持久 cwd/PATH：调用任何 capabilities.yaml 的 cli/python binding 前先解析一次本技能的 SKILL_ROOT 绝对路径，之后一律用绝对路径调用，禁止裸相对路径、禁止假设 PATH 上有 cade。详见下方“Agent Shell 调用契约”。
 > 1. **创建/生成** → 调 `develop()`。它**自动注入相关知识内容**（`knowledge_content`）并**自动静态验证**。**先读响应里的 `knowledge_content` 再写代码**；若出现 `verification_failed: true`，**必须先修复 `verification_errors` 再继续**。
 > 2. **知识/API 问题** → 调 `analyze(request, detail=true)`，一次返回排序后的知识**文件内容**，不要再 grep / 多轮读文件。
@@ -258,7 +258,7 @@ triggers:
 
 **版本**: 3.2.1
 **状态**: ✅ 活跃开发  
-**测试**: 43 套件（快速模式执行 42 套，跳过 1 套 CATIA 生命周期测试）
+**测试**: 套件数以 `tests/test_master.py` 的 `SUITES` 为准；快速模式跳过 `SKIP_SLOW`（当前为 Int-1）
 
 这是一个**智能的 CAA 开发引擎（Development Kernel）**，将模糊的开发需求，经过需求分析、规划、知识推理和验证，稳定地转化为可执行实现。
 
@@ -306,7 +306,7 @@ AI 只知道 3 个 Mode:
 | 🔍 **只读操作用 analyze()** | 所有查询、诊断、分析用 `analyze()`。它永不会修改文件，无需确认。 |
 | 📄 **知识问题加 detail=true** | 问 CAA API/Pattern/做法类问题时调 `analyze(request, detail=true)`，一次调用直接返回排序后的知识**文件内容**，不要再 analyze → read 文件 → grep 定位的多轮往返。返回已按相关性排序并带 reading_guide。 |
 | 🔧 **修复用 repair()** | 修复诊断问题、重构（重命名/移动）、回滚用 `repair()`。Kernel 内部运行 diagnose → fix → verify 最多重试 3 次。 |
-| ⚡ **两层路由，都不靠猜** | **Tier 1 意图**（3 Mode）："创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`——动词分类。**Tier 2 能力**（25 个）：查 [`capabilities.yaml`](capabilities.yaml) 的触发词**定能力**；**入口按「🔀 入口仲裁」选择**（MCP 优先，除非用户显式指定）——不自由发挥。 |
+| ⚡ **两层路由，都不靠猜** | **Tier 1 意图**（3 Mode）："创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`——动词分类。**Tier 2 能力**（以 `capabilities.yaml` 登记数为准）：查 [`capabilities.yaml`](capabilities.yaml) 的触发词**定能力**；**入口按「🔀 入口仲裁」选择**（MCP 优先，除非用户显式指定）——不自由发挥。 |
 | 🚫 **新工具禁止复制旧工具骨架** | 创建新命令/对话框/工作台时，必须调 `develop()` 走模板生成器，**不要**把工作区里现有工具的 .cpp/.h/.CATNls/.CATRsc 复制一份再改名。旧工具可能还带着已修复的历史 bug（如硬编码 `SetTitle`、错误的 `_Chinese.CATNls` 约定），复制 = 把 bug 克隆进新工具，还会错过模板/图标/双语 NLS 的持续更新。已有工具**只可参考业务逻辑**（API 组合、算法、项目命名习惯）；文件骨架、资源文件、注册代码永远以生成器输出为准。 |
 | 🎨 **图标是 develop() 的自动产物，不要手动补** | `develop()` 创建命令时图标已连同骨架一起生成（verb-object 解析自动匹配 CATIA 官方图标 + 角标，如 `CreateHoleCmd` → I_Hole+plus），无需再调 `icon_provider.py`。只有**换图标风格**时才单独调：`from icon_provider import get_icon; get_icon("CmdName")`（自动解析，不要先列图案库人工挑）。首次编译时图标会随 Runtime View 同步自动生效。 |
 | 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架 → 再精准打开 `<CATIA_INSTALL>/CAADoc/` 对应页面。不要跳过 Framework 直接全文搜 CAADoc。 |
@@ -340,11 +340,11 @@ AI 只知道 3 个 Mode:
 2. **意图驱动** — AI 只需表达意图，Planner + Capability/Playbook 自动规划步骤
 3. **需求分析** — 模糊需求自动澄清，决策树引导，生成结构化 RequirementDocument
 4. **Token 优化** — MCP 响应自动压缩，平均节省 50% token，关键信息不丢
-5. **安全操作** — 预览→确认→应用→回滚，全程可控
+5. **安全操作** — 默认生成后立即应用（备份→应用→可回滚）；只有显式 `--preview` 才停在审查，不存在默认确认门
 6. **代码验证** — 生成后自动静态检查（宏/头文件/命名规范），无需 mkmk
 7. **自动修复** — Repair Loop：诊断→修复→验证，最多 3 次重试
 8. **高性能** — 模板生成约50ms，比 RADE 工具快 100 倍
-9. **完整测试** — 43 套件，快速模式执行 42 套
+9. **完整测试** — 套件数以 `tests/test_master.py` 的 `SUITES` 为准；快速模式跳过 `SKIP_SLOW`
 10. **依赖图管理** — 完整的实体关系图和 Mermaid 可视化
 11. **知识体系** — Capability→Playbook→Knowledge→Philosophy→Framework→CAADoc + Failure Patterns + Decision Trees
 
@@ -740,7 +740,7 @@ Repair Loop (repair.py) / Rollback (backup.py)
 7. **Repository Is Single Source** — Workspace 状态统一管理和查询
 8. **ChangeSet Is Contract** — 所有文件写操作全部纳入原子事务管理
 9. **Diagnostics Before Fix** — 问题诊断输出结构化 FixPlan，不输出字符串
-10. **Safe Modification** — 预览→确认→备份→应用→可回滚
+10. **Safe Modification** — 备份→应用→可回滚；默认不等待确认，显式 `--preview` 才进入审查后再应用
 
 ### 🛡️ 生产变更契约与来源准入规范（Change Provenance Contract）
 
@@ -1262,7 +1262,7 @@ python tests/test_full_integration.py
 python tests/test_full_regression.py --quick
 ```
 
-**Master quick**: 43 套中执行 42 套，跳过 1 套 CATIA 生命周期测试（套件数以 `tests/test_master.py` 的 `SUITES` 为准）
+**Master quick**: 执行 `SUITES` 减去 `SKIP_SLOW`（当前跳过 Int-1）；套件数以 `tests/test_master.py` 为准，不写死个数
 ```bash
 python tests/test_master.py --quick
 ```
@@ -1471,7 +1471,7 @@ python tests/test_master.py --quick
 │   │   └── AI_WORKFLOW_EXAMPLES.md
 │   └── README.md                     # 文档索引
 │
-├── tests/                            # 套件数以 test_master.py 的 SUITES 为准（当前 42；磁盘 test_*.py 另有 runner）
+├── tests/                            # 套件数以 test_master.py 的 SUITES 为准（磁盘 test_*.py 另有 runner，不等于套件数）
 │   ├── test_master.py                # 主运行器 / SUITES 权威清单
 │   └── README.md                     # 测试索引（勿把文件个数当套件数）
 │
@@ -1736,7 +1736,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 ### 部署前检查清单
 
 - [ ] 已阅读并接受上方「非阻塞残余风险」的使用规程（尤其：生成代码后必须在真实工作区跑一次 Build）
-- [ ] 已跑通 `python tests/test_master.py --quick`，确认本机 quick 模式通过（当前 43 套中执行 42 套，跳过 Int-1；套件数以 `SUITES` 为准）
+- [ ] 已跑通 `python tests/test_master.py --quick`，确认本机 quick 模式通过（跳过 `SKIP_SLOW`，当前为 Int-1；套件数以 `SUITES` 为准）
 - [ ] 已确认目标 CATIA 版本 ≥ R19（工具在 B28 上做过实机验证；跨版本首次使用建议先在测试工作区跑一次 `develop()`/`repair()` 全流程）
 - [ ] 团队已知晓 `KNOWLEDGE_AUDIT_STATUS.md` 中的审计状态与核实方法论，涉及关键 API 时以 `--query` 核验为准
 - [ ] 首次在新工作区使用时，先用小范围改动验证 ChangeSet 应用 + Build 闭环，再扩大到完整开发任务
@@ -1763,7 +1763,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 ### 已验证范围
 
-- **测试套件**: 43 套；快速模式执行 42 套，跳过 1 套 CATIA 生命周期测试。
+- **测试套件**: 以 `tests/test_master.py` 的 `SUITES` 为准；快速模式跳过 `SKIP_SLOW`（当前为 Int-1）。
 - **Full Integration**: 49/49 通过。
 - **Full Regression quick**: 394/398；4 项 quarantine 不计作通过。
 - **真实 mkmk Build（Tier B，非 quick 模式）**: 对 `TTEST` 工作区执行 `incremental_build()`，0 error，DLL 校验通过且已刷新（`Int-1 Build & Run` 套件，约 33s）。
@@ -1805,4 +1805,4 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 **最后更新**: 2026-08-28  
 **维护者**: Kiro AI Agent  
 **状态**: ✅ 活跃开发（已通过 P0-P2 安全审计）  
-**测试**: 43 套件可用
+**测试**: 套件数以 `tests/test_master.py` 的 `SUITES` 为准

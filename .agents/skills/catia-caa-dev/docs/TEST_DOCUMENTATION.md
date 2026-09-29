@@ -127,13 +127,13 @@ CADE 使用 **L1-L7 分层测试金字塔** + 集成/审计套件。
 ### 快速检查（跳过 Build/Run）
 ```bash
 python tests/test_master.py --quick
-# 跳过 Int-1 Build & Run；套件数以 tests/test_master.py 的 SUITES 为准（当前 43 注册 / quick 42）
+# 跳过 SKIP_SLOW（当前为 Int-1 Build & Run）；套件数以 SUITES 为准
 ```
 
 ### 全量检查
 ```bash
 python tests/test_master.py
-# 含 CATIA 启停；套件数以 SUITES 为准（当前 43）
+# 含 CATIA 启停；套件数以 SUITES 为准
 ```
 
 ### 单套件
@@ -143,23 +143,14 @@ python tests/test_deep_audit.py
 python tests/test_l4_architecture.py
 ```
 
-### 按层级
-```bash
-# L1-L7 核心套件
-python tests/test_master.py --layers
-
-# 仅审计套件
-python tests/test_master.py --audit
-```
-
 ---
 
 ## 测试统计
 
 | 指标 | 值 |
 |------|-----|
-| 套件总数 | 以 `tests/test_master.py` 的 `SUITES` 为准（快照 **43**；会漂移） |
-| 快速模式 | `SKIP_SLOW` 跳过 Int-1，当前执行 42 套 |
+| 套件总数 | 以 `tests/test_master.py` 的 `SUITES` 为准；不写死个数 |
+| 快速模式 | `SKIP_SLOW` 跳过 Int-1 |
 | 磁盘 `test_*.py` | 不等于套件数（含 runner / 未全注册文件） |
 | 完整清单 | [tests/README.md](../tests/README.md) |
 
