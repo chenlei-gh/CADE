@@ -1297,7 +1297,8 @@ def _exec_build_cmd(command: str, workspace_path: Path, timeout: int = 300) -> d
     import tempfile
     from datetime import datetime
 
-    logger = Logger("build.log")
+    resolved_root = _resolve_workspace_root(workspace_path) if workspace_path else None
+    logger = Logger("build.log", workspace_root=resolved_root)
     start_time = datetime.now()
     logger.write(f"Running: {command}")
 
