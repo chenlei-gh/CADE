@@ -81,6 +81,7 @@ CADE 的架构级约束，定义"什么是权威来源、什么入口必须走�
 - **[KNOWLEDGE_SYSTEM_ARCHITECTURE.md](KNOWLEDGE_SYSTEM_ARCHITECTURE.md)** - 五层知识系统架构
 - **[HARDCODE_CHECK_REPORT.md](HARDCODE_CHECK_REPORT.md)** - 硬编码检查报告
 - **[CAPABILITY_HISTORY.md](CAPABILITY_HISTORY.md)** - 能力治理与变更历史
+- **[AI_SKILL_ACTIVATION_FINDINGS.md](AI_SKILL_ACTIVATION_FINDINGS.md)** - Skill 自动激活调查报告（**调查记录，非架构契约**；宿主机制、实测数据、已推翻假说、禁止推断）
 - **[WIKI_HOME.md](WIKI_HOME.md)** - Wiki 跳转页（GitHub Wiki 入口）
 
 ---
@@ -134,5 +135,5 @@ CADE 的架构级约束，定义"什么是权威来源、什么入口必须走�
 
 ---
 
-**最后更新**: 2026-08-28  
+**最后更新**: 2026-09-29  
 **维护者**: Kiro AI Agent

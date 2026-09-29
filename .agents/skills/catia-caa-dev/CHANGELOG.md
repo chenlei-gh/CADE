@@ -10,6 +10,18 @@
 
 ## [未发布]
 
+### 📋 Skill 自动激活调查报告 (2026-09-29, CLOSED — 文档记录，无代码变更)
+
+- **背景**：一次 CATIA/CAA 请求未触发 `catia-caa-dev` skill 自动激活。调查从 CADE 正文规则逐层上溯至宿主（Zed）平台机制。
+- **宿主源码事实**：
+  - `SKILL.md` frontmatter 仅解析 `name` / `description` / `disable-model-invocation` 三字段，**`triggers:` 无任何消费者**；
+  - 进入 system prompt 的 skill catalog 仅含 `name` + `description` + `location`，**正文不参与首次决策**；
+  - catalog 筛选仅「隐藏过滤 + 50KB 预算」，**无关键词匹配 / 相关性打分 / 动作触发逻辑**；
+  - 正文注入仅两条路径：模型调用 `skill` 工具、用户 `/` 或 `@` 注入；**不存在 always-apply / auto-load / 强制注入机制**。
+- **实测（`threads.db`，35 线程 / 1958 条用户消息）**：16 条激活 100% 为模型主动调用；`/` 与 `@` 注入通道使用次数为 **0**。存在「同类只读任务、关键词密度相当，一激活一不激活」的对照，以及「模型在 thinking 中显式讨论 skill 后仍拒绝调用」的单线程自证。
+- **决策**：CADE 侧无可控杠杆，**不再为提高自动激活率修改 `SKILL.md` 正文或 `triggers`**；自然语言「请使用 CADE」为 hint 而非保证；确定性通道为宿主 `/`、`@` 注入（依赖宿主）与 CLI（宿主无关）。MCP 为 stdio server，需宿主拉起。
+- **产出**：新增 `docs/AI_SKILL_ACTIVATION_FINDINGS.md`（调查记录，**非架构契约**，含已推翻假说与方法教训，防止重复调查）。
+
 ### 🏁 W-4 Release Hardening, Cross-Lifecycle Acceptance & V1 Frozen (2026-09-18, ACCEPTED WITH DOCUMENTED INTEGRATION-SCOPE LIMITATION / V1 FROZEN FOR CURRENT IMPLEMENTED SCOPE)
 
 - **架构生命周期终审定性**：
