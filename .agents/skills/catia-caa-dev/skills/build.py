@@ -359,9 +359,27 @@ def _ensure_identity_cards_for_build(workspace_path: Path, logger=None) -> dict:
             if not (ic_xml.exists() or ic_h.exists()):
                 continue
             ic_dir = fw / "IdentityCard"
-            has_binary = ic_dir.exists() and any(
-                f.suffix in (".obj", "") and "IdentityCard" in f.name
-                for f in ic_dir.iterdir()
+            # mkCreateIC writes its build data to IdentityCard/Objects/<arch>/
+            # (.mkdata.mk and friends), not to the IdentityCard/ top level,
+            # which holds only IdentityCard.xml plus the Objects/ container.
+            # The previously exclusive top-level scan (suffix in {".obj", ""}
+            # and "IdentityCard" in name) could therefore never match on a real
+            # workspace, so has_binary stayed False and mkCreateIC re-ran for
+            # every framework on every build — ~10s x N of avoidable overhead.
+            #
+            # Detect the real generated artifact, and keep the legacy top-level
+            # scan as a fallback so historical / heterogeneous layouts (e.g. a
+            # top-level IdentityCard.obj) still short-circuit when present.
+            objects_dir = ic_dir / "Objects"
+            has_binary = (
+                (objects_dir.is_dir() and any(objects_dir.glob("*/.mkdata.mk")))
+                or (
+                    ic_dir.is_dir()
+                    and any(
+                        f.suffix in (".obj", "") and "IdentityCard" in f.name
+                        for f in ic_dir.iterdir()
+                    )
+                )
             )
             if not has_binary:
                 base = fw.name.replace(".edu", "")
