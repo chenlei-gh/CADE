@@ -498,7 +498,7 @@ def build_workspace(
         catia_status = check_catia_running()
         if catia_status.get("status") == "running" or catia_status.get("running"):
             proc_list = ", ".join(
-                p.get("pid", "?") for p in catia_status.get("processes", [])
+                str(p.get("pid", "?")) for p in catia_status.get("processes", [])
             )
             msg = (
                 f"CATIA is running (PID {proc_list}). DLLs are locked — "

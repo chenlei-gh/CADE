@@ -201,6 +201,20 @@ class Kernel:
     def __init__(self, workspace_root: str = None):
         self.workspace_root = Path(workspace_root).resolve() if workspace_root else Path.cwd()
         self._state = KernelState.IDLE
+        self._action_context = None
+
+    @property
+    def action_context(self):
+        """ActionContext instance cached on this Kernel instance.
+
+        Reuses ActionContext across sub-steps within the same execute/develop lifecycle,
+        leveraging ActionContext's signature-based caching and TTL rather than
+        re-scanning the entire workspace multiple times.
+        """
+        if getattr(self, "_action_context", None) is None:
+            from actions import ActionContext
+            self._action_context = ActionContext(str(self.workspace_root))
+        return self._action_context
 
     @property
     def retrieval(self):
@@ -297,8 +311,7 @@ class Kernel:
 
         # Phase 0.5: Brownfield Maintenance Routing (v3.2.2 P1)
         try:
-            from actions import ActionContext
-            ctx = ActionContext(str(self.workspace_root))
+            ctx = self.action_context
             m_info = self._parse_maintenance_request(request, ctx)
             if m_info:
                 target_mod = m_info["module"]
@@ -510,8 +523,7 @@ class Kernel:
 
         # ── Path 0.5: Module-scoped Deep Analysis (Brownfield Targeted View) ──
         try:
-            from actions import ActionContext
-            ctx = ActionContext(str(self.workspace_root))
+            ctx = self.action_context
             m_info = self._parse_maintenance_request(request, ctx)
             target_mod = m_info["module"] if m_info else self._find_target_module(request, ctx)
             if target_mod:
@@ -525,8 +537,7 @@ class Kernel:
         if any(kw in request_lower for kw in ("diagnos", "check", "inspect", "validate", "verify")):
             try:
                 from diagnostics import diagnose_workspace
-                from actions import ActionContext
-                ctx = ActionContext(str(self.workspace_root))
+                ctx = self.action_context
                 diag_result = diagnose_workspace(ctx)
                 self._state = KernelState.COMPLETED
                 return KernelResult(
@@ -540,9 +551,9 @@ class Kernel:
         # ── Path 2: Dependency / entity query (before knowledge — more specific) ──
         if any(kw in request_lower for kw in ("depend", "impact", "graph", "visualiz")):
             try:
-                from actions import ActionContext, get_dependencies, visualize_dependencies
+                from actions import get_dependencies, visualize_dependencies
                 import re
-                ctx = ActionContext(str(self.workspace_root))
+                ctx = self.action_context
                 entity_match = re.search(r'(?:of|for)\s+(\w+)', request)
                 entity = entity_match.group(1) if entity_match else None
                 if entity and "graph" in request_lower:
@@ -583,8 +594,8 @@ class Kernel:
 
         # ── Path 4: Default — workspace analysis ──
         try:
-            from actions import ActionContext, analyze_workspace
-            ctx = ActionContext(str(self.workspace_root))
+            from actions import analyze_workspace
+            ctx = self.action_context
             analysis = analyze_workspace(ctx)
             self._state = KernelState.COMPLETED
             return KernelResult(
@@ -611,8 +622,7 @@ class Kernel:
         # ── Refactor operations ──
         if any(kw in request_lower for kw in ("rename", "move", "refactor")):
             try:
-                from actions import ActionContext
-                ctx = ActionContext(str(self.workspace_root))
+                ctx = self.action_context
                 ctx.refresh()
                 snapshot = ctx.snapshot
                 # Extract params
@@ -639,8 +649,8 @@ class Kernel:
         # ── Rollback operations ──
         if any(kw in request_lower for kw in ("rollback", "list rollback", "backup")):
             try:
-                from actions import ActionContext, list_rollback_points, rollback_operation
-                ctx = ActionContext(str(self.workspace_root))
+                from actions import list_rollback_points, rollback_operation
+                ctx = self.action_context
                 import re
                 id_match = re.search(r'(?:to|id)\s+(\w+)', request)
                 if id_match:
@@ -682,8 +692,7 @@ class Kernel:
         # Fallback: basic diagnose + fix
         try:
             from diagnostics import diagnose_workspace
-            from actions import ActionContext
-            ctx = ActionContext(str(self.workspace_root))
+            ctx = self.action_context
             diag_result = diagnose_workspace(ctx)
             auto_fixable = diag_result.get("auto_fixable", 0)
             if auto_fixable == 0:
@@ -1128,13 +1137,6 @@ class Kernel:
         3. Extract the clean problem description
         4. Guard against destructive generator invocation
         """
-        try:
-            snap = ctx.snapshot
-            if not snap or not snap.frameworks:
-                return None
-        except Exception:
-            return None
-
         import re
         request_lower = request.lower()
 
@@ -1158,6 +1160,13 @@ class Kernel:
         has_explicit_create = bool(re.search(greenfield_pattern, request, re.IGNORECASE))
         has_fix_override = any(kw in request_lower for kw in ("fix", "maintain", "修复", "维护", "排查", "调试", "verify", "检查", "lint"))
         if has_explicit_create and not has_fix_override:
+            return None
+
+        try:
+            snap = ctx.snapshot
+            if not snap or not snap.frameworks:
+                return None
+        except Exception:
             return None
 
         # 2. Module candidate matching
@@ -1885,7 +1894,7 @@ class Kernel:
             )
             from intents import create_executable_command, create_feature, create_extension
 
-            ctx = ActionContext(str(self.workspace_root))
+            ctx = self.action_context
 
             if "Command" in intent_type:
                 # CreateCommandWithDialog must actually generate the dialog
@@ -1980,7 +1989,10 @@ class Kernel:
         try:
             from changeset import ChangeSet
             cs = ChangeSet.from_dict(changeset_dict)
-            return cs.apply(workspace_root=self.workspace_root)
+            res = cs.apply(workspace_root=self.workspace_root)
+            if getattr(self, "_action_context", None) is not None:
+                self._action_context.refresh(force=True)
+            return res
         except Exception as e:
             return {"status": "error", "errors": [str(e)]}
 

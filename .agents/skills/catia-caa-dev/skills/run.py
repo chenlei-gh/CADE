@@ -60,6 +60,50 @@ def _clean_cnext_sessions():
                 pass
 
 
+def _check_process_running_win32(process_name: str):
+    """Fast Windows-native process enumeration via Toolhelp32Snapshot (sub-10ms)."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        TH32CS_SNAPPROCESS = 0x00000002
+        h_snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        if h_snap == -1:
+            return None
+
+        class PROCESSENTRY32(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", wintypes.DWORD),
+                ("cntUsage", wintypes.DWORD),
+                ("th32ProcessID", wintypes.DWORD),
+                ("th32DefaultHeapID", ctypes.c_size_t),
+                ("th32ModuleID", wintypes.DWORD),
+                ("cntThreads", wintypes.DWORD),
+                ("th32ParentProcessID", wintypes.DWORD),
+                ("pcPriClassBase", ctypes.c_long),
+                ("dwFlags", wintypes.DWORD),
+                ("szExeFile", ctypes.c_char * 260),
+            ]
+
+        pe = PROCESSENTRY32()
+        pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+        target = process_name.lower()
+        found = []
+        success = kernel32.Process32First(h_snap, ctypes.byref(pe))
+        while success:
+            exe_name = pe.szExeFile.decode("latin1", errors="replace")
+            if exe_name.lower() == target:
+                found.append({"pid": int(pe.th32ProcessID), "name": exe_name})
+            success = kernel32.Process32Next(h_snap, ctypes.byref(pe))
+        kernel32.CloseHandle(h_snap)
+        return found
+    except Exception:
+        return None
+
+
 def check_process_running(process_name: str) -> list:
     """
     Check if a process is running using Windows native commands (P2-009 fix).
@@ -78,10 +122,15 @@ def check_process_running(process_name: str) -> list:
     if not re.match(r'^[a-zA-Z0-9_.\-]+\.exe$', process_name):
         return []  # Invalid name → no matches found
 
+    # Fast path: sub-10ms native snapshot on Windows (avoids 250ms+ tasklist subprocess)
+    native_res = _check_process_running_win32(process_name)
+    if native_res is not None:
+        return native_res
+
     running_processes = []
 
     try:
-        # Use /FI filter (no shell pipe injection risk)
+        # Fallback to tasklist with /FI filter
         result = subprocess.run(
             ["tasklist", "/FI", f"IMAGENAME eq {process_name}"],
             capture_output=True,
