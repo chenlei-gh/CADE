@@ -10,6 +10,11 @@
 
 ## [未发布]
 
+### 🐛 修复：UnboundLocalError 缺陷修复 (2026-10-16)
+
+- **`skills/token_optimizer.py`**：修复 `_extract_level2` 中 `err_diags` 局部变量在 `diagnostics` 为空列表或无 ERROR 字典时未初始化即被访问导致的 `UnboundLocalError: cannot access local variable 'err_diags'`。完善边界检查，并在 `test_token_optimizer.py` 中增加回归用例。
+- **`skills/cade.py`**：修复 `cmd_analyze` 在使用 `--modules`、`--commands`、`--deps`、`--graph` 参数时局部变量 `ws` 未在分支前初始化导致的 `UnboundLocalError: cannot access local variable 'ws'`。统一在顶部调用 `_get_ws(args)`。
+
 ### 🎯 意图对齐：重构 SKILL.md description 并补全全局 Agent 调度契约 (2026-10-16)
 
 - **背景**：在日常自然语言提问中，若用户未显式提及“使用 CADE”，模型因 Skill metadata 缺少意图触发谓词（原为规格清单堆砌）且宿主缺乏顶层调度约束，导致绕开 CADE。

@@ -156,6 +156,23 @@ r = optimize(clean_diag, mode="auto")
 check("ok is True", r["ok"] is True)
 check("detail NOT present", "detail" not in r)
 
+# Regression test for err_diags UnboundLocalError
+warn_only_diag = {
+    "status": "ok",
+    "diagnostics": [{"severity": "WARNING", "message": "Harmless warning"}],
+    "error_count": 0,
+}
+r_warn = optimize(warn_only_diag, mode="auto")
+check("warn-only diagnostics does not crash", r_warn["ok"] is True)
+
+non_dict_diag = {
+    "status": "ok",
+    "diagnostics": ["just a string message"],
+    "error_count": 0,
+}
+r_str = optimize(non_dict_diag, mode="auto")
+check("non-dict diagnostics does not crash", r_str["ok"] is True)
+
 
 # ═══════════════════════════════════════════════════════════════
 # 5. Brief mode → always level 1

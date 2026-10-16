@@ -557,6 +557,7 @@ def cmd_analyze(args):
     """Analyze via Kernel — routes through analyze()."""
     opts = _get_flags(args)
     detail = "--detail" in opts
+    ws = _get_ws(args)
     if "--modules" in opts:
         text = "list all modules"
     elif "--commands" in opts:

@@ -217,12 +217,12 @@ def _extract_level2(d: dict) -> dict:
     # Diagnostics
     if "diagnostics" in d:
         diags = d["diagnostics"]
-        if isinstance(diags, list) and diags and isinstance(diags[0], dict):
-            err_diags = [di for di in diags if di.get("severity") == "ERROR"]
-        if err_diags:
-            detail["errors"] = detail.get("errors", []) + [
-                _keep_actionable(di) for di in err_diags[:10]
-            ]
+        if isinstance(diags, list) and diags:
+            err_diags = [di for di in diags if isinstance(di, dict) and di.get("severity") == "ERROR"]
+            if err_diags:
+                detail["errors"] = detail.get("errors", []) + [
+                    _keep_actionable(di) for di in err_diags[:10]
+                ]
 
     # Build output tail (last 500 chars are usually where errors appear)
     for k in ("output", "stderr"):
