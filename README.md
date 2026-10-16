@@ -222,26 +222,40 @@ CADE is structured around two central engines: the **Kernel Execution Pipeline**
 
 ## 06 — Quick Start
 
-### 1. Clone & Setup
+### 1. Prerequisites
+- **OS**: Windows 64-bit (required for CATIA V5 CAA development)
+- **Toolchain**: CATIA V5 (e.g. B28) + CAA RADE / TCK + Visual Studio (e.g. VC11/VC14)
+- **Python**: Python 3.7+ (Standard library only; CADE core has **zero** external dependencies)
+- **Optional**: `pip install Pillow` (only required for 22×22 engineering BMP icon generation)
+
+### 2. Setup Workspace
+
+#### Option A: Initial Workspace Deployment
+Clone CADE and copy both the `.agents` skills directory and the project governance rule `AGENTS.md` into your CAA workspace root:
 
 ```powershell
-# PowerShell (Windows / recommended for CATIA V5)
+# PowerShell (Windows)
 git clone https://github.com/chenlei-gh/CADE.git
-Copy-Item -Recurse .\CADE\.agents C:\YourCAAWorkspace\
-pip install Pillow
+Copy-Item -Recurse .\CADE\.agents D:\YourCAAWorkspace\
+Copy-Item .\CADE\AGENTS.md D:\YourCAAWorkspace\
 ```
+
+#### Option B: Continuous Mirroring (Recommended for active dev)
+If you already maintain a production workspace (e.g. shadow copy), use the automated mirror script to avoid copying runtime caches (`__pycache__`, logs) and record `.sync_stamp`:
 
 ```bash
-# Bash
-git clone https://github.com/chenlei-gh/CADE.git
-cp -r ./CADE/.agents /path/to/your/caa/workspace/
-pip install Pillow
+# Bash / MSYS2
+sh sync_agents.sh
 ```
 
-### 2. Open in Editor
-
-- **Zed**: Works out of the box (reads `.agents/skills/`).
-- **Cursor / VS Code / Windsurf / Claude**: Run `python .agents/skills/catia-caa-dev/tools/setup_mcp.py` to configure the MCP server.
+### 3. Verify & Connect
+1. **Verify Environment Detection**:
+   ```bash
+   python .agents/skills/catia-caa-dev/skills/env.py
+   ```
+2. **Editor Setup**:
+   - **Zed**: Works out of the box (reads `.agents/skills/` and `AGENTS.md`).
+   - **Cursor / VS Code / Windsurf / Claude**: Run `python .agents/skills/catia-caa-dev/tools/setup_mcp.py` to configure the MCP server.
 
 ---
 
@@ -534,28 +548,42 @@ CADE 由两大核心引擎支撑：**内核执行管线（Kernel Execution Pipel
 
 ### 06 — 快速开始
 
-#### 1. 克隆与配置
+#### 1. 前置依赖与环境
+- **操作系统**：Windows 64 位（CATIA V5 CAA 开发必须环境）
+- **官方工具链**：CATIA V5（如 B28）+ CAA RADE / TCK + Visual Studio（如 VC11 / VC14）
+- **Python 环境**：Python 3.7+（仅需标准库，CADE 内核本身 **0 外部依赖**）
+- **可选依赖**：`pip install Pillow`（仅在使用 22×22 工程语义 BMP 图标生成时需要）
+
+#### 2. 工作区部署与配置
+
+##### 方案 A：新工作区初始部署
+克隆 CADE 并将 `.agents` 技能目录与项目治理规范 `AGENTS.md` 一同放入你的 CAA 工程根目录下：
 
 ```powershell
-# PowerShell（Windows / 推荐 CATIA V5 环境）
+# PowerShell（Windows）
 git clone https://github.com/chenlei-gh/CADE.git
-Copy-Item -Recurse .\CADE\.agents C:\你的CAA工程目录\
-pip install Pillow
+Copy-Item -Recurse .\CADE\.agents D:\你的CAA工程目录\
+Copy-Item .\CADE\AGENTS.md D:\你的CAA工程目录\
 ```
 
-> 提示：也可以直接手动将 `CADE/.agents` 目录复制到你的 CAA 工程根目录下。
+> **注意**：必须将 `AGENTS.md` 放置在工程根目录，以确保 AI Agent 严格遵守 CADE 唯一开发闭环，防止模型绕过工具链直接修改受控资产。
+
+##### 方案 B：持续镜像与同步（推荐）
+若你维护独立的生产工作区或影子目录，推荐使用项目内置的同步脚本，它会自动排除 `__pycache__`、测试日志等临时产物，并打上 `.sync_stamp` 版本校验戳：
 
 ```bash
-# Bash
-git clone https://github.com/chenlei-gh/CADE.git
-cp -r ./CADE/.agents /path/to/your/caa/workspace/
-pip install Pillow
+# Bash / Git Bash
+sh sync_agents.sh
 ```
 
-#### 2. 连接你的 AI 编辑器
-
-- **Zed**：开箱即用（自动识别并加载 `.agents/skills/` 下的技能规范）。
-- **Cursor / VS Code / Windsurf / Claude**：运行 `python .agents/skills/catia-caa-dev/tools/setup_mcp.py` 自动配置 MCP 服务。
+#### 3. 环境校验与编辑器连接
+1. **验证环境自检**：
+   ```bash
+   python .agents/skills/catia-caa-dev/skills/env.py
+   ```
+2. **连接 AI 编辑器**：
+   - **Zed**：开箱即用（自动加载 `.agents/skills/` 下的技能规范与根目录 `AGENTS.md` 治理规则）。
+   - **Cursor / VS Code / Windsurf / Claude**：运行 `python .agents/skills/catia-caa-dev/tools/setup_mcp.py` 自动配置 MCP 服务。
 
 ---
 
