@@ -10,6 +10,13 @@
 
 ## [未发布]
 
+### 🎯 意图对齐：重构 SKILL.md description 并补全全局 Agent 调度契约 (2026-10-16)
+
+- **背景**：在日常自然语言提问中，若用户未显式提及“使用 CADE”，模型因 Skill metadata 缺少意图触发谓词（原为规格清单堆砌）且宿主缺乏顶层调度约束，导致绕开 CADE。
+- **修复**：
+  1. 重构 `SKILL.md` frontmatter 的 `description`，注入明确的意图谓词（“当用户进行任何 CATIA V5 / CAA 开发、修改模块、生成或排查 CAA 代码、管理工作区、排查编译错误或执行构建时使用此 Skill”），保留 Kernel 3-Mode 核心契约。
+  2. 在用户全局 `AGENTS.md`（`C:\Users\DELL\AppData\Roaming\Zed\AGENTS.md`）中补入 `## CATIA CAA 开发约束`，建立首要调度规则。
+
 ### 🐛 MCP stdio 编码：修复 CJK 请求静默乱码 / 崩溃 (2026-09-30)
 
 **现象**：`analyze` 工具在 Windows 上因编码问题失败。
