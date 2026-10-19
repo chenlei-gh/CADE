@@ -243,6 +243,22 @@ class Kernel:
                 return None
         return None
 
+    @property
+    def dic_index(self):
+        """Shipped .dic ground truth from the retrieval facade.
+
+        Answers "does this CAA name ship at all?" — the question the curated
+        catalog and HeaderMap cannot answer for automation/IDL interfaces that
+        live only under PublicGenerated.
+        """
+        r = self.retrieval
+        if r is not None:
+            try:
+                return r.dic_index
+            except Exception:
+                return None
+        return None
+
     # ─── Public API ────────────────────────────────────────────
 
     def execute(self, mode: KernelMode, request: str, preview: bool = False,
@@ -583,14 +599,41 @@ class Kernel:
 
         # ── Path 3c: General Knowledge / API query (Catalog semantic search) ──
         if self._is_knowledge_query(request_lower):
-            result = self._lookup_knowledge(request_lower, include_content=detail)
-            if result:
+            result = self._lookup_knowledge(
+                request_lower, include_content=detail, defer_to_dic=True)
+            if result and result.get("found"):
                 self._state = KernelState.COMPLETED
                 return KernelResult(
                     status="ok", mode="analyze", state=self._state.value,
                     message=f"Knowledge lookup: {result.get('summary', '')}",
                     data=result,
                 ).to_dict()
+            # Zero curated hits: if the request names an identifier, the
+            # shipped .dic can still answer existence. That is a real answer,
+            # not an empty search, so it replaces the fallback.
+            dic_verdict = self._try_dic_verdict(request)
+            if dic_verdict:
+                self._state = KernelState.COMPLETED
+                return dic_verdict
+            # No identifier to look up (or the index is missing): fall back to
+            # the prose-oriented next_steps.
+            if not result or not result.get("next_steps"):
+                result = self._lookup_knowledge(request_lower, include_content=detail)
+            self._state = KernelState.COMPLETED
+            return KernelResult(
+                status="not_found" if result else "ok",
+                mode="analyze", state=self._state.value,
+                message=f"Knowledge lookup: {(result or {}).get('summary', 'no match')}",
+                data=result or {},
+            ).to_dict()
+
+        # ── Path 3d: Shipped .dic verdict without a knowledge classification ──
+        # Guards the phrasing that never matched the keyword tables (e.g. a
+        # bare "CATIAScene" or "CATIAScene 是什么" with Jev disabled).
+        dic_result = self._try_dic_verdict(request)
+        if dic_result:
+            self._state = KernelState.COMPLETED
+            return dic_result
 
         # ── Path 4: Default — workspace analysis ──
         try:
@@ -1020,6 +1063,206 @@ class Kernel:
                 ).to_dict()
 
         return None
+
+    def _try_dic_verdict(self, request: str) -> Optional[dict]:
+        """Answer existence/attribution from the shipped .dic dictionary.
+
+        This is a verdict, not a search: a NOT-FOUND here means the name is
+        absent from every .dic that ships with CATIA, which is a usable
+        answer. It deliberately says nothing about callability — a .dic hit
+        proves the name ships, not that a public C++ header exists (that
+        remains HeaderMap's job).
+
+        Returns None when the request names no identifier-shaped token, so
+        ordinary prose still falls through to the workspace default.
+        """
+        # A workspace operation that happens to contain a CAT-named module is
+        # still a workspace operation. Without this guard, "list modules in
+        # CATTest" was answered with a dictionary verdict about a module name.
+        req_lower = (request or "").lower()
+        if any(sig in req_lower for sig in self._WORKSPACE_OP_SIGNALS):
+            return None
+
+        candidates = self._extract_caa_candidates(request)
+        if not candidates:
+            return None
+        di = self.dic_index
+        if di is None or not getattr(di, "pair_count", 0):
+            return None
+
+        resolved = []
+        for name in candidates:
+            try:
+                info = di.resolve_name(name)
+            except Exception:
+                continue
+            if info.get("known"):
+                resolved.append(info)
+
+        if not resolved:
+            # Nothing known: still a verdict. Name the absence explicitly so
+            # the caller does not read it as "the search failed".
+            return KernelResult(
+                status="not_found", mode="analyze", state=self._state.value,
+                message=(
+                    f"{', '.join(candidates)} is not present in any shipped "
+                    f".dic file (checked against {di.pair_count} "
+                    f"component/interface pairs, version {di.source_version or '?'})."
+                ),
+                data={
+                    "query_type": "dic_lookup",
+                    "found": False,
+                    "checked_names": candidates,
+                    "dic": {
+                        "pairs": di.pair_count,
+                        "interfaces": di.interface_count,
+                        "components": di.component_count,
+                        "version": di.source_version,
+                    },
+                    "next_steps": self._dic_absent_next_steps(candidates),
+                },
+            ).to_dict()
+
+        facts = []
+        for info in resolved:
+            if info.get("as_interface"):
+                impls = info["as_interface"]["implemented_by"]
+                lib = info["as_interface"].get("library") or "?"
+                facts.append(
+                    f"{info['name']} is an INTERFACE implemented by "
+                    f"{len(impls)} component(s) ({', '.join(impls[:5])}"
+                    f"{' ...' if len(impls) > 5 else ''}), shipped in {lib}"
+                )
+            if info.get("as_component"):
+                ifaces = info["as_component"]["implements"]
+                facts.append(
+                    f"{info['name']} is a COMPONENT implementing "
+                    f"{len(ifaces)} interface(s)"
+                )
+
+        header_note = self._header_presence_note(resolved)
+        return KernelResult(
+            status="ok", mode="analyze", state=self._state.value,
+            message="Shipped .dic confirms: " + "; ".join(facts),
+            data={
+                "query_type": "dic_lookup",
+                "found": True,
+                "resolved": resolved,
+                "facts": facts,
+                "header_presence": header_note,
+                "caveat": (
+                    "A .dic hit proves the name ships with CATIA. It does NOT "
+                    "prove a public C++ header or callable API exists — check "
+                    "header_presence before writing code against it."
+                ),
+                "next_steps": self._dic_hit_next_steps(resolved, header_note),
+            },
+        ).to_dict()
+
+    def _header_presence_note(self, resolved: list) -> dict:
+        """Cross-check .dic hits against HeaderMap (callability, not existence)."""
+        note = {}
+        r = self.retrieval
+        hm = None
+        if r is not None:
+            try:
+                hm = r.header_map
+            except Exception:
+                hm = None
+        if hm is None:
+            return {"checked": False, "reason": "header_map_unavailable"}
+
+        for info in resolved:
+            names = [info["name"]]
+            if info.get("as_interface"):
+                names += info["as_interface"]["implemented_by"][:5]
+            elif info.get("as_component"):
+                names += info["as_component"]["implements"][:5]
+            for name in names:
+                try:
+                    hit = hm.lookup(name)
+                except Exception:
+                    hit = None
+                if hit:
+                    note[info["name"]] = {
+                        "public_header": True,
+                        "header": f"{name}.h",
+                        "framework": hit[1],
+                        "module": hit[0],
+                    }
+                    break
+            else:
+                note[info["name"]] = {"public_header": False}
+        return note
+
+    def _dic_absent_next_steps(self, candidates: list) -> list:
+        """Next steps for a name that no shipped .dic knows.
+
+        The useful distinction here is whether the token even looks like a CAA
+        type name: a near-miss identifier deserves a spelling/variant hunt,
+        while a product word that merely looks identifier-shaped (CATIAExplode)
+        should be reframed as a capability question. Jev supplies that read; the
+        absence itself stays a .dic fact either way.
+        """
+        names = " ".join(candidates[:3]) if candidates else "<Name>"
+        first_search = candidates[0] if candidates else "<Name>"
+
+        plausibility = None
+        try:
+            import jev_judge
+            plausibility = jev_judge.identifier_plausibility(candidates)
+        except Exception:
+            plausibility = None
+        probs = (plausibility or {}).get("probabilities") or {}
+        likely_type = [n for n in candidates if probs.get(n, 0.0) >= 0.5]
+        likely_prose = [n for n in candidates if n in probs and probs[n] < 0.35]
+
+        steps = []
+        if likely_prose:
+            steps.append(
+                "\"" + "\", \"".join(likely_prose) + "\" does not read like a CAA "
+                "type name — most likely a product/feature term rather than a "
+                "misspelled interface. Ask which CATIA command produces it "
+                "instead of guessing interface names."
+            )
+        if likely_type or not probs:
+            steps.append(
+                f"Check the spelling and naming variant first (CATI*/CAT*/plural "
+                f"forms): python skills/header_map.py {names}"
+            )
+        steps.append(
+            "If the header also misses, broaden to substring search: "
+            f"python tools/build_caadoc_index.py --search \"{first_search}\""
+        )
+        steps.append(
+            "If both miss, state that no shipped CAA API carries this name and "
+            "ask the user for the product term or a screenshot — do not invent "
+            "an interface name to fill the gap"
+        )
+        return steps
+
+    def _dic_hit_next_steps(self, resolved: list, header_note: dict) -> list:
+        callable_names = [n for n, v in header_note.items()
+                          if isinstance(v, dict) and v.get("public_header")]
+        bare = [i["name"] for i in resolved if i["name"] not in callable_names]
+        steps = []
+        if callable_names:
+            steps.append(
+                "These have public headers — read the signature before coding: "
+                + ", ".join(callable_names)
+            )
+        if bare:
+            steps.append(
+                ", ".join(bare) + " ships but has NO public C++ header. Do not "
+                "write #include against it; treat it as automation/IDL or a "
+                "capability that must be reached through another API."
+            )
+        steps.append(
+            "If the task needs a callable path, ask how the implementing "
+            "component is obtained (QueryInterface on an existing instance) "
+            "instead of guessing a factory name"
+        )
+        return steps
 
     # ─── Native Investigation (Tier A Advisory) ─────────────────
 
@@ -2678,6 +2921,33 @@ class Kernel:
         "为什么", "为何", "怎么", "如何", "何为", "怎样",
     )
 
+    # Markers that make a request worth a semantic routing check even when no
+    # hardcoded keyword matched. Kept deliberately broad — these only decide
+    # whether to ASK Jev, never the answer itself. Without this, phrasings like
+    # "爆炸图场景如何在 CAA 中生成" fell through to workspace analysis and came
+    # back as a successful, empty result.
+    _QUESTION_MARKERS = (
+        "如何", "怎么", "怎样", "为什么", "为何", "什么", "哪个", "哪些",
+        "是否", "能否", "可以吗", "?", "？",
+        "how ", "what ", "why ", "where ", "which ", "can i", "is there",
+    )
+    # Obvious workspace operations: never spend a network call on them.
+    _WORKSPACE_OP_SIGNALS = (
+        "analyze workspace", "analyze the workspace", "list modules",
+        "list all modules", "list commands", "build the project", "build workspace",
+        "compile", "rename ", "rollback", "run tests", "start catia",
+        "stop catia", "dependencies of", "impact of",
+        "analyze module", "inspect module", "verify module",
+        "show dependencies", "visualize",
+    )
+    # Deterministic fallback when Jev cannot answer: a question marker that was
+    # not already covered by _KNOWLEDGE_KW. Deliberately conservative — it only
+    # applies to question-shaped requests, so "analyze workspace" is untouched.
+    _FALLBACK_QUESTION_MARKERS = (
+        "如何", "怎么", "怎样", "为什么", "为何", "是什么", "有哪些",
+        "how ", "what ", "why ", "where ", "which ",
+    )
+
     def _is_knowledge_query(self, request: str) -> bool:
         """Detect if this is a knowledge/API question, not a workspace operation"""
         import re
@@ -2697,9 +2967,38 @@ class Kernel:
         except Exception:
             pass
         # Check question patterns
-        return any(request.startswith(q) for q in self._KNOWLEDGE_QUESTION_WORDS)
+        if any(request.startswith(q) for q in self._KNOWLEDGE_QUESTION_WORDS):
+            return True
+        # Last resort: semantic routing. The keyword tables above are a finite
+        # list of phrasings, and every phrasing they miss used to end up in the
+        # workspace-analysis default — a successful-looking non-answer.
+        return self._jev_says_knowledge(request)
 
-    def _lookup_knowledge(self, request: str, include_content: bool = False) -> dict:
+    def _jev_says_knowledge(self, request: str) -> bool:
+        """Ask Jev whether this is a knowledge question, with a cheap pre-gate.
+
+        Falls back to a deterministic marker check when Jev is unavailable, so
+        the zero-hit verdict never depends on an API key or a network path.
+        """
+        req = (request or "").strip()
+        if len(req) < 4:
+            return False
+        if any(sig in req for sig in self._WORKSPACE_OP_SIGNALS):
+            return False
+        has_marker = any(m in req for m in self._QUESTION_MARKERS)
+        if not has_marker and not self._extract_caa_candidates(req):
+            return False
+        try:
+            import jev_judge
+            verdict = jev_judge.is_knowledge_question(req)
+        except Exception:
+            verdict = None
+        if verdict and verdict.get("probability") is not None:
+            return bool(verdict["probability"] >= 0.5)
+        return any(m in req for m in self._FALLBACK_QUESTION_MARKERS)
+
+    def _lookup_knowledge(self, request: str, include_content: bool = False,
+                          defer_to_dic: bool = False) -> dict:
         """
         Search knowledge base via CatalogIndex (unified model).
         Alias expansion and keyword matching handled internally.
@@ -2707,9 +3006,19 @@ class Kernel:
         include_content: also inline the full text of the top-ranked knowledge
         files (with a size budget) so the caller gets answers in ONE round
         trip instead of search -> read -> maybe-grep -> read-again.
+
+        defer_to_dic: the caller will try the .dic verdict next when this
+        returns no hits. Skip building next_steps in that case — they would be
+        discarded, and building them costs a Jev round trip.
+
+        `found` is the load-bearing field: a zero-hit search reports
+        found=False plus next_steps, because "searched and there is nothing"
+        and "the answer is not here" used to be indistinguishable from
+        success, which drove callers to walk the SDK by hand.
         """
         results = []
         domain_hint = ""
+        search_error = ""
 
         # Step 1: Detect domain
         try:
@@ -2724,26 +3033,45 @@ class Kernel:
         try:
             if self.catalog:
                 entries = self.catalog.search(request, max_results=10)
-                results = [e.raw_line for e in entries]
-        except Exception:
-            pass
+                # Auto-scanned framework entries carry no raw catalog line; a
+                # blank reference reads as a broken result, so render the same
+                # table shape the hand-listed entries use.
+                results = [
+                    e.raw_line or f"| {e.id} | {e.file} | {e.title} |"
+                    for e in entries
+                ]
+            else:
+                search_error = "catalog_unavailable"
+        except Exception as e:
+            # A raised search is NOT the same verdict as an empty one: say so
+            # instead of reporting a clean zero-hit.
+            search_error = f"catalog_error: {type(e).__name__}"
+
+        candidates = self._extract_caa_candidates(request)
+        found = bool(results)
 
         # Step 3: Build response
         summary_parts = []
         if domain_hint and domain_hint != "general":
             summary_parts.append(f"Domain: {domain_hint}")
-        if results:
+        if found:
             summary_parts.append(f"Found {len(results)} references")
+        elif search_error:
+            summary_parts.append(f"Knowledge search FAILED ({search_error})")
+        else:
+            summary_parts.append("No knowledge entry matched")
 
         guide = ""
-        try:
-            if self.catalog:
-                guide = self.catalog.reading_guide(entries, request)
-        except Exception:
-            pass
+        if entries:
+            try:
+                if self.catalog:
+                    guide = self.catalog.reading_guide(entries, request)
+            except Exception:
+                pass
 
         out = {
-            "summary": "; ".join(summary_parts) if summary_parts else "Knowledge base searched",
+            "summary": "; ".join(summary_parts),
+            "found": found,
             "domain": domain_hint,
             "references": results,
             "reading_guide": guide,
@@ -2751,6 +3079,173 @@ class Kernel:
         }
         if include_content and entries:
             out["content"] = self._read_knowledge_files(entries)
+        if not found:
+            # When a .dic verdict is about to run, it will supply better-targeted
+            # steps (or a fact) — do not pay for Jev twice.
+            di = self.dic_index if defer_to_dic else None
+            will_use_dic = bool(candidates) and di is not None and \
+                bool(getattr(di, "pair_count", 0))
+            if not will_use_dic:
+                out["next_steps"] = self._degraded_next_steps(
+                    request, candidates, search_error=search_error)
+                out["hint"] = (
+                    "No curated knowledge file matched. Do NOT conclude the API is "
+                    "missing — follow next_steps in order; each one turns a guess "
+                    "into a verdict."
+                )
+        return out
+
+    # CAA identifiers worth asking the dictionary about. Deliberately
+    # conservative: a wrong-looking token costs one dict lookup, not a wrong
+    # answer, and Jev demotes implausible ones before they reach the caller.
+    _CAA_NAME_RE = (
+        r"\bCAT[A-Z0-9][A-Za-z0-9_]{2,}"
+        r"|\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+){2,}"
+    )
+
+    def _extract_caa_candidates(self, request: str) -> list:
+        """Extract identifier-shaped tokens that deserve a .dic lookup."""
+        import re
+        seen, out = set(), []
+        for m in re.finditer(self._CAA_NAME_RE, request or ""):
+            tok = m.group(0)
+            if tok not in seen:
+                seen.add(tok)
+                out.append(tok)
+        return out[:6]
+
+    def _degraded_next_steps(self, request: str, candidates: list,
+                             search_error: str = "") -> list:
+        """Concrete, ordered actions after a zero-hit knowledge search.
+
+        Ordering facts stay deterministic (index coverage widens monotonically
+        from .dic -> headers -> CAADoc). Jev may reorder them, but it is told
+        nothing authoritative and its choice is tagged as ordering-only, so a
+        caller can never mistake it for evidence.
+        """
+        dic_hits = self._lookup_dic(candidates)
+        known = [h["name"] for h in dic_hits if h["known"]]
+        unknown = [h["name"] for h in dic_hits if not h["known"]]
+
+        # A prose query names no identifier, so index lookups have no target.
+        # Say that explicitly instead of emitting a command with a <Name>
+        # placeholder the caller cannot fill.
+        if not candidates:
+            steps = []
+            if search_error:
+                steps.append(
+                    "Retrieval itself failed (%s) — a zero-hit here proves "
+                    "nothing. Run: python skills/retrieval.py" % search_error
+                )
+            steps += [
+                "The request names no CAA identifier, so name-based indexes "
+                "(.dic / header_map / method_index) cannot be queried yet. "
+                "Ask the user for the concrete interface, class, or command "
+                "name — or the CATIA command they click.",
+                "Meanwhile search by product wording: "
+                "python tools/build_caadoc_index.py --search \"<term>\" "
+                "(try the feature name, e.g. scene / explode / 爆炸图)",
+                "If the wording matches no CAA concept at all, say so plainly: "
+                "this may not be exposed as public CAA API, rather than "
+                "reporting a successful empty search.",
+            ]
+            return steps
+
+        actions = {
+            "shipped_dic": (
+                "Verify the identifier against the shipped dictionary: "
+                "python skills/dic_index.py "
+                + (" ".join(candidates) if candidates else "<Name>")
+            ),
+            "public_header": (
+                "Check whether a callable C++ header exists: "
+                "python skills/header_map.py "
+                + (" ".join(candidates) if candidates else "<Name>")
+            ),
+            "caadoc": (
+                "Browse design intent: knowledge/frameworks/ for the owning "
+                "framework, then <CATIA_INSTALL>/CAADoc/"
+            ),
+            "not_public_api": (
+                "If neither the dictionary nor the headers know it, stop "
+                "guessing interface names and switch to native/private "
+                "investigation (playbooks/pb_native_command_investigation.md)"
+            ),
+        }
+
+        # Deterministic order: cheapest, most decisive first.
+        order = ["shipped_dic", "public_header", "caadoc", "not_public_api"]
+        choice = None
+        try:
+            import jev_judge
+            choice = jev_judge.first_action(
+                request, candidates, order,
+                catalog_healthy=not search_error,
+            )
+        except Exception:
+            choice = None
+        if choice and choice.get("choice") in order:
+            order.remove(choice["choice"])
+            order.insert(0, choice["choice"])
+
+        steps = []
+        if search_error:
+            steps.append(
+                "Retrieval itself failed (%s) — a zero-hit here proves nothing. "
+                "Run: python skills/retrieval.py" % search_error
+            )
+        for key in order:
+            steps.append(actions[key])
+
+        # Ground truth already in hand: state it instead of making the caller
+        # re-run the lookup.
+        if known:
+            steps.insert(0, (
+                "Already confirmed present in the shipped .dic: "
+                + ", ".join(known)
+                + " (existence only — a .dic hit does NOT imply a public C++ header)"
+            ))
+        if unknown:
+            unverified = None
+            try:
+                import jev_judge
+                unverified = jev_judge.identifier_plausibility(
+                    unknown, request)
+            except Exception:
+                unverified = None
+            probs = (unverified or {}).get("probabilities") or {}
+            weak = [n for n in unknown if probs.get(n, 1.0) < 0.35]
+            if weak:
+                steps.append(
+                    "\"" + "\", \"".join(weak) + "\" does not read like a CAA "
+                    "type name; treat it as a product/prose word, not a missing API"
+                )
+
+        steps.append(
+            "Only after those: state plainly that no shipped API answers this, "
+            "rather than reporting a successful empty search"
+        )
+        return steps
+
+    def _lookup_dic(self, candidates: list) -> list:
+        """Resolve candidate names against the shipped .dic index.
+
+        Returns [{"name", "known", "as_interface", "as_component"}]. An
+        unavailable index yields known=False for every name but is reported
+        as such by the caller (never silently equated with absence).
+        """
+        di = self.dic_index
+        out = []
+        for name in candidates or []:
+            if di is None:
+                out.append({"name": name, "known": False, "as_interface": None,
+                            "as_component": None, "index_unavailable": True})
+                continue
+            try:
+                out.append(di.resolve_name(name))
+            except Exception:
+                out.append({"name": name, "known": False, "as_interface": None,
+                            "as_component": None, "index_unavailable": True})
         return out
 
     def _read_knowledge_files(self, entries, max_files: int = 3,

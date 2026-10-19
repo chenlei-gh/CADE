@@ -27,9 +27,10 @@ One question → one index → one command. Do not grep `knowledge/` or scan
 | Does type `T` really have method `M` (incl. inheritance)? | **MethodIndex** | `python skills/method_index.py <Type> <Method> [Method2 ...]` | `OK` / `NOT-FOUND` with `exists-on:` / `did-you-mean-on-this-type:` |
 | Is this API / enum / factory name real? (broad audit) | **caadoc index** (feeds MethodIndex) | `python tools/build_caadoc_index.py --query <Name>` · `--search <pat>` · `--quiet` · `--repl` | `FOUND`; on `SDK/refman mismatch` trust the **header** |
 | Audit every `CAT*` / `->Method` in a knowledge file | same | `python tools/build_caadoc_index.py --check-file <path>` | only `SUSPECT` lines matter |
+| Does this name ship at all, and which component implements it? | **DicIndex** | `python skills/dic_index.py <Name>` | `INTERFACE`/`COMPONENT` + implementers; `NOT-FOUND` = absent from every shipped `.dic` |
 | Which knowledge file matches this CAA intent? | **CatalogIndex** via Kernel | `analyze(request, detail=true)` | `knowledge_content` is the answer; do not grep `knowledge/` |
 | Has CAA officially used this interface / method in a sample? | **UseCaseIndex** | `r.find_usecases_for_interface("CATIVisProperties")` · `r.find_usecases_for_method("SetPropertiesAtt")` | hit = presence; **empty = no official sample, not "API missing"** |
-| Are the five indexes loaded and non-empty? | facade | `python skills/retrieval.py` | JSON `ok: true`; if false, fix that index before trusting lookups |
+| Are the six indexes loaded and non-empty? | facade | `python skills/retrieval.py` | JSON `ok: true`; if false, fix that index before trusting lookups |
 | Which CADE *capability* handles a user verb? | **not this layer** | `capabilities.yaml` (routing) + `skills/lifecycle.yaml` (can it be used?) | file existence is not proof |
 
 Tie-breakers (do not skip):
@@ -37,17 +38,18 @@ Tie-breakers (do not skip):
 1. Existence of a type/header → HeaderMap, not knowledge docs.
 2. Existence of a method on a type → MethodIndex, not `--search` snippets.
 3. Conflict between refman and SDK header → header.
-4. Catalog miss → say "no catalog hit", then Framework → CAADoc. Do not invent APIs.
+4. Catalog miss → say "no catalog hit", then check DicIndex (does the name ship?), then Framework → CAADoc. Do not invent APIs.
 5. UseCase miss → say "no official example found". Check HeaderMap/MethodIndex for existence.
+6. DicIndex hit → say "ships with CATIA", never "callable". Confirm a public header before suggesting code.
 
 Feature code must go through `from retrieval import get_retrieval`.
 CLI tools above are the Agent-facing shortcuts; they load the same caches.
 
 ---
 
-## 1. The Five-Index Model
+## 1. The Six-Index Model
 
-All retrieval in CADE goes through five indexes, each with a single
+All retrieval in CADE goes through six indexes, each with a single
 authoritative data source and a single lifecycle:
 
 | Index | Authoritative source | What it answers | Snapshot (2026-07) |
@@ -57,6 +59,14 @@ authoritative data source and a single lifecycle:
 | **HeaderMap** | B28 install `<FW>/PublicInterfaces/*.h` scan → `cache/header_map_<ver>.json` | "Does this class/header exist in CATIA?" | 5500 headers, 503 frameworks |
 | **MethodIndex** | `cache/caadoc_index.json` (pre-parsed SDK headers) → `cache/method_index.pickle` | "Does type X really have method M?" | 2655 types |
 | **UseCaseIndex** | CAADoc use-case `.cpp` scan + official resources (Imakefile/LocalInterfaces/CATNls/CATRsc) → `cache/usecase_index.json` (builder: `tools/build_usecase_index.py`) | "Has CAA officially used X this way?" | 1233 examples + 1674 resource files |
+| **DicIndex** | `<CATIA_INSTALL>/<arch>/code/dictionary/*.dic` → `cache/caadoc_index.json` `sdk_dic_entries` | "Does this name ship at all, and which component implements it?" | 12,946 interfaces / 14,782 components / 73,076 pairs (B28) |
+
+**DicIndex boundary**: it answers *existence and attribution only*. A hit
+means the name is real and these components declare it — it does **not**
+imply a public C++ header or a callable API. That is HeaderMap's and
+MethodIndex's authority, and `analyze()` reports both facts side by side
+(`header_presence`) so the distinction cannot be lost. Existence is not
+callability.
 
 **UseCaseIndex boundary**: it records *presence only* — which official
 sample `#include`s an interface, calls a method, or uses an enum. It never
@@ -94,6 +104,7 @@ mi = r.method_index      # MethodIndex (HeaderMap injected)
 reg = r.registry         # ApiRegistry (process-cached)
 cat = r.catalog          # CatalogIndex (disk + process cached)
 uc = r.usecase_index     # UseCaseIndex (presence evidence)
+dic = r.dic_index        # DicIndex (shipped .dic ground truth)
 
 # UseCase presence queries (passive, on-demand — never auto-injected):
 r.find_usecases_for_interface("CATIVisProperties")   # -> [example names]
@@ -115,7 +126,7 @@ Agent-facing diagnostics:
 python skills/retrieval.py
 ```
 
-prints a JSON health report for all five indexes. Use this first when
+prints a JSON health report for all six indexes. Use this first when
 any lookup result looks wrong.
 
 ---

@@ -611,6 +611,12 @@ def cmd_analyze(args):
     guide = result.get("reading_guide", data.get("reading_guide", ""))
     if guide:
         print(f"  阅读顺序: {guide}")
+    # Negative verdicts must be actionable on the CLI too, not just over MCP.
+    steps = result.get("next_steps", data.get("next_steps", []))
+    if steps:
+        print("  下一步:")
+        for i, step in enumerate(steps, 1):
+            print(f"    {i}. {step}")
     # --detail: print inlined knowledge content (flattened to top level)
     for item in result.get("content", []):
         print(f"\n=== {item['file']} (id: {item['id']}) ===")

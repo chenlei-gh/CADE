@@ -2,7 +2,8 @@
 Retrieval — Unified Knowledge Access Layer
 ===========================================
 Single entry point for CADE's retrieval indexes (catalog, API registry,
-header map, method index, use case index). Exists for two reasons:
+header map, method index, use case index, shipped .dic index). Exists for
+two reasons:
 
 1. Correctness: every index is loaded at most once per process through
    get_retrieval(). Before this module, diagnostics.py re-called
@@ -24,6 +25,7 @@ Usage:
   mi = r.method_index      # MethodIndex (header_map injected)
   reg = r.registry         # ApiRegistry
   cat = r.catalog          # CatalogIndex
+  dic = r.dic_index        # DicIndex (shipped .dic ground truth)
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ class Retrieval:
         self._header_map = None
         self._method_index = None
         self._usecase_index = None
+        self._dic_index = None
 
     @property
     def skill_root(self) -> Path:
@@ -78,6 +81,19 @@ class Retrieval:
             self._method_index = MethodIndex.load(
                 self._root, header_map=self.header_map)
         return self._method_index
+
+    @property
+    def dic_index(self):
+        """Shipped .dic interface ↔ component ground truth.
+
+        Answers "does this name ship at all?" for names HeaderMap never sees
+        (automation/IDL interfaces such as CATIAScene under PublicGenerated).
+        Loaded lazily; a missing cache yields an empty index, not an error.
+        """
+        if self._dic_index is None:
+            from dic_index import DicIndex
+            self._dic_index = DicIndex.load(self._root)
+        return self._dic_index
 
     @property
     def usecase_index(self) -> dict:
@@ -184,6 +200,20 @@ class Retrieval:
             }
         except Exception as e:
             report["usecase_index"] = {"ok": False, "error": str(e)}
+
+        try:
+            import dic_index as _dic
+            di = self.dic_index
+            report["dic_index"] = {
+                "ok": di.pair_count > 0,
+                "interfaces": di.interface_count,
+                "components": di.component_count,
+                "pairs": di.pair_count,
+                "version": di.source_version,
+                "cache": dict(_dic.CACHE_STATS),
+            }
+        except Exception as e:
+            report["dic_index"] = {"ok": False, "error": str(e)}
 
         report["ok"] = all(v.get("ok") for v in report.values())
         return report

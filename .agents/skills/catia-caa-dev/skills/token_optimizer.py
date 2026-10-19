@@ -73,6 +73,7 @@ _PASSTHROUGH_KEYS = (
     "components",          # multi-artifact composition summary
     "verification_failed", # top-level flag set by kernel Phase 3
     "rollback_id",         # undo handle for an applied ChangeSet
+    "next_steps",          # ordered recovery actions after a negative verdict
 )
 
 
@@ -166,6 +167,11 @@ def _extract_level1(d: dict) -> dict:
     msg = d.get("message", "")
     if msg and len(msg) < 200:
         summary["message"] = msg
+
+    # Negative verdicts: 'found=False' is the answer, not an absence of data.
+    # The generic passthrough below drops falsy values, so carry it explicitly.
+    if "found" in d:
+        summary["found"] = bool(d["found"])
 
     # AI-actionable fields — never stripped (see _PASSTHROUGH_KEYS)
     for k in _PASSTHROUGH_KEYS:

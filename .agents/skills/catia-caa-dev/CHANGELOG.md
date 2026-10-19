@@ -10,6 +10,33 @@
 
 ## [未发布]
 
+### 🔍 修复：知识检索零命中的「静默假成功」（P0）+ 接入随产品发布字典（P1）
+
+**问题**：`analyze()` 在知识库零命中时仍返回 `status=ok` + `"Knowledge base searched"`，AI 无法区分「查到了但没用」与「根本不存在」，于是绕过 CADE 去 `grep`/`ls` 裸扫 SDK。另有两条更隐蔽的路径：`爆炸图场景如何在 CAA 中生成` 因未命中硬编码词表直接落到 workspace 分析（看起来成功），以及 `CAA` 作为查询词子串命中 `catiqsrcaafactory` 等噪声关键词，使空结果变成「Found 5 references」。
+
+**P0 — 让失败说真话**
+
+- `skills/kernel.py`：`_lookup_knowledge()` 新增 `found` 字段；零命中时不再留空，返回有序 `next_steps`。检索本身抛异常与「查完为空」被区分开（`catalog_error`），不再一律上报干净的空结果。
+- `skills/kernel.py`：`_is_knowledge_query()` 在词表与前缀规则全部未命中后追加语义路由判断，问句式请求不再落到 workspace 默认分支；Jev 不可用时退回确定性问句标记，离线同样生效。
+- `skills/catalog.py`：`CAA`/`CATIA`/`V5`/`B28` 作为查询停用词剔除——它们在纯 CAA 语料里没有区分度，只会把无关条目变成「命中」。
+- `skills/kernel.py`：framework 条目无 `raw_line` 时渲染为同形的表格行，引用不再是空串。
+- `skills/token_optimizer.py`：`found` 与 `next_steps` 加入永不剥离字段（`found=False` 是关键结论，不能当空值丢掉）。
+- `skills/cade.py`：CLI 打印 `下一步` 列表，负结论在命令行侧同样可行动。
+
+**P1 — 接入 `.dic` ground truth**
+
+- 新增 `skills/dic_index.py`：来自随产品发布的 885 个 `.dic`（12,946 接口 / 14,782 组件 / 73,076 对，B28），回答「这个名字到底存不存在、谁实现它」。
+- `skills/kernel.py`：catalog 零命中且请求含标识符时，改用 `.dic` 给结论；命中同时附 `header_presence`（是否有公开头文件）与 caveat——**存在不等于可调用**，二者必须并列呈现。不在任何 `.dic` 中同样是有效结论，并给出去哪查拼写变体。
+- `skills/retrieval.py`：`DicIndex` 纳入统一门面（`r.dic_index`）与 `health()` 报告，索引数由五升为六。
+
+**Jev 的定位（遵守 `docs/AI_SKILL_ACTIVATION_FINDINGS.md` §8）**
+
+- 新增 `skills/jev_judge.py`，仅用 `urllib.request`（不新增依赖，符合 `config/requirements.txt` 的零依赖声明），超时 6s，任何失败一律降级为 `None`。
+- 仅承担三处判断：请求是否属于知识问题（routing）、零命中后优先尝试哪条降级路径（ordering）、名字是否像 CAA 类型名（wording）。返回结果均标注 `role`，**不参与任何存在性断言**——存在性只认 `.dic` / HeaderMap。
+- 可通过 `CADE_JEV=0` 关闭；无 key 时全部判断走确定性路径，P0/P1 行为不变。
+
+**验证**：新增 `tests/test_knowledge_visibility.py`（53 项，含无 key 降级与工作区护栏），并登记进 `test_master.py`。`test_master.py --quick` 在**有 key 与无 key 两种环境下均 44/44 通过**。
+
 ### 🐛 修复：UnboundLocalError 缺陷修复 (2026-10-16)
 
 - **`skills/token_optimizer.py`**：修复 `_extract_level2` 中 `err_diags` 局部变量在 `diagnostics` 为空列表或无 ERROR 字典时未初始化即被访问导致的 `UnboundLocalError: cannot access local variable 'err_diags'`。完善边界检查，并在 `test_token_optimizer.py` 中增加回归用例。

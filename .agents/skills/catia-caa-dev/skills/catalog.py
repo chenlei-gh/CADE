@@ -54,6 +54,11 @@ class CatalogIndex:
     _MATCH_EXACT = 3.0
     _MATCH_PREFIX = 2.0
     _MATCH_SUBSTRING = 1.0
+    # Product/domain names carry no topic signal in a CAA-only corpus: 'caa'
+    # substring-matches catiqsrcaafactory, caacloudqsritf, and most framework
+    # ids, so treating it as a query word makes an unrelated entry look like a
+    # hit. Dropping these keeps "found" meaning "something relevant matched".
+    _QUERY_STOPWORDS = {"caa", "catia", "v5", "b28"}
     # Playbook/pattern entries that match ONLY via their id/file tokens are
     # penalized: their "涉及 Capability" column declares they delegate to the
     # referenced capability/knowledge entry, so an id-only hit (e.g. 'dialog'
@@ -248,7 +253,8 @@ class CatalogIndex:
             self._build_field_index()
 
         expanded = self._expand_aliases(query)
-        words = [w.lower() for w in expanded.split() if len(w) >= 3]
+        words = [w.lower() for w in expanded.split()
+                 if len(w) >= 3 and w.lower() not in self._QUERY_STOPWORDS]
 
         query_lower = query.lower()
         pattern_intent = any(t in query_lower for t in self._PATTERN_INTENT)

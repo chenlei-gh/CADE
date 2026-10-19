@@ -78,6 +78,8 @@ SUITES = {
     "Retrieval Benchmark": "test_retrieval_benchmark.py",
     # ── UseCase presence index (official example evidence) ──
     "UseCase Index": "test_usecase_index.py",
+    # ── Knowledge retrieval visibility (zero-hit verdict + .dic truth) ──
+    "Knowledge Visibility": "test_knowledge_visibility.py",
     "UI Clarifier": "test_ui_generator_clarifier.py",
     # ── MCP stdio contract (spawns the real server on a GBK code page) ──
     "MCP Stdio Encoding": "test_mcp_stdio_encoding.py",
@@ -128,6 +130,7 @@ VERIFY_STRINGS = {
     "test_capability_contract.py": "CAPABILITY CONTRACT OK",
     "test_retrieval_benchmark.py": "passed",
     "test_usecase_index.py": "USECASE INDEX OK",
+    "test_knowledge_visibility.py": "KNOWLEDGE VISIBILITY OK",
     "test_ui_generator_clarifier.py": "passed",
     "test_mcp_stdio_encoding.py": "passed",
     }

@@ -1337,7 +1337,9 @@ python tests/test_master.py --quick
 │   ├── api_registry.py               # API 白名单注册表（知识库驱动）
 │   ├── header_map.py                # CAA header→module→framework 映射（缓存；CLI: python skills/header_map.py <Name> 返回头文件绝对路径）
 │   ├── method_index.py             # 类型→方法存在性检查（继承链；CLI: python skills/method_index.py <Type> <Method...>）
-│   ├── retrieval.py                 # 统一检索门面（五索引：catalog/registry/header_map/method_index/usecase）
+│   ├── dic_index.py                # 随产品发布的 .dic 事实索引（接口↔实现组件；CLI: python skills/dic_index.py <Name>）
+│   ├── jev_judge.py                # Jev 判定层（路由/排序/措辞，非证据源；无 key 或网络失败自动降级）
+│   ├── retrieval.py                 # 统一检索门面（六索引：catalog/registry/header_map/method_index/usecase/dic）
 │   ├── build_gate.py              # 编译前静态门禁（虚构 API 拦截；PASS/WARN/BLOCK/SKIP + JSONL 遥测；build.py --skip-gate 可绕过）
 │   ├── ui_lint.py                    # UI 失效模式静态检查器（failure_patterns）
 │   ├── requirements.py               # Requirements Clarifier + UI 4-axis clarifier (v3.0)
