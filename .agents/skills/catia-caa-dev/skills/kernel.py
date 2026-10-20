@@ -1088,11 +1088,16 @@ class Kernel:
 
     @staticmethod
     def _chain_contract_ok(cand: dict) -> tuple:
-        """Promote a candidate only when explorer labels agree with the evidence contract.
+        """Promote a candidate only when explorer labels and dataflow agree with the evidence contract.
 
-        Kernel does not re-parse C++. It refuses to upgrade a fragment when the
-        connectivity label, evidence tier, source fingerprint, parse status, or
-        ownership ambiguity disagree.
+        Kernel independently verifies:
+        1. Connectivity status is 'connected' and evidence_tier is 'grounded_candidate_chain'.
+        2. Parse status is 'ok' and source SHA256 is present.
+        3. Index consistency is not stale.
+        4. All steps are in a single, non-global function scope.
+        5. No error branch steps and no unresolved method owner ambiguity.
+        6. Def-Use dataflow integrity: steps must maintain an unbroken caller_def -> result_def
+           definition chain leading to the target type.
         """
         if not isinstance(cand, dict):
             return False, "candidate is not a dict"
@@ -1106,18 +1111,58 @@ class Kernel:
             return False, "missing source_sha256"
         if cand.get("index_consistency") == "stale":
             return False, "usecase index is stale relative to source"
+
         steps = cand.get("steps") or []
         if not steps:
             return False, "no steps"
+
         if any(s.get("ownership_status") == "ambiguous" for s in steps if isinstance(s, dict)):
             return False, "unresolved method-owner ambiguity"
         if any(s.get("in_error_branch") for s in steps if isinstance(s, dict)):
             return False, "error-branch step present in claimed chain"
+
         scopes = {
             s.get("function_scope") for s in steps if isinstance(s, dict) and s.get("function_scope")
         }
-        if len(scopes) > 1:
-            return False, "steps span multiple function scopes"
+        if len(scopes) != 1 or "global" in scopes:
+            return False, f"invalid or inconsistent function scopes: {scopes}"
+
+        # Independent Def-Use dataflow verification
+        live_defs = set()
+        start_type = cand.get("start_type", "").strip()
+        target_type = cand.get("target_type", "").strip()
+        target_produced = False
+
+        for idx, s in enumerate(steps):
+            if not isinstance(s, dict):
+                return False, "step is not a dict"
+            c_def = tuple(s.get("caller_def") or ())
+            r_def = tuple(s.get("result_def") or ())
+
+            if idx == 0:
+                if c_def:
+                    live_defs.add(c_def)
+                elif start_type and s.get("caller_type") == start_type:
+                    pass
+                else:
+                    return False, "first step lacks grounded start definition"
+
+            # Verify caller was produced or live
+            if c_def and c_def not in live_defs and idx > 0:
+                return False, f"step {idx} caller_def not produced by previous steps"
+
+            if r_def:
+                live_defs.add(r_def)
+
+            if target_type:
+                res_t = s.get("result_type") or ""
+                tgt_t = s.get("target") or ""
+                if res_t == target_type or tgt_t == target_type:
+                    target_produced = True
+
+        if target_type and not target_produced:
+            return False, f"target_type {target_type} not produced by any step in chain"
+
         return True, ""
 
     def _try_chain_exploration(self, request: str) -> Optional[dict]:
@@ -1128,7 +1173,6 @@ class Kernel:
 
         import re
         ids = re.findall(r'CAT[A-Za-z0-9_]+', request)
-        # Must have at least one concrete CAA identifier to explore call chains
         if not ids:
             return None
 
@@ -1142,18 +1186,64 @@ class Kernel:
             "到", "to", "how", "create", "get", "retrieve", "convert", "chain", "step", "workflow"
         ))
 
-        # Need either multiple identifiers (e.g. A to B) or a single identifier with action intent
         if len(ids) < 2 and not is_action_query:
             return None
 
-        start = ids[0] if len(ids) >= 2 else ""
-        target = ids[1] if len(ids) >= 2 else (ids[0] if ids else "")
+        # Robust direction extraction from query semantics
+        m_from_to = re.search(
+            r'(?:从|from)\s*(CAT[A-Za-z0-9_]+)\s*(?:到|至|to|获取|提取|转为|转换到)\s*(CAT[A-Za-z0-9_]+)',
+            request,
+            re.IGNORECASE,
+        )
+        m_get_from = re.search(
+            r'(?:获取|得到|创建|查询|get|retrieve|create)\s*(CAT[A-Za-z0-9_]+)\s*(?:从|通过|via|from)\s*(CAT[A-Za-z0-9_]+)',
+            request,
+            re.IGNORECASE,
+        )
+        if m_from_to:
+            start, target = m_from_to.group(1), m_from_to.group(2)
+        elif m_get_from:
+            target, start = m_get_from.group(1), m_get_from.group(2)
+        elif len(ids) >= 2:
+            sub_pat = re.search(
+                r'\b(CAT[A-Za-z0-9_]+)\s*(?:到|->|to)\s*(CAT[A-Za-z0-9_]+)\b',
+                request,
+                re.IGNORECASE,
+            )
+            if sub_pat:
+                start, target = sub_pat.group(1), sub_pat.group(2)
+            else:
+                start, target = ids[0], ids[1]
+        else:
+            start = ""
+            target = ids[0] if ids else ""
 
         try:
-            exp_result = r.explore_chain(start=start, target=target, query=request, max_candidates=2)
+            exp_result = r.explore_chain(start=start, target=target, query=request, max_candidates=3)
             if exp_result and exp_result.get("status") == "ok" and exp_result.get("candidates"):
-                cand = exp_result["candidates"][0]
-                promoted, reject_reason = self._chain_contract_ok(cand)
+                cands = exp_result.get("candidates") or []
+                chosen_cand = None
+                chosen_promoted = False
+                chosen_reject_reason = ""
+
+                # Priority 1: Pick the first candidate that strictly satisfies the full contract
+                for cand in cands:
+                    promoted, reason = self._chain_contract_ok(cand)
+                    if promoted:
+                        chosen_cand = cand
+                        chosen_promoted = True
+                        chosen_reject_reason = ""
+                        break
+
+                # Priority 2: If none promoted, pick the best reference fragment
+                if chosen_cand is None and cands:
+                    chosen_cand = cands[0]
+                    chosen_promoted = False
+                    _, chosen_reject_reason = self._chain_contract_ok(chosen_cand)
+
+                cand = chosen_cand
+                promoted = chosen_promoted
+                reject_reason = chosen_reject_reason
                 tier = "grounded_candidate_chain" if promoted else "candidate_fragment"
 
                 if promoted:

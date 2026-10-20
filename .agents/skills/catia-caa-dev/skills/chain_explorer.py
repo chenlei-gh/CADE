@@ -66,13 +66,39 @@ _HRESULT_STATUS_RE = re.compile(
 )
 
 _UNSUPPORTED_CPP_RE = re.compile(
-    r'\b(?:template\s*<|operator\s*\(|#define\b|goto\b)\b'
+    r'(?:template\s*<|\boperator\s*\(|#\s*(?:define|undef|if|ifdef|ifndef|elif|else)\b|\bgoto\b|\[[^\]]*\]\s*\([^\)]*\)\s*\{)',
+    re.IGNORECASE
 )
 
 _STATUS_VARS = {"rc", "hr", "ret", "res", "status", "hresult"}
 
-# (function_scope, variable, definition_id). Cross-function edges are not inferred.
-DefKey = Tuple[str, str, int]
+_KNOWN_CAA_OUT_METHODS = {
+    "GetSpecContainer",
+    "GetPart",
+    "GetRootProduct",
+    "GetReferenceProduct",
+    "GetActiveSheet",
+}
+
+# Single-line unbraced condition statement: if (...) call; or else call;
+_UNBRACED_IF_STMT_RE = re.compile(
+    r'^\s*(?:if|else\s+if|else)\b',
+    re.IGNORECASE
+)
+
+# (function_scope, lexical_scope_id, variable, definition_id)
+# Scope-isolated and versioned Def-Use tracking.
+DefKey = Tuple[str, int, str, int]
+
+
+def _is_safe_subpath(child: Path, parent: Path) -> bool:
+    """Verifies that child path is strictly inside parent directory using path parts."""
+    try:
+        return child.resolve().is_relative_to(parent.resolve())
+    except (ValueError, AttributeError):
+        c_parts = child.resolve().parts
+        p_parts = parent.resolve().parts
+        return len(c_parts) >= len(p_parts) and c_parts[:len(p_parts)] == p_parts
 
 
 def _exact_type(left: str, right: str) -> bool:
@@ -206,6 +232,7 @@ class ChainStep:
         self.link_module: Optional[str] = None
         self.caller_def: Optional[DefKey] = None
         self.result_def: Optional[DefKey] = None
+        self.lexical_scope: int = 0
 
     def to_dict(self) -> dict:
         method_name = self.target_name if self.kind == "method_call" else ""
@@ -216,15 +243,18 @@ class ChainStep:
             "caller_var": self.caller_var,
             "caller_type": self.caller_type,
             "caller": f"{self.caller_var} ({self.caller_type})" if self.caller_type else self.caller_var,
+            "caller_def": list(self.caller_def) if self.caller_def else None,
             "method": method_name,
             "target": self.target_name,
             "target_type": target_type_name,
             "result_var": self.result_var,
             "result_type": self.result_type,
             "result": f"{self.result_var} ({self.result_type})" if self.result_type else self.result_var,
+            "result_def": list(self.result_def) if self.result_def else None,
             "args": self.args,
             "snippet": self.snippet,
             "function_scope": self.function_scope,
+            "lexical_scope": self.lexical_scope,
             "in_error_branch": self.in_error_branch,
             "verified_owner": self.verified_owner,
             "candidate_owners": self.candidate_owners,
@@ -515,17 +545,19 @@ class ChainExplorer:
         target_type: str = "",
         source_text: str = "",
     ) -> Tuple[List[ChainStep], str, str]:
-        """Recover sequential call steps with function-scoped Def-Use tracking.
+        """Recover sequential call steps with lexical-scoped Def-Use tracking.
 
         Returns:
             (steps, connectivity_status, parse_status)
             connectivity_status: connected | disconnected | single_scope
             parse_status: ok | unsupported_syntax | unparsed
 
-        Reachability is a set of (function_scope, variable, definition_id).
-        Same names in different functions are different objects. Reassignment
-        allocates a new definition id and drops the old one. Cross-function
-        parameter/return edges are not inferred by this scanner.
+        Reachability is tracked via DefKey = (function_scope, lexical_scope_id, variable, definition_id).
+        A scope stack manages nested blocks and inner-variable shadowing. Exiting a
+        block revokes live reachability for variables declared inside it.
+        Reassignment to NULL or non-proven objects drops the live definition.
+        Out-parameters are recognized only via explicit '&' or known safe CAA out-APIs.
+        Cross-function parameter/return edges are not inferred by this scanner.
         """
         start_type = _normalize_type(start_type)
         target_type = _normalize_type(target_type)
@@ -538,40 +570,49 @@ class ChainExplorer:
                 return [], "disconnected", "unparsed"
 
         parse_status = "unsupported_syntax" if _UNSUPPORTED_CPP_RE.search(source_text) else "ok"
+
         statements = self._preprocess_cpp_statements(source_text)
 
-        # fn -> var -> (type, definition_id)
-        symbols: Dict[str, Dict[str, Tuple[str, int]]] = {"global": {}}
-        def_ids: Dict[Tuple[str, str], int] = {}
-        reachable: Set[DefKey] = set()
+        # Lexical scope stack: list of dicts mapping var -> (normalized_type, def_id, scope_id)
+        # Scope 0 is global
+        scope_stack: List[Dict[str, Tuple[str, int, int]]] = [{}]
+        scope_id_stack: List[int] = [0]
+        scope_counter = 0
+        def_id_counter = 0
+
+        live_reachable: Set[DefKey] = set()
         all_steps: List[ChainStep] = []
+        candidate_chain_steps: List[ChainStep] = []
 
         cur_function = "global"
         in_error_block = False
         error_block_depth = 0
         brace_depth = 0
         function_brace_depth = 0
+        target_reached = False
 
-        def _bump(fn: str, var: str, type_name: str) -> DefKey:
-            key = (fn, var)
-            def_ids[key] = def_ids.get(key, 0) + 1
-            symbols.setdefault(fn, {})[var] = (_normalize_type(type_name), def_ids[key])
-            return (fn, var, def_ids[key])
+        def _bump(var: str, type_name: str) -> DefKey:
+            nonlocal def_id_counter
+            def_id_counter += 1
+            cur_scope_id = scope_id_stack[-1]
+            norm_type = _normalize_type(type_name)
+            scope_stack[-1][var] = (norm_type, def_id_counter, cur_scope_id)
+            return (cur_function, cur_scope_id, var, def_id_counter)
 
-        def _lookup(fn: str, var: str) -> Tuple[str, Optional[DefKey]]:
+        def _lookup(var: str) -> Tuple[str, Optional[DefKey]]:
             if not var:
                 return "", None
-            local = symbols.get(fn, {}).get(var)
-            if local:
-                return local[0], (fn, var, local[1])
-            glob = symbols.get("global", {}).get(var)
-            if glob and fn != "global":
-                return glob[0], ("global", var, glob[1])
+            for idx in range(len(scope_stack) - 1, -1, -1):
+                entry = scope_stack[idx].get(var)
+                if entry:
+                    t_name, d_id, s_id = entry
+                    fn = cur_function if idx > 0 else "global"
+                    return t_name, (fn, s_id, var, d_id)
             return "", None
 
         def _enter_function(stmt: str) -> None:
             nonlocal cur_function, function_brace_depth
-            if stmt.strip().startswith(("if", "while", "for", "switch")):
+            if stmt.strip().startswith(("if", "while", "for", "switch", "catch")):
                 return
             m_fn = re.search(
                 r'(?:^|[\s*>])(?P<name>(?:[A-Za-z_][A-Za-z0-9_]*::)?[A-Za-z_][A-Za-z0-9_]*)\s*\(',
@@ -579,27 +620,32 @@ class ChainExplorer:
             )
             if not m_fn or "{" not in stmt:
                 return
-            if not m_fn:
-                return
             name = m_fn.group("name")
             if name in ("if", "while", "for", "switch", "catch"):
                 return
             cur_function = name
-            symbols.setdefault(cur_function, {})
             function_brace_depth = brace_depth
-            # Parameters are definitions of this function, not cross-function edges.
+
+            # Function arguments are registered in the current function-level scope
             params = stmt[m_fn.end():]
             for pm in re.finditer(
                 r'\b(?P<type>CAT[A-Za-z0-9_]+)(?:_var\b|\s*\*)\s*(?P<var>[A-Za-z_][A-Za-z0-9_]*)',
                 params,
             ):
-                param_def = _bump(cur_function, pm.group("var"), pm.group("type"))
+                param_def = _bump(pm.group("var"), pm.group("type"))
                 if start_type and _exact_type(_normalize_type(pm.group("type")), start_type):
-                    reachable.add(param_def)
+                    live_reachable.add(param_def)
 
         for line_no, stmt in statements:
             open_br = stmt.count("{")
             close_br = stmt.count("}")
+
+            # Manage lexical scopes per brace
+            for _ in range(open_br):
+                scope_counter += 1
+                scope_stack.append({})
+                scope_id_stack.append(scope_counter)
+
             if "{" in stmt and "(" in stmt:
                 _enter_function(stmt)
 
@@ -610,45 +656,58 @@ class ChainExplorer:
                 in_error_block = False
                 error_block_depth = 0
 
-            brace_depth += open_br - close_br
-            if cur_function != "global" and brace_depth < function_brace_depth:
-                cur_function = "global"
-                function_brace_depth = 0
+            # Determine if this statement is an unbraced conditional branch
+            is_unbraced_cond = bool(_UNBRACED_IF_STMT_RE.match(stmt) and "{" not in stmt)
+            step_in_error = in_error_block or is_unbraced_cond
+
+            cur_lexical_scope = scope_id_stack[-1]
 
             stripped_stmt = stmt.strip()
             if stripped_stmt.startswith("#"):
                 if stripped_stmt.startswith("#define") or stripped_stmt.startswith("#undef"):
                     parse_status = "unsupported_syntax"
+                # Handle scope closures before continuing
+                for _ in range(close_br):
+                    if len(scope_stack) > 1:
+                        popped_vars = scope_stack.pop()
+                        scope_id_stack.pop()
+                        for v, (_, d_id, s_id) in popped_vars.items():
+                            live_reachable.discard((cur_function, s_id, v, d_id))
+                brace_depth += open_br - close_br
                 continue
 
-            # Reassignment without a new type: piProduct = NULL; kills the old def.
+            # Reassignment without declaration: piProduct = NULL; kills live reachability
             m_redef = re.match(
                 r'^\s*(?P<var>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?![A-Za-z_][A-Za-z0-9_]*\s*(?:->|\.))',
                 stmt,
             )
             if m_redef and "->" not in stmt.split("=", 1)[0]:
-                prev_type, prev_def = _lookup(cur_function, m_redef.group("var"))
-                if prev_type:
-                    new_def = _bump(cur_function, m_redef.group("var"), prev_type)
-                    if prev_def in reachable:
-                        reachable.discard(prev_def)
-                        # A bare reassignment is not a proven new object.
-                        # Do not add new_def back into the live set.
-                        del new_def
+                var_name = m_redef.group("var")
+                prev_type, prev_def = _lookup(var_name)
+                if prev_type and prev_def:
+                    live_reachable.discard(prev_def)
+                    # Assigning to NULL/0/status creates a new dead def, not a live start object
+                    _bump(var_name, prev_type)
 
+            # Declaration: CATIProduct *piProduct = NULL;
             m_decl = _VAR_DECL_RE.match(stmt)
             if m_decl and "->" not in stmt.split("=", 1)[0]:
-                decl_def = _bump(cur_function, m_decl.group("var"), m_decl.group("type"))
-                if start_type and _exact_type(_normalize_type(m_decl.group("type")), start_type):
-                    reachable.add(decl_def)
+                d_type = m_decl.group("type")
+                d_var = m_decl.group("var")
+                decl_def = _bump(d_var, d_type)
+                # Seed live_reachable ONLY when the declaration is reached in temporal sequence
+                if start_type and _exact_type(_normalize_type(d_type), start_type):
+                    live_reachable.add(decl_def)
 
+            # QueryInterface pattern
             m_qi = _QI_RE.search(stmt)
             if m_qi:
                 caller = m_qi.group("caller")
                 itf = _normalize_type(m_qi.group("itf"))
                 target = m_qi.group("target")
-                c_type, caller_def = _lookup(cur_function, caller)
-                result_def = _bump(cur_function, target, itf)
+                c_type, caller_def = _lookup(caller)
+                result_def = _bump(target, itf)
+
                 step = ChainStep(
                     line=line_no,
                     kind="query_interface",
@@ -659,151 +718,144 @@ class ChainExplorer:
                     result_type=itf,
                     snippet=stmt[:160],
                     function_scope=cur_function,
-                    in_error_branch=in_error_block,
+                    in_error_branch=step_in_error,
                 )
                 step.caller_def = caller_def
                 step.result_def = result_def
+                step.lexical_scope = cur_lexical_scope
                 step.qi_convention = "IUnknown"
                 step.call_success_status = "not_observed"
                 all_steps.append(step)
-                continue
 
-            m_call = _CALL_RE.search(stmt)
-            if not m_call or "QueryInterface" in stmt:
-                continue
-            caller = m_call.group("caller")
-            meth = m_call.group("method")
-            args = m_call.group("args") or ""
-            ret_var = m_call.group("ret_var") or ""
-            decl_type = _normalize_type(m_call.group("decl_type") or "")
-            c_type, caller_def = _lookup(cur_function, caller)
-
-            if meth in ("AddRef", "Release"):
-                continue
-
-            arg_out_var = ""
-            m_out = re.search(r'&\s*(?P<out_var>[A-Za-z_][A-Za-z0-9_]*)', args)
-            if m_out:
-                arg_out_var = m_out.group("out_var")
-            else:
-                # Official samples pass some out-params without '&'
-                # (GetSpecContainer(pContainer)). Only a variable already
-                # declared as a CAT* pointer/smart pointer qualifies.
-                for tok in re.findall(r'\b[A-Za-z_][A-Za-z0-9_]*\b', args):
-                    tok_type, _tok_def = _lookup(cur_function, tok)
-                    if tok_type.startswith("CAT") and not _is_status_var(tok):
-                        arg_out_var = tok
+                if not in_error_block and caller_def in live_reachable:
+                    candidate_chain_steps.append(step)
+                    live_reachable.add(result_def)
+                    if target_type and _exact_type(itf, target_type):
+                        target_reached = True
                         break
 
-            if (not ret_var or _is_status_var(ret_var)) and arg_out_var:
-                res_var = arg_out_var
-                prior_type, _prior_def = _lookup(cur_function, arg_out_var)
-                res_type = decl_type or prior_type
-            else:
-                res_var = ret_var
-                prior_type, _prior_def = _lookup(cur_function, ret_var) if ret_var else ("", None)
-                res_type = decl_type or prior_type
+                # Handle scope closures for this statement
+                for _ in range(close_br):
+                    if len(scope_stack) > 1:
+                        popped_vars = scope_stack.pop()
+                        scope_id_stack.pop()
+                        for v, (_, d_id, s_id) in popped_vars.items():
+                            live_reachable.discard((cur_function, s_id, v, d_id))
+                brace_depth += open_br - close_br
+                if cur_function != "global" and brace_depth < function_brace_depth:
+                    cur_function = "global"
+                    function_brace_depth = 0
+                continue
 
-            result_def = None
-            if res_var and res_type and not _is_status_var(res_var):
-                result_def = _bump(cur_function, res_var, res_type)
+            # Method call pattern
+            m_call = _CALL_RE.search(stmt)
+            if m_call and "QueryInterface" not in stmt:
+                caller = m_call.group("caller")
+                meth = m_call.group("method")
+                args = m_call.group("args") or ""
+                ret_var = m_call.group("ret_var") or ""
+                decl_type = _normalize_type(m_call.group("decl_type") or "")
+                c_type, caller_def = _lookup(caller)
 
-            step = ChainStep(
-                line=line_no,
-                kind="method_call",
-                caller_var=caller,
-                caller_type=c_type,
-                target_name=meth,
-                result_var=res_var if not _is_status_var(res_var) else "",
-                result_type=res_type,
-                args=args,
-                snippet=stmt[:160],
-                function_scope=cur_function,
-                in_error_branch=in_error_block,
-            )
-            step.caller_def = caller_def
-            step.result_def = result_def
-            step.call_success_status = "not_observed"
-            all_steps.append(step)
+                if meth not in ("AddRef", "Release"):
+                    arg_out_var = ""
+                    # 1. Explicit address-of (&var) indicates out-pointer
+                    m_out = re.search(r'&\s*(?P<out_var>[A-Za-z_][A-Za-z0-9_]*)', args)
+                    if m_out:
+                        arg_out_var = m_out.group("out_var")
+                    elif meth in _KNOWN_CAA_OUT_METHODS:
+                        # 2. Known safe CAA out-APIs passing container/pointer without '&'
+                        for tok in re.findall(r'\b[A-Za-z_][A-Za-z0-9_]*\b', args):
+                            tok_type, _tok_def = _lookup(tok)
+                            if tok_type.startswith("CAT") and not _is_status_var(tok):
+                                arg_out_var = tok
+                                break
+
+                    if (not ret_var or _is_status_var(ret_var)) and arg_out_var:
+                        res_var = arg_out_var
+                        prior_type, _prior_def = _lookup(arg_out_var)
+                        res_type = decl_type or prior_type
+                    else:
+                        res_var = ret_var
+                        prior_type, _prior_def = _lookup(ret_var) if ret_var else ("", None)
+                        res_type = decl_type or prior_type
+
+                    result_def = None
+                    if res_var and res_type and not _is_status_var(res_var):
+                        result_def = _bump(res_var, res_type)
+
+                    step = ChainStep(
+                        line=line_no,
+                        kind="method_call",
+                        caller_var=caller,
+                        caller_type=c_type,
+                        target_name=meth,
+                        result_var=res_var if not _is_status_var(res_var) else "",
+                        result_type=res_type,
+                        args=args,
+                        snippet=stmt[:160],
+                        function_scope=cur_function,
+                        in_error_branch=step_in_error,
+                    )
+                    step.caller_def = caller_def
+                    step.result_def = result_def
+                    step.lexical_scope = cur_lexical_scope
+                    step.call_success_status = "not_observed"
+                    all_steps.append(step)
+
+                    if not step_in_error and caller_def in live_reachable:
+                        candidate_chain_steps.append(step)
+                        if result_def:
+                            live_reachable.add(result_def)
+                        if target_type and (
+                            _exact_type(res_type, target_type)
+                            or (_exact_type(c_type, target_type) and caller_def in live_reachable)
+                        ):
+                            target_reached = True
+                            break
+
+            # Handle scope closures at the end of each statement
+            for _ in range(close_br):
+                if len(scope_stack) > 1:
+                    popped_vars = scope_stack.pop()
+                    scope_id_stack.pop()
+                    for v, (_, d_id, s_id) in popped_vars.items():
+                        live_reachable.discard((cur_function, s_id, v, d_id))
+            brace_depth += open_br - close_br
+            if cur_function != "global" and brace_depth < function_brace_depth:
+                cur_function = "global"
+                function_brace_depth = 0
 
         valid_steps = [s for s in all_steps if not s.in_error_branch]
         if not valid_steps:
             return [], "disconnected", parse_status
 
         if parse_status != "ok":
-            # Unsupported syntax can hide control flow. Keep only exact hits, never a chain.
+            # Unsupported syntax cannot form a proven connected chain.
             if target_type:
                 hits = [s for s in valid_steps if _step_mentions_type(s, target_type)]
                 return hits[:8], "disconnected", parse_status
             return [], "disconnected", parse_status
 
-        if not start_type and not target_type:
-            return valid_steps[:20], "single_scope", parse_status
-
         def _exact_steps(type_name: str) -> List[ChainStep]:
             return [s for s in valid_steps if _step_mentions_type(s, type_name)]
+
+        if not start_type and not target_type:
+            return valid_steps[:20], "single_scope", parse_status
 
         if not start_type and target_type:
             hits = _exact_steps(target_type)
             return (hits or valid_steps[:15]), "single_scope", parse_status
 
         if start_type and not target_type:
-            reachable: Set[DefKey] = set()
-            fwd: List[ChainStep] = []
-            for step in valid_steps:
-                if step.caller_def in reachable or _exact_type(step.caller_type, start_type):
-                    if step.caller_def is None and not _exact_type(step.caller_type, start_type):
-                        continue
-                    fwd.append(step)
-                    if step.result_def:
-                        reachable.add(step.result_def)
-                elif step.caller_def and _exact_type(step.caller_type, start_type):
-                    fwd.append(step)
-                    reachable.add(step.caller_def)
-                    if step.result_def:
-                        reachable.add(step.result_def)
-            # Seed from declarations of the start type even before the first call.
-            if not fwd:
-                return valid_steps[:15], "single_scope", parse_status
-            return fwd, "single_scope", parse_status
+            return (candidate_chain_steps or valid_steps[:15]), "single_scope", parse_status
 
-        # Both ends specified. A connected chain must stay inside one function
-        # and one definition version. Declarations seed reachability during the
-        # scan; reassignment removes the old definition and does not put the
-        # replacement back. Do not re-seed from the final symbol table.
-        chain_steps: List[ChainStep] = []
-        target_reached = False
-        seen_start = bool(reachable)
-        if not seen_start:
-            hits = _exact_steps(target_type)
-            return (hits, "disconnected", parse_status) if hits else ([], "disconnected", parse_status)
-
-        for step in valid_steps:
-            caller_live = step.caller_def in reachable
-            # Type equality is not a cross-function edge, and a reassignment
-            # does not revive a killed definition just because the declared
-            # type still matches the start type.
-            if not caller_live:
-                continue
-            if step.caller_def and step.caller_def[0] not in {k[0] for k in reachable}:
-                continue
-            chain_steps.append(step)
-            if step.result_def and step.result_def[0] == (step.caller_def[0] if step.caller_def else step.function_scope):
-                reachable.add(step.result_def)
-
-            produced_target = (
-                step.kind == "query_interface" and _exact_type(step.target_name, target_type)
-            ) or _exact_type(step.result_type, target_type)
-            used_target = _exact_type(step.caller_type, target_type) and step.caller_def in reachable
-            if produced_target or used_target:
-                target_reached = True
-                break
-
-        if target_reached and chain_steps:
-            scopes = {s.function_scope for s in chain_steps}
-            if len(scopes) == 1:
-                return chain_steps, "connected", parse_status
-            return chain_steps, "disconnected", parse_status
+        # Both start and target specified
+        if target_reached and candidate_chain_steps:
+            scopes = {s.function_scope for s in candidate_chain_steps}
+            if len(scopes) == 1 and "global" not in scopes:
+                return candidate_chain_steps, "connected", parse_status
+            return candidate_chain_steps, "disconnected", parse_status
 
         return [], "disconnected", parse_status
 
@@ -891,10 +943,15 @@ class ChainExplorer:
                         step.owner_ambiguity = False
                         step.ownership_status = "verified"
                     elif len(owners) == 1:
-                        # Unambiguous single owner in index
-                        step.verified_owner = owners[0]
-                        step.owner_ambiguity = False
-                        step.ownership_status = "verified"
+                        # Single owner in index: verified only if caller_type matches owner
+                        if step.caller_type and _exact_type(step.caller_type, owners[0]):
+                            step.verified_owner = owners[0]
+                            step.owner_ambiguity = False
+                            step.ownership_status = "verified"
+                        else:
+                            step.verified_owner = owners[0]
+                            step.owner_ambiguity = False
+                            step.ownership_status = "single_candidate_unverified_caller"
                     else:
                         # Ambiguous: multiple owners exist and caller_type does not resolve it
                         step.verified_owner = None
@@ -944,14 +1001,14 @@ class ChainExplorer:
             start=start, target=target, query=query, limit=10
         )
 
-        # If a specific target is specified, candidate use cases MUST mention the target
+        # If a specific target is specified, candidate use cases MUST mention the target.
+        # File name substring is only used for ranking/sorting, NEVER as target presence fact.
         if target:
             candidate_ucs = [
                 uc for uc in candidate_ucs
                 if target in uc.get("interfaces", [])
                 or target in uc.get("symbols", [])
                 or target in uc.get("methods", [])
-                or target.lower() in uc.get("file", "").lower()
             ]
 
         if not candidate_ucs:
@@ -991,14 +1048,10 @@ class ChainExplorer:
                 continue
 
             full_path = (root / rel_file).resolve()
-            # Path traversal security check
-            try:
-                if not full_path.is_relative_to(root_resolved):
-                    logger.warning("Blocked path traversal attempt outside CAADoc: %s", full_path)
-                    continue
-            except (ValueError, AttributeError):
-                if not str(full_path).startswith(str(root_resolved)):
-                    continue
+            # Path traversal security check using strict path parts
+            if not _is_safe_subpath(full_path, root_resolved):
+                logger.warning("Blocked path traversal attempt outside CAADoc: %s", full_path)
+                continue
 
             if not full_path.exists():
                 continue
@@ -1064,7 +1117,7 @@ class ChainExplorer:
             meta = self.retrieval.usecase_index.get("meta", {}) if self.retrieval.usecase_index else {}
             indexed_root = str(meta.get("caadoc_root", ""))
             cand.index_consistency = (
-                "consistent"
+                "root_matched_metadata_unverified"
                 if indexed_root and Path(indexed_root).resolve() == root_resolved and index_sha
                 else "unknown"
             )

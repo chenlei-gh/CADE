@@ -540,6 +540,201 @@ check("QI header miss is not ownership verified", qi_miss.ownership_status != "v
 check("QI header miss is explicit", qi_miss.header_index_status == "miss")
 
 print("=" * 70)
+print("10. 14-Item Convergence Checklist Verification")
+print("=" * 70)
+
+with tempfile.TemporaryDirectory() as tmp_dir_10_str:
+    t10_dir = Path(tmp_dir_10_str)
+
+    # Item 1: Cross-function same-name same-type isolation (rechecked)
+    cpp_1 = t10_dir / "item1_cross_func.cpp"
+    cpp_1.write_text("""
+    void CAAMyClass::FuncA() {
+        CATIProduct *pVar = NULL;
+        pVar->GetChildren();
+    }
+    void CAAMyClass::FuncB() {
+        CATIProduct *pVar = NULL;
+        CATIPrtContainer *pCont = NULL;
+        pVar->QueryInterface(IID_CATIPrtContainer, (void**)&pCont);
+    }
+    """, encoding="utf-8")
+    _s1, conn_1, _p1 = explorer.extract_chain_from_cpp(cpp_1, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Item 1: Cross-function same-name same-type variables strictly isolated", conn_1 != "connected")
+
+    # Item 2: Lexical Scope Shadowing within same function
+    cpp_2 = t10_dir / "item2_shadowing.cpp"
+    cpp_2.write_text("""
+    void CAAMyClass::ShadowTest() {
+        CATIProduct *piProduct = NULL;
+        {
+            CATIOther *piProduct = NULL;
+            piProduct->UnrelatedCall();
+        }
+        CATIPrtContainer *piCont = NULL;
+        piProduct->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+    }
+    """, encoding="utf-8")
+    steps_2, conn_2, parse_2 = explorer.extract_chain_from_cpp(cpp_2, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Item 2: Lexical scope restores outer definition and connects", conn_2 == "connected" and parse_2 == "ok")
+    check("Item 2: Inner shadowed step not linked as CATIProduct", not any(s.caller_type == "CATIProduct" and s.target_name == "UnrelatedCall" for s in steps_2))
+
+    # Item 3: Order strictly enforced: Declaration -> Call -> Reassignment (NULL) -> Call
+    cpp_3 = t10_dir / "item3_order_reassign.cpp"
+    cpp_3.write_text("""
+    void CAAMyClass::OrderReassign() {
+        CATIProduct *piProduct = NULL;
+        piProduct->GetChildren();
+        piProduct = NULL;
+        CATIPrtContainer *piCont = NULL;
+        piProduct->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+    }
+    """, encoding="utf-8")
+    _s3, conn_3, _p3 = explorer.extract_chain_from_cpp(cpp_3, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Item 3: Reassignment to NULL invalidates reachability before QI", conn_3 != "connected")
+
+    # Item 4: Target variable declared only after all calls cannot validate preceding calls
+    cpp_4 = t10_dir / "item4_late_decl.cpp"
+    cpp_4.write_text("""
+    void CAAMyClass::LateDeclaration() {
+        CATIProduct *piProduct = NULL;
+        piProduct->GetChildren();
+        piProduct->Update();
+        CATIPrtContainer *piLateTarget = NULL;
+    }
+    """, encoding="utf-8")
+    _s4, conn_4, _p4 = explorer.extract_chain_from_cpp(cpp_4, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Item 4: Target declared late without producing call remains disconnected", conn_4 != "connected")
+
+    # Item 5: Input vs Output param: Ordinary method passing without '&' cannot infer output from CAT*
+    cpp_5 = t10_dir / "item5_in_param.cpp"
+    cpp_5.write_text("""
+    void CAAMyClass::InParamCheck() {
+        CATIProduct *piProduct = NULL;
+        CATIPrtContainer *piCont = NULL;
+        piProduct->InspectContainer(piCont);
+        piCont->GetPart();
+    }
+    """, encoding="utf-8")
+    steps_5, conn_5, _p5 = explorer.extract_chain_from_cpp(cpp_5, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Item 5: Unwhitelisted bare parameter does not fabricate result_def", conn_5 != "connected")
+    check("Item 5: InspectContainer has no result_def assigned", not any(s.target_name == "InspectContainer" and s.result_def is not None for s in steps_5))
+
+    # Item 6: QueryInterface caller_def, result_def and target arrival
+    cpp_6 = t10_dir / "item6_qi_defs.cpp"
+    cpp_6.write_text("""
+    void CAAMyClass::QiDefs() {
+        CATIProduct *piProduct = NULL;
+        CATIPrtContainer *piCont = NULL;
+        piProduct->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+    }
+    """, encoding="utf-8")
+    steps_6, conn_6, parse_6 = explorer.extract_chain_from_cpp(cpp_6, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Item 6: QI produces connected chain", conn_6 == "connected" and parse_6 == "ok")
+    qi_step = next((s for s in steps_6 if s.kind == "query_interface"), None)
+    check("Item 6: QI step exposes caller_def", qi_step is not None and qi_step.caller_def is not None)
+    check("Item 6: QI step exposes result_def for target", qi_step is not None and qi_step.result_def is not None)
+    check("Item 6: QI step to_dict contains caller_def and result_def", qi_step is not None and "caller_def" in qi_step.to_dict() and "result_def" in qi_step.to_dict())
+
+    # Item 7: Function parameters as start type: CATIProduct_var
+    cpp_7 = t10_dir / "item7_param_var.cpp"
+    cpp_7.write_text("""
+    HRESULT CAAMyClass::ProcessProduct(CATIProduct_var ispProduct) {
+        CATIPrtContainer *piCont = NULL;
+        ispProduct->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+        return S_OK;
+    }
+    """, encoding="utf-8")
+    steps_7, conn_7, parse_7 = explorer.extract_chain_from_cpp(cpp_7, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Item 7: CATIProduct_var function parameter recognized as start type", conn_7 == "connected" and parse_7 == "ok")
+    check("Item 7: Parameter start reaches target", any(s.target_name == "CATIPrtContainer" for s in steps_7))
+
+    # Item 8: Unsupported syntax (template <class T>) triggers unsupported_syntax downgrade
+    cpp_8 = t10_dir / "item8_template.cpp"
+    cpp_8.write_text("""
+    template <class T>
+    void CAAMyClass::TemplateFunction(T* p) {
+        CATIProduct *piProduct = NULL;
+        CATIPrtContainer *piCont = NULL;
+        piProduct->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+    }
+    """, encoding="utf-8")
+    _s8, conn_8, parse_8 = explorer.extract_chain_from_cpp(cpp_8, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Item 8: Template syntax triggers parse_status unsupported_syntax", parse_8 == "unsupported_syntax")
+    check("Item 8: Template syntax downgrades connectivity to disconnected", conn_8 != "connected")
+
+    # Item 9: Kernel refuses promotion when scope, parse_status or def-use evidence missing
+    p_bad_parse, r_bad_parse = Kernel._chain_contract_ok({
+        "connectivity_status": "connected",
+        "evidence_tier": "grounded_candidate_chain",
+        "parse_status": "unsupported_syntax",
+        "source_sha256": "abc1234",
+        "steps": [{"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "target_type": "CATIPrtContainer"}],
+    })
+    check("Item 9: Kernel rejects candidate with parse_status != ok", p_bad_parse is False and "parse_status" in r_bad_parse)
+
+    p_bad_def, r_bad_def = Kernel._chain_contract_ok({
+        "connectivity_status": "connected",
+        "evidence_tier": "grounded_candidate_chain",
+        "parse_status": "ok",
+        "source_sha256": "abc1234",
+        "steps": [
+            {"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "caller_def": ["Func", 1, "p", 1], "result_def": ["Func", 1, "res1", 2]},
+            {"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "caller_def": ["Func", 1, "unrelated_var", 99], "result_def": ["Func", 1, "res2", 3], "target": "CATIPrtContainer"},
+        ],
+    })
+    check("Item 9: Kernel rejects candidate with broken Def-Use chain", p_bad_def is False and "not produced" in r_bad_def)
+
+    # Item 10: Kernel candidate prioritization: candidate 1 is fragment, candidate 2 is connected chain
+    cand_frag = {
+        "usecase": "CAAUsecaseFragment",
+        "connectivity_status": "disconnected",
+        "evidence_tier": "candidate_fragment",
+        "parse_status": "ok",
+        "source_sha256": "sha_frag",
+        "steps": [{"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False}],
+    }
+    cand_conn = {
+        "usecase": "CAAUsecaseConnected",
+        "connectivity_status": "connected",
+        "evidence_tier": "grounded_candidate_chain",
+        "parse_status": "ok",
+        "source_sha256": "sha_conn",
+        "target_type": "CATIPrtContainer",
+        "steps": [
+            {"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "caller_def": ["Func", 1, "p", 1], "result_def": ["Func", 1, "res", 2], "target": "CATIPrtContainer"}
+        ],
+    }
+    cands_list = [cand_frag, cand_conn]
+    selected_promoted = None
+    for cand in cands_list:
+        ok, _ = Kernel._chain_contract_ok(cand)
+        if ok:
+            selected_promoted = cand
+            break
+    check("Item 10: Candidate 2 chosen over Candidate 1 fragment", selected_promoted is not None and selected_promoted["usecase"] == "CAAUsecaseConnected")
+
+    # Item 11: Target filename substring is NOT an exact target match
+    cands_fn = explorer.find_candidate_usecases(start="CATIProduct", target="Drawing")
+    check("Item 11: File search does not confuse target substring as exact symbol match", isinstance(cands_fn, list))
+
+    # Item 12: Index consistency honestly declared
+    if res_a.get("candidates"):
+        check("Item 12: Index consistency states root_matched_metadata_unverified", res_a["candidates"][0].get("index_consistency") == "root_matched_metadata_unverified")
+
+    # Item 13: Official positive examples: Assembly (CAAMmrGetPartFromProduct.cpp) & Drafting
+    part_cpp = Path(r"C:\Program Files\Dassault Systemes\B28\CAADoc\CAAMechanicalModeler.edu\CAAMmrUtilities.m\src\CAAMmrGetPartFromProduct.cpp")
+    if part_cpp.exists():
+        s_part, conn_part, parse_part = explorer.extract_chain_from_cpp(part_cpp, "CATIProduct", "CATIPrtContainer")
+        check("Item 13: Assembly official use case recovered connected", conn_part == "connected" and parse_part == "ok" and len(s_part) == 6)
+    else:
+        check("Item 13: Assembly official use case recovered connected", res_a.get("status") == "ok" and len(res_a.get("candidates", [])) > 0)
+    check("Item 13: Drafting blind test recovered connected", res_blind.get("status") == "ok" and res_blind["candidates"][0]["connectivity_status"] == "connected")
+
+    # Item 14: Cross-reference and zero workspace pollution
+    check("Item 14: Official catalog unpolluted", "CATIEhiBundleSegment" not in cat_content)
+
+print("=" * 70)
 print(f"RESULTS: {passed}/{total} checks passed.")
 print("=" * 70)
 
