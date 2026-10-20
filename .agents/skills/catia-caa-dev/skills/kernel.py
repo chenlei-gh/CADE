@@ -1093,11 +1093,13 @@ class Kernel:
         Kernel independently verifies:
         1. Connectivity status is 'connected' and evidence_tier is 'grounded_candidate_chain'.
         2. Parse status is exactly 'ok' and source SHA256 is present.
-        3. Index consistency is present and not stale or unknown.
+        3. Index consistency is exactly 'consistent'. Root-path match without
+           metadata verification is not consistency evidence.
         4. All steps are in a single, non-global function scope.
         5. No error branch steps and no unresolved method owner ambiguity.
-        6. Def-Use dataflow integrity: every caller_def is a start definition or a prior
-           result_def, and the chain produces the declared target type.
+        6. Def-Use dataflow integrity: every caller_def belongs to the step's
+           function scope, is a start definition or a prior result_def, and the
+           target type is produced by a step that carries a matching result_def.
         """
         if not isinstance(cand, dict):
             return False, "candidate is not a dict"
@@ -1110,7 +1112,9 @@ class Kernel:
         if not cand.get("source_sha256"):
             return False, "missing source_sha256"
         consistency = cand.get("index_consistency")
-        if consistency in (None, "", "unknown", "stale"):
+        # Only a completed consistency check may promote. Root-path match,
+        # unknown, stale, and any other label are not verified evidence.
+        if consistency != "consistent":
             return False, f"index_consistency={consistency!r}"
 
         steps = cand.get("steps") or []
@@ -1139,7 +1143,8 @@ class Kernel:
         for idx, s in enumerate(steps):
             if not isinstance(s, dict):
                 return False, "step is not a dict"
-            if not s.get("function_scope"):
+            scope = s.get("function_scope")
+            if not scope:
                 return False, f"step {idx} missing function_scope"
             c_def = tuple(s.get("caller_def") or ())
             r_def = tuple(s.get("result_def") or ())
@@ -1147,6 +1152,8 @@ class Kernel:
                 return False, f"step {idx} missing caller_def"
             if len(c_def) != 4:
                 return False, f"step {idx} caller_def is not a definition key"
+            if c_def[0] != scope:
+                return False, f"step {idx} caller_def function does not match function_scope"
 
             caller_type = (s.get("caller_type") or "").strip()
             if idx == 0:
@@ -1159,12 +1166,15 @@ class Kernel:
             if r_def:
                 if len(r_def) != 4:
                     return False, f"step {idx} result_def is not a definition key"
+                if r_def[0] != scope:
+                    return False, f"step {idx} result_def function does not match function_scope"
                 live_defs.add(r_def)
 
-            res_t = s.get("result_type") or ""
+            res_t = (s.get("result_type") or "").strip()
             if s.get("kind") == "query_interface":
-                res_t = res_t or s.get("target") or ""
-            if res_t == target_type:
+                res_t = res_t or (s.get("target") or "").strip()
+            # A type label without a result definition is a claim, not production.
+            if res_t == target_type and r_def:
                 target_produced = True
 
         if not target_produced:

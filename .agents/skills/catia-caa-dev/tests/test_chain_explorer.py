@@ -500,12 +500,23 @@ check("Kernel provides disconnected_warning for fragments", "disconnected_warnin
 check("Kernel tone explicitly states static-checked / not compiler-verified", "compiler_verified" in k_data and k_data["compiler_verified"] is False)
 check("Kernel included isolated candidate note", "isolated_candidate_note" in k_data)
 
-# 9c: Fully connected chain query invokes chain explorer and surfaces official_usecase_chain
+# 9c: A connected source walk is still not a promoted chain when the index
+# only matched its root path. Metadata consistency is unverified.
 k_res_chain = k.execute(KernelMode.ANALYZE, "如何在CAA中从CATIDftDrawing获取CATIDftSheet")
 check("Kernel analyze returned ok for connected chain query", k_res_chain.get("status") == "ok")
 k_chain_data = k_res_chain.get("data", {})
-check("Kernel surfaced official_usecase_chain for connected query", k_chain_data.get("evidence_level") == "official_usecase_chain")
-check("Kernel data sets connected=True and fragment_only=False", k_chain_data.get("connected") is True and k_chain_data.get("fragment_only") is False)
+check(
+    "Kernel does not promote a root-matched unverified index to official_usecase_chain",
+    k_chain_data.get("evidence_level") == "official_usecase_fragment",
+)
+check(
+    "Kernel keeps unverified-index evidence as a fragment",
+    k_chain_data.get("connected") is False and k_chain_data.get("fragment_only") is True,
+)
+check(
+    "Kernel names the unverified index as the reject reason",
+    "index_consistency" in (k_chain_data.get("contract_reject_reason") or ""),
+)
 check("Kernel chain payload has source hash", bool((k_chain_data.get("candidate") or {}).get("source_sha256")))
 check(
     "Kernel chain payload marks link_libraries as non-authoritative",
@@ -527,7 +538,7 @@ promoted_scope, reason_scope = Kernel._chain_contract_ok({
     "evidence_tier": "grounded_candidate_chain",
     "parse_status": "ok",
     "source_sha256": "abc",
-    "index_consistency": "root_matched_metadata_unverified",
+    "index_consistency": "consistent",
     "start_type": "CATIProduct",
     "target_type": "CATIPrtContainer",
     "steps": [
@@ -787,10 +798,10 @@ with tempfile.TemporaryDirectory() as tmp_dir_10_str:
         "evidence_tier": "grounded_candidate_chain",
         "parse_status": "unsupported_syntax",
         "source_sha256": "abc1234",
-        "index_consistency": "root_matched_metadata_unverified",
+        "index_consistency": "consistent",
         "start_type": "CATIProduct",
         "target_type": "CATIPrtContainer",
-        "steps": [{"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "kind": "query_interface", "result_type": "CATIPrtContainer"}],
+        "steps": [{"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "result_def": ["Func", 1, "c", 2], "kind": "query_interface", "result_type": "CATIPrtContainer"}],
     })
     check("Item 9: Kernel rejects candidate with parse_status != ok", p_bad_parse is False and "parse_status" in r_bad_parse)
 
@@ -798,10 +809,10 @@ with tempfile.TemporaryDirectory() as tmp_dir_10_str:
         "connectivity_status": "connected",
         "evidence_tier": "grounded_candidate_chain",
         "source_sha256": "abc1234",
-        "index_consistency": "root_matched_metadata_unverified",
+        "index_consistency": "consistent",
         "start_type": "CATIProduct",
         "target_type": "CATIPrtContainer",
-        "steps": [{"function_scope": "Func", "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "kind": "query_interface", "result_type": "CATIPrtContainer"}],
+        "steps": [{"function_scope": "Func", "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "result_def": ["Func", 1, "c", 2], "kind": "query_interface", "result_type": "CATIPrtContainer"}],
     })
     check("Item 9: Kernel rejects missing parse_status", p_missing_parse is False and "parse_status" in r_missing_parse)
 
@@ -813,7 +824,7 @@ with tempfile.TemporaryDirectory() as tmp_dir_10_str:
         "index_consistency": "unknown",
         "start_type": "CATIProduct",
         "target_type": "CATIPrtContainer",
-        "steps": [{"function_scope": "Func", "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "kind": "query_interface", "result_type": "CATIPrtContainer"}],
+        "steps": [{"function_scope": "Func", "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "result_def": ["Func", 1, "c", 2], "kind": "query_interface", "result_type": "CATIPrtContainer"}],
     })
     check("Item 9: Kernel rejects unknown index_consistency", p_unknown_idx is False and "index_consistency" in r_unknown_idx)
 
@@ -822,7 +833,7 @@ with tempfile.TemporaryDirectory() as tmp_dir_10_str:
         "evidence_tier": "grounded_candidate_chain",
         "parse_status": "ok",
         "source_sha256": "abc1234",
-        "index_consistency": "root_matched_metadata_unverified",
+        "index_consistency": "consistent",
         "start_type": "CATIProduct",
         "target_type": "CATIPrtContainer",
         "steps": [
@@ -837,7 +848,7 @@ with tempfile.TemporaryDirectory() as tmp_dir_10_str:
         "evidence_tier": "grounded_candidate_chain",
         "parse_status": "ok",
         "source_sha256": "abc1234",
-        "index_consistency": "root_matched_metadata_unverified",
+        "index_consistency": "consistent",
         "start_type": "CATIProduct",
         "target_type": "CATIPrtContainer",
         "steps": [
@@ -852,14 +863,65 @@ with tempfile.TemporaryDirectory() as tmp_dir_10_str:
         "evidence_tier": "grounded_candidate_chain",
         "parse_status": "ok",
         "source_sha256": "abc1234",
+        "index_consistency": "consistent",
+        "start_type": "CATIProduct",
+        "target_type": "CATIPrtContainer",
+        "steps": [
+            {"function_scope": "Func", "caller_type": "CATIOther", "caller_def": ["Func", 1, "p", 1], "result_def": ["Func", 1, "c", 2], "kind": "query_interface", "result_type": "CATIPrtContainer"},
+        ],
+    })
+    check("Item 9: Kernel rejects a first caller that is not start_type", p_wrong_start is False and "start_type" in r_wrong_start)
+
+    p_unverified_idx, r_unverified_idx = Kernel._chain_contract_ok({
+        "connectivity_status": "connected",
+        "evidence_tier": "grounded_candidate_chain",
+        "parse_status": "ok",
+        "source_sha256": "abc1234",
         "index_consistency": "root_matched_metadata_unverified",
         "start_type": "CATIProduct",
         "target_type": "CATIPrtContainer",
         "steps": [
-            {"function_scope": "Func", "caller_type": "CATIOther", "caller_def": ["Func", 1, "p", 1], "kind": "query_interface", "result_type": "CATIPrtContainer"},
+            {"function_scope": "Func", "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "result_def": ["Func", 1, "c", 2], "kind": "query_interface", "result_type": "CATIPrtContainer"},
         ],
     })
-    check("Item 9: Kernel rejects a first caller that is not start_type", p_wrong_start is False and "start_type" in r_wrong_start)
+    check(
+        "Item 9: Kernel rejects root-matched but metadata-unverified index",
+        p_unverified_idx is False and "index_consistency" in r_unverified_idx,
+    )
+
+    p_scope_key, r_scope_key = Kernel._chain_contract_ok({
+        "connectivity_status": "connected",
+        "evidence_tier": "grounded_candidate_chain",
+        "parse_status": "ok",
+        "source_sha256": "abc1234",
+        "index_consistency": "consistent",
+        "start_type": "CATIProduct",
+        "target_type": "CATIPrtContainer",
+        "steps": [
+            {"function_scope": "FuncA", "caller_type": "CATIProduct", "caller_def": ["FuncB", 1, "p", 1], "result_def": ["FuncA", 1, "c", 2], "kind": "query_interface", "result_type": "CATIPrtContainer"},
+        ],
+    })
+    check(
+        "Item 9: Kernel rejects a definition key from another function",
+        p_scope_key is False and "function_scope" in r_scope_key,
+    )
+
+    p_no_result_def, r_no_result_def = Kernel._chain_contract_ok({
+        "connectivity_status": "connected",
+        "evidence_tier": "grounded_candidate_chain",
+        "parse_status": "ok",
+        "source_sha256": "abc1234",
+        "index_consistency": "consistent",
+        "start_type": "CATIProduct",
+        "target_type": "CATIPrtContainer",
+        "steps": [
+            {"function_scope": "Func", "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "kind": "query_interface", "result_type": "CATIPrtContainer"},
+        ],
+    })
+    check(
+        "Item 9: Kernel rejects a target type label with no result_def",
+        p_no_result_def is False and "not produced" in r_no_result_def,
+    )
 
     # Item 10: Kernel candidate prioritization goes through the real selector.
     cand_frag = {
@@ -879,11 +941,11 @@ with tempfile.TemporaryDirectory() as tmp_dir_10_str:
         "evidence_tier": "grounded_candidate_chain",
         "parse_status": "ok",
         "source_sha256": "sha_conn",
-        "index_consistency": "root_matched_metadata_unverified",
+        "index_consistency": "consistent",
         "start_type": "CATIProduct",
         "target_type": "CATIPrtContainer",
         "steps": [
-            {"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "kind": "query_interface", "result_type": "CATIPrtContainer", "target": "CATIPrtContainer"}
+            {"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "result_def": ["Func", 1, "c", 2], "kind": "query_interface", "result_type": "CATIPrtContainer", "target": "CATIPrtContainer"}
         ],
     }
 
