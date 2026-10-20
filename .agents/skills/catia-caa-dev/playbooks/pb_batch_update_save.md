@@ -39,7 +39,7 @@ tags: [playbook, update, save, batch, automation]
 
 ## 前置条件
 
-- 已加载 CATProduct 及其子 CATPart 文档
+- 已加载 CATProduct 及其子 CATPart 文档（若无现成模型，可通过 `python skills/sample_data_index.py --kind product` 查找内置装配样例）
 - 部分 Feature 处于未更新（dirty）状态
 - 有写权限的文档路径
 

@@ -2,7 +2,7 @@
 Retrieval — Unified Knowledge Access Layer
 ===========================================
 Single entry point for CADE's retrieval indexes (catalog, API registry,
-header map, method index, use case index, shipped .dic index). Exists for
+header map, method index, use case index, shipped .dic index, sample data index). Exists for
 two reasons:
 
 1. Correctness: every index is loaded at most once per process through
@@ -26,6 +26,7 @@ Usage:
   reg = r.registry         # ApiRegistry
   cat = r.catalog          # CatalogIndex
   dic = r.dic_index        # DicIndex (shipped .dic ground truth)
+  sdi = r.sample_data_index # SampleDataIndex (shipped sample models)
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ class Retrieval:
         self._method_index = None
         self._usecase_index = None
         self._dic_index = None
+        self._sample_data_index = None
 
     @property
     def skill_root(self) -> Path:
@@ -94,6 +96,37 @@ class Retrieval:
             from dic_index import DicIndex
             self._dic_index = DicIndex.load(self._root)
         return self._dic_index
+
+    @property
+    def sample_data_index(self):
+        """Shipped sample CAD models (.CATPart, .CATProduct, .CATDrawing).
+
+        Answers "what sample file can I open/test against?" without guessing.
+        Loaded lazily; missing cache yields an empty index.
+        """
+        if self._sample_data_index is None:
+            from sample_data_index import SampleDataIndex
+            self._sample_data_index = SampleDataIndex.load(self._root)
+        return self._sample_data_index
+
+    def find_sample_data(
+        self,
+        query: str = "",
+        framework: str = "",
+        kind: str = "",
+        source: str = "",
+        category: str = "",
+        limit: int = 20,
+    ) -> list:
+        """Find sample models (.CATPart, .CATProduct, .CATDrawing)."""
+        return self.sample_data_index.find_samples(
+            query=query,
+            framework=framework,
+            kind=kind,
+            source=source,
+            category=category,
+            limit=limit,
+        )
 
     @property
     def usecase_index(self) -> dict:
@@ -214,6 +247,21 @@ class Retrieval:
             }
         except Exception as e:
             report["dic_index"] = {"ok": False, "error": str(e)}
+
+        try:
+            import sample_data_index as _sdi
+            sdi = self.sample_data_index
+            report["sample_data_index"] = {
+                "ok": sdi.total_count > 0,
+                "total": sdi.total_count,
+                "parts": sdi.part_count,
+                "products": sdi.product_count,
+                "drawings": sdi.drawing_count,
+                "frameworks": sdi.framework_count,
+                "cache": dict(_sdi.CACHE_STATS),
+            }
+        except Exception as e:
+            report["sample_data_index"] = {"ok": False, "error": str(e)}
 
         report["ok"] = all(v.get("ok") for v in report.values())
         return report

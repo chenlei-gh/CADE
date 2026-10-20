@@ -37,7 +37,7 @@ tags: [playbook, FTA, annotation, 3D, PMI, automation]
 
 ## 前置条件
 
-- 已加载 CATPart（含实体几何）
+- 已加载 CATPart（含实体几何；若无现成模型，可通过 `python skills/sample_data_index.py --kind part` 检索内置测试样件）
 - FTA 工作台已激活，文档内已存在（或已创建）`CATITPSSet`
 - 可选：标注规范（公差标准、精度等级）
 

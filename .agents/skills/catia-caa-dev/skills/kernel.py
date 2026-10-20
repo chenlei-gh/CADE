@@ -259,6 +259,20 @@ class Kernel:
                 return None
         return None
 
+    @property
+    def sample_data_index(self):
+        """Shipped sample models (.CATPart, .CATProduct, .CATDrawing) from retrieval.
+
+        Answers "what built-in CAD files can I open/test against?" without guessing.
+        """
+        r = self.retrieval
+        if r is not None:
+            try:
+                return r.sample_data_index
+            except Exception:
+                return None
+        return None
+
     # ─── Public API ────────────────────────────────────────────
 
     def execute(self, mode: KernelMode, request: str, preview: bool = False,
@@ -3130,6 +3144,7 @@ class Kernel:
         # A prose query names no identifier, so index lookups have no target.
         # Say that explicitly instead of emitting a command with a <Name>
         # placeholder the caller cannot fill.
+        req_lower = (request or "").lower()
         if not candidates:
             steps = []
             if search_error:
@@ -3149,6 +3164,11 @@ class Kernel:
                 "this may not be exposed as public CAA API, rather than "
                 "reporting a successful empty search.",
             ]
+            if any(term in req_lower for term in ("part", "product", "drawing", "零件", "装配", "模型", "样件", "样例", "测试文件", "test data", "sample")):
+                steps.append(
+                    "If looking for test documents (.CATPart, .CATProduct, .CATDrawing): "
+                    "python skills/sample_data_index.py [query] [--kind part|product|drawing]"
+                )
             return steps
 
         actions = {

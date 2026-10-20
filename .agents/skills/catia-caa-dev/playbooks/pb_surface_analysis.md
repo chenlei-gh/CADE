@@ -34,7 +34,7 @@ tags: [playbook, surface, GSD, analysis, report]
 
 ## 前置条件
 
-- 已加载包含 GSD 曲面 Feature 的 CATPart
+- 已加载包含 GSD 曲面 Feature 的 CATPart（若无现成模型，可通过 `python skills/sample_data_index.py --framework CAAGSMInterfaces --kind part` 检索曲面样件）
 - 可选：通过 Selection 预选曲面
 - 可选：报告输出路径
 

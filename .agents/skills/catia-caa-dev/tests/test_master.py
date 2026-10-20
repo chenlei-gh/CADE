@@ -80,6 +80,8 @@ SUITES = {
     "UseCase Index": "test_usecase_index.py",
     # ── Knowledge retrieval visibility (zero-hit verdict + .dic truth) ──
     "Knowledge Visibility": "test_knowledge_visibility.py",
+    # ── Sample Data Index (built-in .CATPart/.CATProduct ground truth) ──
+    "Sample Data Index": "test_sample_data.py",
     "UI Clarifier": "test_ui_generator_clarifier.py",
     # ── MCP stdio contract (spawns the real server on a GBK code page) ──
     "MCP Stdio Encoding": "test_mcp_stdio_encoding.py",
@@ -131,6 +133,7 @@ VERIFY_STRINGS = {
     "test_retrieval_benchmark.py": "passed",
     "test_usecase_index.py": "USECASE INDEX OK",
     "test_knowledge_visibility.py": "KNOWLEDGE VISIBILITY OK",
+    "test_sample_data.py": "SAMPLE DATA ACCEPTANCE OK",
     "test_ui_generator_clarifier.py": "passed",
     "test_mcp_stdio_encoding.py": "passed",
     }

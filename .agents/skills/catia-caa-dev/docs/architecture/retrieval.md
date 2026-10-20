@@ -28,9 +28,10 @@ One question → one index → one command. Do not grep `knowledge/` or scan
 | Is this API / enum / factory name real? (broad audit) | **caadoc index** (feeds MethodIndex) | `python tools/build_caadoc_index.py --query <Name>` · `--search <pat>` · `--quiet` · `--repl` | `FOUND`; on `SDK/refman mismatch` trust the **header** |
 | Audit every `CAT*` / `->Method` in a knowledge file | same | `python tools/build_caadoc_index.py --check-file <path>` | only `SUSPECT` lines matter |
 | Does this name ship at all, and which component implements it? | **DicIndex** | `python skills/dic_index.py <Name>` | `INTERFACE`/`COMPONENT` + implementers; `NOT-FOUND` = absent from every shipped `.dic` |
+| What built-in sample CAD models (.CATPart, .CATProduct, .CATDrawing) can I test against? | **SampleDataIndex** | `python skills/sample_data_index.py [query]` · `--kind part` · `--framework FW` | File name, kind, local path; `NOT-FOUND` = no matching sample model |
 | Which knowledge file matches this CAA intent? | **CatalogIndex** via Kernel | `analyze(request, detail=true)` | `knowledge_content` is the answer; do not grep `knowledge/` |
 | Has CAA officially used this interface / method in a sample? | **UseCaseIndex** | `r.find_usecases_for_interface("CATIVisProperties")` · `r.find_usecases_for_method("SetPropertiesAtt")` | hit = presence; **empty = no official sample, not "API missing"** |
-| Are the six indexes loaded and non-empty? | facade | `python skills/retrieval.py` | JSON `ok: true`; if false, fix that index before trusting lookups |
+| Are the seven indexes loaded and non-empty? | facade | `python skills/retrieval.py` | JSON `ok: true`; if false, fix that index before trusting lookups |
 | Which CADE *capability* handles a user verb? | **not this layer** | `capabilities.yaml` (routing) + `skills/lifecycle.yaml` (can it be used?) | file existence is not proof |
 
 Tie-breakers (do not skip):
@@ -41,15 +42,16 @@ Tie-breakers (do not skip):
 4. Catalog miss → say "no catalog hit", then check DicIndex (does the name ship?), then Framework → CAADoc. Do not invent APIs.
 5. UseCase miss → say "no official example found". Check HeaderMap/MethodIndex for existence.
 6. DicIndex hit → say "ships with CATIA", never "callable". Confirm a public header before suggesting code.
+7. SampleDataIndex hit → answers "where is a test model I can load", NOT "what features are inside this model". Do not attempt to parse proprietary binary geometry.
 
 Feature code must go through `from retrieval import get_retrieval`.
 CLI tools above are the Agent-facing shortcuts; they load the same caches.
 
 ---
 
-## 1. The Six-Index Model
+## 1. The Seven-Index Model
 
-All retrieval in CADE goes through six indexes, each with a single
+All retrieval in CADE goes through seven indexes, each with a single
 authoritative data source and a single lifecycle:
 
 | Index | Authoritative source | What it answers | Snapshot (2026-07) |
@@ -60,6 +62,12 @@ authoritative data source and a single lifecycle:
 | **MethodIndex** | `cache/caadoc_index.json` (pre-parsed SDK headers) → `cache/method_index.pickle` | "Does type X really have method M?" | 2655 types |
 | **UseCaseIndex** | CAADoc use-case `.cpp` scan + official resources (Imakefile/LocalInterfaces/CATNls/CATRsc) → `cache/usecase_index.json` (builder: `tools/build_usecase_index.py`) | "Has CAA officially used X this way?" | 1233 examples + 1674 resource files |
 | **DicIndex** | `<CATIA_INSTALL>/<arch>/code/dictionary/*.dic` → `cache/caadoc_index.json` `sdk_dic_entries` | "Does this name ship at all, and which component implements it?" | 12,946 interfaces / 14,782 components / 73,076 pairs (B28) |
+| **SampleDataIndex** | `<CATIA_INSTALL>/CAADoc/**/*.edu` + `win_b64/startup/**` → `cache/sample_data_index.json` (builder: `tools/build_sample_data_index.py`) | "What built-in sample CAD models (.CATPart, .CATProduct, .CATDrawing) can I open/test against?" | 10,677 files (8,892 parts, 1,747 products, 38 drawings, 40 frameworks) |
+
+**SampleDataIndex boundary**: it answers *file location, kind, and framework/catalog origin only*.
+It records where real sample models live on disk (CAADoc test fixtures and startup standard part catalogs).
+It deliberately does **not** attempt to parse proprietary `V5_CFV2` binary geometry or feature trees —
+inspection of geometry happens inside the live CATIA runtime or via CAA code, never through static index parsing.
 
 **DicIndex boundary**: it answers *existence and attribution only*. A hit
 means the name is real and these components declare it — it does **not**
@@ -105,6 +113,7 @@ reg = r.registry         # ApiRegistry (process-cached)
 cat = r.catalog          # CatalogIndex (disk + process cached)
 uc = r.usecase_index     # UseCaseIndex (presence evidence)
 dic = r.dic_index        # DicIndex (shipped .dic ground truth)
+sdi = r.sample_data_index # SampleDataIndex (shipped sample models)
 
 # UseCase presence queries (passive, on-demand — never auto-injected):
 r.find_usecases_for_interface("CATIVisProperties")   # -> [example names]
@@ -126,7 +135,7 @@ Agent-facing diagnostics:
 python skills/retrieval.py
 ```
 
-prints a JSON health report for all six indexes. Use this first when
+prints a JSON health report for all seven indexes. Use this first when
 any lookup result looks wrong.
 
 ---

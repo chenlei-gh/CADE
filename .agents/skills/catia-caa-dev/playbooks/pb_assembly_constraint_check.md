@@ -54,7 +54,7 @@ tags: [playbook, constraint, assembly, check, verification]
 
 ## 前置条件
 
-- 已加载 CATProduct 装配文档
+- 已加载 CATProduct 装配文档（若无现成模型，可通过 `python skills/sample_data_index.py --kind product` 查找内置装配样例）
 - 装配已添加约束（Fix/Distance/On/Concentric/Tangent/Angle/…）
 
 ## 涉及能力

@@ -36,7 +36,7 @@ tags: [playbook, geometry, quality, check, analysis]
 
 ## 前置条件
 
-- 已加载 CATPart 文档
+- 已加载 CATPart 文档（若无现成模型，可通过 `python skills/sample_data_index.py --kind part` 查找安装包内置样例，如 `CAAAfrPart1.CATPart`）
 - 可选：企业规范文件（规则表/JSON）
 - 可选：报告输出路径
 

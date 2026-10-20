@@ -23,7 +23,7 @@ tags: [playbook, BOM, export]
 
 ## 前置条件
 
-- 已加载 CATProduct 文档
+- 已加载 CATProduct 文档（若无现成装配，可通过 `python skills/sample_data_index.py --kind product` 查找内置装配样例）
 - 零件属性已填写（PartNumber、Description、Material 等）
 - 输出目录存在
 

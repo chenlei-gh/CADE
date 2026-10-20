@@ -23,7 +23,7 @@ tags: [playbook, color, automation]
 
 ## 前置条件
 
-- 已加载 CATPart 或 CATProduct 文档
+- 已加载 CATPart 或 CATProduct 文档（若无现成模型，可通过 `python skills/sample_data_index.py --kind product` 查找内置装配样例）
 - 可选：颜色映射表（零件名→颜色）
 
 ## 涉及能力

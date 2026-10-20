@@ -10,6 +10,18 @@
 
 ## [未发布]
 
+### 📦 新增：CATIA 内置样件与测试模型地面事实索引（SampleDataIndex，方案 B）
+
+**背景**：8 个 playbook（几何质量检查、自动着色、3D 标注、工程图、BOM 导出、装配约束等）将「已加载 CATPart/CATProduct 文档」列为前置条件，但此前 CADE 未对安装包内置的样件提供索引，导致开发者或 AI 运行 playbook 时无真实测试模型可用，或去猜目录。
+
+- **`tools/build_sample_data_index.py`**：新增样件索引构建器，扫描 CATIA 安装目录（`CAADoc/**/*.edu` 测试夹具和 `win_b64/startup/**` 标准件/模板库）。记录相对路径、绝对路径、大小、所属 framework / category 以及文件类型（part / product / drawing）。实测索引 10,677 个样本（8,892 个 part, 1,747 个 product, 38 个 drawing，涵盖 40 个官方 framework）。
+- **`skills/sample_data_index.py`**：提供快速单例加载（`load`）与倒排查询（`find_samples`、`get_sample_by_name`），支持 CLI 交互（`python skills/sample_data_index.py --kind part --framework CAAApplicationFrame`）。
+- **`skills/retrieval.py`**：统一检索门面从「六索引」升级为「七索引」，提供 `r.sample_data_index` 与 `r.find_sample_data(...)` 门面函数，并在 `health()` 中输出样件健康指标。
+- **`skills/kernel.py`**：接入 `sample_data_index` property，并在 zero-hit 降级引导中对模型/样件相关请求推荐内置样件命令。
+- **8 个 Playbook 更新**：在前置条件中补全样件获取指引（`python skills/sample_data_index.py --kind part/product`）。
+- **明确边界**：遵循方案 B 约定，只记录元数据与路径，**不解析闭源二进制 V5_CFV2 几何**；几何检查由实时 CATIA 运行时或 CAA 代码完成。
+- **验证**：新增 `tests/test_sample_data.py`（39 项断言全部通过），登记进 `test_master.py`（基线升级为 46 套件，快速套件 45/45 100% 通过）。
+
 ### 🔍 修复：知识检索零命中的「静默假成功」（P0）+ 接入随产品发布字典（P1）
 
 **问题**：`analyze()` 在知识库零命中时仍返回 `status=ok` + `"Knowledge base searched"`，AI 无法区分「查到了但没用」与「根本不存在」，于是绕过 CADE 去 `grep`/`ls` 裸扫 SDK。另有两条更隐蔽的路径：`爆炸图场景如何在 CAA 中生成` 因未命中硬编码词表直接落到 workspace 分析（看起来成功），以及 `CAA` 作为查询词子串命中 `catiqsrcaafactory` 等噪声关键词，使空结果变成「Found 5 references」。

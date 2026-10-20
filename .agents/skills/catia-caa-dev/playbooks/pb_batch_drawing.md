@@ -68,8 +68,8 @@ tags: [playbook, drawing, batch, automation]
 
 ## 前置条件
 
-- 已加载 CATProduct 及所有 CATPart
-- 工程图模板（.CATDrawing）存在，且已包含所需的 3D 标注视图（`CATITPSView`）或已知如何为每个零件生成
+- 已加载 CATProduct 及所有 CATPart（若无现成模型，可通过 `python skills/sample_data_index.py --kind product` 查找内置装配样例）
+- 工程图模板（.CATDrawing）存在（可通过 `python skills/sample_data_index.py --kind drawing` 检索内置模板），且已包含所需的 3D 标注视图（`CATITPSView`）或已知如何为每个零件生成
 - 可选：输出目录
 
 ## 涉及能力

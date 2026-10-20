@@ -691,7 +691,7 @@ CADE 的所有知识检索必须走统一门面，禁止绕过：
 - **Use Retrieval facade only** — `from retrieval import get_retrieval`
 
 权威级别：HeaderMap > ApiRegistry > Knowledge 文档。
-Agent 诊断：`python skills/retrieval.py` 输出五索引健康报告。
+Agent 诊断：`python skills/retrieval.py` 输出七索引健康报告。
 
 **UseCaseIndex（官方样例存在性索引）** — 回答“CAA 官方有没有这样用过？”：
 - 数据源：CAADoc 用例 .cpp（1233 个）+ 官方资源（Imakefile 566 / LocalInterfaces 774 / CATNls 273 / CATRsc 61），builder `tools/build_usecase_index.py` 生成 `cache/usecase_index.json`
@@ -1338,8 +1338,9 @@ python tests/test_master.py --quick
 │   ├── header_map.py                # CAA header→module→framework 映射（缓存；CLI: python skills/header_map.py <Name> 返回头文件绝对路径）
 │   ├── method_index.py             # 类型→方法存在性检查（继承链；CLI: python skills/method_index.py <Type> <Method...>）
 │   ├── dic_index.py                # 随产品发布的 .dic 事实索引（接口↔实现组件；CLI: python skills/dic_index.py <Name>）
+│   ├── sample_data_index.py        # 随产品发布的样件索引（.CATPart/.CATProduct/.CATDrawing；CLI: python skills/sample_data_index.py）
 │   ├── jev_judge.py                # Jev 判定层（路由/排序/措辞，非证据源；无 key 或网络失败自动降级）
-│   ├── retrieval.py                 # 统一检索门面（六索引：catalog/registry/header_map/method_index/usecase/dic）
+│   ├── retrieval.py                 # 统一检索门面（七索引：catalog/registry/header_map/method_index/usecase/dic/sample_data）
 │   ├── build_gate.py              # 编译前静态门禁（虚构 API 拦截；PASS/WARN/BLOCK/SKIP + JSONL 遥测；build.py --skip-gate 可绕过）
 │   ├── ui_lint.py                    # UI 失效模式静态检查器（failure_patterns）
 │   ├── requirements.py               # Requirements Clarifier + UI 4-axis clarifier (v3.0)
