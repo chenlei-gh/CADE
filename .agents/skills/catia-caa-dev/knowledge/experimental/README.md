@@ -9,3 +9,11 @@
 >   1. 真实工作区通过 `build.py` 编译零错误；
 >   2. 真实 CATIA 运行时功能验收通过；
 >   3. 编写回归用例确认无副作用。
+>
+> **完整调用链提升当前是关闭的**（阶段性设计，不是漏洞）：
+> `ChainExplorer` 现在只会写出 `index_consistency=root_matched_metadata_unverified`
+> 或 `unknown`。Kernel 只接受 `consistent` 才会把结果标成 `official_usecase_chain`。
+> 没有生产代码会写出 `consistent`，所以真实探索一律停在
+> `official_usecase_fragment`（`fragment_only=true`）。
+> 根路径匹配不等于索引元数据已与源码核对。在补上这一步之前，
+> 不要把片段当成可执行调用链，也不要为了重新提升而手工填 `consistent`。

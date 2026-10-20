@@ -1112,8 +1112,10 @@ class Kernel:
         if not cand.get("source_sha256"):
             return False, "missing source_sha256"
         consistency = cand.get("index_consistency")
-        # Only a completed consistency check may promote. Root-path match,
-        # unknown, stale, and any other label are not verified evidence.
+        # Stage gate: only a completed metadata-vs-source check may promote.
+        # ChainExplorer does not emit "consistent" today, so live queries stay
+        # fragments. Root-path match, unknown, stale, and any other label are
+        # not consistency evidence. Do not stamp "consistent" to reopen this.
         if consistency != "consistent":
             return False, f"index_consistency={consistency!r}"
 

@@ -381,7 +381,9 @@ class ChainCandidate:
         self.source_path: str = ""
         self.index_sha256: str = ""
         self.index_schema: str = ""
-        self.index_consistency: str = "unknown"  # consistent | stale | unknown
+        # Live explore() emits only root_matched_metadata_unverified or unknown.
+        # "consistent" is accepted by Kernel but no production path writes it.
+        self.index_consistency: str = "unknown"
         self.parse_status: str = "ok"  # ok | unsupported_syntax | unparsed
 
     def to_dict(self) -> dict:

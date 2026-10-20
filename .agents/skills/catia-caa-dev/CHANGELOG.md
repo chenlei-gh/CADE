@@ -10,6 +10,16 @@
 
 ## [未发布]
 
+### 📌 记录：完整调用链提升当前被索引一致性门禁关闭
+
+**状态**：有意的阶段性门禁，不是新的假阳性漏洞。审查 `76b77fa` 后确认两处 Kernel 契约缺口已按预期修复；本条只记录功能状态，不补一致性验证实现。
+
+- `ChainExplorer.explore()` 只写 `index_consistency=root_matched_metadata_unverified`（CAADoc 根路径与索引 meta 一致，候选元数据尚未与解析源码核对）或 `unknown`。没有任何生产路径写出 `consistent`。
+- `Kernel._chain_contract_ok()` 只接受 `consistent`。因此真实探索结果安全降级为 `official_usecase_fragment`，`fragment_only=true`。
+- 测试候选里手工填写的 `consistent` 只证明门禁函数本身，不代表线上已经能提升完整链。
+- 契约写入 `docs/architecture/retrieval.md` 与 `knowledge/experimental/README.md`。在补上元数据对源码的一致性核验之前，不得为了重新提升而伪造 `consistent`。
+- 静态契约通过仍不等于 `mkmk` 编译或 CATIA 运行验证。
+
 ### 📦 新增：CATIA 内置样件与测试模型地面事实索引（SampleDataIndex，方案 B）
 
 **背景**：8 个 playbook（几何质量检查、自动着色、3D 标注、工程图、BOM 导出、装配约束等）将「已加载 CATPart/CATProduct 文档」列为前置条件，但此前 CADE 未对安装包内置的样件提供索引，导致开发者或 AI 运行 playbook 时无真实测试模型可用，或去猜目录。

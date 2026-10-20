@@ -83,6 +83,21 @@ query time) and never marks anything "recommended" (that is Knowledge's
 job). A miss means "no official example found", NOT "the API does not
 exist" — existence is HeaderMap/MethodIndex's authority.
 
+**Call-chain promotion boundary** (intentional stage gate, not a lookup
+miss): `ChainExplorer` may recover a source-grounded fragment from the
+use-case `.cpp` that `UseCaseIndex` points at. Kernel promotes that
+fragment to `official_usecase_chain` only when `index_consistency` is
+exactly `consistent`. The explorer currently emits only
+`root_matched_metadata_unverified` (CAADoc root path matches the index
+meta, but candidate metadata has not been checked against the parsed
+source) or `unknown`. No production path writes `consistent`. Real
+queries therefore stay `official_usecase_fragment` with
+`fragment_only=true`. That is the safe default: a root-path match is not
+index/source consistency, and a hand-filled `consistent` label in a test
+candidate is not a live verification. Do not treat a fragment as an
+executable chain, and do not invent `consistent` to reopen promotion.
+Static extraction is also not `mkmk` or CATIA runtime proof.
+
 **caadoc_index.json storage boundary (schema 2)**: the builder persists
 *facts only* — the 5 raw keys (`types`/`dico_entries`/`sdk_dic_entries`/
 `header_classes`/`header_enums`), with every `file` field stored as a
@@ -233,6 +248,7 @@ Forbidden:
 | Read `knowledge/*.md` directly in a feature | Bypasses catalog ranking and alias expansion |
 | Add a new index without registering it here | Creates a second source of truth (Phantom) |
 | Trust a knowledge/example file that lacks an audit trail | Handwritten docs are authoritative only after the fictional-API audit (see `KNOWLEDGE_AUDIT_STATUS.md`); even then, method-level facts defer to MethodIndex/HeaderMap on conflict |
+| Promote a use-case fragment because the CAADoc root matches, or stamp `index_consistency="consistent"` without a metadata-vs-source check | Root match is `root_matched_metadata_unverified`. Kernel accepts only `consistent`, and no production path emits it. See the call-chain promotion boundary above |
 
 ---
 
