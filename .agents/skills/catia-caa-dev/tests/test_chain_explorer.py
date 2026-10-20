@@ -160,7 +160,11 @@ with tempfile.TemporaryDirectory() as tmp_dir_str:
     )
     steps_cf, conn_cf, parse_cf = explorer.extract_chain_from_cpp(cpp_cross_fn, start_type="CATIProduct", target_type="CATIPrtContainer")
     check("Cross-function isolation rejected as disconnected", conn_cf == "disconnected")
-    check("Cross-function steps do not falsely connect", len(steps_cf) == 0, f"steps={len(steps_cf)} parse={parse_cf}")
+    check(
+        "Cross-function steps do not falsely connect",
+        len({s.function_scope for s in steps_cf}) <= 1 and not any(s.target_name == "CATIPrtContainer" for s in steps_cf),
+        f"steps={len(steps_cf)} parse={parse_cf}",
+    )
 
     # 7b: Error handling branch isolation
     cpp_error_branch = tmp_dir / "error_branch.cpp"
@@ -484,8 +488,9 @@ k_cat = k.execute(KernelMode.ANALYZE, "如何在CAA中创建特征")
 check("Curated catalog knowledge takes precedence", k_cat.get("status") == "ok")
 check("Curated hit returns references", "references" in k_cat.get("data", {}))
 
-# 9b: Uncovered action query invokes chain explorer with objective tone
-k_res = k.execute(KernelMode.ANALYZE, "如何在CAA中获取CATIEhiBundleSegment并配置线束")
+# 9b: Uncovered action query invokes chain explorer with objective tone.
+# Direction must be explicit. Identifier order is not a start/target guess.
+k_res = k.execute(KernelMode.ANALYZE, "如何在CAA中从CATIProduct到CATIEhiBundleSegment并配置线束")
 check("Kernel analyze returned ok for uncovered domain", k_res.get("status") == "ok")
 k_data = k_res.get("data", {})
 # CATIEhiBundleSegment is an unconnected official fragment, so Kernel must accurately label it as fragment
@@ -522,12 +527,35 @@ promoted_scope, reason_scope = Kernel._chain_contract_ok({
     "evidence_tier": "grounded_candidate_chain",
     "parse_status": "ok",
     "source_sha256": "abc",
+    "index_consistency": "root_matched_metadata_unverified",
+    "start_type": "CATIProduct",
+    "target_type": "CATIPrtContainer",
     "steps": [
-        {"function_scope": "A", "ownership_status": "verified", "in_error_branch": False},
-        {"function_scope": "B", "ownership_status": "verified", "in_error_branch": False},
+        {
+            "function_scope": "FuncA",
+            "ownership_status": "verified",
+            "in_error_branch": False,
+            "caller_type": "CATIProduct",
+            "caller_def": ["FuncA", 1, "pVar", 1],
+            "result_def": ["FuncA", 1, "pMid", 2],
+            "result_type": "CATIContainer",
+        },
+        {
+            "function_scope": "FuncB",
+            "ownership_status": "verified",
+            "in_error_branch": False,
+            "caller_type": "CATIContainer",
+            "caller_def": ["FuncB", 2, "pMid", 3],
+            "kind": "query_interface",
+            "result_type": "CATIPrtContainer",
+            "target": "CATIPrtContainer",
+        },
     ],
 })
-check("Kernel refuses a claimed chain that spans two functions", promoted_scope is False and "scope" in reason_scope)
+check(
+    "Kernel refuses a claimed chain that spans two functions",
+    promoted_scope is False and "scope" in reason_scope,
+)
 
 # 9e: QI header miss is not collapsed into ownership verified
 qi_miss = ChainStep(
@@ -546,21 +574,25 @@ print("=" * 70)
 with tempfile.TemporaryDirectory() as tmp_dir_10_str:
     t10_dir = Path(tmp_dir_10_str)
 
-    # Item 1: Cross-function same-name same-type isolation (rechecked)
+    # Item 1: Cross-function splice. Neither function is a complete start->target walk.
+    # A wrong implementation that shares variable names across functions would connect.
     cpp_1 = t10_dir / "item1_cross_func.cpp"
     cpp_1.write_text("""
     void CAAMyClass::FuncA() {
         CATIProduct *pVar = NULL;
-        pVar->GetChildren();
+        CATIContainer *pMid = NULL;
+        pVar->GetSpecContainer(pMid);
     }
     void CAAMyClass::FuncB() {
-        CATIProduct *pVar = NULL;
+        CATIContainer *pMid = NULL;
         CATIPrtContainer *pCont = NULL;
-        pVar->QueryInterface(IID_CATIPrtContainer, (void**)&pCont);
+        pMid->QueryInterface(IID_CATIPrtContainer, (void**)&pCont);
     }
     """, encoding="utf-8")
-    _s1, conn_1, _p1 = explorer.extract_chain_from_cpp(cpp_1, start_type="CATIProduct", target_type="CATIPrtContainer")
-    check("Item 1: Cross-function same-name same-type variables strictly isolated", conn_1 != "connected")
+    steps_1, conn_1, parse_1 = explorer.extract_chain_from_cpp(cpp_1, start_type="CATIProduct", target_type="CATIPrtContainer")
+    scopes_1 = {s.function_scope for s in steps_1}
+    check("Item 1: Cross-function splice is not a connected chain", conn_1 != "connected" and parse_1 == "ok")
+    check("Item 1: Returned steps do not span both functions as one chain", len(scopes_1) <= 1)
 
     # Item 2: Lexical Scope Shadowing within same function
     cpp_2 = t10_dir / "item2_shadowing.cpp"
@@ -649,7 +681,55 @@ with tempfile.TemporaryDirectory() as tmp_dir_10_str:
     check("Item 7: CATIProduct_var function parameter recognized as start type", conn_7 == "connected" and parse_7 == "ok")
     check("Item 7: Parameter start reaches target", any(s.target_name == "CATIPrtContainer" for s in steps_7))
 
-    # Item 8: Unsupported syntax (template <class T>) triggers unsupported_syntax downgrade
+    # Function boundary must reset after the closing brace, before the next function.
+    cpp_fn = t10_dir / "function_boundary.cpp"
+    cpp_fn.write_text("""
+    void CAAMyClass::First() {
+        CATIProduct *piProduct = NULL;
+        piProduct->GetChildren();
+    }
+    CATIPrtContainer *gCont = NULL;
+    void CAAMyClass::Second() {
+        CATIProduct *piOther = NULL;
+        gCont->GetPart();
+    }
+    """, encoding="utf-8")
+    steps_fn, conn_fn, parse_fn = explorer.extract_chain_from_cpp(cpp_fn, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Item 4b: Function exit does not leak the old function into later calls", conn_fn != "connected" and parse_fn == "ok")
+    check("Item 4b: Later call is not attributed to the closed function", not any(s.function_scope.endswith("First") and s.target_name == "GetPart" for s in steps_fn))
+
+    cpp_qi_if = t10_dir / "unbraced_qi.cpp"
+    cpp_qi_if.write_text("""
+    void CAAMyClass::GuardedQi() {
+        CATIProduct *pProduct = NULL;
+        CATIPrtContainer *pContainer = NULL;
+        if (pProduct)
+            pProduct->QueryInterface(IID_CATIPrtContainer, (void**)&pContainer);
+    }
+    """, encoding="utf-8")
+    steps_qi_if, conn_qi_if, parse_qi_if = explorer.extract_chain_from_cpp(cpp_qi_if, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("QI unbraced branch is not a connected chain", conn_qi_if != "connected" and parse_qi_if == "ok")
+    check("QI unbraced branch is not promoted into the candidate walk", not any(s.kind == "query_interface" and not s.in_error_branch for s in steps_qi_if))
+
+    cpp_sig = t10_dir / "out_signature.cpp"
+    cpp_sig.write_text("""
+    void CAAMyClass::Signature() {
+        CATIProduct *piProduct = NULL;
+        CATIOther *pOther = NULL;
+        CATIContainer *pContainer = NULL;
+        piProduct->GetSpecContainer(pOther, pContainer);
+        CATIPrtContainer *piCont = NULL;
+        pContainer->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+    }
+    """, encoding="utf-8")
+    steps_sig, conn_sig, _parse_sig = explorer.extract_chain_from_cpp(cpp_sig, start_type="CATIProduct", target_type="CATIPrtContainer")
+    spec_step = next((s for s in steps_sig if s.target_name == "GetSpecContainer"), None)
+    # Official signature is GetSpecContainer(outContainer). A leading CAT* input is not
+    # the out slot, and the scanner must not invent a second-argument output contract.
+    check("Out-signature does not treat the first CAT* token as output", spec_step is not None and spec_step.result_var != "pOther")
+    check("Unproven second argument is not an indexed out parameter", spec_step is not None and spec_step.result_var != "pContainer" and conn_sig != "connected")
+
+    # Item 8: Unsupported syntax must downgrade, not just templates.
     cpp_8 = t10_dir / "item8_template.cpp"
     cpp_8.write_text("""
     template <class T>
@@ -663,35 +743,134 @@ with tempfile.TemporaryDirectory() as tmp_dir_10_str:
     check("Item 8: Template syntax triggers parse_status unsupported_syntax", parse_8 == "unsupported_syntax")
     check("Item 8: Template syntax downgrades connectivity to disconnected", conn_8 != "connected")
 
+    cpp_raw = t10_dir / "item8_raw.cpp"
+    cpp_raw.write_text(
+        'void CAAMyClass::Raw() {\n'
+        '    const char *note = R"(if (FAILED(rc)) { })";\n'
+        '    CATIProduct *piProduct = NULL;\n'
+        '    CATIPrtContainer *piCont = NULL;\n'
+        '    piProduct->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    _s_raw, conn_raw, parse_raw = explorer.extract_chain_from_cpp(cpp_raw, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Item 8: Raw string is unsupported_syntax", parse_raw == "unsupported_syntax" and conn_raw != "connected")
+
+    cpp_brace_lit = t10_dir / "item8_brace_literal.cpp"
+    cpp_brace_lit.write_text("""
+    void CAAMyClass::LiteralBrace() {
+        CATIProduct *piProduct = NULL;
+        const char *blob = "} void Fake() {";
+        CATIPrtContainer *piCont = NULL;
+        piProduct->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+    }
+    """, encoding="utf-8")
+    steps_lit, conn_lit, parse_lit = explorer.extract_chain_from_cpp(cpp_brace_lit, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Item 8: Brace inside a string does not split the function", conn_lit == "connected" and parse_lit == "ok")
+    check("Item 8: String-brace chain stays in the real function", steps_lit and all("LiteralBrace" in s.function_scope for s in steps_lit))
+
+    cpp_while = t10_dir / "item8_unbraced_while.cpp"
+    cpp_while.write_text("""
+    void CAAMyClass::UnbracedWhile() {
+        CATIProduct *piProduct = NULL;
+        CATIPrtContainer *piCont = NULL;
+        while (piProduct)
+            piProduct->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+    }
+    """, encoding="utf-8")
+    _s_while, conn_while, parse_while = explorer.extract_chain_from_cpp(cpp_while, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Item 8: Unbraced while body is not a connected chain", conn_while != "connected" and parse_while == "ok")
+
     # Item 9: Kernel refuses promotion when scope, parse_status or def-use evidence missing
     p_bad_parse, r_bad_parse = Kernel._chain_contract_ok({
         "connectivity_status": "connected",
         "evidence_tier": "grounded_candidate_chain",
         "parse_status": "unsupported_syntax",
         "source_sha256": "abc1234",
-        "steps": [{"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "target_type": "CATIPrtContainer"}],
+        "index_consistency": "root_matched_metadata_unverified",
+        "start_type": "CATIProduct",
+        "target_type": "CATIPrtContainer",
+        "steps": [{"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "kind": "query_interface", "result_type": "CATIPrtContainer"}],
     })
     check("Item 9: Kernel rejects candidate with parse_status != ok", p_bad_parse is False and "parse_status" in r_bad_parse)
+
+    p_missing_parse, r_missing_parse = Kernel._chain_contract_ok({
+        "connectivity_status": "connected",
+        "evidence_tier": "grounded_candidate_chain",
+        "source_sha256": "abc1234",
+        "index_consistency": "root_matched_metadata_unverified",
+        "start_type": "CATIProduct",
+        "target_type": "CATIPrtContainer",
+        "steps": [{"function_scope": "Func", "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "kind": "query_interface", "result_type": "CATIPrtContainer"}],
+    })
+    check("Item 9: Kernel rejects missing parse_status", p_missing_parse is False and "parse_status" in r_missing_parse)
+
+    p_unknown_idx, r_unknown_idx = Kernel._chain_contract_ok({
+        "connectivity_status": "connected",
+        "evidence_tier": "grounded_candidate_chain",
+        "parse_status": "ok",
+        "source_sha256": "abc1234",
+        "index_consistency": "unknown",
+        "start_type": "CATIProduct",
+        "target_type": "CATIPrtContainer",
+        "steps": [{"function_scope": "Func", "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "kind": "query_interface", "result_type": "CATIPrtContainer"}],
+    })
+    check("Item 9: Kernel rejects unknown index_consistency", p_unknown_idx is False and "index_consistency" in r_unknown_idx)
 
     p_bad_def, r_bad_def = Kernel._chain_contract_ok({
         "connectivity_status": "connected",
         "evidence_tier": "grounded_candidate_chain",
         "parse_status": "ok",
         "source_sha256": "abc1234",
+        "index_consistency": "root_matched_metadata_unverified",
+        "start_type": "CATIProduct",
+        "target_type": "CATIPrtContainer",
         "steps": [
-            {"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "caller_def": ["Func", 1, "p", 1], "result_def": ["Func", 1, "res1", 2]},
-            {"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "caller_def": ["Func", 1, "unrelated_var", 99], "result_def": ["Func", 1, "res2", 3], "target": "CATIPrtContainer"},
+            {"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "result_def": ["Func", 1, "res1", 2], "result_type": "CATIContainer"},
+            {"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "caller_type": "CATIContainer", "caller_def": ["Func", 1, "unrelated_var", 99], "result_def": ["Func", 1, "res2", 3], "kind": "query_interface", "result_type": "CATIPrtContainer"},
         ],
     })
     check("Item 9: Kernel rejects candidate with broken Def-Use chain", p_bad_def is False and "not produced" in r_bad_def)
 
-    # Item 10: Kernel candidate prioritization: candidate 1 is fragment, candidate 2 is connected chain
+    p_missing_caller, r_missing_caller = Kernel._chain_contract_ok({
+        "connectivity_status": "connected",
+        "evidence_tier": "grounded_candidate_chain",
+        "parse_status": "ok",
+        "source_sha256": "abc1234",
+        "index_consistency": "root_matched_metadata_unverified",
+        "start_type": "CATIProduct",
+        "target_type": "CATIPrtContainer",
+        "steps": [
+            {"function_scope": "Func", "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "result_def": ["Func", 1, "res", 2], "result_type": "CATIContainer"},
+            {"function_scope": "Func", "caller_type": "CATIContainer", "kind": "query_interface", "result_type": "CATIPrtContainer"},
+        ],
+    })
+    check("Item 9: Kernel rejects a later step with no caller_def", p_missing_caller is False and "caller_def" in r_missing_caller)
+
+    p_wrong_start, r_wrong_start = Kernel._chain_contract_ok({
+        "connectivity_status": "connected",
+        "evidence_tier": "grounded_candidate_chain",
+        "parse_status": "ok",
+        "source_sha256": "abc1234",
+        "index_consistency": "root_matched_metadata_unverified",
+        "start_type": "CATIProduct",
+        "target_type": "CATIPrtContainer",
+        "steps": [
+            {"function_scope": "Func", "caller_type": "CATIOther", "caller_def": ["Func", 1, "p", 1], "kind": "query_interface", "result_type": "CATIPrtContainer"},
+        ],
+    })
+    check("Item 9: Kernel rejects a first caller that is not start_type", p_wrong_start is False and "start_type" in r_wrong_start)
+
+    # Item 10: Kernel candidate prioritization goes through the real selector.
     cand_frag = {
         "usecase": "CAAUsecaseFragment",
         "connectivity_status": "disconnected",
         "evidence_tier": "candidate_fragment",
         "parse_status": "ok",
         "source_sha256": "sha_frag",
+        "index_consistency": "root_matched_metadata_unverified",
+        "start_type": "CATIProduct",
+        "target_type": "CATIPrtContainer",
         "steps": [{"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False}],
     }
     cand_conn = {
@@ -700,23 +879,37 @@ with tempfile.TemporaryDirectory() as tmp_dir_10_str:
         "evidence_tier": "grounded_candidate_chain",
         "parse_status": "ok",
         "source_sha256": "sha_conn",
+        "index_consistency": "root_matched_metadata_unverified",
+        "start_type": "CATIProduct",
         "target_type": "CATIPrtContainer",
         "steps": [
-            {"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "caller_def": ["Func", 1, "p", 1], "result_def": ["Func", 1, "res", 2], "target": "CATIPrtContainer"}
+            {"function_scope": "Func", "ownership_status": "verified", "in_error_branch": False, "caller_type": "CATIProduct", "caller_def": ["Func", 1, "p", 1], "kind": "query_interface", "result_type": "CATIPrtContainer", "target": "CATIPrtContainer"}
         ],
     }
-    cands_list = [cand_frag, cand_conn]
-    selected_promoted = None
-    for cand in cands_list:
-        ok, _ = Kernel._chain_contract_ok(cand)
-        if ok:
-            selected_promoted = cand
-            break
-    check("Item 10: Candidate 2 chosen over Candidate 1 fragment", selected_promoted is not None and selected_promoted["usecase"] == "CAAUsecaseConnected")
+
+    class _FakeRetrieval:
+        def explore_chain(self, start="", target="", query="", max_candidates=3):
+            return {"status": "ok", "candidates": [cand_frag, cand_conn]}
+
+    k_sel = Kernel()
+    k_sel._retrieval_facade = _FakeRetrieval()
+    k_sel._retrieval_attempted = True
+    selected = k_sel._try_chain_exploration("如何从CATIProduct到CATIPrtContainer")
+    check("Item 10: Kernel selector promotes candidate 2", selected is not None and selected["data"]["evidence_level"] == "official_usecase_chain")
+    check("Item 10: Kernel selector did not keep the fragment", selected["data"]["candidate"]["usecase"] == "CAAUsecaseConnected")
+
+    refused_dir = k_sel._try_chain_exploration("请比较CATIProduct和CATIPrtContainer")
+    check("Item 10: Ambiguous identifier order is not a direction", refused_dir is None)
 
     # Item 11: Target filename substring is NOT an exact target match
     cands_fn = explorer.find_candidate_usecases(start="CATIProduct", target="Drawing")
-    check("Item 11: File search does not confuse target substring as exact symbol match", isinstance(cands_fn, list))
+    filtered_fn = [
+        uc for uc in cands_fn
+        if "Drawing" in uc.get("interfaces", [])
+        or "Drawing" in uc.get("symbols", [])
+        or "Drawing" in uc.get("methods", [])
+    ]
+    check("Item 11: Exact symbol filter drops filename-only substring hits", filtered_fn == [])
 
     # Item 12: Index consistency honestly declared
     if res_a.get("candidates"):

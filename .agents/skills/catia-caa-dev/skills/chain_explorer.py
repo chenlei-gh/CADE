@@ -66,24 +66,31 @@ _HRESULT_STATUS_RE = re.compile(
 )
 
 _UNSUPPORTED_CPP_RE = re.compile(
-    r'(?:template\s*<|\boperator\s*\(|#\s*(?:define|undef|if|ifdef|ifndef|elif|else)\b|\bgoto\b|\[[^\]]*\]\s*\([^\)]*\)\s*\{)',
+    r'(?:template\s*<|\boperator\s*\(|#\s*(?:define|undef|if|ifdef|ifndef|elif|else)\b|\bgoto\b|\[[^\]]*\]\s*\([^\)]*\)\s*\{|R"[^(]*\()',
     re.IGNORECASE
 )
 
 _STATUS_VARS = {"rc", "hr", "ret", "res", "status", "hresult"}
 
-_KNOWN_CAA_OUT_METHODS = {
-    "GetSpecContainer",
-    "GetPart",
-    "GetRootProduct",
-    "GetReferenceProduct",
-    "GetActiveSheet",
+# (method, 0-based argument index of the proven out-parameter).
+# Name-only matching is not an output contract. Index 0 is the first argument,
+# never "the first CAT* token". Official B28 use is
+# GetSpecContainer(pIContainerOnSpecContainer): the sole argument is the out slot.
+_KNOWN_CAA_OUT_SIGNATURES = {
+    ("GetSpecContainer", 0),
+    ("GetRootProduct", 0),
+    ("GetActiveSheet", 0),
 }
 
-# Single-line unbraced condition statement: if (...) call; or else call;
-_UNBRACED_IF_STMT_RE = re.compile(
-    r'^\s*(?:if|else\s+if|else)\b',
+# Single-line unbraced control-flow statement. The body is not a proven main-path step.
+_UNBRACED_CTRL_RE = re.compile(
+    r'^\s*(?:if|else\s+if|else|while|for|switch)\b',
     re.IGNORECASE
+)
+
+_STRINGISH_RE = re.compile(
+    r'R"[^(]*\(.*?\)[^"]*"|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'',
+    re.DOTALL,
 )
 
 # (function_scope, lexical_scope_id, variable, definition_id)
@@ -99,6 +106,33 @@ def _is_safe_subpath(child: Path, parent: Path) -> bool:
         c_parts = child.resolve().parts
         p_parts = parent.resolve().parts
         return len(c_parts) >= len(p_parts) and c_parts[:len(p_parts)] == p_parts
+
+
+def _directed_types(text: str) -> Optional[Tuple[str, str]]:
+    """Return (start, target) only when the text states a direction."""
+    request = text or ""
+    m_from_to = re.search(
+        r'(?:从|from)\s*(CAT[A-Za-z0-9_]+)\s*(?:到|至|to|获取|提取|转为|转换到)\s*(CAT[A-Za-z0-9_]+)',
+        request,
+        re.IGNORECASE,
+    )
+    if m_from_to:
+        return m_from_to.group(1), m_from_to.group(2)
+    m_get_from = re.search(
+        r'(?:获取|得到|创建|查询|get|retrieve|create)\s*(CAT[A-Za-z0-9_]+)\s*(?:从|通过|via|from)\s*(CAT[A-Za-z0-9_]+)',
+        request,
+        re.IGNORECASE,
+    )
+    if m_get_from:
+        return m_get_from.group(2), m_get_from.group(1)
+    m_arrow = re.search(
+        r'\b(CAT[A-Za-z0-9_]+)\s*(?:到|->|to)\s*(CAT[A-Za-z0-9_]+)\b',
+        request,
+        re.IGNORECASE,
+    )
+    if m_arrow:
+        return m_arrow.group(1), m_arrow.group(2)
+    return None
 
 
 def _exact_type(left: str, right: str) -> bool:
@@ -118,6 +152,47 @@ def _normalize_type(name: str) -> str:
 
 def _is_status_var(name: str) -> bool:
     return (name or "").lower() in _STATUS_VARS
+
+
+def _mask_stringish(text: str) -> str:
+    """Replace string and char literals so delimiters inside them do not count."""
+    return _STRINGISH_RE.sub(lambda m: " " * len(m.group(0)), text or "")
+
+
+def _count_delim(text: str, delim: str) -> int:
+    """Count one delimiter after string/char literals are masked.
+
+    Character equality, not substring count: "}" contains "{" , so
+    str.count("{") would treat every close brace as an open brace.
+    """
+    if not delim:
+        return 0
+    return sum(1 for ch in _mask_stringish(text) if ch == delim)
+
+
+def _code_delim_delta(text: str, open_ch: str, close_ch: str) -> int:
+    return _count_delim(text, open_ch) - _count_delim(text, close_ch)
+
+
+def _known_out_arg(method: str, args: str, lookup) -> str:
+    """Return the out-parameter only when the call matches the known arity.
+
+    Index 0 means the first argument of a one-argument call, not the first CAT*
+    token and not "argument 0 of a longer call". Extra arguments mean the call
+    does not match the proven signature, so no output edge is invented.
+    """
+    tokens = re.findall(r'\b[A-Za-z_][A-Za-z0-9_]*\b', args or "")
+    for meth, index in _KNOWN_CAA_OUT_SIGNATURES:
+        if meth != method:
+            continue
+        if index >= len(tokens) or len(tokens) != index + 1:
+            return ""
+        tok = tokens[index]
+        tok_type, _tok_def = lookup(tok)
+        if tok_type.startswith("CAT") and not _is_status_var(tok):
+            return tok
+        return ""
+    return ""
 
 
 def _step_mentions_type(step: "ChainStep", type_name: str) -> bool:
@@ -476,8 +551,9 @@ class ChainExplorer:
         """Preprocesses C++ source into a stream of logical statements with line numbers.
 
         Comment markers inside ordinary string/char literals are preserved.
-        Templates, goto, and macros that hide braces are out of scope; the
-        caller must downgrade evidence instead of treating them as proven flow.
+        Templates, raw strings, goto, and macros that hide braces are out of
+        scope; the caller must downgrade evidence instead of treating them as
+        proven flow. Brace and parenthesis depth ignore string/char literals.
         """
         cleaned_lines = _strip_cpp_comments(text)
 
@@ -504,7 +580,7 @@ class ChainExplorer:
                 start_line = line_no
 
             buf.append(stripped)
-            paren_depth += line.count("(") - line.count(")")
+            paren_depth += _code_delim_delta(stripped, "(", ")")
 
             if paren_depth <= 0 and (
                 stripped.endswith(";") or stripped.endswith("{") or stripped.endswith("}")
@@ -556,8 +632,9 @@ class ChainExplorer:
         A scope stack manages nested blocks and inner-variable shadowing. Exiting a
         block revokes live reachability for variables declared inside it.
         Reassignment to NULL or non-proven objects drops the live definition.
-        Out-parameters are recognized only via explicit '&' or known safe CAA out-APIs.
-        Cross-function parameter/return edges are not inferred by this scanner.
+        Out-parameters are recognized only via explicit '&' or a signature-constrained
+        CAA out-API (method name plus parameter index). Cross-function parameter and
+        return edges are not inferred by this scanner.
         """
         start_type = _normalize_type(start_type)
         target_type = _normalize_type(target_type)
@@ -610,9 +687,22 @@ class ChainExplorer:
                     return t_name, (fn, s_id, var, d_id)
             return "", None
 
-        def _enter_function(stmt: str) -> None:
+        entered_function = False
+
+        def _leave_function_if_closed(opened_and_still_open: bool) -> None:
             nonlocal cur_function, function_brace_depth
-            if stmt.strip().startswith(("if", "while", "for", "switch", "catch")):
+            if opened_and_still_open:
+                return
+            if cur_function != "global" and brace_depth <= function_brace_depth:
+                cur_function = "global"
+                function_brace_depth = 0
+
+        def _enter_function(stmt: str, open_braces: int) -> None:
+            nonlocal cur_function, function_brace_depth, entered_function
+            head = stmt.strip()
+            # A control-flow header is not a function. Do not reject a function
+            # whose body begins with if/while/for on the same logical statement.
+            if re.match(r'(?:if|while|for|switch|catch)\b', head):
                 return
             m_fn = re.search(
                 r'(?:^|[\s*>])(?P<name>(?:[A-Za-z_][A-Za-z0-9_]*::)?[A-Za-z_][A-Za-z0-9_]*)\s*\(',
@@ -624,7 +714,12 @@ class ChainExplorer:
             if name in ("if", "while", "for", "switch", "catch"):
                 return
             cur_function = name
+            # Threshold is the depth before this statement's braces. The opening
+            # statement must not exit immediately; a later close that returns to
+            # this depth does. Comparing against the post-open depth with <= exits
+            # on entry and drops every body statement back to global.
             function_brace_depth = brace_depth
+            entered_function = True
 
             # Function arguments are registered in the current function-level scope
             params = stmt[m_fn.end():]
@@ -637,8 +732,12 @@ class ChainExplorer:
                     live_reachable.add(param_def)
 
         for line_no, stmt in statements:
-            open_br = stmt.count("{")
-            close_br = stmt.count("}")
+            open_br = _count_delim(stmt, "{")
+            close_br = _count_delim(stmt, "}")
+            if open_br and close_br and open_br == close_br:
+                # Balanced braces inside one statement are not a function boundary.
+                # Keep the net delta for scope push/pop below.
+                pass
 
             # Manage lexical scopes per brace
             for _ in range(open_br):
@@ -646,8 +745,8 @@ class ChainExplorer:
                 scope_stack.append({})
                 scope_id_stack.append(scope_counter)
 
-            if "{" in stmt and "(" in stmt:
-                _enter_function(stmt)
+            if open_br and "(" in stmt:
+                _enter_function(stmt, open_br)
 
             if _ERROR_CHECK_RE.search(stmt) and "{" in stmt and open_br > close_br:
                 in_error_block = True
@@ -656,9 +755,9 @@ class ChainExplorer:
                 in_error_block = False
                 error_block_depth = 0
 
-            # Determine if this statement is an unbraced conditional branch
-            is_unbraced_cond = bool(_UNBRACED_IF_STMT_RE.match(stmt) and "{" not in stmt)
-            step_in_error = in_error_block or is_unbraced_cond
+            # Unbraced control-flow bodies are not proven main-path steps.
+            is_unbraced_ctrl = bool(_UNBRACED_CTRL_RE.match(stmt) and "{" not in stmt)
+            step_in_error = in_error_block or is_unbraced_ctrl
 
             cur_lexical_scope = scope_id_stack[-1]
 
@@ -699,7 +798,8 @@ class ChainExplorer:
                 if start_type and _exact_type(_normalize_type(d_type), start_type):
                     live_reachable.add(decl_def)
 
-            # QueryInterface pattern
+            # QueryInterface pattern. Match the original statement so capture spans
+            # stay aligned. Literals are stripped only when selecting an out-parameter.
             m_qi = _QI_RE.search(stmt)
             if m_qi:
                 caller = m_qi.group("caller")
@@ -727,7 +827,7 @@ class ChainExplorer:
                 step.call_success_status = "not_observed"
                 all_steps.append(step)
 
-                if not in_error_block and caller_def in live_reachable:
+                if not step_in_error and caller_def in live_reachable:
                     candidate_chain_steps.append(step)
                     live_reachable.add(result_def)
                     if target_type and _exact_type(itf, target_type):
@@ -742,9 +842,8 @@ class ChainExplorer:
                         for v, (_, d_id, s_id) in popped_vars.items():
                             live_reachable.discard((cur_function, s_id, v, d_id))
                 brace_depth += open_br - close_br
-                if cur_function != "global" and brace_depth < function_brace_depth:
-                    cur_function = "global"
-                    function_brace_depth = 0
+                _leave_function_if_closed(entered_function and open_br > close_br)
+                entered_function = False
                 continue
 
             # Method call pattern
@@ -763,13 +862,10 @@ class ChainExplorer:
                     m_out = re.search(r'&\s*(?P<out_var>[A-Za-z_][A-Za-z0-9_]*)', args)
                     if m_out:
                         arg_out_var = m_out.group("out_var")
-                    elif meth in _KNOWN_CAA_OUT_METHODS:
-                        # 2. Known safe CAA out-APIs passing container/pointer without '&'
-                        for tok in re.findall(r'\b[A-Za-z_][A-Za-z0-9_]*\b', args):
-                            tok_type, _tok_def = _lookup(tok)
-                            if tok_type.startswith("CAT") and not _is_status_var(tok):
-                                arg_out_var = tok
-                                break
+                    else:
+                        # 2. Signature-constrained out-API: method + parameter index.
+                        # Mask literals first so a string is not an out-parameter.
+                        arg_out_var = _known_out_arg(meth, _mask_stringish(args), _lookup)
 
                     if (not ret_var or _is_status_var(ret_var)) and arg_out_var:
                         res_var = arg_out_var
@@ -822,9 +918,8 @@ class ChainExplorer:
                     for v, (_, d_id, s_id) in popped_vars.items():
                         live_reachable.discard((cur_function, s_id, v, d_id))
             brace_depth += open_br - close_br
-            if cur_function != "global" and brace_depth < function_brace_depth:
-                cur_function = "global"
-                function_brace_depth = 0
+            _leave_function_if_closed(entered_function and open_br > close_br)
+            entered_function = False
 
         valid_steps = [s for s in all_steps if not s.in_error_branch]
         if not valid_steps:
@@ -857,7 +952,17 @@ class ChainExplorer:
                 return candidate_chain_steps, "connected", parse_status
             return candidate_chain_steps, "disconnected", parse_status
 
-        return [], "disconnected", parse_status
+        # Prefer the walk that was actually attempted. Returning every valid
+        # step from other functions makes a refused splice look like one chain.
+        # If the walk produced nothing, keep the start-side steps so a refused
+        # out-parameter can still be inspected. Status stays disconnected.
+        if candidate_chain_steps:
+            return candidate_chain_steps, "disconnected", parse_status
+        start_side = [
+            s for s in valid_steps
+            if s.caller_type == start_type or s.result_type == start_type
+        ]
+        return start_side[:8], "disconnected", parse_status
 
     def verify_steps(self, steps: List[ChainStep]) -> Tuple[List[str], List[str], List[str]]:
         """Validates steps against MethodIndex and HeaderMap with caller_type disambiguation.
@@ -987,14 +1092,18 @@ class ChainExplorer:
         - Incorporates Jev System One semantic review when enabled.
         - NEVER claims compiler or runtime verification.
         """
-        # Automatically extract identifiers if missing
-        if not start or not target:
-            ids = self.extract_identifiers(query)
-            if len(ids) >= 2 and not start and not target:
-                start = ids[0]
-                target = ids[1]
-            elif len(ids) == 1 and not target:
-                target = ids[0]
+        # Direction is inferred only from an explicit relation. Identifier order is not a direction.
+        if query and (not start or not target):
+            directed = _directed_types(query)
+            if directed:
+                if not start:
+                    start = directed[0]
+                if not target:
+                    target = directed[1]
+            elif not target:
+                ids = self.extract_identifiers(query)
+                if len(ids) == 1:
+                    target = ids[0]
 
         # Step 1: Candidate Discovery
         candidate_ucs = self.find_candidate_usecases(

@@ -1092,12 +1092,12 @@ class Kernel:
 
         Kernel independently verifies:
         1. Connectivity status is 'connected' and evidence_tier is 'grounded_candidate_chain'.
-        2. Parse status is 'ok' and source SHA256 is present.
-        3. Index consistency is not stale.
+        2. Parse status is exactly 'ok' and source SHA256 is present.
+        3. Index consistency is present and not stale or unknown.
         4. All steps are in a single, non-global function scope.
         5. No error branch steps and no unresolved method owner ambiguity.
-        6. Def-Use dataflow integrity: steps must maintain an unbroken caller_def -> result_def
-           definition chain leading to the target type.
+        6. Def-Use dataflow integrity: every caller_def is a start definition or a prior
+           result_def, and the chain produces the declared target type.
         """
         if not isinstance(cand, dict):
             return False, "candidate is not a dict"
@@ -1105,12 +1105,13 @@ class Kernel:
             return False, "connectivity_status is not connected"
         if cand.get("evidence_tier") != "grounded_candidate_chain":
             return False, "evidence_tier is not grounded_candidate_chain"
-        if cand.get("parse_status") not in (None, "", "ok"):
-            return False, f"parse_status={cand.get('parse_status')}"
+        if cand.get("parse_status") != "ok":
+            return False, f"parse_status={cand.get('parse_status')!r}"
         if not cand.get("source_sha256"):
             return False, "missing source_sha256"
-        if cand.get("index_consistency") == "stale":
-            return False, "usecase index is stale relative to source"
+        consistency = cand.get("index_consistency")
+        if consistency in (None, "", "unknown", "stale"):
+            return False, f"index_consistency={consistency!r}"
 
         steps = cand.get("steps") or []
         if not steps:
@@ -1127,40 +1128,46 @@ class Kernel:
         if len(scopes) != 1 or "global" in scopes:
             return False, f"invalid or inconsistent function scopes: {scopes}"
 
-        # Independent Def-Use dataflow verification
+        start_type = (cand.get("start_type") or "").strip()
+        target_type = (cand.get("target_type") or "").strip()
+        if not start_type or not target_type:
+            return False, "missing start_type or target_type"
+
         live_defs = set()
-        start_type = cand.get("start_type", "").strip()
-        target_type = cand.get("target_type", "").strip()
         target_produced = False
 
         for idx, s in enumerate(steps):
             if not isinstance(s, dict):
                 return False, "step is not a dict"
+            if not s.get("function_scope"):
+                return False, f"step {idx} missing function_scope"
             c_def = tuple(s.get("caller_def") or ())
             r_def = tuple(s.get("result_def") or ())
+            if not c_def:
+                return False, f"step {idx} missing caller_def"
+            if len(c_def) != 4:
+                return False, f"step {idx} caller_def is not a definition key"
 
+            caller_type = (s.get("caller_type") or "").strip()
             if idx == 0:
-                if c_def:
-                    live_defs.add(c_def)
-                elif start_type and s.get("caller_type") == start_type:
-                    pass
-                else:
-                    return False, "first step lacks grounded start definition"
-
-            # Verify caller was produced or live
-            if c_def and c_def not in live_defs and idx > 0:
+                if caller_type != start_type:
+                    return False, "first step caller_type is not start_type"
+                live_defs.add(c_def)
+            elif c_def not in live_defs:
                 return False, f"step {idx} caller_def not produced by previous steps"
 
             if r_def:
+                if len(r_def) != 4:
+                    return False, f"step {idx} result_def is not a definition key"
                 live_defs.add(r_def)
 
-            if target_type:
-                res_t = s.get("result_type") or ""
-                tgt_t = s.get("target") or ""
-                if res_t == target_type or tgt_t == target_type:
-                    target_produced = True
+            res_t = s.get("result_type") or ""
+            if s.get("kind") == "query_interface":
+                res_t = res_t or s.get("target") or ""
+            if res_t == target_type:
+                target_produced = True
 
-        if target_type and not target_produced:
+        if not target_produced:
             return False, f"target_type {target_type} not produced by any step in chain"
 
         return True, ""
@@ -1204,19 +1211,16 @@ class Kernel:
             start, target = m_from_to.group(1), m_from_to.group(2)
         elif m_get_from:
             target, start = m_get_from.group(1), m_get_from.group(2)
-        elif len(ids) >= 2:
+        else:
             sub_pat = re.search(
                 r'\b(CAT[A-Za-z0-9_]+)\s*(?:到|->|to)\s*(CAT[A-Za-z0-9_]+)\b',
                 request,
                 re.IGNORECASE,
             )
-            if sub_pat:
-                start, target = sub_pat.group(1), sub_pat.group(2)
-            else:
-                start, target = ids[0], ids[1]
-        else:
-            start = ""
-            target = ids[0] if ids else ""
+            if not sub_pat:
+                # Identifier order is not a direction. Refuse to guess.
+                return None
+            start, target = sub_pat.group(1), sub_pat.group(2)
 
         try:
             exp_result = r.explore_chain(start=start, target=target, query=request, max_candidates=3)
