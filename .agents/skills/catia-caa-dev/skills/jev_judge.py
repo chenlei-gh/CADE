@@ -337,6 +337,77 @@ def identifier_plausibility(names: List[str], request: str = "",
     }
 
 
+def judge_chain_relevance(request: str, candidate: dict,
+                          timeout: float = DEFAULT_TIMEOUT) -> Optional[dict]:
+    """Judge how relevant a recovered official call chain is to the user's intent.
+
+    Role: 'review-only'. Jev (TypeSafe System One) provides semantic scoring
+    to evaluate whether the recovered calling sequence logically answers the
+    user's development request. Existence and attribution facts remain
+    exclusively verified by local authoritative indexes (HeaderMap, MethodIndex).
+
+    Returns ``{model, choice, confidence, probabilities, role}`` or ``None``.
+    """
+    if not candidate or not enabled():
+        return None
+
+    state = {
+        "user_request": (request or "")[:800],
+        "usecase_name": str(candidate.get("usecase", "")),
+        "source_file": str(candidate.get("file", "")),
+        "key_interfaces": list(candidate.get("key_interfaces", []))[:8],
+        "call_summary": [
+            f"{s.get('caller', '')} -> {s.get('method', '')} -> {s.get('target', '')}"
+            for s in candidate.get("steps", [])[:10]
+        ],
+    }
+
+    questions = {
+        "chain_relevance": {
+            "type": "choice",
+            "instructions": (
+                "A CATIA CAA chain explorer recovered an official call sequence "
+                "from a Dassault CAADoc sample. Judge how well this call sequence "
+                "matches the user's CAA development requirement."
+            ),
+            "criteria": {
+                "highly_relevant": (
+                    "The recovered sequence directly demonstrates how to obtain, "
+                    "instantiate, query, or mutate the target CAA object requested."
+                ),
+                "partially_relevant": (
+                    "The sequence touches related concepts or domain objects, "
+                    "but only provides a partial step or peripheral interaction."
+                ),
+                "not_relevant": (
+                    "The sequence is unrelated to the user's actual goal despite "
+                    "sharing a token or identifier."
+                ),
+            },
+        }
+    }
+
+    resp = evaluate(state, questions, timeout=timeout)
+    if not resp:
+        return None
+
+    answer = resp["answers"].get("chain_relevance")
+    if not isinstance(answer, dict):
+        return None
+
+    choice = answer.get("choice")
+    if choice not in ("highly_relevant", "partially_relevant", "not_relevant"):
+        return None
+
+    return {
+        "model": resp.get("model", ""),
+        "choice": choice,
+        "confidence": answer.get("confidence"),
+        "probabilities": answer.get("probabilities"),
+        "role": "review-only",
+    }
+
+
 # ─── CLI ─────────────────────────────────────────────────────────
 
 def _cli(argv: List[str]) -> int:

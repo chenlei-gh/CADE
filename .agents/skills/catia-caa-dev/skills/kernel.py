@@ -615,6 +615,19 @@ class Kernel:
         if self._is_knowledge_query(request_lower):
             result = self._lookup_knowledge(
                 request_lower, include_content=detail, defer_to_dic=True)
+
+            # Check if query targets a specific uncovered identifier not mentioned in the matched references
+            ids = [i for i in self._extract_caa_candidates(request) if not i.endswith(".edu") and not i.endswith(".m")]
+            is_specific_id_query = bool(ids and not any(any(i in str(ref) for i in ids) for ref in (result or {}).get("references", [])))
+
+            if is_specific_id_query or not (result and result.get("found")):
+                chain_result = self._try_chain_exploration(request)
+                if chain_result:
+                    if result and result.get("found"):
+                        chain_result["data"]["general_knowledge"] = result
+                    self._state = KernelState.COMPLETED
+                    return chain_result
+
             if result and result.get("found"):
                 self._state = KernelState.COMPLETED
                 return KernelResult(
@@ -622,7 +635,8 @@ class Kernel:
                     message=f"Knowledge lookup: {result.get('summary', '')}",
                     data=result,
                 ).to_dict()
-            # Zero curated hits: if the request names an identifier, the
+
+            # Zero curated hits and no chain: if the request names an identifier, the
             # shipped .dic can still answer existence. That is a real answer,
             # not an empty search, so it replaces the fallback.
             dic_verdict = self._try_dic_verdict(request)
@@ -1076,6 +1090,65 @@ class Kernel:
                     },
                 ).to_dict()
 
+        return None
+
+    def _try_chain_exploration(self, request: str) -> Optional[dict]:
+        """Tries to recover an official source-grounded calling chain for an uncovered request."""
+        r = self.retrieval
+        if r is None or not hasattr(r, "explore_chain"):
+            return None
+
+        import re
+        ids = re.findall(r'CAT[A-Za-z0-9_]+', request)
+        # Must have at least one concrete CAA identifier to explore call chains
+        if not ids:
+            return None
+
+        # If it's a simple definition query ("...是什么", "...what is..."), let dic_verdict handle it
+        is_definition_query = any(k in request for k in ("是什么", "what is", "define", "定义"))
+        if len(ids) == 1 and is_definition_query:
+            return None
+
+        is_action_query = any(k in request for k in (
+            "如何", "怎样", "获取", "创建", "转换", "调用", "实现", "步骤",
+            "到", "to", "how", "create", "get", "retrieve", "convert", "chain", "step", "workflow"
+        ))
+
+        # Need either multiple identifiers (e.g. A to B) or a single identifier with action intent
+        if len(ids) < 2 and not is_action_query:
+            return None
+
+        start = ids[0] if len(ids) >= 2 else ""
+        target = ids[1] if len(ids) >= 2 else (ids[0] if ids else "")
+
+        try:
+            exp_result = r.explore_chain(start=start, target=target, query=request, max_candidates=2)
+            if exp_result and exp_result.get("status") == "ok" and exp_result.get("candidates"):
+                cand = exp_result["candidates"][0]
+                return KernelResult(
+                    status="ok", mode="analyze", state=self._state.value,
+                    message=(
+                        f"Recovered official call chain from use case '{cand.get('usecase')}': "
+                        f"{cand.get('step_count')} verified steps."
+                    ),
+                    data={
+                        "found": True,
+                        "evidence_level": "official_usecase_chain",
+                        "uncovered_domain": True,
+                        "exploration": exp_result,
+                        "candidate": cand,
+                        "headers_required": cand.get("headers_required", []),
+                        "frameworks_required": cand.get("frameworks_required", []),
+                        "steps": cand.get("steps", []),
+                        "jev_verdict": cand.get("jev_verdict"),
+                        "isolated_candidate_note": (
+                            "Candidate call chain recovered from official CAADoc samples. "
+                            "Requires verification before formal playbook crystallization."
+                        ),
+                    },
+                ).to_dict()
+        except Exception:
+            pass
         return None
 
     def _try_dic_verdict(self, request: str) -> Optional[dict]:

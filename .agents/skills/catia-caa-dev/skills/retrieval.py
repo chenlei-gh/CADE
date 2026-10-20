@@ -48,6 +48,7 @@ class Retrieval:
         self._usecase_index = None
         self._dic_index = None
         self._sample_data_index = None
+        self._chain_explorer = None
 
     @property
     def skill_root(self) -> Path:
@@ -163,6 +164,26 @@ class Retrieval:
         examples = self.usecase_index.get("by_method", {}).get(method, [])
         return {"owners": owners, "examples": examples}
 
+    @property
+    def chain_explorer(self):
+        """Official use case sequential call chain explorer."""
+        if self._chain_explorer is None:
+            from chain_explorer import ChainExplorer
+            self._chain_explorer = ChainExplorer(self._root, retrieval=self)
+        return self._chain_explorer
+
+    def explore_chain(
+        self,
+        start: str = "",
+        target: str = "",
+        query: str = "",
+        max_candidates: int = 3,
+    ) -> dict:
+        """Explores grounded official calling sequences for unknown requirements."""
+        return self.chain_explorer.explore(
+            start=start, target=target, query=query, max_candidates=max_candidates
+        )
+
     # ─── Diagnostics ─────────────────────────────────────────────
 
     def health(self) -> dict:
@@ -262,6 +283,15 @@ class Retrieval:
             }
         except Exception as e:
             report["sample_data_index"] = {"ok": False, "error": str(e)}
+
+        try:
+            ce = self.chain_explorer
+            report["chain_explorer"] = {
+                "ok": ce.caadoc_root is not None,
+                "caadoc_root": str(ce.caadoc_root) if ce.caadoc_root else None,
+            }
+        except Exception as e:
+            report["chain_explorer"] = {"ok": False, "error": str(e)}
 
         report["ok"] = all(v.get("ok") for v in report.values())
         return report

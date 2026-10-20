@@ -1341,6 +1341,7 @@ python tests/test_master.py --quick
 │   ├── sample_data_index.py        # 随产品发布的样件索引（.CATPart/.CATProduct/.CATDrawing；CLI: python skills/sample_data_index.py）
 │   ├── jev_judge.py                # Jev 判定层（路由/排序/措辞，非证据源；无 key 或网络失败自动降级）
 │   ├── retrieval.py                 # 统一检索门面（七索引：catalog/registry/header_map/method_index/usecase/dic/sample_data）
+│   ├── chain_explorer.py            # 官方例程时序调用链探索器（真实源码切片提取/隔离结晶）
 │   ├── build_gate.py              # 编译前静态门禁（虚构 API 拦截；PASS/WARN/BLOCK/SKIP + JSONL 遥测；build.py --skip-gate 可绕过）
 │   ├── ui_lint.py                    # UI 失效模式静态检查器（failure_patterns）
 │   ├── requirements.py               # Requirements Clarifier + UI 4-axis clarifier (v3.0)
