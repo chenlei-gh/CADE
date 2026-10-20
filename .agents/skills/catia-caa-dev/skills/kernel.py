@@ -1119,36 +1119,58 @@ class Kernel:
             exp_result = r.explore_chain(start=start, target=target, query=request, max_candidates=2)
             if exp_result and exp_result.get("status") == "ok" and exp_result.get("candidates"):
                 cand = exp_result["candidates"][0]
-                tier = cand.get("evidence_tier", "grounded_candidate_chain")
-                return KernelResult(
-                    status="ok", mode="analyze", state=self._state.value,
-                    message=(
+                is_connected = cand.get("connectivity_status") == "connected"
+                tier = cand.get("evidence_tier", "grounded_candidate_chain" if is_connected else "candidate_fragment")
+
+                if is_connected:
+                    evidence_level = "official_usecase_chain"
+                    msg = (
                         f"Grounded candidate call chain from use case '{cand.get('usecase')}': "
                         f"{cand.get('step_count')} static-checked steps (not compiler-verified)."
+                    )
+                else:
+                    evidence_level = "official_usecase_fragment"
+                    msg = (
+                        f"Official use-case code fragment from '{cand.get('usecase')}': "
+                        f"disconnected dataflow, {cand.get('step_count')} steps (unverified fragment)."
+                    )
+
+                data_payload = {
+                    "found": True,
+                    "evidence_level": evidence_level,
+                    "evidence_tier": tier,
+                    "connectivity_status": cand.get("connectivity_status", "connected" if is_connected else "disconnected"),
+                    "connected": is_connected,
+                    "fragment_only": not is_connected,
+                    "source_grounded": True,
+                    "compiler_verified": False,
+                    "runtime_verified": False,
+                    "uncovered_domain": True,
+                    "exploration": exp_result,
+                    "candidate": cand,
+                    "headers_required": cand.get("headers_required", []),
+                    "frameworks_required": cand.get("frameworks_required", []),
+                    "modules_from_header_map": cand.get("modules_from_header_map", cand.get("link_libraries", [])),
+                    "link_libraries": cand.get("link_libraries", []),
+                    "key_interfaces": cand.get("key_interfaces", []),
+                    "steps": cand.get("steps", []),
+                    "jev_verdict": cand.get("jev_verdict"),
+                    "isolated_candidate_note": (
+                        "Candidate call sequence recovered from official CAADoc samples. "
+                        "Static-checked against MethodIndex/HeaderMap; requires compilation "
+                        "and runtime verification before formal playbook crystallization."
                     ),
-                    data={
-                        "found": True,
-                        "evidence_level": "official_usecase_chain",
-                        "evidence_tier": tier,
-                        "connectivity_status": cand.get("connectivity_status", "connected"),
-                        "source_grounded": True,
-                        "compiler_verified": False,
-                        "runtime_verified": False,
-                        "uncovered_domain": True,
-                        "exploration": exp_result,
-                        "candidate": cand,
-                        "headers_required": cand.get("headers_required", []),
-                        "frameworks_required": cand.get("frameworks_required", []),
-                        "link_libraries": cand.get("link_libraries", []),
-                        "key_interfaces": cand.get("key_interfaces", []),
-                        "steps": cand.get("steps", []),
-                        "jev_verdict": cand.get("jev_verdict"),
-                        "isolated_candidate_note": (
-                            "Candidate call chain recovered from official CAADoc samples. "
-                            "Static-checked against MethodIndex/HeaderMap; requires compilation "
-                            "and runtime verification before formal playbook crystallization."
-                        ),
-                    },
+                }
+                if not is_connected:
+                    data_payload["disconnected_warning"] = (
+                        "Dataflow between start and target is not fully proven connected; "
+                        "treat recovered steps as an isolated reference fragment rather than an executable chain."
+                    )
+
+                return KernelResult(
+                    status="ok", mode="analyze", state=self._state.value,
+                    message=msg,
+                    data=data_payload,
                 ).to_dict()
         except Exception:
             pass

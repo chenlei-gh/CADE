@@ -93,6 +93,7 @@ class ChainStep:
         self.verified_owner: Optional[str] = None
         self.candidate_owners: List[str] = []
         self.owner_ambiguity: bool = False
+        self.ownership_status: str = "unindexed"  # "verified" | "ambiguous" | "unindexed"
         self.header: Optional[str] = None
         self.framework: Optional[str] = None
         self.link_module: Optional[str] = None
@@ -119,6 +120,7 @@ class ChainStep:
             "verified_owner": self.verified_owner,
             "candidate_owners": self.candidate_owners,
             "owner_ambiguity": self.owner_ambiguity,
+            "ownership_status": self.ownership_status,
             "header": self.header,
             "framework": self.framework,
             "link_module": self.link_module,
@@ -149,14 +151,21 @@ class ChainCandidate:
         self.evidence_tier = evidence_tier
         self.headers_required: List[str] = []
         self.frameworks_required: List[str] = []
-        self.link_libraries: List[str] = []
+        self.modules_from_header_map: List[str] = []
+        self.link_libraries: List[str] = []  # Backwards-compatible alias for modules_from_header_map
         self.key_interfaces: List[str] = []
         self.jev_verdict: Optional[dict] = None
         self.source_grounded: bool = True
         self.compiler_verified: bool = False
         self.runtime_verified: bool = False
+        self.source_sha256: str = ""
+        self.source_mtime: str = ""
+        self.source_path: str = ""
 
     def to_dict(self) -> dict:
+        verified_count = sum(1 for s in self.steps if s.ownership_status == "verified")
+        ambiguous_count = sum(1 for s in self.steps if s.ownership_status == "ambiguous")
+        unindexed_count = sum(1 for s in self.steps if s.ownership_status == "unindexed")
         return {
             "usecase": self.usecase,
             "file": self.file,
@@ -169,9 +178,16 @@ class ChainCandidate:
             "source_grounded": self.source_grounded,
             "compiler_verified": self.compiler_verified,
             "runtime_verified": self.runtime_verified,
+            "source_sha256": self.source_sha256,
+            "source_mtime": self.source_mtime,
+            "source_path": self.source_path,
             "headers_required": self.headers_required,
             "frameworks_required": self.frameworks_required,
+            "modules_from_header_map": self.modules_from_header_map,
             "link_libraries": self.link_libraries,
+            "verified_steps_count": verified_count,
+            "ambiguous_steps_count": ambiguous_count,
+            "unindexed_steps_count": unindexed_count,
             "key_interfaces": self.key_interfaces,
             "steps": [s.to_dict() for s in self.steps],
             "jev_verdict": self.jev_verdict,
@@ -396,11 +412,11 @@ class ChainExplorer:
 
         statements = self._preprocess_cpp_statements(content)
 
-        vars_type: Dict[str, str] = {}
-        vars_scope: Dict[str, str] = {}
+        vars_by_func: Dict[str, Dict[str, str]] = {}
         all_steps: List[ChainStep] = []
 
         cur_function = "global"
+        vars_by_func["global"] = {}
         in_error_block = False
         error_block_depth = 0
 
@@ -411,6 +427,7 @@ class ChainExplorer:
                 m_fn = re.search(r'([A-Za-z0-9_]+::[A-Za-z0-9_]+)\s*\(', stmt)
                 if m_fn:
                     cur_function = m_fn.group(1)
+                    vars_by_func.setdefault(cur_function, {})
 
             # Track error branch entry/exit
             if _ERROR_CHECK_RE.search(stmt):
@@ -426,13 +443,20 @@ class ChainExplorer:
                     in_error_block = False
                     error_block_depth = 0
 
+            # Helper to look up variable type in scoped symbol table
+            def _lookup_var_type(vname: str) -> str:
+                if cur_function in vars_by_func and vname in vars_by_func[cur_function]:
+                    return vars_by_func[cur_function][vname]
+                if "global" in vars_by_func and vname in vars_by_func["global"]:
+                    return vars_by_func["global"][vname]
+                return ""
+
             # Variable Declaration: CATIProduct *piRootProduct = NULL;
             m_decl = _VAR_DECL_RE.match(stmt)
             if m_decl:
                 t_name = m_decl.group("type")
                 v_name = m_decl.group("var")
-                vars_type[v_name] = t_name
-                vars_scope[v_name] = cur_function
+                vars_by_func.setdefault(cur_function, {})[v_name] = t_name
 
             # QueryInterface: rc = var1->QueryInterface(IID_TargetItf, (void**)&var2);
             m_qi = _QI_RE.search(stmt)
@@ -440,9 +464,8 @@ class ChainExplorer:
                 caller = m_qi.group("caller")
                 itf = m_qi.group("itf")
                 target = m_qi.group("target")
-                c_type = vars_type.get(caller, "")
-                vars_type[target] = itf
-                vars_scope[target] = cur_function
+                c_type = _lookup_var_type(caller)
+                vars_by_func.setdefault(cur_function, {})[target] = itf
                 all_steps.append(ChainStep(
                     line=line_no,
                     kind="query_interface",
@@ -465,34 +488,41 @@ class ChainExplorer:
                 args = m_call.group("args")
                 ret_var = m_call.group("ret_var") or ""
                 decl_type = m_call.group("decl_type") or ""
-                c_type = vars_type.get(caller, "")
+                c_type = _lookup_var_type(caller)
 
                 if ret_var and decl_type:
-                    vars_type[ret_var] = decl_type
-                    vars_scope[ret_var] = cur_function
+                    vars_by_func.setdefault(cur_function, {})[ret_var] = decl_type
 
                 # Skip standard Release/AddRef noise in the core sequence unless explicitly requested
                 if meth in ("AddRef", "Release") and not (target_type and target_type in meth):
                     continue
 
-                # Check if an argument looks like an output pointer (&var)
+                # Check if an argument looks like an output pointer (&var) or declared pointer
                 arg_out_var = ""
                 arg_out_type = ""
                 m_out = re.search(r'&\s*(?P<out_var>[A-Za-z0-9_]+)', args)
                 if m_out:
                     arg_out_var = m_out.group("out_var")
-                    arg_out_type = vars_type.get(arg_out_var, "")
+                    arg_out_type = _lookup_var_type(arg_out_var)
+                else:
+                    # Also check for pointer-reference passing: e.g. Method(pContainer)
+                    arg_tokens = re.findall(r'\b[A-Za-z0-9_]+\b', args)
+                    for tok in arg_tokens:
+                        t = _lookup_var_type(tok)
+                        if t and (t.startswith("CAT") or t.endswith("Container") or t.endswith("Product")):
+                            arg_out_var = tok
+                            arg_out_type = t
+                            break
 
                 if (not ret_var or ret_var.lower() in ("rc", "hr", "ret", "res", "status", "hresult")) and arg_out_var:
                     res_var = arg_out_var
-                    res_type = decl_type or vars_type.get(arg_out_var, arg_out_type)
+                    res_type = decl_type or _lookup_var_type(arg_out_var) or arg_out_type
                 else:
                     res_var = ret_var or arg_out_var
-                    res_type = decl_type or vars_type.get(res_var, arg_out_type)
+                    res_type = decl_type or _lookup_var_type(res_var) or arg_out_type
 
                 if res_var and res_type:
-                    vars_scope[res_var] = cur_function
-                    vars_type[res_var] = res_type
+                    vars_by_func.setdefault(cur_function, {})[res_var] = res_type
 
                 all_steps.append(ChainStep(
                     line=line_no,
@@ -508,17 +538,29 @@ class ChainExplorer:
                     in_error_branch=in_error_block,
                 ))
 
-        # Filter out error branch cleanups unless specifically targeting error handling
+        # Filter out error branch cleanups: DO NOT fall back if all steps are in error branches!
         valid_steps = [s for s in all_steps if not s.in_error_branch]
-        if not valid_steps and all_steps:
-            valid_steps = all_steps
+        if not valid_steps:
+            return [], "disconnected"
 
-        # Pass 2: Rigorous Def-Use Dataflow Tracking
+        # Pass 2: Rigorous Def-Use Dataflow Tracking (Function Scope Isolated)
         if not start_type and not target_type:
             return valid_steps[:20], "single_scope"
 
-        start_vars = {v for v, t in vars_type.items() if t == start_type or (start_type and start_type in t)}
-        target_vars = {v for v, t in vars_type.items() if t == target_type or (target_type and target_type in t)}
+        # Collect start & target variables strictly by function scope
+        def _get_vars_of_type(target_t: str) -> Dict[str, Set[str]]:
+            res: Dict[str, Set[str]] = {}
+            for fn, vmap in vars_by_func.items():
+                matched = {v for v, t in vmap.items() if t == target_t or (target_t and target_t in t)}
+                if matched:
+                    res[fn] = matched
+            return res
+
+        start_vars_by_fn = _get_vars_of_type(start_type)
+        target_vars_by_fn = _get_vars_of_type(target_type)
+
+        all_start_vars = {v for vset in start_vars_by_fn.values() for v in vset}
+        all_target_vars = {v for vset in target_vars_by_fn.values() for v in vset}
 
         if not start_type and target_type:
             # Backward reachability to target
@@ -530,7 +572,7 @@ class ChainExplorer:
 
         if start_type and not target_type:
             # Forward reachability from start
-            reachable_vars = set(start_vars)
+            reachable_vars = set(all_start_vars)
             fwd_steps = []
             for s in valid_steps:
                 if s.caller_var in reachable_vars or s.caller_type == start_type:
@@ -540,24 +582,27 @@ class ChainExplorer:
             return (fwd_steps or valid_steps[:15]), "single_scope"
 
         # Both start_type and target_type are specified: enforce Def-Use forward connectivity
-        if not start_vars and not any(s.caller_type == start_type for s in valid_steps):
+        if not all_start_vars and not any(s.caller_type == start_type for s in valid_steps):
             # Start type not present in this file: check if target steps exist as a fragment
             target_steps = [
                 s for s in valid_steps
-                if s.target_name == target_type or s.result_type == target_type or s.caller_type == target_type or target_type in s.args
+                if (s.kind == "query_interface" and s.target_name == target_type)
+                or s.result_type == target_type
+                or s.caller_type == target_type
             ]
             if target_steps:
                 return target_steps, "disconnected"
             return [], "disconnected"
 
-        # Check function scopes: start and target must not be in mutually isolated functions without pass-through
-        start_scopes = {vars_scope.get(v, "") for v in start_vars if v in vars_scope}
-        target_scopes = {vars_scope.get(v, "") for v in target_vars if v in vars_scope}
-        if start_scopes and target_scopes and not (start_scopes & target_scopes) and "global" not in start_scopes:
-            # Separated in distinct functions without linkage
+        # Function scope check: ensure start and target share a common function scope or global
+        start_fns = set(start_vars_by_fn.keys())
+        target_fns = set(target_vars_by_fn.keys())
+        common_fns = start_fns & target_fns
+        if start_fns and target_fns and not common_fns and "global" not in start_fns and "global" not in target_fns:
             return [], "disconnected"
 
-        reachable_vars: Set[str] = set(start_vars)
+        # Track forward Def-Use across the statements
+        reachable_vars: Set[str] = set(all_start_vars)
         chain_steps: List[ChainStep] = []
         target_reached = False
 
@@ -568,12 +613,24 @@ class ChainExplorer:
                 if step.result_var:
                     reachable_vars.add(step.result_var)
 
-                # Check if this step reached target
+                # Link pass-through arguments to reachable variables
+                if step.args:
+                    arg_toks = re.findall(r'\b[A-Za-z0-9_]+\b', step.args)
+                    for tok in arg_toks:
+                        fn_vars = vars_by_func.get(step.function_scope, {})
+                        if tok in fn_vars and tok not in reachable_vars:
+                            reachable_vars.add(tok)
+
+                # Strictly verify if target was reached:
+                # 1. QueryInterface to target_type
+                # 2. Method returned/assigned target_type
+                # 3. Caller type itself is target_type
+                # (Notice: NEVER match purely by string presence in args!)
                 if (
-                    step.target_name == target_type
-                    or step.result_type == target_type
-                    or (step.result_var and step.result_var in target_vars)
-                    or (target_type in step.args)
+                    (step.kind == "query_interface" and step.target_name == target_type)
+                    or (step.result_type == target_type)
+                    or (step.result_var and step.result_var in all_target_vars)
+                    or (step.caller_type == target_type)
                 ):
                     target_reached = True
                     break
@@ -581,10 +638,12 @@ class ChainExplorer:
         if target_reached:
             return chain_steps, "connected"
 
-        # If strict def-use forward walk did not directly connect target, check if target was hit but vars were unlinked
+        # If strict def-use forward walk did not directly connect target, collect target steps as disconnected fragment
         target_steps = [
             s for s in valid_steps
-            if s.target_name == target_type or s.result_type == target_type or s.caller_type == target_type or target_type in s.args
+            if (s.kind == "query_interface" and s.target_name == target_type)
+            or s.result_type == target_type
+            or s.caller_type == target_type
         ]
         if target_steps and chain_steps:
             # Both exist in file, but disconnected dataflow
@@ -636,11 +695,15 @@ class ChainExplorer:
                         link_modules.add(module)
                 step.verified_owner = "IUnknown"
                 step.owner_ambiguity = False
+                step.ownership_status = "verified"
 
             # 3. Verify method call with caller_type disambiguation
             elif step.kind == "method_call":
                 owners = mi.owners_of(step.target_name)
                 if not owners:
+                    step.verified_owner = None
+                    step.owner_ambiguity = False
+                    step.ownership_status = "unindexed"
                     continue
 
                 step.candidate_owners = owners
@@ -650,6 +713,7 @@ class ChainExplorer:
                 if step.caller_type in owners:
                     step.verified_owner = step.caller_type
                     step.owner_ambiguity = False
+                    step.ownership_status = "verified"
                 else:
                     # 3b. Check inheritance: does caller_type inherit from one of the owners?
                     matched_ancestor = None
@@ -666,14 +730,17 @@ class ChainExplorer:
                     if matched_ancestor:
                         step.verified_owner = matched_ancestor
                         step.owner_ambiguity = False
+                        step.ownership_status = "verified"
                     elif len(owners) == 1:
                         # Unambiguous single owner in index
                         step.verified_owner = owners[0]
                         step.owner_ambiguity = False
+                        step.ownership_status = "verified"
                     else:
                         # Ambiguous: multiple owners exist and caller_type does not resolve it
                         step.verified_owner = None
                         step.owner_ambiguity = True
+                        step.ownership_status = "ambiguous"
 
                 # Lookup header & framework for verified owner (or first candidate if unambiguous)
                 owner_for_lookup = step.verified_owner or (owners[0] if not step.owner_ambiguity else None)
@@ -794,8 +861,7 @@ class ChainExplorer:
                 has_target_op = any(
                     target in (s.caller_type or "") or
                     target in (s.result_type or "") or
-                    target in (s.target_name or "") or
-                    target in (s.args or "")
+                    target in (s.target_name or "")
                     for s in steps
                 )
                 if not has_target_op:
@@ -821,7 +887,18 @@ class ChainExplorer:
             )
             cand.headers_required = headers
             cand.frameworks_required = frameworks
+            cand.modules_from_header_map = link_modules
             cand.link_libraries = link_modules
+
+            # Source provenance fingerprinting
+            try:
+                content_bytes = full_path.read_bytes()
+                cand.source_sha256 = hashlib.sha256(content_bytes).hexdigest()
+                mtime = full_path.stat().st_mtime
+                cand.source_mtime = datetime.fromtimestamp(mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                cand.source_path = str(full_path)
+            except Exception as e:
+                logger.debug("Source fingerprint calculation failed for %s: %s", full_path, e)
 
             # Collect key interfaces for Jev and downstream inspection
             key_ifaces: List[str] = []
@@ -858,19 +935,21 @@ class ChainExplorer:
                 "summary": "Presence detected in use cases, but no continuous grounded source flow recovered.",
             }
 
+        best_tier = recovered_candidates[0].evidence_tier if recovered_candidates else "insufficient_evidence"
+        tier_label = "grounded candidate calling sequence(s)" if best_tier == "grounded_candidate_chain" else "candidate code fragment(s) (unconnected dataflow)"
         return {
             "status": "ok",
             "start": start,
             "target": target,
             "query": query,
             "candidate_count": len(recovered_candidates),
-            "evidence_tier": recovered_candidates[0].evidence_tier,
+            "evidence_tier": best_tier,
             "source_grounded": True,
             "compiler_verified": False,
             "runtime_verified": False,
             "candidates": [c.to_dict() for c in recovered_candidates],
             "summary": (
-                f"Successfully recovered {len(recovered_candidates)} grounded candidate calling sequence(s) "
+                f"Successfully recovered {len(recovered_candidates)} {tier_label} "
                 f"(static-checked, not compiler-verified) from official CAADoc samples for {start or 'query'} -> {target or 'target'}."
             ),
         }
@@ -928,6 +1007,11 @@ class ChainExplorer:
             f"- **Step Count**: {candidate.get('step_count', 0)} static-checked steps",
             f"- **Connectivity**: `{candidate.get('connectivity_status', 'connected')}`",
             f"- **Evidence Tier**: `{candidate.get('evidence_tier', 'grounded_candidate_chain')}`",
+            f"- **Source SHA256**: `{candidate.get('source_sha256', 'unknown')}`",
+            f"- **Source MTime**: `{candidate.get('source_mtime', 'unknown')}`",
+            f"- **Verified Steps**: {candidate.get('verified_steps_count', 0)}",
+            f"- **Ambiguous Steps**: {candidate.get('ambiguous_steps_count', 0)}",
+            f"- **Unindexed Steps**: {candidate.get('unindexed_steps_count', 0)}",
             "",
             "## 2. Prerequisites & Build Dependencies",
             "### Headers Required (`#include`)",
@@ -944,9 +1028,11 @@ class ChainExplorer:
 
         lines.extend([
             "",
-            "### Recommended Link Modules (`Imakefile.mk LINK_WITH`)",
+            "### Recommended Link Modules (Inferred from HeaderMap, verify with Imakefile.mk)",
+            "> Note: HeaderMap lookup proves framework and module ownership of the declared headers.",
+            "> Actual LINK_WITH entries in Imakefile.mk must be verified against your workspace build config.",
         ])
-        link_libs = candidate.get("link_libraries", [])
+        link_libs = candidate.get("modules_from_header_map") or candidate.get("link_libraries", [])
         if link_libs:
             for lib in link_libs:
                 lines.append(f"- `{lib}`")

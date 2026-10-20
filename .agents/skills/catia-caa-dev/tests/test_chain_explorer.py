@@ -198,12 +198,67 @@ with tempfile.TemporaryDirectory() as tmp_dir_str:
     steps_un, conn_un = explorer.extract_chain_from_cpp(cpp_unlinked, start_type="CATIProduct", target_type="CATIArrSegment")
     check("Unlinked dataflow within same function detected as disconnected", conn_un == "disconnected")
 
-    # 7d: Method disambiguation check
+    # 7d: All steps in error branch must NEVER fall back and recover
+    cpp_all_error = tmp_dir / "all_error_branch.cpp"
+    cpp_all_error.write_text(
+        """
+        void CAAMyClass::FailAll() {
+            HRESULT hr = E_FAIL;
+            if (FAILED(hr)) {
+                CATIProduct *piProduct = NULL;
+                CATIPrtContainer *piCont = NULL;
+                piProduct->GetChildren();
+                piCont->GetPart();
+            }
+        }
+        """,
+        encoding="utf-8"
+    )
+    steps_ae, conn_ae = explorer.extract_chain_from_cpp(cpp_all_error, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("All steps in error branch cleanly rejected without fallback", conn_ae == "disconnected")
+    check("Error branch fallback loophole sealed (step count is 0)", len(steps_ae) == 0)
+
+    # 7e: Target only appearing in method argument string without QI transition
+    cpp_arg_only = tmp_dir / "target_in_arg_string_only.cpp"
+    cpp_arg_only.write_text(
+        """
+        void CAAMyClass::QueryByName() {
+            CATIProduct *piProduct = NULL;
+            CATBaseUnknown *pObj = NULL;
+            pObj = piProduct->FindObject("CATIPrtContainer");
+            pObj->Release();
+        }
+        """,
+        encoding="utf-8"
+    )
+    steps_ao, conn_ao = explorer.extract_chain_from_cpp(cpp_arg_only, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Target appearing only in argument string is NOT falsely connected", conn_ao == "disconnected")
+
+    # 7f: Cross-function same-name variable isolation
+    cpp_same_var = tmp_dir / "same_var_diff_func.cpp"
+    cpp_same_var.write_text(
+        """
+        void CAAMyClass::MethodAlpha() {
+            CATIProduct *piSharedVar = NULL;
+            piSharedVar->GetChildren();
+        }
+        void CAAMyClass::MethodBeta() {
+            CATIPrtContainer *piSharedVar = NULL;
+            piSharedVar->GetPart();
+        }
+        """,
+        encoding="utf-8"
+    )
+    steps_sv, conn_sv = explorer.extract_chain_from_cpp(cpp_same_var, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Same-named local variable across functions isolated by function scope", conn_sv == "disconnected")
+
+    # 7g: Method disambiguation check with ownership_status
     step_amb = ChainStep(
         line=10, kind="method_call", caller_var="pUnknown", caller_type="", target_name="Release"
     )
     explorer.verify_steps([step_amb])
     check("Ambiguous method with multiple owners flags owner_ambiguity", step_amb.owner_ambiguity is True)
+    check("Ambiguous method has ownership_status=='ambiguous'", step_amb.ownership_status == "ambiguous")
     check("Ambiguous method has candidate owners", len(step_amb.candidate_owners) > 1)
 
 
@@ -254,9 +309,19 @@ check("Curated hit returns references", "references" in k_cat.get("data", {}))
 k_res = k.execute(KernelMode.ANALYZE, "如何在CAA中获取CATIEhiBundleSegment并配置线束")
 check("Kernel analyze returned ok for uncovered domain", k_res.get("status") == "ok")
 k_data = k_res.get("data", {})
-check("Kernel surfaced official_usecase_chain", k_data.get("evidence_level") == "official_usecase_chain")
+# CATIEhiBundleSegment is an unconnected official fragment, so Kernel must accurately label it as fragment
+check("Kernel correctly labels unconnected evidence as official_usecase_fragment", k_data.get("evidence_level") == "official_usecase_fragment")
+check("Kernel data sets connected=False and fragment_only=True", k_data.get("connected") is False and k_data.get("fragment_only") is True)
+check("Kernel provides disconnected_warning for fragments", "disconnected_warning" in k_data)
 check("Kernel tone explicitly states static-checked / not compiler-verified", "compiler_verified" in k_data and k_data["compiler_verified"] is False)
 check("Kernel included isolated candidate note", "isolated_candidate_note" in k_data)
+
+# 9c: Fully connected chain query invokes chain explorer and surfaces official_usecase_chain
+k_res_chain = k.execute(KernelMode.ANALYZE, "如何在CAA中从CATIDftDrawing获取CATIDftSheet")
+check("Kernel analyze returned ok for connected chain query", k_res_chain.get("status") == "ok")
+k_chain_data = k_res_chain.get("data", {})
+check("Kernel surfaced official_usecase_chain for connected query", k_chain_data.get("evidence_level") == "official_usecase_chain")
+check("Kernel data sets connected=True and fragment_only=False", k_chain_data.get("connected") is True and k_chain_data.get("fragment_only") is False)
 
 print("=" * 70)
 print(f"RESULTS: {passed}/{total} checks passed.")

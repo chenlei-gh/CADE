@@ -367,11 +367,15 @@ def judge_chain_relevance(request: str, candidate: dict,
             ret_str = f" => {res}" if res else ""
             call_summary.append(f"{caller}->{meth}({args}){ret_str}")
 
+    conn_status = str(candidate.get("connectivity_status", "connected"))
+    evidence_tier = str(candidate.get("evidence_tier", "grounded_candidate_chain"))
+
     state = {
         "user_request": (request or "")[:800],
         "usecase_name": str(candidate.get("usecase", "")),
         "source_file": str(candidate.get("file", "")),
-        "connectivity_status": str(candidate.get("connectivity_status", "connected")),
+        "connectivity_status": conn_status,
+        "evidence_tier": evidence_tier,
         "key_interfaces": list(candidate.get("key_interfaces", []))[:8],
         "call_summary": call_summary,
     }
@@ -382,7 +386,10 @@ def judge_chain_relevance(request: str, candidate: dict,
             "instructions": (
                 "A CATIA CAA chain explorer recovered an official call sequence "
                 "from a Dassault CAADoc sample. Judge how well this call sequence "
-                "matches the user's CAA development requirement."
+                "matches the user's CAA development requirement. Take into account "
+                "the connectivity_status ('connected' vs 'disconnected') and evidence_tier: "
+                "if disconnected, this candidate is an isolated code fragment rather "
+                "than an end-to-end continuous calling chain."
             ),
             "criteria": {
                 "highly_relevant": (
