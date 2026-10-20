@@ -203,18 +203,20 @@ CADE is structured around two central engines: the **Kernel Execution Pipeline**
 ```text
                   Retrieval Facade
                          │
-      ┌──────────────────┼──────────────────┐
+      ┌──────────────────┼────────────────────┐
       ▼                  ▼                  ▼
    Catalog          ApiRegistry         HeaderMap
- (Index/Playbooks)  (Verified APIs)   (B28 SDK Headers)
+ MethodIndex        UseCaseIndex        DicIndex
+ SampleDataIndex
       │                  │                  │
-      └──────────────────┼──────────────────┘
+      └──────────────────┴───────────────────┘
                          ▼
-                 Method / UseCase
-                         │
-                         ▼
-                 Official CAADoc
+              Official CAADoc sources
 ```
+
+The facade answers seven different questions. A hit in one index is not proof for another: Catalog matches a knowledge file, HeaderMap/MethodIndex prove a public type or method, DicIndex only says a name ships, UseCaseIndex only records that an official sample mentioned a symbol, and SampleDataIndex only locates a built-in model.
+
+When no playbook covers a request, `analyze()` may recover an official use-case fragment. That fragment is not a verified call chain. Kernel promotes it to `official_usecase_chain` only when `index_consistency` is exactly `consistent`. Live exploration currently emits `root_matched_metadata_unverified` or `unknown`, so real queries stay `official_usecase_fragment`. A root-path match is not metadata-vs-source consistency, and a static fragment is not an `mkmk` or CATIA runtime result.
 
 > **Core Tenet**: Capability grows by accumulating structured knowledge assets, not by expanding code complexity.
 
@@ -339,6 +341,7 @@ To keep engineering goals focused and reliable, CADE maintains clear functional 
 | **Complete CAA component scaffolding generator** | Your proprietary engineering algorithms |
 | **Build, runtime, diagnosis & rollback tooling** | A replacement for CATIA/RADE or MSVC compilers |
 | **Grounded CAA knowledge & retrieval engine** | A generic, hallucination-prone coding assistant |
+| **Official use-case fragment recovery** | A proven call-chain synthesizer or auto-published playbook |
 
 > **CADE is a developer tool for CATIA CAA. It is not an end-user CATIA product.**
 
@@ -535,14 +538,18 @@ CADE 由两大核心引擎支撑：**内核执行管线（Kernel Execution Pipel
 ```text
                   统一检索门面 (Retrieval Facade)
                                 │
-        ┌───────────────────────┼───────────────────────┐
+        ┌───────────────────────┬─────────────────────┐
         ▼                       ▼                       ▼
-   能力与场景编排              API 与头文件映射            底层索引与沉淀
-  Capabilities (13)        HeaderMap (头文件映射)       FrameworkMap (148)
-  Playbooks (15)           ApiRegistry (B28 符号)       CAADoc 原生用例索引
-  Knowledge (32K+14P)      MethodIndex (方法签名)       Native Investigation
-  FailurePatterns (15)
+   能力与场景编排              API 与头文件映射            官方证据索引
+  Capabilities (13)        HeaderMap (头文件)         UseCaseIndex (出现证据)
+  Playbooks (15)           MethodIndex (方法)        DicIndex (发布字典)
+  Knowledge / Patterns     ApiRegistry (已登记 API)   SampleDataIndex (样件路径)
+  FailurePatterns (15)     CatalogIndex (知识路由)   CAADoc 源码片段
 ```
+
+七索引各答一件事。知识目录命中不等于 API 存在；字典命中只说明这个名字随产品发布，不代表有公共 C++ 入口；官方例程命中只证明符号出现过，不证明调用顺序。
+
+没有现成 Playbook 时，`analyze()` 可以从官方例程收回源码片段。这不是已验证调用链。Kernel 只有在 `index_consistency` 严格等于 `consistent` 时，才会把片段提升为 `official_usecase_chain`。当前真实探索只会写出 `root_matched_metadata_unverified` 或 `unknown`，因此结果停在 `official_usecase_fragment`。根路径匹配不等于索引元数据已与源码核对；静态片段也不等于 `mkmk` 编译或 CATIA 运行通过。
 
 ---
 
@@ -665,6 +672,7 @@ sh scripts/install-git-hooks.sh
 | 高内聚 CAA 代码结构与工程脚手架生成器 | 负责编写用户专属业务核心算法的替代者 |
 | 覆盖验证、构建、诊断与运行的工程工具链 | 达索官方 CATIA、RADE 或 mkmk 编译器的替代品 |
 | 面向 CAA 专有领域的结构化知识与检索系统 | 脱离 CATIA 上下文的通用代码补全插件 |
+| 官方例程片段回收（证据不足时拒绝提升） | 已证明的调用链合成器，或自动发布的 Playbook |
 
 > **CADE 是专为 CATIA CAA 开发者打造的工程提效内核，而非面向最终用户的 CATIA 应用程序。**
 
