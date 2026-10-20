@@ -387,9 +387,10 @@ def judge_chain_relevance(request: str, candidate: dict,
                 "A CATIA CAA chain explorer recovered an official call sequence "
                 "from a Dassault CAADoc sample. Judge how well this call sequence "
                 "matches the user's CAA development requirement. Take into account "
-                "the connectivity_status ('connected' vs 'disconnected') and evidence_tier: "
-                "if disconnected, this candidate is an isolated code fragment rather "
-                "than an end-to-end continuous calling chain."
+                "the connectivity_status and evidence_tier. A candidate_fragment or "
+                "disconnected status is an isolated source slice, not a proven chain. "
+                "Your confidence is semantic relevance only, not call-chain accuracy "
+                "and not proof that any API exists."
             ),
             "criteria": {
                 "highly_relevant": (

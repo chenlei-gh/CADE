@@ -1086,6 +1086,40 @@ class Kernel:
 
         return None
 
+    @staticmethod
+    def _chain_contract_ok(cand: dict) -> tuple:
+        """Promote a candidate only when explorer labels agree with the evidence contract.
+
+        Kernel does not re-parse C++. It refuses to upgrade a fragment when the
+        connectivity label, evidence tier, source fingerprint, parse status, or
+        ownership ambiguity disagree.
+        """
+        if not isinstance(cand, dict):
+            return False, "candidate is not a dict"
+        if cand.get("connectivity_status") != "connected":
+            return False, "connectivity_status is not connected"
+        if cand.get("evidence_tier") != "grounded_candidate_chain":
+            return False, "evidence_tier is not grounded_candidate_chain"
+        if cand.get("parse_status") not in (None, "", "ok"):
+            return False, f"parse_status={cand.get('parse_status')}"
+        if not cand.get("source_sha256"):
+            return False, "missing source_sha256"
+        if cand.get("index_consistency") == "stale":
+            return False, "usecase index is stale relative to source"
+        steps = cand.get("steps") or []
+        if not steps:
+            return False, "no steps"
+        if any(s.get("ownership_status") == "ambiguous" for s in steps if isinstance(s, dict)):
+            return False, "unresolved method-owner ambiguity"
+        if any(s.get("in_error_branch") for s in steps if isinstance(s, dict)):
+            return False, "error-branch step present in claimed chain"
+        scopes = {
+            s.get("function_scope") for s in steps if isinstance(s, dict) and s.get("function_scope")
+        }
+        if len(scopes) > 1:
+            return False, "steps span multiple function scopes"
+        return True, ""
+
     def _try_chain_exploration(self, request: str) -> Optional[dict]:
         """Tries to recover an official source-grounded calling chain for an uncovered request."""
         r = self.retrieval
@@ -1119,10 +1153,10 @@ class Kernel:
             exp_result = r.explore_chain(start=start, target=target, query=request, max_candidates=2)
             if exp_result and exp_result.get("status") == "ok" and exp_result.get("candidates"):
                 cand = exp_result["candidates"][0]
-                is_connected = cand.get("connectivity_status") == "connected"
-                tier = cand.get("evidence_tier", "grounded_candidate_chain" if is_connected else "candidate_fragment")
+                promoted, reject_reason = self._chain_contract_ok(cand)
+                tier = "grounded_candidate_chain" if promoted else "candidate_fragment"
 
-                if is_connected:
+                if promoted:
                     evidence_level = "official_usecase_chain"
                     msg = (
                         f"Grounded candidate call chain from use case '{cand.get('usecase')}': "
@@ -1132,16 +1166,18 @@ class Kernel:
                     evidence_level = "official_usecase_fragment"
                     msg = (
                         f"Official use-case code fragment from '{cand.get('usecase')}': "
-                        f"disconnected dataflow, {cand.get('step_count')} steps (unverified fragment)."
+                        f"{reject_reason or 'disconnected dataflow'}, "
+                        f"{cand.get('step_count')} steps (unverified fragment)."
                     )
 
                 data_payload = {
                     "found": True,
                     "evidence_level": evidence_level,
                     "evidence_tier": tier,
-                    "connectivity_status": cand.get("connectivity_status", "connected" if is_connected else "disconnected"),
-                    "connected": is_connected,
-                    "fragment_only": not is_connected,
+                    "connectivity_status": "connected" if promoted else cand.get("connectivity_status", "disconnected"),
+                    "connected": promoted,
+                    "fragment_only": not promoted,
+                    "contract_reject_reason": reject_reason,
                     "source_grounded": True,
                     "compiler_verified": False,
                     "runtime_verified": False,
@@ -1150,8 +1186,15 @@ class Kernel:
                     "candidate": cand,
                     "headers_required": cand.get("headers_required", []),
                     "frameworks_required": cand.get("frameworks_required", []),
-                    "modules_from_header_map": cand.get("modules_from_header_map", cand.get("link_libraries", [])),
+                    "modules_from_header_map": cand.get("modules_from_header_map", []),
                     "link_libraries": cand.get("link_libraries", []),
+                    "link_libraries_authority": cand.get(
+                        "link_libraries_authority", "header_map_module_not_link_with"
+                    ),
+                    "link_libraries_note": (
+                        "link_libraries aliases modules_from_header_map and is not a "
+                        "verified Imakefile.mk LINK_WITH list."
+                    ),
                     "key_interfaces": cand.get("key_interfaces", []),
                     "steps": cand.get("steps", []),
                     "jev_verdict": cand.get("jev_verdict"),
@@ -1161,7 +1204,7 @@ class Kernel:
                         "and runtime verification before formal playbook crystallization."
                     ),
                 }
-                if not is_connected:
+                if not promoted:
                     data_payload["disconnected_warning"] = (
                         "Dataflow between start and target is not fully proven connected; "
                         "treat recovered steps as an isolated reference fragment rather than an executable chain."

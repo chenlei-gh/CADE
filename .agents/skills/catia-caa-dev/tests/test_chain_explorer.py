@@ -158,9 +158,9 @@ with tempfile.TemporaryDirectory() as tmp_dir_str:
         """,
         encoding="utf-8"
     )
-    steps_cf, conn_cf = explorer.extract_chain_from_cpp(cpp_cross_fn, start_type="CATIProduct", target_type="CATIPrtContainer")
+    steps_cf, conn_cf, parse_cf = explorer.extract_chain_from_cpp(cpp_cross_fn, start_type="CATIProduct", target_type="CATIPrtContainer")
     check("Cross-function isolation rejected as disconnected", conn_cf == "disconnected")
-    check("Cross-function steps do not falsely connect", len(steps_cf) == 0)
+    check("Cross-function steps do not falsely connect", len(steps_cf) == 0, f"steps={len(steps_cf)} parse={parse_cf}")
 
     # 7b: Error handling branch isolation
     cpp_error_branch = tmp_dir / "error_branch.cpp"
@@ -179,7 +179,7 @@ with tempfile.TemporaryDirectory() as tmp_dir_str:
         """,
         encoding="utf-8"
     )
-    steps_eb, conn_eb = explorer.extract_chain_from_cpp(cpp_error_branch, start_type="CATIProduct", target_type="CATIArrSegment")
+    steps_eb, conn_eb, _parse_eb = explorer.extract_chain_from_cpp(cpp_error_branch, start_type="CATIProduct", target_type="CATIArrSegment")
     check("Target in FAILED(rc) error block is not promoted to valid chain", conn_eb == "disconnected")
 
     # 7c: Dataflow disconnect within same function
@@ -195,7 +195,7 @@ with tempfile.TemporaryDirectory() as tmp_dir_str:
         """,
         encoding="utf-8"
     )
-    steps_un, conn_un = explorer.extract_chain_from_cpp(cpp_unlinked, start_type="CATIProduct", target_type="CATIArrSegment")
+    steps_un, conn_un, _parse_un = explorer.extract_chain_from_cpp(cpp_unlinked, start_type="CATIProduct", target_type="CATIArrSegment")
     check("Unlinked dataflow within same function detected as disconnected", conn_un == "disconnected")
 
     # 7d: All steps in error branch must NEVER fall back and recover
@@ -214,7 +214,7 @@ with tempfile.TemporaryDirectory() as tmp_dir_str:
         """,
         encoding="utf-8"
     )
-    steps_ae, conn_ae = explorer.extract_chain_from_cpp(cpp_all_error, start_type="CATIProduct", target_type="CATIPrtContainer")
+    steps_ae, conn_ae, _parse_ae = explorer.extract_chain_from_cpp(cpp_all_error, start_type="CATIProduct", target_type="CATIPrtContainer")
     check("All steps in error branch cleanly rejected without fallback", conn_ae == "disconnected")
     check("Error branch fallback loophole sealed (step count is 0)", len(steps_ae) == 0)
 
@@ -231,7 +231,7 @@ with tempfile.TemporaryDirectory() as tmp_dir_str:
         """,
         encoding="utf-8"
     )
-    steps_ao, conn_ao = explorer.extract_chain_from_cpp(cpp_arg_only, start_type="CATIProduct", target_type="CATIPrtContainer")
+    steps_ao, conn_ao, _parse_ao = explorer.extract_chain_from_cpp(cpp_arg_only, start_type="CATIProduct", target_type="CATIPrtContainer")
     check("Target appearing only in argument string is NOT falsely connected", conn_ao == "disconnected")
 
     # 7f: Cross-function same-name variable isolation
@@ -249,8 +249,187 @@ with tempfile.TemporaryDirectory() as tmp_dir_str:
         """,
         encoding="utf-8"
     )
-    steps_sv, conn_sv = explorer.extract_chain_from_cpp(cpp_same_var, start_type="CATIProduct", target_type="CATIPrtContainer")
+    steps_sv, conn_sv, _parse_sv = explorer.extract_chain_from_cpp(cpp_same_var, start_type="CATIProduct", target_type="CATIPrtContainer")
     check("Same-named local variable across functions isolated by function scope", conn_sv == "disconnected")
+
+    # 7h: same name AND same type in two functions must not connect
+    cpp_same_type = tmp_dir / "same_type_same_name.cpp"
+    cpp_same_type.write_text(
+        """
+        void CAAMyClass::Produces() {
+            CATIProduct *piSharedVar = NULL;
+            piSharedVar->GetChildren();
+        }
+        void CAAMyClass::Consumes() {
+            CATIProduct *piSharedVar = NULL;
+            CATIPrtContainer *piCont = NULL;
+            piSharedVar->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+        }
+        """,
+        encoding="utf-8",
+    )
+    steps_st, conn_st, _parse_st = explorer.extract_chain_from_cpp(
+        cpp_same_type, start_type="CATIProduct", target_type="CATIPrtContainer"
+    )
+    check("Same-type same-name locals across functions stay disconnected", conn_st == "disconnected")
+    check(
+        "Cross-function same-type chain is not a single-scope connected walk",
+        not (conn_st == "connected" and len({s.function_scope for s in steps_st}) > 1),
+    )
+
+    # 7i: reassignment kills the previous definition
+    cpp_redef = tmp_dir / "reassign.cpp"
+    cpp_redef.write_text(
+        """
+        void CAAMyClass::Reset() {
+            CATIProduct *piProduct = NULL;
+            piProduct->GetChildren();
+            piProduct = NULL;
+            CATIPrtContainer *piCont = NULL;
+            piProduct->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+        }
+        """,
+        encoding="utf-8",
+    )
+    _steps_rd, conn_rd, _parse_rd = explorer.extract_chain_from_cpp(
+        cpp_redef, start_type="CATIProduct", target_type="CATIPrtContainer"
+    )
+    check("Reassignment invalidates the previous reachable definition", conn_rd == "disconnected")
+
+    # 7j: unrelated function calling the same interface is not the start flow
+    cpp_other = tmp_dir / "other_function_same_iface.cpp"
+    cpp_other.write_text(
+        """
+        void CAAMyClass::StartOnly() {
+            CATIProduct *piMine = NULL;
+            piMine->GetChildren();
+        }
+        void CAAMyClass::OtherProduct() {
+            CATIProduct *piOther = NULL;
+            CATIPrtContainer *piCont = NULL;
+            piOther->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+        }
+        """,
+        encoding="utf-8",
+    )
+    _steps_ot, conn_ot, _parse_ot = explorer.extract_chain_from_cpp(
+        cpp_other, start_type="CATIProduct", target_type="CATIPrtContainer"
+    )
+    check("Unrelated function using the same interface is not connected", conn_ot == "disconnected")
+
+    # 7k: target exists only in an unrelated function
+    cpp_tgt_elsewhere = tmp_dir / "target_elsewhere.cpp"
+    cpp_tgt_elsewhere.write_text(
+        """
+        void CAAMyClass::StartOnly() {
+            CATIProduct *piMine = NULL;
+            piMine->GetChildren();
+        }
+        void CAAMyClass::TargetOnly() {
+            CATIPrtContainer *piCont = NULL;
+            piCont->GetPart();
+        }
+        """,
+        encoding="utf-8",
+    )
+    _steps_te, conn_te, _parse_te = explorer.extract_chain_from_cpp(
+        cpp_tgt_elsewhere, start_type="CATIProduct", target_type="CATIPrtContainer"
+    )
+    check("Target only in an unrelated function is disconnected", conn_te == "disconnected")
+
+    # 7l: comment markers inside a string must not eat the real call
+    cpp_str = tmp_dir / "string_comment.cpp"
+    cpp_str.write_text(
+        """
+        void CAAMyClass::KeepCall() {
+            CATIProduct *piProduct = NULL;
+            CATUnicodeString label = "not a // comment";
+            CATIPrtContainer *piCont = NULL;
+            piProduct->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+        }
+        """,
+        encoding="utf-8",
+    )
+    steps_sc, conn_sc, parse_sc = explorer.extract_chain_from_cpp(
+        cpp_str, start_type="CATIProduct", target_type="CATIPrtContainer"
+    )
+    check("String-literal comment marker does not drop the real QI", conn_sc == "connected" and parse_sc == "ok")
+    check("String-literal case still records the QI step", any(s.kind == "query_interface" for s in steps_sc))
+
+    # 7m: template/goto/define is an unsupported subset and cannot be a chain
+    cpp_bad = tmp_dir / "unsupported.cpp"
+    cpp_bad.write_text(
+        """
+        #define QI QueryInterface
+        void CAAMyClass::MacroHidden() {
+            CATIProduct *piProduct = NULL;
+            CATIPrtContainer *piCont = NULL;
+            piProduct->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+        }
+        """,
+        encoding="utf-8",
+    )
+    _steps_bad, conn_bad, parse_bad = explorer.extract_chain_from_cpp(
+        cpp_bad, start_type="CATIProduct", target_type="CATIPrtContainer"
+    )
+    check("Unsupported preprocessor syntax is not a connected chain", conn_bad != "connected")
+    check("Unsupported syntax is labeled unsupported_syntax", parse_bad == "unsupported_syntax")
+
+    # 7n: type substring must not count as the target type
+    cpp_sub = tmp_dir / "type_substring.cpp"
+    cpp_sub.write_text(
+        """
+        void CAAMyClass::Substring() {
+            CATIProduct *piProduct = NULL;
+            CATIProductExtra *piExtra = NULL;
+            piProduct->QueryInterface(IID_CATIProductExtra, (void**)&piExtra);
+        }
+        """,
+        encoding="utf-8",
+    )
+    _steps_sub, conn_sub, _parse_sub = explorer.extract_chain_from_cpp(
+        cpp_sub, start_type="CATIProduct", target_type="CATIProductEx"
+    )
+    check("Type substring is not an exact target hit", conn_sub != "connected")
+
+    # 7o: same-function QI still connects
+    cpp_ok = tmp_dir / "same_function_qi.cpp"
+    cpp_ok.write_text(
+        """
+        void CAAMyClass::Convert() {
+            CATIProduct *piProduct = NULL;
+            CATIPrtContainer *piCont = NULL;
+            piProduct->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+            piCont->GetPart();
+        }
+        """,
+        encoding="utf-8",
+    )
+    steps_ok, conn_ok, parse_ok = explorer.extract_chain_from_cpp(
+        cpp_ok, start_type="CATIProduct", target_type="CATIPrtContainer"
+    )
+    check("Same-function QI remains connected", conn_ok == "connected" and parse_ok == "ok")
+    check("Same-function QI chain includes the target interface", any(s.target_name == "CATIPrtContainer" for s in steps_ok))
+
+    # 7p: output argument without '&' remains a def inside the same function
+    cpp_out = tmp_dir / "bare_out_param.cpp"
+    cpp_out.write_text(
+        """
+        void CAAMyClass::BareOut() {
+            CATIProduct *piProduct = NULL;
+            CATIContainer *pContainer = NULL;
+            piProduct->GetSpecContainer(pContainer);
+            CATIPrtContainer *piCont = NULL;
+            pContainer->QueryInterface(IID_CATIPrtContainer, (void**)&piCont);
+        }
+        """,
+        encoding="utf-8",
+    )
+    steps_out, conn_out, _parse_out = explorer.extract_chain_from_cpp(
+        cpp_out, start_type="CATIProduct", target_type="CATIPrtContainer"
+    )
+    check("Bare CAT* out-parameter still connects inside one function", conn_out == "connected")
+    check("Bare out-parameter chain reaches the QI target", any(s.target_name == "CATIPrtContainer" for s in steps_out))
 
     # 7g: Method disambiguation check with ownership_status
     step_amb = ChainStep(
@@ -286,7 +465,7 @@ with tempfile.TemporaryDirectory() as tmp_exp_dir_str:
         check("Candidate header contains SECURITY NOTICE", "SECURITY NOTICE" in content)
         check("Candidate document states isolated from catalog", "isolated from official knowledge" in content)
         check("Candidate document contains Promotion Gate checklist", "Promotion Gate" in content)
-        check("Candidate document distinguishes Frameworks vs Link Modules", "Recommended Link Modules" in content)
+        check("Candidate document distinguishes HeaderMap modules from LINK_WITH", "not verified LINK_WITH" in content)
 
     # Verify official catalog/index.yaml was NOT modified or contaminated
     cat_yaml = SKILL_ROOT / "catalog" / "index.yaml"
@@ -322,6 +501,43 @@ check("Kernel analyze returned ok for connected chain query", k_res_chain.get("s
 k_chain_data = k_res_chain.get("data", {})
 check("Kernel surfaced official_usecase_chain for connected query", k_chain_data.get("evidence_level") == "official_usecase_chain")
 check("Kernel data sets connected=True and fragment_only=False", k_chain_data.get("connected") is True and k_chain_data.get("fragment_only") is False)
+check("Kernel chain payload has source hash", bool((k_chain_data.get("candidate") or {}).get("source_sha256")))
+check(
+    "Kernel chain payload marks link_libraries as non-authoritative",
+    k_chain_data.get("link_libraries_authority") == "header_map_module_not_link_with",
+)
+
+# 9d: a lying connected label without the evidence contract must not be promoted
+promoted, reason = Kernel._chain_contract_ok({
+    "connectivity_status": "connected",
+    "evidence_tier": "candidate_fragment",
+    "parse_status": "ok",
+    "source_sha256": "abc",
+    "steps": [{"function_scope": "A", "ownership_status": "verified", "in_error_branch": False}],
+})
+check("Kernel refuses connected label that disagrees with evidence_tier", promoted is False and "evidence_tier" in reason)
+
+promoted_scope, reason_scope = Kernel._chain_contract_ok({
+    "connectivity_status": "connected",
+    "evidence_tier": "grounded_candidate_chain",
+    "parse_status": "ok",
+    "source_sha256": "abc",
+    "steps": [
+        {"function_scope": "A", "ownership_status": "verified", "in_error_branch": False},
+        {"function_scope": "B", "ownership_status": "verified", "in_error_branch": False},
+    ],
+})
+check("Kernel refuses a claimed chain that spans two functions", promoted_scope is False and "scope" in reason_scope)
+
+# 9e: QI header miss is not collapsed into ownership verified
+qi_miss = ChainStep(
+    line=1, kind="query_interface", caller_var="p", caller_type="CATIProduct",
+    target_name="CATIDoesNotExistHeader",
+)
+explorer.verify_steps([qi_miss])
+check("QI convention is recorded separately", qi_miss.qi_convention == "IUnknown")
+check("QI header miss is not ownership verified", qi_miss.ownership_status != "verified")
+check("QI header miss is explicit", qi_miss.header_index_status == "miss")
 
 print("=" * 70)
 print(f"RESULTS: {passed}/{total} checks passed.")
