@@ -66,6 +66,7 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 | 教程/示例/例子 | tutorial, example, walkthrough, guide |
 | 命令 | command, CATStateCommand, state machine, toolbar |
 | 开发/开发教程 | tutorial, example, develop, guide |
+| 特征/创建特征 | feature, StartUp, spec object, CATISpecObject |
 
 ## 索引
 

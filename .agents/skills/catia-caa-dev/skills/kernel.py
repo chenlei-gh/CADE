@@ -616,18 +616,7 @@ class Kernel:
             result = self._lookup_knowledge(
                 request_lower, include_content=detail, defer_to_dic=True)
 
-            # Check if query targets a specific uncovered identifier not mentioned in the matched references
-            ids = [i for i in self._extract_caa_candidates(request) if not i.endswith(".edu") and not i.endswith(".m")]
-            is_specific_id_query = bool(ids and not any(any(i in str(ref) for i in ids) for ref in (result or {}).get("references", [])))
-
-            if is_specific_id_query or not (result and result.get("found")):
-                chain_result = self._try_chain_exploration(request)
-                if chain_result:
-                    if result and result.get("found"):
-                        chain_result["data"]["general_knowledge"] = result
-                    self._state = KernelState.COMPLETED
-                    return chain_result
-
+            # 1. Curated knowledge (Catalog) takes strict precedence if matched
             if result and result.get("found"):
                 self._state = KernelState.COMPLETED
                 return KernelResult(
@@ -636,15 +625,20 @@ class Kernel:
                     data=result,
                 ).to_dict()
 
-            # Zero curated hits and no chain: if the request names an identifier, the
-            # shipped .dic can still answer existence. That is a real answer,
-            # not an empty search, so it replaces the fallback.
+            # 2. Curated knowledge did not match: try official source call-chain exploration
+            # for concrete workflow/conversion/action intents
+            chain_result = self._try_chain_exploration(request)
+            if chain_result:
+                self._state = KernelState.COMPLETED
+                return chain_result
+
+            # 3. If no chain recovered, shipped .dic answers existence for named identifier
             dic_verdict = self._try_dic_verdict(request)
             if dic_verdict:
                 self._state = KernelState.COMPLETED
                 return dic_verdict
-            # No identifier to look up (or the index is missing): fall back to
-            # the prose-oriented next_steps.
+
+            # 4. Fall back to prose next_steps
             if not result or not result.get("next_steps"):
                 result = self._lookup_knowledge(request_lower, include_content=detail)
             self._state = KernelState.COMPLETED
@@ -1125,25 +1119,34 @@ class Kernel:
             exp_result = r.explore_chain(start=start, target=target, query=request, max_candidates=2)
             if exp_result and exp_result.get("status") == "ok" and exp_result.get("candidates"):
                 cand = exp_result["candidates"][0]
+                tier = cand.get("evidence_tier", "grounded_candidate_chain")
                 return KernelResult(
                     status="ok", mode="analyze", state=self._state.value,
                     message=(
-                        f"Recovered official call chain from use case '{cand.get('usecase')}': "
-                        f"{cand.get('step_count')} verified steps."
+                        f"Grounded candidate call chain from use case '{cand.get('usecase')}': "
+                        f"{cand.get('step_count')} static-checked steps (not compiler-verified)."
                     ),
                     data={
                         "found": True,
                         "evidence_level": "official_usecase_chain",
+                        "evidence_tier": tier,
+                        "connectivity_status": cand.get("connectivity_status", "connected"),
+                        "source_grounded": True,
+                        "compiler_verified": False,
+                        "runtime_verified": False,
                         "uncovered_domain": True,
                         "exploration": exp_result,
                         "candidate": cand,
                         "headers_required": cand.get("headers_required", []),
                         "frameworks_required": cand.get("frameworks_required", []),
+                        "link_libraries": cand.get("link_libraries", []),
+                        "key_interfaces": cand.get("key_interfaces", []),
                         "steps": cand.get("steps", []),
                         "jev_verdict": cand.get("jev_verdict"),
                         "isolated_candidate_note": (
                             "Candidate call chain recovered from official CAADoc samples. "
-                            "Requires verification before formal playbook crystallization."
+                            "Static-checked against MethodIndex/HeaderMap; requires compilation "
+                            "and runtime verification before formal playbook crystallization."
                         ),
                     },
                 ).to_dict()

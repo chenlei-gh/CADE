@@ -324,7 +324,7 @@ sh scripts/install-git-hooks.sh
 
 That copies `scripts/git-hooks/pre-push` into `.git/hooks/`. `.git/hooks` is not distributed with the repo, so a fresh clone does not get the gate until the installer is run. Bypass a single push with `git push --no-verify`.
 
-> **Test baseline**: 46 suites (45 fast suites + 1 CATIA lifecycle suite) · Fast regression: 45/45 passing.
+> **Test baseline**: 47 suites (46 fast suites + 1 CATIA lifecycle suite) · Fast regression: 46/46 passing.
 
 ---
 
@@ -650,7 +650,7 @@ sh scripts/install-git-hooks.sh
 
 它把 `scripts/git-hooks/pre-push` 复制到 `.git/hooks/`。`.git/hooks` 不随仓库分发，新 clone 不跑安装脚本就没有这道门禁。单次绕过用 `git push --no-verify`。
 
-> **测试基线**：46 套件（45 快速套件 + 1 CATIA 生命周期套件）· 快速回归通过：45/45。
+> **测试基线**：47 套件（46 快速套件 + 1 CATIA 生命周期套件）· 快速回归通过：46/46。
 
 ---
 

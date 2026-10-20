@@ -85,6 +85,8 @@ SUITES = {
     "UI Clarifier": "test_ui_generator_clarifier.py",
     # ── MCP stdio contract (spawns the real server on a GBK code page) ──
     "MCP Stdio Encoding": "test_mcp_stdio_encoding.py",
+    # ── Official call chain explorer (evidence-grounded CAA workflow recovery) ──
+    "Call Chain Explorer": "test_chain_explorer.py",
     }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
@@ -136,6 +138,7 @@ VERIFY_STRINGS = {
     "test_sample_data.py": "SAMPLE DATA ACCEPTANCE OK",
     "test_ui_generator_clarifier.py": "passed",
     "test_mcp_stdio_encoding.py": "passed",
+    "test_chain_explorer.py": "checks passed",
     }
 
 

@@ -284,16 +284,33 @@ class Retrieval:
         except Exception as e:
             report["sample_data_index"] = {"ok": False, "error": str(e)}
 
+        # Core indexes determine primary retrieval health
+        core_indexes = [
+            "catalog", "method_index", "header_map", "api_registry",
+            "usecase_index", "dic_index", "sample_data_index"
+        ]
+        report["core_ok"] = all(report.get(k, {}).get("ok", False) for k in core_indexes)
+
+        # Chain explorer is an optional analytical extension
         try:
             ce = self.chain_explorer
+            has_root = ce.caadoc_root is not None
             report["chain_explorer"] = {
-                "ok": ce.caadoc_root is not None,
+                "ok": has_root,
+                "status": "ready" if has_root else "degraded",
                 "caadoc_root": str(ce.caadoc_root) if ce.caadoc_root else None,
+                "note": "Optional source-grounded chain discovery extension."
             }
         except Exception as e:
-            report["chain_explorer"] = {"ok": False, "error": str(e)}
+            report["chain_explorer"] = {
+                "ok": False,
+                "status": "unavailable",
+                "error": str(e),
+                "note": "Optional source-grounded chain discovery extension."
+            }
 
-        report["ok"] = all(v.get("ok") for v in report.values())
+        # Overall retrieval health reflects core authority indexes
+        report["ok"] = report["core_ok"]
         return report
 
 

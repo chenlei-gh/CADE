@@ -351,15 +351,29 @@ def judge_chain_relevance(request: str, candidate: dict,
     if not candidate or not enabled():
         return None
 
+    steps = candidate.get("steps", [])[:10]
+    call_summary = []
+    for s in steps:
+        caller = s.get("caller_type") or s.get("caller_var") or s.get("caller", "")
+        kind = s.get("kind", "")
+        if kind == "query_interface":
+            target_itf = s.get("target_type") or s.get("target") or ""
+            res_var = s.get("result_var") or ""
+            call_summary.append(f"{caller}->QueryInterface({target_itf}, &{res_var})")
+        else:
+            meth = s.get("method") or s.get("target") or ""
+            args = s.get("args") or ""
+            res = s.get("result_type") or s.get("result_var") or ""
+            ret_str = f" => {res}" if res else ""
+            call_summary.append(f"{caller}->{meth}({args}){ret_str}")
+
     state = {
         "user_request": (request or "")[:800],
         "usecase_name": str(candidate.get("usecase", "")),
         "source_file": str(candidate.get("file", "")),
+        "connectivity_status": str(candidate.get("connectivity_status", "connected")),
         "key_interfaces": list(candidate.get("key_interfaces", []))[:8],
-        "call_summary": [
-            f"{s.get('caller', '')} -> {s.get('method', '')} -> {s.get('target', '')}"
-            for s in candidate.get("steps", [])[:10]
-        ],
+        "call_summary": call_summary,
     }
 
     questions = {

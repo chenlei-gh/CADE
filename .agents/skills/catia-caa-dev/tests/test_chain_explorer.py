@@ -18,7 +18,7 @@ SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT / "skills"))
 
 from retrieval import get_retrieval
-from chain_explorer import ChainExplorer
+from chain_explorer import ChainExplorer, ChainStep
 from kernel import Kernel, KernelMode
 
 total = passed = 0
@@ -135,22 +135,103 @@ check("Negative control provides missing_evidence reason", len(res_neg.get("miss
 
 
 print("=" * 70)
-print("7. Controlled Crystallization & Knowledge Isolation")
+print("7. Adversarial Negative Controls (Def-Use, Cross-Function & Error Blocks)")
 print("=" * 70)
 
-if res_c.get("candidates"):
-    cand_to_crystallize = res_c["candidates"][0]
-    exp_dir = SKILL_ROOT / "knowledge" / "experimental"
-    c_res = explorer.crystallize(cand_to_crystallize, output_dir=exp_dir)
+import tempfile
 
-    check("Crystallize status is ok", c_res.get("status") == "ok")
-    doc_path = Path(c_res.get("file", ""))
-    check("Candidate markdown file created", doc_path.exists())
+with tempfile.TemporaryDirectory() as tmp_dir_str:
+    tmp_dir = Path(tmp_dir_str)
 
-    content = doc_path.read_text(encoding="utf-8")
-    check("Candidate header contains SECURITY NOTICE", "SECURITY NOTICE" in content)
-    check("Candidate document states isolated from catalog", "isolated from official knowledge" in content)
-    check("Candidate document contains Promotion Gate checklist", "Promotion Gate" in content)
+    # 7a: Cross-function isolation counter-example
+    cpp_cross_fn = tmp_dir / "cross_function_isolated.cpp"
+    cpp_cross_fn.write_text(
+        """
+        void CAAMyClass::FunctionA() {
+            CATIProduct *piProduct = NULL;
+            piProduct->GetChildren();
+        }
+        void CAAMyClass::FunctionB() {
+            CATIPrtContainer *piContainer = NULL;
+            piContainer->GetPart();
+        }
+        """,
+        encoding="utf-8"
+    )
+    steps_cf, conn_cf = explorer.extract_chain_from_cpp(cpp_cross_fn, start_type="CATIProduct", target_type="CATIPrtContainer")
+    check("Cross-function isolation rejected as disconnected", conn_cf == "disconnected")
+    check("Cross-function steps do not falsely connect", len(steps_cf) == 0)
+
+    # 7b: Error handling branch isolation
+    cpp_error_branch = tmp_dir / "error_branch.cpp"
+    cpp_error_branch.write_text(
+        """
+        void CAAMyClass::Execute() {
+            CATIProduct *piProduct = NULL;
+            HRESULT rc = S_OK;
+            if (FAILED(rc)) {
+                CATIArrSegment *piErrSeg = NULL;
+                piErrSeg->Release();
+                return;
+            }
+            piProduct->GetChildren();
+        }
+        """,
+        encoding="utf-8"
+    )
+    steps_eb, conn_eb = explorer.extract_chain_from_cpp(cpp_error_branch, start_type="CATIProduct", target_type="CATIArrSegment")
+    check("Target in FAILED(rc) error block is not promoted to valid chain", conn_eb == "disconnected")
+
+    # 7c: Dataflow disconnect within same function
+    cpp_unlinked = tmp_dir / "unlinked_dataflow.cpp"
+    cpp_unlinked.write_text(
+        """
+        void CAAMyClass::Execute() {
+            CATIProduct *piProduct = NULL;
+            piProduct->GetChildren();
+            CATIArrSegment *piOther = NULL;
+            piOther->GetDiameter();
+        }
+        """,
+        encoding="utf-8"
+    )
+    steps_un, conn_un = explorer.extract_chain_from_cpp(cpp_unlinked, start_type="CATIProduct", target_type="CATIArrSegment")
+    check("Unlinked dataflow within same function detected as disconnected", conn_un == "disconnected")
+
+    # 7d: Method disambiguation check
+    step_amb = ChainStep(
+        line=10, kind="method_call", caller_var="pUnknown", caller_type="", target_name="Release"
+    )
+    explorer.verify_steps([step_amb])
+    check("Ambiguous method with multiple owners flags owner_ambiguity", step_amb.owner_ambiguity is True)
+    check("Ambiguous method has candidate owners", len(step_amb.candidate_owners) > 1)
+
+
+print("=" * 70)
+print("8. Controlled Crystallization (Zero Workspace Pollution & Overwrite Defense)")
+print("=" * 70)
+
+with tempfile.TemporaryDirectory() as tmp_exp_dir_str:
+    exp_dir = Path(tmp_exp_dir_str)
+    if res_c.get("candidates"):
+        cand_to_crystallize = res_c["candidates"][0]
+
+        # First write
+        c_res1 = explorer.crystallize(cand_to_crystallize, output_dir=exp_dir, overwrite=False)
+        check("Crystallize status is ok", c_res1.get("status") == "ok")
+        doc_path1 = Path(c_res1.get("file", ""))
+        check("Candidate markdown file created in temp dir", doc_path1.exists())
+
+        # Second write with overwrite=False: must generate _v2
+        c_res2 = explorer.crystallize(cand_to_crystallize, output_dir=exp_dir, overwrite=False)
+        doc_path2 = Path(c_res2.get("file", ""))
+        check("Overwrite defense creates _v2 candidate file", "_v2" in doc_path2.name and doc_path2.exists())
+
+        content = doc_path1.read_text(encoding="utf-8")
+        check("Candidate header contains SECURITY NOTICE", "SECURITY NOTICE" in content)
+        check("Candidate document states isolated from catalog", "isolated from official knowledge" in content)
+        check("Candidate document contains Promotion Gate checklist", "Promotion Gate" in content)
+        check("Candidate document distinguishes Frameworks vs Link Modules", "Recommended Link Modules" in content)
 
     # Verify official catalog/index.yaml was NOT modified or contaminated
     cat_yaml = SKILL_ROOT / "catalog" / "index.yaml"
@@ -159,14 +240,22 @@ if res_c.get("candidates"):
 
 
 print("=" * 70)
-print("8. End-to-End Kernel ANALYZE Integration")
+print("9. End-to-End Kernel ANALYZE Integration & Precedence")
 print("=" * 70)
 
 k = Kernel()
+
+# 9a: Curated catalog hit takes precedence over chain exploration
+k_cat = k.execute(KernelMode.ANALYZE, "如何在CAA中创建特征")
+check("Curated catalog knowledge takes precedence", k_cat.get("status") == "ok")
+check("Curated hit returns references", "references" in k_cat.get("data", {}))
+
+# 9b: Uncovered action query invokes chain explorer with objective tone
 k_res = k.execute(KernelMode.ANALYZE, "如何在CAA中获取CATIEhiBundleSegment并配置线束")
-check("Kernel analyze returned ok", k_res.get("status") == "ok")
+check("Kernel analyze returned ok for uncovered domain", k_res.get("status") == "ok")
 k_data = k_res.get("data", {})
 check("Kernel surfaced official_usecase_chain", k_data.get("evidence_level") == "official_usecase_chain")
+check("Kernel tone explicitly states static-checked / not compiler-verified", "compiler_verified" in k_data and k_data["compiler_verified"] is False)
 check("Kernel included isolated candidate note", "isolated_candidate_note" in k_data)
 
 print("=" * 70)
