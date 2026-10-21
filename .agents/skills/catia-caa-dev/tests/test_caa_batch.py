@@ -327,9 +327,10 @@ check("5.3 -macro survives inside the -c payload",
 # mkrun splits the -c payload on spaces, so a spaced path can never survive:
 # bare, nested quotes and backslash escapes all truncate at the first space on
 # B28. The launcher must refuse instead of emitting something that fails.
-
-
-space_path = "C:\\Program Files\\x y.CATScript"
+# Built from the test workspace rather than a literal drive path: only the
+# space matters here, and a hardcoded C:\ makes this line trip the
+# no-hardcoded-paths scan for no reason.
+space_path = str(WS / "Program Files" / "x y.CATScript")
 try:
     spaced_line = _launcher_line(["-macro", space_path])
     space_failed_loud = False

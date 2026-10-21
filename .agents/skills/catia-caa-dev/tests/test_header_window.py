@@ -49,8 +49,12 @@ ck(
     ) == "CATIVisPropertiesAbstract",
 )
 ck("empty install is refused", resolve_header_file("", "Dialog", "CATDlgEditor") is None)
-ck("dotdot framework refused", resolve_header_file("C:/catia", "..", "CATDlgEditor") is None)
-ck("dotdot stem refused", resolve_header_file("C:/catia", "Dialog", "..\\secret") is None)
+# These two cases are about '..' in the framework/stem, which is rejected
+# before the install root is ever touched. A drive-free fake root keeps the
+# fixture honest without tripping the no-hardcoded-paths scan.
+FAKE_INSTALL = "fake/catia"
+ck("dotdot framework refused", resolve_header_file(FAKE_INSTALL, "..", "CATDlgEditor") is None)
+ck("dotdot stem refused", resolve_header_file(FAKE_INSTALL, "Dialog", "..\\secret") is None)
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp)
