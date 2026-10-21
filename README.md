@@ -144,7 +144,7 @@ repair()
 - **mkmk Integration**: Incremental builds (`mkmk -u`) and clean full rebuilds.
 - **Prerequisites Engine**: Automatic dependency resolution and `IdentityCard.h` verification.
 - **Runtime View**: Automated assembly of `win_b64` runtime trees (`mkCreateRuntimeView`).
-- **CATIA Launcher**: Process control via `mkrun` with environment initialization.
+- **CATIA Launcher**: Workspace launch goes through `run.py <workspace>` and `mkrun`, which mounts that workspace Runtime View. A bare `CATSTART.exe` / `CNEXT.exe` starts CATIA with no custom CAA DLLs. `status=started` is not `runtime_view_mounted`.
 - **Telemetry & Error Parsing**: Real-time compiler log classification and error location.
 
 ### 🔍 Analyze
@@ -258,6 +258,11 @@ sh sync_agents.sh
 2. **Editor Setup**:
    - **Zed**: Works out of the box (reads `.agents/skills/` and `AGENTS.md`).
    - **Cursor / VS Code / Windsurf / Claude**: Run `python .agents/skills/catia-caa-dev/tools/setup_mcp.py` to configure the MCP server.
+3. **Launch CATIA with the workspace mounted**:
+   ```bash
+   python .agents/skills/catia-caa-dev/skills/run.py D:/YourCAAWorkspace
+   ```
+   `workspace` is a positional argument, not `--workspace`. This path uses `mkrun` and sets `CATDLLPath` / `CATDictionaryPath` / `CATMsgCatalogPath`. Do not launch `<CATIA_INSTALL>/win_b64/code/bin/CATSTART.exe` or `CNEXT.exe`, and do not call `run.py` without a workspace: CATIA will start, but no custom CAA DLL loads. Check `runtime_view_mounted` in the JSON result; `status=started` only means the process is up.
 
 ---
 
@@ -290,7 +295,7 @@ AnalysisModule.m/
 
 ### Automated Pipeline
 ```text
-Clarify Intent ➔ Plan Task ➔ Generate Scaffolding ➔ Verify Syntax ➔ Build (mkmk) ➔ Run (CNEXT)
+Clarify Intent ➔ Plan Task ➔ Generate Scaffolding ➔ Verify Syntax ➔ Build (mkmk) ➔ Run (run.py <workspace> → mkrun)
 ```
 
 ---
@@ -487,7 +492,7 @@ repair() 修复模式
 #### 🔨 构建与运行（Build & Run）
 - **mkmk 构建闭环**：多进程编译执行、构建门禁过滤与编译器报错语义解析。
 - **前置依赖解析（Prerequisites）**：跨 Framework 依赖管理、构建环境初始化与运行时视图（Runtime View）装配。
-- **CATIA 容器运行**：自动化启动 CNEXT、挂载测试工作区与自动化批处理宏执行。
+- **CATIA 启动**：必须带工作区走 `run.py <workspace>` → `mkrun`，才会挂载该工作区的 Runtime View。裸跑 `CATSTART.exe` / `CNEXT.exe` 只会起一个不加载自定义 CAA DLL 的 CATIA。`status=started` 不等于 `runtime_view_mounted`。
 
 #### 🔍 静态与影响分析（Analyze）
 - **工作区拓扑扫描**：自动解析 Framework、Module、Interface、Component 与引用关系。
@@ -591,6 +596,11 @@ sh sync_agents.sh
 2. **连接 AI 编辑器**：
    - **Zed**：开箱即用（自动加载 `.agents/skills/` 下的技能规范与根目录 `AGENTS.md` 治理规则）。
    - **Cursor / VS Code / Windsurf / Claude**：运行 `python .agents/skills/catia-caa-dev/tools/setup_mcp.py` 自动配置 MCP 服务。
+3. **带工作区启动 CATIA**：
+   ```bash
+   python .agents/skills/catia-caa-dev/skills/run.py D:/你的CAA工程目录
+   ```
+   `workspace` 是位置参数，不是 `--workspace`。这条路径走 `mkrun`，并设置 `CATDLLPath` / `CATDictionaryPath` / `CATMsgCatalogPath`。不要直接跑安装目录里的 `CATSTART.exe` 或 `CNEXT.exe`，也不要不带工作区调 `run.py`：CATIA 会起来，但任何自定义 CAA DLL 都不加载。看返回 JSON 的 `runtime_view_mounted`，不要只看 `status=started`。
 
 ---
 
@@ -623,7 +633,7 @@ AnalysisModule.m/
 
 #### 自动化流转管线
 ```text
-澄清意图 ➔ 规划任务 ➔ 生成脚手架 ➔ 静态验证 ➔ mkmk 构建 ➔ CNEXT 运行
+澄清意图 ➔ 规划任务 ➔ 生成脚手架 ➔ 静态验证 ➔ mkmk 构建 ➔ run.py <workspace> → mkrun
 ```
 
 ---

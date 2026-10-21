@@ -1012,12 +1012,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=r"""
 Examples:
-  python run.py                              # Start CATIA (default environment)
-  python run.py D:\workspace                 # Start with Runtime View
-  python run.py --env CATIA.P3.V5-6R2018.B28 # Specify environment
-  python run.py --wait                       # Start and wait for exit
-  python run.py --check                      # Check if running
-  python run.py --dev D:\workspace           # Build + Run in one command
+  python run.py D:\workspace                 # Mount Runtime View via mkrun (required)
+  python run.py D:\workspace --wait          # Mount, start, and wait for exit
+  python run.py --env CATIA.P3.V5-6R2018.B28 D:\workspace
+  python run.py --check                      # Check if running (does not start)
+  python run.py --stop                       # Stop CATIA (does not start)
+  python run.py --dev D:\workspace           # Build + mount Runtime View + start
+
+workspace is a positional argument, not --workspace. Omitting it falls back to
+bare CATSTART.exe: CATIA starts, but custom CAA DLLs are not loaded.
+Check runtime_view_mounted. status=started does not mean the workspace is mounted.
+Do not launch CATSTART.exe or CNEXT.exe from the CATIA install directory.
         """,
     )
 
@@ -1025,7 +1030,7 @@ Examples:
         "workspace",
         nargs="?",
         default=None,
-        help="Workspace path with Runtime View (optional)",
+        help="Workspace path. Required to mount Runtime View; omit only for a bare session",
     )
 
     parser.add_argument(

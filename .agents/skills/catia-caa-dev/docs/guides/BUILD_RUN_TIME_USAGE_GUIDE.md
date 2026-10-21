@@ -145,23 +145,23 @@ Run Time 环境用于 **运行 CATIA**，它需要：
 ### 🔧 初始化方式
 
 ```batch
-# Run Time Prompt 调用链 (B28)
-cmd.exe
-  → mkrun.bat                    # 设置 Runtime 环境变量
-  → 设置 CATInstallPath, CATDLLPath
-  → 现在可以运行 CNEXT.exe
+# 带工作区的启动链 (B28)
+run.py <workspace>
+  → tck_init → tck_profile → mkinit
+  → Runtime View
+  → mkrun                      # 设置 CATDLLPath / CATDictionaryPath / CATMsgCatalogPath
+  → CNEXT
 ```
+
+不要自己 `Popen` 安装目录里的 `CNEXT.exe` 或 `CATSTART.exe`。那不会挂 Runtime View。
 
 **在 Python 中调用：**
 
 ```python
-from env import CAAEnvironment
+from run import start_catia_runtime
 
-caa_env = CAAEnvironment()
-env_vars = caa_env.initialize()  # 设置基本 Runtime 变量
-
-cnext_path = caa_env.get_cnext_path()
-subprocess.Popen([str(cnext_path)], env=env_vars)
+result = start_catia_runtime(workspace_path="D:/workspace")
+# 看 runtime_view_mounted，不要只看 status == "started"
 ```
 
 ### 📂 使用 Run Time 的 Skills
@@ -175,25 +175,25 @@ subprocess.Popen([str(cnext_path)], env=env_vars)
 
 **调用方式：**
 ```bash
-python skills/run.py                # 启动 CATIA (后台)
-python skills/run.py --wait         # 启动并等待退出
-python skills/run.py --check        # 检查是否运行
+python skills/run.py D:\workspace            # 启动并挂载该工作区 Runtime View
+python skills/run.py D:\workspace --wait     # 挂载后启动并等待退出
+python skills/run.py --check                 # 只检查是否运行，不启动
+python skills/run.py --stop                  # 停止，不启动
 ```
+
+`workspace` 是位置参数，不是 `--workspace`。不带路径会回退到裸 `CATSTART.exe`：CATIA 起来，自定义 CAA DLL 不加载，`status` 仍可能是 `started`。
 
 **内部实现：**
 ```python
-# run.py 内部流程
-caa_env = CAAEnvironment()
-env_vars = caa_env.initialize()  # 设置 Runtime 环境
-
-cnext_path = caa_env.get_cnext_path()
-process = subprocess.Popen([str(cnext_path)], env=env_vars)
+# 带 workspace：mkrun，挂 CATDLLPath / CATDictionaryPath / CATMsgCatalogPath
+result = start_catia_runtime(workspace_path="D:/workspace")
+assert result["runtime_view_mounted"] is True
 ```
 
 **关键点：**
-- ✅ 启动前检查 CATIA 是否已运行（避免多实例冲突）
-- ✅ 可以后台启动或前台等待
-- ✅ 需要有效的 Runtime View
+- ✅ 验证自定义工具时必须带 workspace
+- ✅ 看 `runtime_view_mounted`，不要只看 `status`
+- ✅ 禁止直接运行安装目录里的 `CATSTART.exe` / `CNEXT.exe`
 
 ---
 
@@ -232,7 +232,7 @@ subprocess.run(cmd)
 |------|------|---------|
 | `CNEXT.exe not found` | CATIA 路径错误 | 检查 `caa_env_config.txt` |
 | `No licenses available` | 许可证未配置 | 配置 CATIA 许可证服务器 |
-| `Runtime View not found` | 未创建 Runtime View | 运行 `python skills/runtime_view.py --create` |
+| `Runtime View not found` | 未创建 Runtime View | `python skills/runtime_view.py <workspace> --create` |
 | `CATIA is already running` | CATIA 已在运行 | 使用 `--check` 检查状态 |
 
 ---
@@ -250,7 +250,7 @@ graph TD
     Question -->|检查工作区| None[不需要特殊环境]
     
     BuildTime --> BuildPy[python skills/build.py]
-    RunTime --> RunPy[python skills/run.py]
+    RunTime --> RunPy["python skills/run.py workspace"]
     Clean --> CleanPy[python skills/clean.py]
     BuildTime2 --> RuntimeViewPy[python skills/runtime_view.py]
     None --> WorkspacePy[python skills/workspace.py]
@@ -267,7 +267,7 @@ graph TD
 |---------|------------|-----------|------|
 | "编译我的代码" | `build.py` | Build Time | `python skills/build.py` |
 | "清理构建" | `clean.py` | Build Time (可选) | `python skills/clean.py` |
-| "运行CATIA" | `run.py` | Run Time | `python skills/run.py` |
+| "运行CATIA" | `run.py` | Run Time | `python skills/run.py <workspace>` |
 | "创建Runtime View" | `runtime_view.py` | Build Time | `python skills/runtime_view.py --create` |
 | "检查工作区" | `workspace.py` | 无 | `python skills/workspace.py` |
 | "检查CATIA是否运行" | `run.py` | Run Time | `python skills/run.py --check` |
@@ -292,10 +292,10 @@ sequenceDiagram
     BuildTime->>BuildTime: mkinit.bat 初始化
     BuildTime->>BuildTime: mkmkM -u 编译
     BuildTime-->>AI: {"status":"success"}
-    AI->>RunTime: python skills/run.py
-    RunTime->>RunTime: 初始化 Runtime 环境
-    RunTime->>CATIA: 启动 CNEXT.exe
-    CATIA-->>AI: {"status":"started"}
+    AI->>RunTime: python skills/run.py workspace
+    RunTime->>RunTime: mkrun 挂载 Runtime View
+    RunTime->>CATIA: 启动 CNEXT
+    CATIA-->>AI: runtime_view_mounted=true
     AI-->>User: 编译成功，CATIA已启动
 ```
 
@@ -312,11 +312,11 @@ result = subprocess.run(["python", "skills/build.py", "TestFramework.edu"],
 build_result = json.loads(result.stdout)
 
 if build_result["status"] == "success":
-    # Step 3: 运行 (使用 Run Time)
-    result = subprocess.run(["python", "skills/run.py"], 
+    # Step 3: 运行。workspace 是位置参数，不带则自定义 DLL 不加载。
+    result = subprocess.run(["python", "skills/run.py", "D:/workspace"],
                            capture_output=True, text=True)
     run_result = json.loads(result.stdout)
-    print(f"CATIA started: {run_result['message']}")
+    print(f"mounted: {run_result.get('runtime_view_mounted')}")
 else:
     # Step 4: 修复错误
     for error in build_result["errors"]:
@@ -346,7 +346,7 @@ graph LR
     N --> O{编译成功?}
     O -->|是| P[测试运行]
     O -->|否| Q[修复错误]
-    P --> R[python skills/run.py]
+    P --> R["python skills/run.py workspace"]
     R --> S[Run Time: CNEXT]
 ```
 
@@ -375,8 +375,8 @@ if runtime_info["status"] == "success":
     build_info = json.loads(result.stdout)
     
     if build_info["status"] == "success":
-        # Step 5: 运行 (使用 Run Time)
-        subprocess.run(["python", "skills/run.py"])
+        # Step 5: 运行。必须把 workspace_path 作为位置参数传进去。
+        subprocess.run(["python", "skills/run.py", workspace_path])
 ```
 
 ---
@@ -401,8 +401,8 @@ for attempt in range(max_attempts):
     if build_result["status"] == "success":
         print("✓ Build successful!")
         
-        # 运行测试 (Run Time)
-        subprocess.run(["python", "skills/run.py"])
+        # 运行测试。不带 workspace 是裸机启动。
+        subprocess.run(["python", "skills/run.py", workspace])
         break
     else:
         print(f"✗ Build failed with {build_result['error_count']} errors")
@@ -442,7 +442,7 @@ result = subprocess.run(["python", "skills/build.py"], capture_output=True)
 build_info = json.loads(result.stdout)
 
 if build_info["status"] == "success":
-    subprocess.run(["python", "skills/run.py"])  # 完全独立的 Run Time 环境
+    subprocess.run(["python", "skills/run.py", "D:/workspace"])  # 位置参数，走 mkrun
 ```
 
 #### 场景 3：检查 CATIA 是否运行再启动
@@ -453,7 +453,7 @@ result = subprocess.run(["python", "skills/run.py", "--check"], capture_output=T
 check_result = json.loads(result.stdout)
 
 if check_result["status"] == "not_running":
-    subprocess.run(["python", "skills/run.py"])
+    subprocess.run(["python", "skills/run.py", "D:/workspace"])
 else:
     print(f"CATIA already running (PID: {check_result['processes'][0]['pid']})")
 ```
@@ -497,7 +497,7 @@ subprocess.run(["C:\\...\\mkmkM.exe", "-u"])
 ```python
 # ❌ 错误：没有检查 Runtime View
 subprocess.run(["python", "skills/build.py"])
-subprocess.run(["python", "skills/run.py"])  # 可能失败：Runtime View 不存在
+subprocess.run(["python", "skills/run.py"])  # 裸机：自定义 DLL 不加载
 ```
 
 **原因：** 即使编译成功，没有 Runtime View 就无法运行。
@@ -506,9 +506,9 @@ subprocess.run(["python", "skills/run.py"])  # 可能失败：Runtime View 不�
 
 ```python
 # ✅ 正确
-subprocess.run(["python", "skills/runtime_view.py", "--create"])
-subprocess.run(["python", "skills/build.py"])
-subprocess.run(["python", "skills/run.py"])
+subprocess.run(["python", "skills/runtime_view.py", "D:/workspace", "--create"])
+subprocess.run(["python", "skills/build.py", "D:/workspace"])
+subprocess.run(["python", "skills/run.py", "D:/workspace"])
 ```
 
 ---
@@ -570,16 +570,16 @@ Cannot find Visual Studio 2012
 
 ```python
 # Step 1: 检查 Runtime View
-subprocess.run(["python", "skills/runtime_view.py"])
+subprocess.run(["python", "skills/runtime_view.py", "D:/workspace"])
 
 # Step 2: 创建 Runtime View (如果不存在)
-subprocess.run(["python", "skills/runtime_view.py", "--create"])
+subprocess.run(["python", "skills/runtime_view.py", "D:/workspace", "--create"])
 
 # Step 3: 重新编译
-subprocess.run(["python", "skills/build.py"])
+subprocess.run(["python", "skills/build.py", "D:/workspace"])
 
-# Step 4: 再次运行
-subprocess.run(["python", "skills/run.py"])
+# Step 4: 再次运行。不带 workspace 仍是裸机。
+subprocess.run(["python", "skills/run.py", "D:/workspace"])
 ```
 
 ---
@@ -604,7 +604,7 @@ check = json.loads(result.stdout)
 if check["status"] == "running":
     print("关闭现有 CATIA 实例后再启动")
 else:
-    subprocess.run(["python", "skills/run.py"])
+    subprocess.run(["python", "skills/run.py", "D:/workspace"])
 
 # 方案 2: 强制使用现有实例
 if check["status"] == "running":
@@ -624,10 +624,9 @@ if check["status"] == "running":
    - 由 `build.py` 和 `runtime_view.py` 使用
 
 2. **Run Time = 运行环境**
-   - 使用 `mkrun.bat` 初始化（或直接设置环境变量）
-   - 运行 `CNEXT.exe`
-   - 依赖 Runtime View
-   - 由 `run.py` 使用
+   - 带 workspace 走 `mkrun`，挂载 `CATDLLPath` / `CATDictionaryPath` / `CATMsgCatalogPath`
+   - 不要直接运行 `CATSTART.exe` / `CNEXT.exe`
+   - 由 `run.py <workspace>` 使用；看 `runtime_view_mounted`
 
 3. **环境隔离**
    - 每个任务使用独立环境
@@ -639,7 +638,7 @@ if check["status"] == "running":
    workspace.py (检查) 
      → runtime_view.py --create (创建Runtime View, Build Time)
      → build.py (编译, Build Time) 
-     → run.py (运行, Run Time)
+     → run.py <workspace> (mkrun 挂载后运行)
    ```
 
 ---

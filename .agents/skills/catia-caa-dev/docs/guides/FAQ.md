@@ -288,10 +288,11 @@ CATMsgCatalog::PrintMessage("Debug message");
 - **From command line**: In that console window
 - **From Start Menu**: No console (messages lost)
 
-**Solution**: Launch CATIA from command line:
-```cmd
-"<CATIA_INSTALL>\win_b64\code\bin\CNEXT.exe"
+**Solution**: Launch through CADE with the workspace, not the install-dir exe:
+```bash
+python .agents/skills/catia-caa-dev/skills/run.py D:/YourCAAWorkspace
 ```
+Do not run `<CATIA_INSTALL>\win_b64\code\bin\CNEXT.exe` or `CATSTART.exe`. That starts CATIA with no custom CAA DLLs, so cout from your component never runs. `mkrun` keeps the console that shows cout.
 
 ---
 

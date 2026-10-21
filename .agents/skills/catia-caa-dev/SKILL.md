@@ -1158,12 +1158,13 @@ python skills/run.py [workspace] [options]
 
 **示例**:
 ```bash
-python skills/run.py D:\workspace         # 启动 CATIA 并挂载该工作区 Runtime View（推荐，验证自定义工具时必须这样）
-python skills/run.py                      # 裸机启动，不加载任何自定义 CAA DLL（会打印 WARNING）
-python skills/run.py --wait               # 启动并等待 CATIA 退出
-python skills/run.py --stop               # 停止所有 CATIA 进程
+python skills/run.py D:\workspace         # 启动 CATIA 并挂载该工作区 Runtime View（验证自定义工具时必须带 workspace）
+python skills/run.py D:\workspace --wait  # 挂载后启动并等待 CATIA 退出
+python skills/run.py --stop               # 停止所有 CATIA 进程（不启动）
 python skills/run.py --dev D:\workspace   # 编译 + 挂载 Runtime View 启动，一步到位
 ```
+
+不要复制不带 workspace 的 `python skills/run.py`。那是裸机回退：会打印 WARNING，CATIA 起来，自定义 CAA DLL 不加载。
 
 **Python API**:
 ```python
@@ -1178,8 +1179,8 @@ from run import (
 # 启动 CATIA
 result = start_catia_runtime(workspace_path="D:/workspace")
 
-# 运行宏
-result = run_catia_macro("D:/scripts/my_macro.CATScript")
+# 运行宏（必须带 workspace，否则是裸机）
+result = run_catia_macro("D:/scripts/my_macro.CATScript", workspace_path="D:/workspace")
 
 # 检查是否运行
 result = check_catia_running()
@@ -1190,11 +1191,8 @@ result = stop_catia()
 # 指定环境启动
 result = run_catia_with_env("CATIA_P3.V5-6R2018.B28", workspace_path="D:/workspace")
 
-# 运行 CATScript 宏
-result = run_catia_macro("D:/scripts/my_macro.CATScript")
-
-# Batch 模式
-result = run_catia_batch()
+# Batch 模式（必须带 workspace）
+result = run_catia_batch(workspace_path="D:/workspace")
 ```
 
 ### 3. 清理工作区

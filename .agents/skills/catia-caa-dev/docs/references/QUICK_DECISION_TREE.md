@@ -39,9 +39,9 @@
 
 | 操作 | Skill | 命令 |
 |-----|------|------|
-| 启动 CATIA | `run.py` | `python skills/run.py` |
+| 启动 CATIA | `run.py` | `python skills/run.py <workspace>` |
 | 检查 CATIA 是否运行 | `run.py` | `python skills/run.py --check` |
-| 启动并等待 CATIA 退出 | `run.py` | `python skills/run.py --wait` |
+| 启动并等待 CATIA 退出 | `run.py` | `python skills/run.py <workspace> --wait` |
 
 **关键标志：**
 - ✅ 涉及 `CNEXT.exe`
@@ -126,7 +126,7 @@ graph TD
     Type -->|不确定|Analyze[分析具体操作]
     
     Compile --> BuildPy["python skills/build.py"]
-    Run --> RunPy["python skills/run.py"]
+    Run --> RunPy["python skills/run.py workspace"]
     Check --> WorkspacePy["python skills/workspace.py"]
     Clean --> CleanPy["python skills/clean.py"]
     
@@ -149,13 +149,15 @@ graph TD
 
 **答案：** 因为创建工具 `mkCreateRuntimeView` 是 Build Time 工具。
 
-```python
+```bash
 # 创建 Runtime View：使用 Build Time
-python skills/runtime_view.py --create  # 内部调用 mkCreateRuntimeView (Build Time工具)
+python skills/runtime_view.py D:/workspace --create
 
-# 使用 Runtime View：使用 Run Time
-python skills/run.py  # 内部使用 Runtime View 启动 CNEXT
+# 使用 Runtime View：使用 Run Time。workspace 是位置参数。
+python skills/run.py D:/workspace
 ```
+
+不带 workspace 的 `python skills/run.py` 不会挂 Runtime View。
 
 ---
 
@@ -231,8 +233,8 @@ python skills/clean.py --use-mkmk  # 调用 mkmk -u (Build Time)
 # Step 1: 编译 → Build Time
 subprocess.run(["python", "skills/build.py"])
 
-# Step 2: 运行 → Run Time
-subprocess.run(["python", "skills/run.py"])
+# Step 2: 运行 → Run Time。workspace 是位置参数。
+subprocess.run(["python", "skills/run.py", "D:/workspace"])
 ```
 
 ---
@@ -268,8 +270,8 @@ result = subprocess.run(["python", "skills/build.py"], capture_output=True)
 build_result = json.loads(result.stdout)
 
 if build_result["status"] == "success":
-    # Step 3: 运行 (Run Time)
-    subprocess.run(["python", "skills/run.py"])
+    # Step 3: 运行。不带 workspace 不会加载自定义 DLL。
+    subprocess.run(["python", "skills/run.py", "D:/workspace"])
 else:
     print("编译失败，无法运行")
 ```

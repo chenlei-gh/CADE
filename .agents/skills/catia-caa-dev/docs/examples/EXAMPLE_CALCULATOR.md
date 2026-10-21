@@ -301,7 +301,7 @@ HRESULT Calculator::Divide(double iA, double iB, double& oResult)
 
 ## Compilation
 
-**Build**: `python skills/build.py Framework.edu/Module.m` | **Run**: `python skills/run.py`
+**Build**: `python skills/build.py Framework.edu/Module.m` | **Run**: `python skills/run.py D:/workspace`
 
 **Quick command**:
 ```bash

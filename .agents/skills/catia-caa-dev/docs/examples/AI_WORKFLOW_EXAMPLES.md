@@ -113,14 +113,14 @@ def setup_new_project(workspace_path):
         return False
     
     print("\nStep 5: 启动 CATIA 测试...")
-    # 使用 Run Time 环境
+    # workspace 是位置参数。不带它会落到裸 CATSTART，自定义 DLL 不加载。
     result = subprocess.run([
-        "python", "skills/run.py"
+        "python", "skills/run.py", workspace_path
     ], capture_output=True, text=True, cwd=".agents/skills/catia-caa-dev")
     
     run_info = json.loads(result.stdout)
     
-    if run_info["status"] == "started":
+    if run_info.get("runtime_view_mounted") and run_info["status"] == "started":
         print(f"✓ CATIA 已启动 (PID: {run_info['pid']})")
         print("\n项目设置完成！可以开始开发了。")
         return True
@@ -326,14 +326,14 @@ def create_and_test_dialog(framework_path, dialog_name):
     print(f"✓ 编译成功 ({build_info['duration']})")
     
     print("\nStep 4: 启动 CATIA 测试...")
-    # 使用 Run Time 环境
+    # workspace 是位置参数。看 runtime_view_mounted，不要只看 status。
     result = subprocess.run([
-        "python", "skills/run.py"
+        "python", "skills/run.py", framework_path
     ], capture_output=True, text=True, cwd=".agents/skills/catia-caa-dev")
     
     run_info = json.loads(result.stdout)
     
-    if run_info["status"] == "started":
+    if run_info.get("runtime_view_mounted") and run_info["status"] == "started":
         print(f"✓ CATIA 已启动 (PID: {run_info['pid']})")
         print(f"\n现在可以在 CATIA 中测试 {dialog_name} 了。")
         return True
@@ -446,9 +446,9 @@ def debug_catia_crash(workspace_path):
     print(f"✓ 编译成功 ({build_info['duration']})")
     
     print("\n诊断 4: 尝试启动 CATIA...")
-    # 使用 Run Time 环境
+    # 必须带 workspace，否则 --wait 也只是在等一个没挂自定义环境的 CATIA。
     result = subprocess.run([
-        "python", "skills/run.py", "--wait", "--timeout", "60"
+        "python", "skills/run.py", workspace_path, "--wait", "--timeout", "60"
     ], capture_output=True, text=True, cwd=".agents/skills/catia-caa-dev")
     
     run_info = json.loads(result.stdout)
@@ -632,12 +632,12 @@ def incremental_development_loop(workspace_path):
                     # 使用 Run Time 环境启动
                     print("\n[Run Time] 启动 CATIA...")
                     result = subprocess.run([
-                        "python", "skills/run.py"
+                        "python", "skills/run.py", workspace_path
                     ], capture_output=True, text=True, cwd=".agents/skills/catia-caa-dev")
                     
                     run_info = json.loads(result.stdout)
                     
-                    if run_info["status"] == "started":
+                    if run_info.get("runtime_view_mounted") and run_info["status"] == "started":
                         print(f"✓ CATIA 已启动 (PID: {run_info['pid']})")
         else:
             print(f"✗ 编译失败 ({build_info['error_count']} 错误)")

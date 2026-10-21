@@ -531,7 +531,7 @@ When generating CAA code:
 
 ## AI Capabilities
 
-**CAN do**: Generate standard CAA code, create framework structures, write interfaces/components, generate Imakefile.mk and IdentityCard.h, compile via `skills/build.py`, start CATIA via `skills/run.py`, check workspace via `skills/workspace.py`.
+**CAN do**: Generate standard CAA code, create framework structures, write interfaces/components, generate Imakefile.mk and IdentityCard.h, compile via `skills/build.py`, start CATIA via `skills/run.py <workspace>` (positional; bare `run.py` does not load custom CAA DLLs), check workspace via `skills/workspace.py`.
 
 **User must do**: Test CAA components in running CATIA.
 

@@ -21,11 +21,11 @@
 | 用户说的关键词 | 环境 | 命令 |
 |-------------|-----|------|
 | `编译`, `compile`, `build` | **Build Time** | `python skills/build.py` |
-| `运行`, `启动`, `run`, `start` | **Run Time** | `python skills/run.py` |
+| `运行`, `启动`, `run`, `start` | **Run Time** | `python skills/run.py <workspace>` |
 | `检查`, `验证`, `check`, `validate` | 无 | `python skills/workspace.py` |
 | `清理`, `clean` | 无 或 Build Time | `python skills/clean.py` |
 | `mkmk` | **Build Time** | `python skills/build.py` |
-| `CNEXT`, `CATIA` | **Run Time** | `python skills/run.py` |
+| `CNEXT`, `CATIA` | **Run Time** | `python skills/run.py <workspace>` |
 
 ---
 
@@ -51,7 +51,7 @@ runtime_view.py   [Build Time]   创建 Runtime View
      ↓
 build.py          [Build Time]   编译
      ↓
-run.py            [Run Time]     运行测试
+run.py <workspace> [Run Time]    mkrun 挂载后运行
 ```
 
 ---
@@ -63,7 +63,8 @@ run.py            [Run Time]     运行测试
 | `'mkmkM' is not recognized` | 未初始化 Build Time | Build Time | 必须通过 `mkinit.bat` |
 | `0xC0000142` | 直接运行 mkmkM.exe | Build Time | 必须在 cmd.exe 中初始化 |
 | `CNEXT.exe not found` | 路径错误 | Run Time | 检查 config.txt |
-| `Runtime View not found` | 未创建 | Run Time | 运行 `runtime_view.py --create` |
+| `Runtime View not found` | 未创建 | Run Time | `runtime_view.py <workspace> --create` |
+| CATIA 起来但没有自定义工具 | 裸 `CATSTART` / 不带 workspace 的 `run.py` | Run Time | `python skills/run.py <workspace>`，看 `runtime_view_mounted` |
 
 ---
 
@@ -71,7 +72,7 @@ run.py            [Run Time]     运行测试
 
 ```
 Build Time 编译用，mkinit 打头阵
-Run Time 运行时，CNEXT 是核心
+Run Time 运行时，mkrun 挂工作区
 工作区检查不用环境，直接读文件
 两个环境分得清，CAA 开发才顺心
 ```
@@ -100,8 +101,8 @@ Run Time 运行时，CNEXT 是核心
 # Build Time
 subprocess.run(["python", "skills/build.py", workspace])
 
-# Run Time
-subprocess.run(["python", "skills/run.py"])
+# Run Time。workspace 是位置参数。
+subprocess.run(["python", "skills/run.py", workspace])
 ```
 
 ### 示例 2：修复错误
@@ -123,8 +124,8 @@ subprocess.run(["python", "skills/workspace.py"])
 subprocess.run(["python", "skills/runtime_view.py", "--create"])
 subprocess.run(["python", "skills/build.py"])
 
-# Run Time
-subprocess.run(["python", "skills/run.py"])
+# Run Time。不带 workspace 不会加载自定义 DLL。
+subprocess.run(["python", "skills/run.py", "D:/workspace"])
 ```
 
 ---
@@ -142,6 +143,7 @@ subprocess.run(["python", "skills/run.py"])
 2. ~~编译和运行用同一个环境~~（会冲突）
 3. ~~假设编译成功就能运行~~（可能没有 Runtime View）
 4. ~~尝试在 Python 中设置环境变量~~（必须在 cmd.exe 中）
+5. ~~直接运行 `CATSTART.exe` / `CNEXT.exe`，或不带 workspace 调 `run.py`~~（CATIA 起来，自定义 DLL 不加载）
 
 ---
 
