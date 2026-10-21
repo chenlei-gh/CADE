@@ -71,8 +71,14 @@ workspace 模式下遇到含空格的宏/参数路径，直接返回
 
 **实测边界**：上述修复让 `batchmain` 真正被调用（`Entry point <batchmain> found`，
 用户代码产出日志）。剩余退出码来自 CATIA 会话创建失败
-（`Create_Session : 0x80004005`、`GSO factory available : 0`），属 CATIA 运行时层，
-**未定位根因**，与本修复无关。
+（`Create_Session : 0x80004005`、`GSO factory available : 0`）。
+
+**根因已定位**（对照实验，详见 `batch_infrastructure.md`）：同一台机器、同一份
+Runtime View、同一条 mkrun 链路下，`mkrun -c "CNEXT -batch -macro ..."` 的
+`Documents.Add("Part")` 和 `Documents.Open(...)` 都成功，而 `mkrun -c "CATBatch <param.xml>"`
+两者都返回 `0x80004005`。差别在启动器本身——CATBatch 托管模式自己管会话生命周期，
+会话没建成，`batchmain` 里再调 `Create_Session` 也补不回来。属 CATBatch/DASSAULT 层面限制，
+不在 CADE 修复范围：`batchmain` 里做纯计算/文件读写可用，文档级操作请走 `run_catia_batch`。
 
 ### ✨ 新增：CAA Batch（CATBatch.exe）能力 + 修复批描述符不同步
 

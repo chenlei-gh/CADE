@@ -25,6 +25,7 @@ CAA 里「批量跑东西」有两条完全不同的路，入口符号、输入�
 | 执行物 | CATScript / VBA 脚本 | 已编译 DLL 的导出函数 |
 | 入口符号 | `CATMain` | `batchmain` |
 | 需要描述符 | 否 | 是（`CNext/resources/batchdesc/*.xml`） |
+| 文档级操作（`Documents.Add` / `Open`） | ✅ 可用（B28 实测） | ❌ `0x80004005`（会话建不起来） |
 | CADE 能力 | `run_catia --batch` | `run_caa_batch` |
 
 官方原文（`CAADoc/Doc/online/CAAScdInfTechArticles/CAAInfInvoking.htm`）：

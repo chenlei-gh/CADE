@@ -1358,6 +1358,20 @@ def run_caa_batch(
         )
     else:
         result["message"] = f"CATBatch completed (exit {proc.returncode})"
+
+    # 0x80004005 here is a known launcher limitation, not a bug in the batch.
+    # B28 testing showed the same Documents.Add/Open calls succeed under
+    # `CNEXT -batch -macro` and fail under CATBatch, so the managed session
+    # never comes up. Say so, instead of leaving the caller to re-diagnose it.
+    if proc.returncode != 0 and "80004005" in (result["stdout"] + result["stderr"]):
+        result["known_limitation"] = "catbatch_session"
+        result["message"] += (
+            " Output contains 0x80004005: CATBatch's managed session did not "
+            "come up, so Documents.Add/Open cannot succeed from batchmain. "
+            "This is a CATBatch launcher limitation, not a fault in the batch "
+            "code or the environment. For document-level work use "
+            "run_catia_batch / run_catia_macro instead."
+        )
     return result
 
 

@@ -357,6 +357,66 @@ check("5.7 a spaced macro path reports an error, not a silent no-op",
       "space" in macro_result.get("message", ""),
       macro_result.get("message", "")[:100])
 
+# ═══ 6. Known-limitation hint on a 0x80004005 failure ═══
+print("\n" + "=" * 70)
+print("  6. CATBatch session failure is self-explaining")
+print("=" * 70)
+
+# CATBatch's managed session never comes up on B28, so Documents.Add/Open
+# return 0x80004005. The same calls succeed under CNEXT script mode, so this
+# is a launcher limitation, not a fault in the batch. The failure message must
+# say so rather than leaving the caller to re-diagnose it. The fixture has to
+# clear preflight on its own: section 3 deletes the shared input file.
+
+
+def _annotate(stdout, stderr, rc=2):
+    """Drive only the post-run annotation; subprocess is stubbed out."""
+    ann_ws = Path(tempfile.mkdtemp(prefix="cade_batch_ann_"))
+    try:
+        ann_desc = ann_ws / "win_b64" / "resources" / "batchdesc"
+        ann_bin = ann_ws / "win_b64" / "code" / "bin"
+        ann_desc.mkdir(parents=True)
+        ann_bin.mkdir(parents=True)
+        (ann_desc / "TestBatch.xml").write_text(DESCRIPTOR, encoding="utf-8")
+        (ann_bin / "TestLib.dll").write_bytes(_minimal_pe(["batchmain"]))
+        ann_in = ann_ws / "in.CATPart"
+        ann_in.write_bytes(b"x")
+        ann_param = ann_ws / "Param.xml"
+        ann_param.write_text(
+            PARAM_OK.format(input=str(ann_in), out=str(ann_ws / "out")),
+            encoding="utf-8")
+
+        def fake_run(cmd, **kwargs):
+            return type("P", (), {"returncode": rc,
+                                  "stdout": stdout, "stderr": stderr})()
+
+        real_run = run_mod.subprocess.run
+        run_mod.subprocess.run = fake_run
+        try:
+            return run_mod.run_caa_batch(str(ann_param), workspace_path=str(ann_ws))
+        finally:
+            run_mod.subprocess.run = real_run
+    finally:
+        shutil.rmtree(ann_ws, ignore_errors=True)
+
+
+session_fail = _annotate("", "Create_Session : 0x80004005\nlocated in <C:\\temp\\abc>")
+check("6.1 0x80004005 is flagged as the known session limitation",
+      session_fail.get("known_limitation") == "catbatch_session" and
+      "run_catia_batch" in session_fail.get("message", ""),
+      session_fail.get("message", "")[:110])
+
+other_fail = _annotate("", "Entry point <batchmain> not found")
+check("6.2 an unrelated failure is not mislabelled as the session limitation",
+      "known_limitation" not in other_fail and
+      "0x80004005" not in other_fail.get("message", ""),
+      other_fail.get("message", "")[:110])
+
+ok_run = _annotate("batch done", "", rc=0)
+check("6.3 a clean run carries no limitation flag",
+      ok_run.get("status") == "success" and "known_limitation" not in ok_run,
+      ok_run.get("status"))
+
 # ═══ Summary ═══
 print("\n" + "=" * 70)
 print(f"  CAA Batch: {passed}/{total}")
