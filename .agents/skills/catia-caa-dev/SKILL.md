@@ -236,6 +236,7 @@ triggers:
 | 任务 | 阅读章节 |
 |------|----------|
 | 看能创建/生成什么（命令、对话框、工作台等） | `## 📚 支持的模板类型` |
+| 判断任务是否属于高级算法研发、怎么做算法研究 | `## 🎯 核心特性` 的「高级算法研发」小节 |
 | CLI / MCP / Python API 三者怎么配合 | `## 🔌 三接口协作` |
 | Python API 具体调用、参数、返回值 | `## 🔧 Python API` |
 | 编译、构建、Build Time 命令、启动 CATIA | `## 🛠️ 命令行工具` |
@@ -333,6 +334,31 @@ AI 只知道 3 个 Mode:
 任务匹配 CADE 能力、且用户未显式指定入口时：**MCP 可用（`develop`/`analyze`/`repair`）则优先 MCP**，否则用文档化的 CLI fallback。**不要求用户显式说出 "CADE"**——任务匹配 CADE 能力即可。
 
 本位规则**不覆盖**用户对具体工具 / 命令 / 脚本 / 执行方式的直接指定。
+
+### 🧠 高级算法研发（Advanced Algorithm Development）
+
+本小节只做**任务识别与路由**，不是新的 Kernel 模式、Capability 或 Playbook；算法的具体方法与证据标准见 [docs/guides/ALGORITHM_RESEARCH_PROTOCOL.md](docs/guides/ALGORITHM_RESEARCH_PROTOCOL.md)。
+
+Consider a task algorithm-intensive when it involves one or more of the following:
+
+- Designing or substantially replacing a non-trivial algorithm.
+- Solving geometric, numerical, optimization, planning, or constraint-satisfaction problems.
+- Improving algorithmic correctness, robustness, scalability, or performance beyond local bug fixing.
+- Comparing competing algorithmic approaches or investigating fundamental limitations of the current approach.
+
+For such tasks:
+
+1. Establish the problem model, constraints, and measurable success criteria before implementation.
+2. Evaluate appropriate candidate approaches rather than immediately committing to the first plausible solution.
+3. Identify failure modes and define independent verification before implementation.
+4. Implement only after the approach is sufficiently justified.
+5. Report evidence, limitations, and unresolved risks explicitly.
+
+**Do not** invoke the full research protocol for straightforward edits, localized bug fixes, or tasks that do not require substantive algorithm design — routine CAA work keeps the existing workflow (`develop` / `analyze` / `repair`).
+
+The protocol guides reasoning and verification only. It does **not** override repository constraints, public API evidence requirements (see 「给 AI 的提示」中的 `--query` / `header_map` / `method_index` 规则), change-control rules, or user authorization. It also adds no new entry point: the work still goes through the same three kernel modes.
+
+> 局限：本节能提高识别与执行该流程的概率，但**不保证**宿主环境一定自动加载本 Skill。支持显式调用的宿主，建议直接点名本指南以提高确定性。
 
 ### ✨ 核心优势
 
@@ -1473,6 +1499,7 @@ python tests/test_master.py --quick
 ├── docs/                             # 文档目录
 │   ├── guides/                       # 使用指南
 │   │   ├── AI_GUIDE.md
+│   │   ├── ALGORITHM_RESEARCH_PROTOCOL.md
 │   │   ├── GETTING_STARTED.md
 │   │   ├── BUILD_RUN_TIME_USAGE_GUIDE.md
 │   │   ├── DEPLOYMENT_GUIDE.md
@@ -1727,6 +1754,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 - **docs/references/ARCHITECTURE.md** - 系统架构
 - **docs/KNOWLEDGE_SYSTEM_ARCHITECTURE.md** - 知识系统架构
 - **docs/guides/AI_GUIDE.md** - AI 使用指南
+- **docs/guides/ALGORITHM_RESEARCH_PROTOCOL.md** - 高级算法研发协议（问题建模 / 方案比较 / 反例分析 / 验证标准）
 - **docs/guides/GETTING_STARTED.md** - 快速入门
 
 ### 参考指南
