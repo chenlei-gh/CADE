@@ -10,6 +10,28 @@
 
 ## [未发布]
 
+### 🔧 修复：清空 Full Regression 的 4 项 quarantine——修复测试而非豁免
+
+`tests/test_full_regression.py` 的 `QUARANTINE` 里挂了 4 个标签。逐项核对后确认
+它们**没有一个是产品缺陷**，全部是测试自身的过时断言，因此修正断言而不是继续豁免：
+
+| 标签 | 真实情况 | 处理 |
+|---|---|---|
+| `1.1 import test_skills` | 该模块在 `f61deba` 被**有意删除**（死代码清理），`MODULES` 仍残留条目 | 删除条目 |
+| `15.2 run_stdio fn` | `mcp_server.py` 的实际 stdio 入口是 `main()`（内部先调 `_force_utf8_stdio()`），从未有 `run_stdio` | 改断言 `main` |
+| `15.5 TOOLS includes analyze_workspace` | `TOOLS` 只建模 3 个 kernel 模式；`analyze_workspace` 是 `actions.py` 的 action | 改断言 `develop`/`analyze`/`repair` |
+| `15.6 TOOLS includes list_modules` | 同上 | 改为断言每个工具的 `description`/`inputSchema` 完整 |
+
+`QUARANTINE` 现在是空集，并加注释说明：重新加入标签只是临时逃生阀，不是修复。
+同时清掉 `test_cross_reference.py` 的 `SKIP_TREE` 与 `docs/HARDCODE_CHECK_REPORT.md`
+里对已删除 `test_skills.py` 的残留引用，并同步 `SKILL.md` 中过时的 394/398 计数。
+
+`test_master.py` 对 `test_full_regression.py` 的期望标记同步改为 `ALL TESTS PASSED`
+（原为 `ALL NON-QUARANTINED TESTS PASSED`，只有存在 quarantine 时才会打印）。
+
+**实测**：`test_full_regression.py --quick` **350/350（0 failed, 0 quarantined）**；
+`test_master.py --quick` **48/48**；`scripts/static_audit.py` **2/2**。
+
 ### ✨ 新增：意图闸门（`tools/check_intent.py`）——受控资产变更必须声明
 
 `AGENTS.md` §2/§3 一直要求手改受控资产前先声明，但 §4 承认这条规则没有牙：

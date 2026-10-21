@@ -21,9 +21,8 @@
 5. **skills/parser.py** — 测试数据
 6. **skills/run.py** — 命令行帮助示例
 7. **skills/runtime_view.py** — 命令行帮助示例
-8. **skills/test_skills.py** — 测试数据
-9. **skills/workspace.py** — 命令行帮助示例
-10. **tests/test_full_integration.py** — 测试数据
+8. **skills/workspace.py** — 命令行帮助示例
+9. **tests/test_full_integration.py** — 测试数据
 
 ### ✅ 正确的硬编码（自动检测逻辑）
 
@@ -99,7 +98,7 @@ test_output/
 
 | 类型 | 数量 | 状态 | 影响 |
 |------|------|------|------|
-| 文档/示例中的路径 | 10 | ✅ 无问题 | 仅用于帮助文本 |
+| 文档/示例中的路径 | 9 | ✅ 无问题 | 仅用于帮助文本 |
 | 自动检测逻辑 | 1 | ✅ 合理 | Windows 标准路径，支持自动检测 |
 | 配置文件 | 1 | ✅ 已忽略 | 自动生成，不提交到版本控制 |
 

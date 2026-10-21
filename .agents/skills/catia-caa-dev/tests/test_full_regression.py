@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-CADE Full Regression Suite — 244-Test Suite
-=============================================
+CADE Full Regression Suite — 350+ Tests
+=======================================
 ⚠️ 回归套件：与独立测试文件有内容重叠（Spec/Rollback/Backup等）。
    独立测试失败时此处也会失败——这是设计意图，用于捕捉跨模块交互。
 
@@ -29,21 +29,15 @@ Sections:
   19. Integration & Coordination (10 tests)
   20. Run All Existing Test Suites (~18 subprocess tests)
 
-Quarantine (P3-008): Tests with known issues tracked for later fix.
-  These are counted as failed but don't block the suite."
+Quarantine: labels listed here are counted as failed but don't block the
+  suite. It is empty — the last P3-008 entries were stale assertions, not
+  product defects, and were fixed rather than kept exempt.
 """
 
-# P3-008: Explicit quarantine — known failures that are tracked
-QUARANTINE = {
-    # test_catia_detection.py TODOs (pre-existing)
-    "15.2 run_stdio fn",
-    "15.5 TOOLS includes analyze_workspace",
-    "15.6 TOOLS includes list_modules",
-    # Missing module imports (non-critical)
-    "1.1 import test_skills",
-    # test_build_and_run subprocess edge case
-    "test_querying",
-}
+# P3-008: Explicit quarantine — known failures that are tracked.
+# Empty by design. Re-adding a label is a temporary escape hatch, not a fix:
+# prefer correcting the assertion so it reflects the real design.
+QUARANTINE = set()
 
 import argparse
 import importlib
@@ -220,7 +214,6 @@ MODULES = {
     ],
     "mcp_server": [],
     "cade": [],
-    "test_skills": [],
 }
 
 for mod_name, expected_symbols in MODULES.items():
@@ -850,7 +843,9 @@ print("=" * 70)
 mcp_mod, _ = safe_import("mcp_server")
 if mcp_mod:
     check("15.1 mcp_server imported", True)
-    check("15.2 run_stdio fn", callable(getattr(mcp_mod, "run_stdio", None)))
+    # stdio entry point is main(); it pins UTF-8 stdio then runs the
+    # JSON-RPC loop. There is no run_stdio().
+    check("15.2 main fn", callable(getattr(mcp_mod, "main", None)))
     check("15.3 handle_tool fn", callable(getattr(mcp_mod, "handle_tool", None)))
 
     # Check TOOLS definition
@@ -859,10 +854,18 @@ if mcp_mod:
 
     if tools:
         tool_names = [t["name"] for t in tools]
+        # TOOLS models the 3 kernel-level modes only. Action-layer names
+        # (analyze_workspace, list_modules, ...) live in actions.py and are
+        # covered by SECTION 7 — asserting them here would test the wrong layer.
         check(
-            "15.5 TOOLS includes analyze_workspace", "analyze_workspace" in tool_names
+            "15.5 TOOLS exposes kernel modes",
+            {"develop", "analyze", "repair"} <= set(tool_names),
+            f"got {sorted(tool_names)}",
         )
-        check("15.6 TOOLS includes list_modules", "list_modules" in tool_names)
+        check(
+            "15.6 TOOLS schema complete",
+            all(t.get("description") and t.get("inputSchema") for t in tools),
+        )
 
 
 # Setup MCP tool

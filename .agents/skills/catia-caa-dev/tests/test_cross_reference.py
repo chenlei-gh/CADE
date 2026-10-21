@@ -181,11 +181,7 @@ for line in skill_md.splitlines():
     check(f"Tree module -> {current_section}/{mod}.py", exists)
 
 # 2d. All .py files in skills/ should be in the tree (or intentional omissions)
-SKIP_TREE = {
-        "__init__",
-        "test_skills",
-        "intents",
-    }  # intents/intent are package dirs
+SKIP_TREE = {"__init__", "intents"}  # intents/intent are package dirs
 actual_modules = sorted(f.stem for f in SKILLS_DIR.glob("*.py"))
 for mod in actual_modules:
     if mod in SKIP_TREE:

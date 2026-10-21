@@ -1279,7 +1279,7 @@ python skills/runtime_view.py [workspace_path]
 python tests/test_full_integration.py
 ```
 
-**Full Regression quick**: 394/398，剩余 4 项为精确 quarantine
+**Full Regression quick**: 350/350 通过（0 quarantine）
 ```bash
 python tests/test_full_regression.py --quick
 ```
@@ -1758,7 +1758,6 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 **结论**：可以在满足下方「部署前检查清单」的前提下投入生产使用。以下为已知的**非阻塞**残余风险，需在使用规程中显式规避，不需要在使用前修复：
 
-- Full Regression quick 的 4 项 quarantine 均为测试基础设施本身的已知缺口（缺失的辅助模块 `test_skills.py`、`test_build_and_run.py` 在 subprocess 子进程模式下对 MCP 工具列表的间接断言问题），**不代表功能缺陷**，详见下方逐项说明。
 - quick 模式不执行真实 Build、CNEXT 或 CATIA 生命周期（`test_build_and_run.py` 整套在 `test_master.py --quick` 下被跳过）；真实 Build 验证需要单独跑 Tier B（见下方「已验证范围」），**每次生成代码后仍需在自己的工作区跑一次真实 Build 确认**，这是使用规程而非工具缺陷。
 - 模板全集和 CATIA 运行时验收证据仍只覆盖 `TTEST` 单一工作区的一个模块；新工作区/新模板组合首次使用时应加强人工审查。
 - 知识库手写教学文档（`capabilities/` 13 个、`playbooks/` 15 个、`knowledge/` 各子目录、`patterns/` 目录）已全部完成虚构 API 校核并重写修正（详见下方「知识库可信度」及 [`KNOWLEDGE_AUDIT_STATUS.md`](KNOWLEDGE_AUDIT_STATUS.md)）。`frameworks/` 148 个文件为自动提取索引，具体方法签名仍以 `--query` 实时比对头文件为准。
@@ -1795,7 +1794,7 @@ ctx = ActionContext("D:/workspace")  # ✅ 正确
 
 - **测试套件**: 以 `tests/test_master.py` 的 `SUITES` 为准；快速模式跳过 `SKIP_SLOW`（当前为 Int-1）。
 - **Full Integration**: 49/49 通过。
-- **Full Regression quick**: 394/398；4 项 quarantine 不计作通过。
+- **Full Regression quick**: 350/350 通过，`QUARANTINE` 为空集。
 - **真实 mkmk Build（Tier B，非 quick 模式）**: 对 `TTEST` 工作区执行 `incremental_build()`，0 error，DLL 校验通过且已刷新（`Int-1 Build & Run` 套件，约 33s）。
 - **适用场景**: 静态分析、预览、受控生成、模拟回归，以及对已知测试工作区的真实增量 Build 验证；新生成的项目仍须人工审查并在自己的真实工作区跑一次 Build 确认。
 
