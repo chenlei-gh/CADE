@@ -89,6 +89,8 @@ SUITES = {
     "Call Chain Explorer": "test_chain_explorer.py",
     # ── CATBatch descriptor path (distinct from CNEXT -batch -macro) ──
     "CAA Batch": "test_caa_batch.py",
+    # ── Intent gate (pre-commit/commit-msg declaration checkpoint) ──
+    "Intent Gate": "test_intent_gate.py",
     }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
@@ -141,6 +143,7 @@ VERIFY_STRINGS = {
     "test_ui_generator_clarifier.py": "passed",
     "test_mcp_stdio_encoding.py": "passed",
     "test_chain_explorer.py": "checks passed",
+    "test_intent_gate.py": "INTENT GATE OK",
     }
 
 

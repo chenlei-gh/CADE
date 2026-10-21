@@ -10,6 +10,38 @@
 
 ## [未发布]
 
+### ✨ 新增：意图闸门（`tools/check_intent.py`）——受控资产变更必须声明
+
+`AGENTS.md` §2/§3 一直要求手改受控资产前先声明，但 §4 承认这条规则没有牙：
+Provenance Guard 只审计不阻断。本次把「声明」做成可机器校验的东西。
+
+**关键设计约束：不能误伤人工编辑。** Provenance Guard 无法区分「AI 脚本手改」
+与「人工在 IDE 正常编辑」，若按「每个变更都要写一个 `.cade/intent/` JSON」来实现，
+人工编辑必然被误拦。因此声明载体选的是 **commit message trailer**——
+一行本来就在写的提交说明：
+
+```
+git commit -m "<subject>" -m "CADE-Intent: <为什么要改>"
+```
+
+- 只检查**受控资产**，分类直接复用 `skills/provenance_guard.py` 的
+  `is_controlled_source_asset()`，不另写一套会漂移的规则（测试用 15 个扩展名 ×
+  3 种目录共 45 个探针固定住两者一致性）。
+- `pre-commit` **仅提示**（`--warn-only`）：此时提交信息还不存在，看不到 trailer，
+  拦截必然误伤。`commit-msg` 才是正式判定。
+- 内部故障一律 fail-open（`DEGRADED` 放行）：缺分类器、非 git 目录、索引不可读、
+  提交信息文件读不到、gate 脚本被移走，都不拦截。闸门因自身故障锁死仓库，
+  比没有闸门更糟。
+- 逃生阀 `git commit --no-verify`（git 原生，不需要额外记忆）。
+
+附带 `tools/intent_hook_install.py`：`.git/hooks` 不随仓库分发，安装命令会打印
+可重放的一行；遇到他人已有 hook 时拒绝覆盖而非静默破坏。
+
+**实测**（`tests/test_intent_gate.py`，76/76）：在真实 git 仓库上验证——
+未声明 `.cpp` 的 `git commit` 被拒且未产生提交；同一改动加 trailer 后提交成功；
+改 `docs/*.md` 完全不受影响；`--no-verify` 可绕过；并把生产工作区的副本
+clone 到临时目录跑通上述四条（未触碰 `D:/Vault/FSWorkspaces` 本体）。
+
 ### 🔧 修复：`mkrun` 收到 CNEXT 开关就整个不启动，宏/脚本 batch 静默失效
 
 **问题**：`_mkrun_cmd()` 把 `-macro` / `-batch` 直接拼在 `mkrun` 后面。

@@ -983,6 +983,8 @@ if env_config.exists():
 tool_pys = [
     "catia_detector.py",
     "check_code_reuse.py",
+    "check_intent.py",
+    "intent_hook_install.py",
     "prerequisites_manager.py",
     "setup_environment.py",
     "setup_mcp.py",

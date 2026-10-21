@@ -1508,7 +1508,9 @@ python tests/test_master.py --quick
 │   ├── build_usecase_index.py        # 官方样例存在性索引 builder
 │   ├── check_capabilities.py         # capabilities.yaml 与实现双向对账
 │   ├── check_code_reuse.py
+│   ├── check_intent.py               # 受控资产变更的意图闸门（pre-commit/commit-msg）
 │   ├── check_nls_conventions.py
+│   ├── intent_hook_install.py        # 安装/卸载意图闸门 hook
 │   ├── catia_detector.py
 │   ├── prerequisites_manager.py
 │   └── ...
