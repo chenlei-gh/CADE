@@ -1509,8 +1509,11 @@ class Kernel:
         steps = []
         if callable_names:
             steps.append(
-                "These have public headers — read the signature before coding: "
-                + ", ".join(callable_names)
+                "These have public headers — print the declaration before coding "
+                "(do not read_file the install path): "
+                + " ".join(
+                    f"python skills/header_map.py --show {n}" for n in callable_names
+                )
             )
         if bare:
             steps.append(

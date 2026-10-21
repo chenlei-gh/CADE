@@ -23,7 +23,8 @@ One question → one index → one command. Do not grep `knowledge/` or scan
 
 | You need to know | Use | Command | Stop when |
 |---|---|---|---|
-| Does this class / header exist, and where is the `.h`? | **HeaderMap** | `python skills/header_map.py <Name> [Name2 ...]` | `path=` returned; `NOT-FOUND` + did-you-mean is also a verdict |
+| Does this class / header exist, and where is the `.h`? | **HeaderMap** | `python skills/header_map.py <Name> [Name2 ...]` | `path=` is a location verdict, not a file to open |
+| Show the SDK header declaration (editor cannot open the install tree) | **header window** | `python skills/header_map.py --show <Name> [--method <Method>]` | bounded stdout window; do not `read_file` `path=` or hand-roll a dump |
 | Does type `T` really have method `M` (incl. inheritance)? | **MethodIndex** | `python skills/method_index.py <Type> <Method> [Method2 ...]` | `OK` / `NOT-FOUND` with `exists-on:` / `did-you-mean-on-this-type:` |
 | Is this API / enum / factory name real? (broad audit) | **caadoc index** (feeds MethodIndex) | `python tools/build_caadoc_index.py --query <Name>` · `--search <pat>` · `--quiet` · `--repl` | `FOUND`; on `SDK/refman mismatch` trust the **header** |
 | Audit every `CAT*` / `->Method` in a knowledge file | same | `python tools/build_caadoc_index.py --check-file <path>` | only `SUSPECT` lines matter |
@@ -31,6 +32,7 @@ One question → one index → one command. Do not grep `knowledge/` or scan
 | What built-in sample CAD models (.CATPart, .CATProduct, .CATDrawing) can I test against? | **SampleDataIndex** | `python skills/sample_data_index.py [query]` · `--kind part` · `--framework FW` | File name, kind, local path; `NOT-FOUND` = no matching sample model |
 | Which knowledge file matches this CAA intent? | **CatalogIndex** via Kernel | `analyze(request, detail=true)` | `knowledge_content` is the answer; do not grep `knowledge/` |
 | Has CAA officially used this interface / method in a sample? | **UseCaseIndex** | `r.find_usecases_for_interface("CATIVisProperties")` · `r.find_usecases_for_method("SetPropertiesAtt")` | hit = presence; **empty = no official sample, not "API missing"** |
+| Show the official sample source (editor cannot open the install tree) | **usecase_snippet** | `python skills/usecase_snippet.py --interface <Name>` · `--method` · `--example` · `--resource` | bounded stdout window; do not hand-roll a Python dump |
 | Are the seven indexes loaded and non-empty? | facade | `python skills/retrieval.py` | JSON `ok: true`; if false, fix that index before trusting lookups |
 | Which CADE *capability* handles a user verb? | **not this layer** | `capabilities.yaml` (routing) + `skills/lifecycle.yaml` (can it be used?) | file existence is not proof |
 
@@ -41,6 +43,8 @@ Tie-breakers (do not skip):
 3. Conflict between refman and SDK header → header.
 4. Catalog miss → say "no catalog hit", then check DicIndex (does the name ship?), then Framework → CAADoc. Do not invent APIs.
 5. UseCase miss → say "no official example found". Check HeaderMap/MethodIndex for existence.
+5b. UseCase hit but the editor cannot open `<CATIA_INSTALL>/CAADoc` → `usecase_snippet`. Do not write a one-off Python printer. A printed window is presence evidence, not a verified call chain.
+5c. HeaderMap hit but the editor cannot open `<CATIA_INSTALL>/<FW>/PublicInterfaces` → `header_map.py --show` / `Retrieval.read_header_window()`. Do not `read_file` the returned `path=`. A printed window is a signature excerpt, not a call recipe.
 6. DicIndex hit → say "ships with CATIA", never "callable". Confirm a public header before suggesting code.
 7. SampleDataIndex hit → answers "where is a test model I can load", NOT "what features are inside this model". Do not attempt to parse proprietary binary geometry.
 
@@ -133,6 +137,8 @@ sdi = r.sample_data_index # SampleDataIndex (shipped sample models)
 # UseCase presence queries (passive, on-demand — never auto-injected):
 r.find_usecases_for_interface("CATIVisProperties")   # -> [example names]
 r.find_usecases_for_method("SetPropertiesAtt")        # -> {owners, examples}
+r.read_usecase_snippet(interface="CATIVisProperties") # -> bounded source window
+r.read_header_window("CATIVisProperties", method="SetPropertiesAtt")
 ```
 
 Rules:
@@ -245,6 +251,7 @@ Forbidden:
 |---|---|
 | Runtime-scan B28 `PublicInterfaces/` | 503 frameworks; the scan is what `header_map_<ver>.json` caches |
 | `grep` SDK headers for a method | MethodIndex already parsed them, with inheritance |
+| `read_file` a HeaderMap `path=` or dump it with a one-off Python script | The install tree is outside the editor. Use `header_map.py --show` |
 | Read `knowledge/*.md` directly in a feature | Bypasses catalog ranking and alias expansion |
 | Add a new index without registering it here | Creates a second source of truth (Phantom) |
 | Trust a knowledge/example file that lacks an audit trail | Handwritten docs are authoritative only after the fictional-API audit (see `KNOWLEDGE_AUDIT_STATUS.md`); even then, method-level facts defer to MethodIndex/HeaderMap on conflict |

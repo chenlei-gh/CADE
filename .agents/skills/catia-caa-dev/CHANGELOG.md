@@ -10,6 +10,22 @@
 
 ## [未发布]
 
+### 🔍 修复：官方样例在安装目录，编辑器读不了
+
+**问题**：`UseCaseIndex` 只记录 token 存在性和 CAADoc 相对路径。编辑器 `read_file` 不能打开 CATIA 安装目录，于是读样例只能绕过 CADE，用临时 Python 把源码打到 stdout。
+
+- 新增 `skills/usecase_snippet.py`：按 `--interface` / `--method` / `--symbol` / `--example` / `--resource` 定位索引记录，只读打印有界源码窗口。不写文件，不把窗口当已验证调用链。
+- `Retrieval.read_usecase_snippet()` 作为同一门面入口。路径必须落在 CAADoc 根下；缺失返回 `not_found` 或 `source_unavailable`，不猜路径。
+- 登记 `capabilities.yaml` 的 `usecase_snippet`。编辑器读不了安装目录时走这条，禁止再写临时打印脚本。
+
+### 🔍 修复：SDK 头文件同样在安装目录，编辑器读不了
+
+**问题**：`header_map.py` 只返回安装目录绝对路径，`SKILL.md` 还写着「直接读返回的 path」。编辑器 `read_file` 打不开该路径，读声明仍会退回临时 Python。
+
+- `header_map.py --show <Name> [--method <Method>]` 只读打印有界窗口，不写文件。路径必须落在 `CATIA_INSTALL` 下，`..` 被拒绝。无 `--show` 时原 `path=` 位置查询保留。
+- `Retrieval.read_header_window()` 走同一门面。窗口是签名摘录，不是调用配方。
+- `header_lookup` 补 `python: header_map.read_header_window`。不新开能力。refman HTML 仍走 `--query`，`.dic` 仍走 DicIndex，样件二进制仍不解析。
+
 ### 📌 记录：完整调用链提升当前被索引一致性门禁关闭
 
 **状态**：有意的阶段性门禁，不是新的假阳性漏洞。审查 `76b77fa` 后确认两处 Kernel 契约缺口已按预期修复；本条只记录功能状态，不补一致性验证实现。

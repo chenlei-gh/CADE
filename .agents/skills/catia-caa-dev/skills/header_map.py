@@ -16,6 +16,9 @@ cached to JSON keyed by CATIA version. Cache lives in CADE's cache dir.
 CLI (for AI agents — never guess <Framework>/PublicInterfaces paths):
   python skills/header_map.py CATDlgEditor [CATPathElement ...]
       → CATDlgEditor  fw=Dialog  mod=CATDlgBitmap  path=<abs path to .h>
+  python skills/header_map.py --show CATIVisProperties [--method SetPropertiesAtt]
+      → bounded read-only window. The editor cannot open the install tree;
+        do not hand-roll a Python dump of path=.
   python skills/header_map.py --rebuild   # force cache rebuild
   python skills/header_map.py --stats     # cache stats
 
@@ -288,21 +291,225 @@ def _warn_knowledge_release_gap(skill_root: Path, catia_version: str) -> None:
 
 def _resolve_header_path(catia_install: str, fw_name: str, stem: str) -> Optional[str]:
     """Probe the two candidate locations for a header's absolute path."""
-    if not catia_install:
+    found = resolve_header_file(catia_install, fw_name, stem)
+    return str(found) if found else None
+
+
+def resolve_header_file(catia_install: str, fw_name: str, stem: str) -> Optional[Path]:
+    """Same probe as _resolve_header_path, but only if the file stays under CATIA_INSTALL."""
+    if not catia_install or not fw_name or not stem:
         return None
-    root = Path(catia_install) / fw_name
-    for candidate in (root / "PublicInterfaces" / f"{stem}.h",
-                      root / "CNext" / "public" / "interfaces" / f"{stem}.h"):
-        if candidate.exists():
-            return str(candidate)
+    if ".." in Path(fw_name).parts or ".." in Path(stem).parts:
+        return None
+    root = Path(catia_install)
+    base = root / fw_name
+    for candidate in (base / "PublicInterfaces" / f"{stem}.h",
+                      base / "CNext" / "public" / "interfaces" / f"{stem}.h"):
+        try:
+            full = candidate.resolve()
+            full.relative_to(root.resolve())
+        except (OSError, ValueError):
+            continue
+        if full.is_file():
+            return full
     return None
+
+
+def read_header_window(
+    catia_install: str,
+    fw_name: str,
+    stem: str,
+    *,
+    method: str = "",
+    context: int = 8,
+    max_lines: int = 60,
+) -> dict:
+    """Bounded read-only window of an SDK header. Writes nothing.
+
+    status: ok | not_found | source_unavailable
+    The editor cannot open CATIA-install paths. This is the supported read.
+    A window is a signature excerpt, not a verified call chain.
+    """
+    if not catia_install:
+        return {
+            "status": "source_unavailable",
+            "message": "CATIA_INSTALL is empty. Header source cannot be read.",
+            "name": stem,
+            "read_only": True,
+        }
+    full = resolve_header_file(catia_install, fw_name, stem)
+    if full is None:
+        return {
+            "status": "not_found",
+            "message": "Header file not found under CATIA_INSTALL.",
+            "name": stem,
+            "framework": fw_name,
+            "read_only": True,
+        }
+    try:
+        raw = full.read_bytes()
+        text = raw.decode("utf-8", errors="replace")
+    except OSError as exc:
+        return {
+            "status": "source_unavailable",
+            "message": str(exc),
+            "name": stem,
+            "read_only": True,
+        }
+    src = text.splitlines()
+    code_hits = []
+    comment_hits = []
+    if method:
+        for i, line in enumerate(src, start=1):
+            if method not in line:
+                continue
+            if _is_comment_line(line):
+                comment_hits.append(i)
+            else:
+                code_hits.append(i)
+    # A comment mention (@href, prose) is not the declaration. Prefer code.
+    hits = code_hits or comment_hits
+    declaration_in_header = bool(code_hits) if method else None
+    declared_on = "" if code_hits else _comment_declared_on(src, method)
+    if not hits:
+        # Class / declaration line, else the top of the file.
+        hits = [i for i, line in enumerate(src, start=1)
+                if stem in line and not _is_comment_line(line)][:1]
+        if not hits:
+            hits = [i for i, line in enumerate(src, start=1) if stem in line][:1]
+    windows = []
+    if hits:
+        for line in hits:
+            start = max(1, line - context)
+            end = min(len(src), line + context)
+            if windows and start <= windows[-1][1] + 1:
+                windows[-1][1] = max(windows[-1][1], end)
+            else:
+                windows.append([start, end])
+    elif src:
+        windows = [[1, min(len(src), max_lines)]]
+    kept = []
+    used = 0
+    truncated = False
+    for start, end in windows:
+        if used >= max_lines:
+            truncated = True
+            break
+        if used + (end - start + 1) > max_lines:
+            end = start + (max_lines - used) - 1
+            truncated = True
+        kept.append((start, end))
+        used += end - start + 1
+        if truncated:
+            break
+    fragments = []
+    for start, end in kept:
+        fragments.append({
+            "start": start,
+            "end": end,
+            "text": "\n".join(f"{n:5d}|{src[n - 1]}" for n in range(start, end + 1)),
+        })
+    return {
+        "status": "ok",
+        "name": stem,
+        "framework": fw_name,
+        "path": str(full),
+        "line_count": len(src),
+        "truncated": truncated,
+        "matched_lines": hits[:20],
+        "declaration_in_header": declaration_in_header,
+        "declared_on": declared_on,
+        "read_only": True,
+        "note": (
+            "SDK header window. A comment mention is not a declaration. "
+            "Presence of a declaration is not a call recipe."
+        ),
+        "fragments": fragments,
+    }
+
+
+_HREF_RE = re.compile(r"@href\s+([A-Za-z_][A-Za-z0-9_]*)#([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def _comment_declared_on(src, method: str) -> str:
+    """Interface named by @href Type#method when this header only mentions it."""
+    if not method:
+        return ""
+    for line in src:
+        if method not in line or not _is_comment_line(line):
+            continue
+        for type_name, meth in _HREF_RE.findall(line):
+            if meth == method and type_name:
+                return type_name
+    return ""
+
+
+def _is_comment_line(line: str) -> bool:
+    """True for a comment-only line. A code line that also has // stays code."""
+    stripped = line.strip()
+    if stripped.startswith(("//", "*", "/*")):
+        return True
+    code = stripped.split("//", 1)[0]
+    return "/*" in code and "*/" not in code.split("/*", 1)[0]
+
+
+def format_header_window(result: dict) -> str:
+    status = result.get("status")
+    if status != "ok":
+        return f"{status}  {result.get('message', '')}\n"
+    declared = result.get("declaration_in_header")
+    declared_text = ""
+    if declared is True:
+        declared_text = "  declaration=code"
+    elif declared is False:
+        where = result.get("declared_on") or ""
+        declared_text = "  declaration=comment-only"
+        if where:
+            declared_text += f"  declared_on={where}"
+    lines = [
+        f"status=ok  {result.get('name')}  fw={result.get('framework')}  "
+        f"lines={result.get('line_count')}  truncated={str(result.get('truncated')).lower()}"
+        f"{declared_text}",
+    ]
+    for frag in result.get("fragments", []):
+        lines.append(f"--- L{frag['start']}-L{frag['end']} ---")
+        lines.append(frag.get("text", ""))
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _catia_install(skill_root: Path) -> str:
+    try:
+        if str(skill_root / "skills") not in sys.path:
+            sys.path.insert(0, str(skill_root / "skills"))
+        from env import CAAEnvironment
+        env = CAAEnvironment()
+        env.load_config()
+        return env.config.get("CATIA_INSTALL", "") or ""
+    except Exception:
+        return ""
 
 
 def _cli(argv: List[str]) -> int:
     from difflib import get_close_matches
 
-    args = [a for a in argv if not a.startswith("--")]
-    flags = {a for a in argv if a.startswith("--")}
+    show = "--show" in argv
+    method = ""
+    cleaned = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok == "--method" and i + 1 < len(argv):
+            method = argv[i + 1]
+            i += 2
+            continue
+        if tok == "--show":
+            i += 1
+            continue
+        cleaned.append(tok)
+        i += 1
+    args = [a for a in cleaned if not a.startswith("--")]
+    flags = {a for a in cleaned if a.startswith("--")}
 
     skill_root = Path(__file__).resolve().parent.parent
     hm = HeaderMap.load(skill_root, force_rebuild="--rebuild" in flags)
@@ -315,16 +522,41 @@ def _cli(argv: List[str]) -> int:
         print(__doc__.strip())
         return 0
 
-    # CATIA_INSTALL for absolute path resolution
-    catia_install = ""
-    try:
-        sys.path.insert(0, str(skill_root / "skills"))
-        from env import CAAEnvironment
-        env = CAAEnvironment()
-        env.load_config()
-        catia_install = env.config.get("CATIA_INSTALL", "")
-    except Exception:
-        pass
+    catia_install = _catia_install(skill_root)
+
+    if show:
+        rc = 0
+        for name in args:
+            stem = Path(name).stem
+            entry = hm.lookup(stem)
+            if not entry:
+                rc = 1
+                sugg = get_close_matches(stem, sorted(hm._map.keys()), n=3, cutoff=0.70)
+                hint = f"  did-you-mean: {', '.join(sugg)}" if sugg else ""
+                print(f"{stem}  NOT-FOUND{hint}")
+                continue
+            _mod, fw = entry
+            result = read_header_window(
+                catia_install, fw, stem, method=method,
+            )
+            print(format_header_window(result), end="")
+            if result.get("status") != "ok":
+                rc = 1
+                continue
+            # Comment-only @href Type#method: follow one hop to the real header.
+            declared_on = result.get("declared_on") or ""
+            if method and declared_on and declared_on != stem:
+                followed = hm.lookup(declared_on)
+                if followed:
+                    _fmod, ffw = followed
+                    followed_result = read_header_window(
+                        catia_install, ffw, declared_on, method=method,
+                    )
+                    print(f"followed {declared_on}#{method}")
+                    print(format_header_window(followed_result), end="")
+                    if followed_result.get("status") != "ok":
+                        rc = 1
+        return rc
 
     rc = 0
     for name in args:

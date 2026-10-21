@@ -164,6 +164,54 @@ class Retrieval:
         examples = self.usecase_index.get("by_method", {}).get(method, [])
         return {"owners": owners, "examples": examples}
 
+    def read_usecase_snippet(self, **kwargs) -> dict:
+        """Read-only source window for an official CAADoc sample.
+
+        The editor cannot open CATIA-install paths. This is the supported
+        read step: index hit -> bounded stdout window. It never writes.
+        """
+        from usecase_snippet import read_snippet
+        return read_snippet(self, self._root, **kwargs)
+
+    def read_header_window(
+        self,
+        name: str,
+        *,
+        method: str = "",
+        context: int = 8,
+        max_lines: int = 60,
+        catia_install: str = "",
+    ) -> dict:
+        """Read-only window of an SDK header under CATIA_INSTALL.
+
+        HeaderMap answers where the header lives. This answers what it
+        declares, without opening the install path in the editor and
+        without writing a file. A window is a signature excerpt, not a
+        verified call chain.
+        """
+        from env import CAAEnvironment
+        from header_map import read_header_window
+
+        stem = Path(name).stem
+        entry = self.header_map.lookup(stem)
+        if not entry:
+            return {
+                "status": "not_found",
+                "message": "Header is not in HeaderMap.",
+                "name": stem,
+                "read_only": True,
+            }
+        install = catia_install
+        if not install:
+            env = CAAEnvironment()
+            env.load_config()
+            install = env.config.get("CATIA_INSTALL", "") or ""
+        _mod, fw = entry
+        return read_header_window(
+            install, fw, stem,
+            method=method, context=context, max_lines=max_lines,
+        )
+
     @property
     def chain_explorer(self):
         """Official use case sequential call chain explorer."""

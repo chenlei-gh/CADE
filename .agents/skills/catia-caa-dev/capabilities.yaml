@@ -105,14 +105,18 @@ capabilities:
 
   # ── retrieval（查询能力，facade 与索引本体是内部管道不登记）──
   - name: header_lookup
-    description: 查 CAA 类型的头文件位置（框架/模块/绝对路径），禁止凭前缀猜路径
+    description: 查 CAA 类型的头文件位置（框架/模块/绝对路径）；要看声明用 --show，禁止凭前缀猜路径、禁止读安装目录
     triggers:
       - 查头文件
       - 头文件在哪
       - 头文件位置
       - 哪个框架
+      - 读头文件
+      - 头文件声明
     bindings:
       cli: python skills/header_map.py <Name> [Name2 ...]
+      python: header_map.read_header_window
+    note: 位置查询不加 --show，返回的 path= 只是位置判定。编辑器 read_file 读不了安装目录；要看声明跑 `python skills/header_map.py --show <Name> [--method <Method>]`。禁止再写临时 Python 去打印 path=。
 
   - name: method_lookup
     description: 核实类型是否真有某方法（含继承链），NOT-FOUND 给出相近方法与真实归属接口
@@ -132,6 +136,20 @@ capabilities:
       - check-file
     bindings:
       cli: python tools/build_caadoc_index.py --query <name>
+
+  - name: usecase_snippet
+    description: 只读打印官方 CAADoc 样例源码窗口（安装目录不在编辑器工作区内），不写文件、不把片段当调用链
+    triggers:
+      - 官方样例
+      - 读样例
+      - 样例片段
+      - 打印样例
+      - CAADoc读不了
+      - usecase snippet
+    bindings:
+      cli: python skills/usecase_snippet.py --interface <CATIName>
+      python: usecase_snippet.read_snippet
+    note: 也可用 --method/--symbol/--example/--resource；缺失是 no official example，不是 API 不存在。编辑器 read_file 读不了安装目录，禁止再写临时 Python 去打印。
 
   # ── kernel 路由类（经 Kernel develop/analyze/repair；只有 cli binding，
   #    因为 kernel 入口是 Kernel 类 execute() 而非顶层函数）──

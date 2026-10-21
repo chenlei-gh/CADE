@@ -309,9 +309,9 @@ AI 只知道 3 个 Mode:
 | ⚡ **两层路由，都不靠猜** | **Tier 1 意图**（3 Mode）："创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`——动词分类。**Tier 2 能力**（以 `capabilities.yaml` 登记数为准）：查 [`capabilities.yaml`](capabilities.yaml) 的触发词**定能力**；**入口按「🔀 入口仲裁」选择**（MCP 优先，除非用户显式指定）——不自由发挥。 |
 | 🚫 **新工具禁止复制旧工具骨架** | 创建新命令/对话框/工作台时，必须调 `develop()` 走模板生成器，**不要**把工作区里现有工具的 .cpp/.h/.CATNls/.CATRsc 复制一份再改名。旧工具可能还带着已修复的历史 bug（如硬编码 `SetTitle`、错误的 `_Chinese.CATNls` 约定），复制 = 把 bug 克隆进新工具，还会错过模板/图标/双语 NLS 的持续更新。已有工具**只可参考业务逻辑**（API 组合、算法、项目命名习惯）；文件骨架、资源文件、注册代码永远以生成器输出为准。 |
 | 🎨 **图标是 develop() 的自动产物，不要手动补** | `develop()` 创建命令时图标已连同骨架一起生成（verb-object 解析自动匹配 CATIA 官方图标 + 角标，如 `CreateHoleCmd` → I_Hole+plus），无需再调 `icon_provider.py`。只有**换图标风格**时才单独调：`from icon_provider import get_icon; get_icon("CmdName")`（自动解析，不要先列图案库人工挑）。首次编译时图标会随 Runtime View 同步自动生效。 |
-| 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架 → 再精准打开 `<CATIA_INSTALL>/CAADoc/` 对应页面。不要跳过 Framework 直接全文搜 CAADoc。 |
+| 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架，再走 `python tools/build_caadoc_index.py --query <Name>`（签名已打到 stdout）。不要跳过 Framework 直接全文搜 CAADoc，也不要 `read_file` 打开 `<CATIA_INSTALL>/CAADoc/` 页面。 |
 | 📝 **CAADoc 洞察沉淀** | 用 CAADoc 学到**踩坑经验/跨 API 组合/非文档化的行为**时，创建 knowledge/ 文件沉淀。纯 API 签名查询不需要沉淀——下次用 Framework 索引秒查。 |
-| 📍 **查头文件位置用 header_map，禁止猜路径** | 需要读 CAA 头文件（查方法签名、确认类/枚举存在）时，先跑 `python skills/header_map.py <Name> [Name2 ...]`（毫秒级返回 框架/模块/**头文件绝对路径**，可一次查多个）→ 直接读返回的 path。**禁止**凭类名前缀猜 `<CATIA_INSTALL>/<Framework>/PublicInterfaces/` 路径硬查——类名前缀和框架名不对应（`CATDlgEditor.h` 在 Dialog 不在 DialogEngine，`CATPathElement.h` 在 VisualizationBase），猜错就是白跑一轮 PowerShell。未命中时输出的 did-you-mean 就是正确头文件名（如 `CATListValCATBaseUnknown` → `CATLISTV_CATBaseUnknown`）。 |
+| 📍 **查头文件位置用 header_map，禁止猜路径** | 要位置：`python skills/header_map.py <Name> [Name2 ...]`（毫秒级返回 框架/模块/绝对路径）。要看声明：`python skills/header_map.py --show <Name> [--method <Method>]`，只读打印有界窗口。编辑器 `read_file` 读不了 CATIA 安装目录，**禁止**再 `read_file` 返回的 `path=`，也**禁止**自写 Python 去打印该路径。**禁止**凭类名前缀猜 `<CATIA_INSTALL>/<Framework>/PublicInterfaces/`——类名前缀和框架名不对应（`CATDlgEditor.h` 在 Dialog 不在 DialogEngine，`CATPathElement.h` 在 VisualizationBase）。未命中时 did-you-mean 就是正确头文件名（如 `CATListValCATBaseUnknown` → `CATLISTV_CATBaseUnknown`）。 |
 | 🧭 **核实"类型有没有某方法"用 method_index** | 不确定某接口是否真有某方法（尤其"看起来合理"的遍历/Get 方法，如  就是虚构）时，跑 `python skills/method_index.py <Type> <Method1> [Method2 ...]`：OK=方法真实（含继承链），NOT-FOUND 会同时给出**该类型上的相近方法名**和**真正拥有该方法的接口列表**（如 GetAllChildren → CATIProduct/CATIParmPublisher）。比翻 CAADoc 页面快一个数量级。 |
 | 🔎 **核实 API 真实性先用索引工具** | 怀疑 playbooks/patterns/knowledge 里某接口、方法、框架名是否真实存在（尤其是“看起来很统一”的 Factory/Manager 名字，经常是虚构）时，先跑 `python tools/build_caadoc_index.py --query <name>` 或 `--search <pattern>`（cache 命中约 0.3 秒，比手动打开 CAADoc 页面或 `grep` 全量扫描快得多；连续核对多个名字用 `--repl` 交互模式，避免反复启动进程）。只有索引覆盖不到的语义性问题（官方样例怎么组合调用、设计意图是什么）才需要再去翻 `Doc/generated/refman/` 页面或 `.cpp` 样例代码。索引没查到不等于 100% 不存在（可能是拼写变体或索引未覆盖的老旧接口），但命中即可作为“确实存在”的强证据。 |
 | 📄 **批量核实整份文档用 `--check-file`** | 需要一次性核实某个 playbook/pattern/knowledge 文件里所有 API 时，不要逐个手敲 `--query`：跑 `python tools/build_caadoc_index.py --check-file <path>`，它会自动扫描文件里所有 ```cpp 代码块中的 `CAT*` 类型名和 `->`/`::` 方法调用，一次调用只打印疑点（SUSPECT），比人工逐个核对快一个数量级。`--query`/`--check-file` 都支持 `--quiet` 输出一行式 FOUND/NOT-FOUND/MISMATCH verdict，适合批量核对多个名字时减少输出体积。局限：只扫描代码块，不扫描正文反引号提及的 API 名；枚举成员/类型常量可能被误报，需人工用 `--query` 复核。 |
@@ -699,6 +699,8 @@ Agent 诊断：`python skills/retrieval.py` 输出七索引健康报告。
 - 方法归属在查询时用 `MethodIndex.owners_of()` join；最佳实践判断属于 Knowledge/failure_patterns
 - 查询：`r.find_usecases_for_interface("CATIVisProperties")`、`r.find_usecases_for_method("SetPropertiesAtt")`（返回 `{owners, examples}`）
 - 查到 = 有官方样例；查不到 = “No official example found”，**不代表**接口不存在（那是 HeaderMap 的职责）
+- **要看源码用片段读取，禁止自写 Python 去打印安装目录**：编辑器 `read_file` 读不了 CATIA 安装目录。索引只记录存在性；读源码走 `python skills/usecase_snippet.py --interface <Name>`（也可 `--method` / `--symbol` / `--example` / `--resource`）。只读、只打印有界窗口，不写文件，也不把窗口当已验证调用链。
+- **要看 SDK 头文件声明也走窗口**：`HeaderMap.lookup()` 只给位置。读声明走 `python skills/header_map.py --show <Name> [--method <Method>]` 或 `Retrieval.read_header_window()`。禁止 `read_file` 安装路径，禁止自写 Python 打印 `path=`。窗口是签名摘录，不是调用配方。
 
 详细架构契约：[docs/architecture/retrieval.md](docs/architecture/retrieval.md)
 
@@ -1335,10 +1337,11 @@ python tests/test_master.py --quick
 │   ├── lifecycle.yaml               # 能力生命周期（能不能用；防 Phantom）
 │   ├── catalog.py                    # Knowledge Catalog Index (v3.0)
 │   ├── api_registry.py               # API 白名单注册表（知识库驱动）
-│   ├── header_map.py                # CAA header→module→framework 映射（缓存；CLI: python skills/header_map.py <Name> 返回头文件绝对路径）
+│   ├── header_map.py                # CAA header→module→framework 映射（缓存；位置: header_map.py <Name>；声明窗口: --show，禁止读安装路径）
 │   ├── method_index.py             # 类型→方法存在性检查（继承链；CLI: python skills/method_index.py <Type> <Method...>）
 │   ├── dic_index.py                # 随产品发布的 .dic 事实索引（接口↔实现组件；CLI: python skills/dic_index.py <Name>）
 │   ├── sample_data_index.py        # 随产品发布的样件索引（.CATPart/.CATProduct/.CATDrawing；CLI: python skills/sample_data_index.py）
+│   ├── usecase_snippet.py          # 官方样例只读源码窗口（安装目录不在编辑器内；CLI: python skills/usecase_snippet.py）
 │   ├── jev_judge.py                # Jev 判定层（路由/排序/措辞，非证据源；无 key 或网络失败自动降级）
 │   ├── retrieval.py                 # 统一检索门面（七索引：catalog/registry/header_map/method_index/usecase/dic/sample_data）
 │   ├── chain_explorer.py            # 官方例程时序调用链探索器（真实源码切片提取/隔离结晶）

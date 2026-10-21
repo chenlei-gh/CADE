@@ -17,7 +17,7 @@
 2. **SDK 头文件** `<CATIA_INSTALL>/.../PublicInterfaces/*.h`（refman 的生成源，比 htm 页面更权威）
 3. **CAADoc refman htm** `<CATIA_INSTALL>/CAADoc/Doc/generated/refman/`
 4. **CAADoc `.dico` 教学样例**（44个，仅供参考，可能过时或简化）
-5. **官方示例工程源码全文**（`<CATIA_INSTALL>/CAADoc/CAA*.edu/**/*.cpp`，用 `grep -rl` 搜索验证 API 真实调用惯用法——工具查不到"怎么组合调用"时用这个）
+5. **官方示例工程源码**（存在性走 UseCaseIndex；要看源码走 `python skills/usecase_snippet.py`，不要 `grep -rl` 安装目录，也不要自写 Python 打印）
 
 排查工具（在 `.agents/skills/catia-caa-dev/` 目录下运行）：
 
@@ -35,7 +35,7 @@ python tools/build_caadoc_index.py --repl                             # 交互�
 - `--check-file` 只扫描 ` ```cpp ` 代码块，不扫描 frontmatter/正文反引号里提及的 API 名（例如某段说明文字里写"`CATIGSMConnectChecker` 这个类不存在"，这种否定性提及会被漏检，需要人工 `grep` 全文）
 - 枚举成员值、类型常量会被误报 SUSPECT——这是已知局限，不代表真的有问题，需要人工用 `--query` 复核
 - 自定义方法名、说明性文字里提及的虚构类名会被误报
-- **判断头文件是否真实存在时，`find` 路径必须是 `<CATIA_INSTALL>/<Module>/PublicInterfaces/`，不要在 `<arch>/win_b64` 下找**（本次教训：`CATCreateWorkshop.h` 真实存在于 `ApplicationFrame/PublicInterfaces/`，曾因 find 路径误加 `win_b64` 被误判为不存在，导致两个 context_menu 文件被错删 include，已回滚）
+- **判断头文件是否真实存在用 `python skills/header_map.py <Name>`，不要 `find` 安装目录，也不要在 `<arch>/win_b64` 下找**（历史教训：`CATCreateWorkshop.h` 真实存在于 `ApplicationFrame/PublicInterfaces/`，曾因 find 路径误加 `win_b64` 被误判为不存在，导致两个 context_menu 文件被错删 include，已回滚）。要看声明用 `--show`，不要 `read_file` 返回的 `path=`。
 
 ---
 
@@ -115,7 +115,7 @@ native_command_investigation · parameter_editor · surface_analysis
 后续如需复查个别 API：
 1. 跑 `python tools/build_caadoc_index.py --query <TypeName>` 或 `--check-file <path>` 快速核对
 2. 对 SUSPECT 结果，先排除已知误报源（宏/枚举值/库名/头文件名/教学占位符），再用 SDK 头文件或 win_b64 `.dll` 复核
-3. 判断头文件存在性用 `find <CATIA_INSTALL>/<Module>/PublicInterfaces/ -name X.h`，勿在 `win_b64` 下找
+3. 判断头文件存在性用 `python skills/header_map.py <Name>`；要看声明加 `--show`。勿 `find` 安装目录，勿在 `win_b64` 下找
 4. 改知识库长 markdown 用 `write_file` 整体重写，勿用 `edit_file` 局部编辑（历史上多次截断/错位）
 5. 改完跑 `python tests/test_master.py --quick`（应 41/41 全过）
 
