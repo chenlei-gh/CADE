@@ -1289,6 +1289,20 @@ def run_caa_batch(
     result["log_dirs"] = [str(temp_root / d) for d in log_dirs]
     result["stdout"] = (proc.stdout or "").strip()[-2000:]
     result["stderr"] = (proc.stderr or "").strip()[-2000:]
+
+    # The new-dir diff above only works when CATBatch writes under %TEMP%. It
+    # usually writes to C:\temp instead, which is a DIFFERENT directory than
+    # tempfile.gettempdir() on a machine with TMP=/tmp, so the diff comes back
+    # empty. CATBatch always names the real location, as "located in <path>" —
+    # on stderr when it dies before batchmain, on stdout once a batch runs — so
+    # search both and keep the diff as a last resort.
+    located = re.search(r"located in <(.+?)>",
+                        result["stderr"] + "\n" + result["stdout"])
+    if located:
+        reported = located.group(1).replace("\\\\", "\\").strip()
+        if reported and reported.lower() != "(null)":
+            result["log_dirs"] = [reported]
+
     result["status"] = "success" if proc.returncode == 0 else "failed"
     if proc.returncode != 0 and not result["stdout"] and not result["stderr"]:
         result["message"] = (

@@ -10,6 +10,34 @@
 
 ## [未发布]
 
+### 🔧 修复：环境变量与 V5 环境文件对齐，Runtime View 进入 CATInstallPath
+
+**问题**：`CAAEnvironment.initialize()` 发布的环境与安装器写下的
+`CATEnv/<type>.txt` 不一致，其中最致命的一条是 `CATInstallPath` 只含安装目录。
+`CATBatch` 在 `CATInstallPath` 的每个条目下找
+`<root>/resources/batchdesc/<batch_name>.xml`，于是**工作区描述符永远不可见**，
+运行在 `CATBatchInit` 阶段就死掉（RC=2，日志只有一行 `CATBatchInit failed`），
+`batchmain` 从未被调用。这解释了为什么手写 `run_*.bat` 和 CADE 都跑不通同一批次。
+
+- `CATInstallPath` 改为 `;` 分隔列表，Runtime View 在前、安装目录在后。实测确认
+  `CATInstallPath` 支持多路径（与 `CATDLLPath` 同理），且同名时工作区描述符生效。
+- 修正 `CATInstallPath` 层级：应为 `<install>/<arch>`，不是 `<install>`。
+- 资源路径从 `<install>/CNext/...` 改为 `<install>/<arch>/...`（B28 没有 `CNext`
+  目录，旧路径全是死路径），`CNext/` 保留为兜底查找根。
+- 补齐 `CATICPath` / `CATCommandPath` / `CATKnowledgePath` / `CATStartupPath` /
+  `CATDocView` / `CATFontPath` / `CATFeatureCatalogPath`。
+- 修正 `CATDLLPath`：应为 `.../code/bin`，不是 `.../code`；并带上安装目录回退。
+- `run_caa_batch` 的 `log_dirs` 不再恒为空：从输出里的 `located in <path>` 解析
+  真实日志目录（CATIA 写在 `C:\temp`，与 `tempfile.gettempdir()` 不是同一目录）。
+- 修正 `knowledge/infrastructure/batch_infrastructure.md`：`BATCH_PATH` **不是**
+  描述符查找根（原文由反汇编字面串推断，实测否定），并补充 RC=2 的真实根因与
+  已排除假设。
+
+**实测边界**：上述修复让 `batchmain` 真正被调用（`Entry point <batchmain> found`，
+用户代码产出日志）。剩余退出码来自 CATIA 会话创建失败
+（`Create_Session : 0x80004005`、`GSO factory available : 0`），属 CATIA 运行时层，
+**未定位根因**，与本修复无关。
+
 ### ✨ 新增：CAA Batch（CATBatch.exe）能力 + 修复批描述符不同步
 
 **问题**：CADE 只有脚本批处理（`CNEXT -batch -macro`，入口 `CATMain`），没有编译型 CAA Batch（`CATBatch.exe`，入口 `batchmain`）。两者不是同一功能的两个入口，而是两套独立机制。用户只能手写 14 个 `run_*.bat` 维护环境变量，其中 `CATInstallPath` 已漂移出 3 种取值。

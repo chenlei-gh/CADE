@@ -188,15 +188,63 @@ class CAAEnvironment:
         # Base CATIA paths
         code_bin = catia_path / arch / "code" / "bin"
 
-        self.env["CATInstallPath"] = str(catia_path)
-        self.env["CATDictionaryPath"] = str(
-            catia_path / "CNext" / "code" / "dictionary"
-        )
-        self.env["CATGraphicPath"] = str(catia_path / "CNext" / "resources" / "graphic")
-        self.env["CATMsgCatalogPath"] = str(
-            catia_path / "CNext" / "resources" / "msgcatalog"
-        )
-        self.env["CATReffilesPath"] = str(catia_path / "CNext" / "reffiles")
+        # A CATIA installation keeps its runtime root at <install>/<arch>/, so
+        # every path below is spelled <install>/<arch>/... — the authoritative
+        # reference is the V5 environment file the installer writes to
+        # CATEnv/<type>.txt. CADE previously published:
+        #   - CATInstallPath = <install>          (one level too high)
+        #   - resources under <install>/CNext/... (a directory that does not
+        #     exist in B28 at all)
+        # Those dead paths stayed invisible because every launcher went through
+        # mkrun/tck_init, which re-derives them itself. CATBatch.exe reads the
+        # environment it is HANDED, so it failed with "CATBatchInit failed".
+        #
+        # The Runtime View root is a second install root, and it MUST be listed:
+        # CATBatch resolves a parameter file's batch_name against
+        # <CATInstallPath>/resources/batchdesc/, so an install-only
+        # CATInstallPath makes every workspace descriptor invisible and the run
+        # dies in CATBatchInit before batchmain is ever entered. CATInstallPath
+        # accepts a ';'-separated list; Runtime View goes first so a workspace
+        # descriptor shadows an official one of the same name.
+        install_roots = []
+        if workspace_path:
+            rv_root = Path(workspace_path) / arch
+            if rv_root.exists():
+                install_roots.append(rv_root)
+        install_roots.append(catia_path / arch)
+
+        # CNext/ is kept as a last lookup root for layouts that really do carry
+        # that older container directory instead of <install>/<arch>/.
+        resource_roots = install_roots + [catia_path / "CNext"]
+
+        def _resources(*parts):
+            found = []
+            for root in resource_roots:
+                candidate = root.joinpath(*parts)
+                if candidate.exists() and str(candidate) not in found:
+                    found.append(str(candidate))
+            if found:
+                return os.pathsep.join(found)
+            return str(catia_path / arch / Path(*parts))
+
+        self.env["CATInstallPath"] = os.pathsep.join(str(p) for p in install_roots)
+        self.env["CATICPath"] = _resources("code", "productIC")
+        self.env["CATCommandPath"] = _resources("code", "command")
+        self.env["CATDictionaryPath"] = _resources("code", "dictionary")
+        self.env["CATGraphicPath"] = _resources("resources", "graphic")
+        self.env["CATMsgCatalogPath"] = _resources("resources", "msgcatalog")
+        self.env["CATReffilesPath"] = _resources("reffiles")
+        self.env["CATFeatureCatalogPath"] = _resources("resources", "featurecatalog")
+        self.env["CATKnowledgePath"] = _resources("resources", "knowledge")
+        self.env["CATStartupPath"] = _resources("startup")
+        self.env["CATDocView"] = _resources("doc")
+        self.env["CATFontPath"] = _resources("resources", "fonts")
+        # The V5 environment file spells CATDLLPath as .../code/bin, not .../code.
+        self.env["CATDLLPath"] = os.pathsep.join(
+            str(root / "code" / "bin")
+            for root in install_roots
+            if (root / "code" / "bin").exists()
+        ) or str(code_bin)
 
         # Set up PATH - Runtime View first, then CATIA
         path_components = []
@@ -212,11 +260,6 @@ class CAAEnvironment:
                 if runtime_bin.exists():
                     path_components.append(str(runtime_bin))
                     print(f"Using Runtime View: {runtime_view}", file=sys.stderr)
-
-                # Set CATDLLPath to include Runtime View
-                runtime_code = runtime_view / "code"
-                if runtime_code.exists():
-                    self.env["CATDLLPath"] = str(runtime_code)
 
         # Add CATIA code/bin
         if code_bin.exists():

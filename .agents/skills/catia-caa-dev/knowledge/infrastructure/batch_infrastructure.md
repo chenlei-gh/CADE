@@ -98,15 +98,47 @@ extern "C" int batchmain(int argc, char** argv)
 
 通过 `TIE_CAA_BATCHMAIN` 或模块导出表暴露，**不是** `CATMain`。
 
-## 描述符查找顺序
+## 描述符查找顺序（实测修正）
 
-`CATBatch` 按 `BATCH_PATH` 搜索 `batchdesc/` 目录，再回落到安装目录的
-`resources/batchdesc/`。Runtime View 必须先于安装目录，否则工作区的描述符
-会被同名的官方描述符遮蔽。
+`CATBatch` 在 `CATInstallPath` 的**每个**条目下找
+`<root>/resources/batchdesc/<batch_name>.xml`。`CATInstallPath` 接受 `;` 分隔的
+路径列表，和 `CATDLLPath` 一样。
 
-`CATBatchUtils.dll` 中可检出 `BATCH_PATH` 与 `batchdesc` 字面串，即该变量的实际来源。
+**`BATCH_PATH` 不是描述符查找根。** 早先根据 `CATBatchUtils.dll` 里的
+`BATCH_PATH=%s%c%resources%c%batchdesc%c` 字面串推断它是查找根，实测否定：
+无论 `BATCH_PATH` 设成 `win_b64`、`win_b64/resources`、
+`win_b64/resources/batchdesc` 还是不设，运行时行为完全一致。
+
+实测矩阵（B28，`batch_name=S0Probe`，描述符只存在于 Runtime View）：
+
+| `CATInstallPath` | 结果 |
+|---|---|
+| `B28\win_b64`（只有安装） | `CATBatchInit failed`，RC=2，**`batchmain` 从未被调用** |
+| `D:\...\win_b64;B28\win_b64` | 描述符命中，`batchmain` 被调用 |
+| Runtime View 目录里删掉描述符 | 立刻退回 RC=2 |
+
+所以 **Runtime View 必须进 `CATInstallPath`**，否则工作区描述符永远不可见，
+失败发生在 `CATBatchInit` 阶段、日志里只有一行 `CATBatchInit failed`，
+极易被误读成「DLL 或描述符写错了」。CADE 的 `env.py` 已把 Runtime View
+放在 `CATInstallPath` 首位（同名时工作区描述符遮蔽官方描述符）。
 
 ## 失败模式
+
+### RC=2 + 日志只有一行 `CATBatchInit failed`
+
+**根因**：描述符没找到，失败发生在 `batchmain` 之前。最常见原因是
+`CATInstallPath` 只有安装目录、没有 Runtime View（见上节）。
+`CATBatchUtils.dll` 把这一阶段细分成
+`CATCreateInstance failed` / `QI on CATIBatch failed` /
+`put_ParametersPath failed` / `put_BatchDescriptorPathFromParam failed`，
+但 `LOG.txt` 只落一行概括，不写细分原因。
+
+**判据**：`LOG.xml` 里没有 `Entry point <batchmain> found`。
+有它就是过了初始化、问题在别处。
+
+### `CATBatchInit failed` 消失、改成 `batchmain` 内的错误
+
+初始化过了，失败在用户代码，别再改环境变量。
 
 ### AFWIN 弹窗 + `Entry point <batchmain> not found`
 
@@ -131,9 +163,31 @@ CATDocumentServices::OpenDocument      : 0x80004005
 FATAL : OpenDocument returned NULL document
 ```
 
-`batchmain` 已进入、参数已读到，但 CATIA 文档模型整体未起。这是**运行环境**
-问题（`CATInstallPath` 指向的精简/符号链接安装缺资源），不是调用方式问题。
-换回完整安装的 `CATInstallPath` 再试。
+`batchmain` 已进入、参数已读到，但 CATIA 文档模型整体未起。
+
+日志开头通常还伴随：
+
+```
+GetPtrSession (existing session)  : 0x80004005
+existing session available        : 0
+Create_Session                    : 0x80004005
+CATInstantiateComponent(CATFeatCont, IID_CATIGSOFactory) : 0x80004002
+GSO factory available             : 0
+```
+
+即 **CATIA 会话根本没创建成功**，后续所有文档 API 必然连带失败。
+这已经越过 CADE 的控制边界：CATBatch 托管进程的生命周期由它自己管，
+`batchmain` 里显式调 `Create_Session` 也补不回来。
+
+已排除的假设（实测）：
+
+- `CATInstallPath` 用符号链接拼的精简安装 → 不影响，`batchmain` 照常进入
+- 描述符缺 `NeedsVisu` / `catutil` 属性 → 不影响
+- `NOLICENSECHECK` 环境变量 → 不影响
+
+因此 `0x80004005` 会话层的根因**尚未定位**，不要凭症状去改 `env.py`。
+若需要文档级操作，先确认同机器上 `run_catia`（CNEXT 图形会话）能正常开会话，
+再用它做对照隔离。
 
 ### 环境变量漂移
 
