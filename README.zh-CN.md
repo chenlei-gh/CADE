@@ -320,7 +320,7 @@ sh scripts/install-git-hooks.sh
 
 它把 `scripts/git-hooks/pre-push` 复制到 `.git/hooks/`。`.git/hooks` 不随仓库分发，新 clone 不跑安装脚本就没有这道门禁。单次绕过用 `git push --no-verify`。
 
-> **测试基线**：47 套件（46 快速套件 + 1 CATIA 生命周期套件）· 快速回归通过：46/46。
+> **测试基线**：48 套件（47 快速套件 + 1 CATIA 生命周期套件）· 快速回归通过：47/47。
 
 ---
 

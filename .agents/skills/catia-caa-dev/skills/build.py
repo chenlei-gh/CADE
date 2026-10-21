@@ -294,6 +294,29 @@ def sync_runtime_view(workspace_path: Path, arch: str = "win_b64") -> dict:
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(f, dst)
                     synced.append(f"msgcatalog/{rel.as_posix()}")
+        # Batch descriptors. CATBatch resolves a parameter file's
+        # `batch_name` against every `batchdesc/` directory reachable from
+        # BATCH_PATH, so a descriptor that never reaches the Runtime View is
+        # invisible to it. The failure mode is silent and misleading: the
+        # lookup falls through to an official descriptor of the same name and
+        # reports "Entry point <batchmain> not found" for a DLL the author
+        # never referenced (observed in the S0Probe investigation).
+        batchdesc_src = cnext / "resources" / "batchdesc"
+        if batchdesc_src.exists():
+            batchdesc_dst = rv / "resources" / "batchdesc"
+            batchdesc_dst.mkdir(parents=True, exist_ok=True)
+            for f in batchdesc_src.rglob("*"):
+                if not f.is_file() or f.suffix.lower() not in (".xml", ".dtd"):
+                    continue
+                rel = f.relative_to(batchdesc_src)
+                dst = batchdesc_dst / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                # Content compare, not mtime: a stale descriptor is
+                # indistinguishable from a fresh one at run time, and git
+                # checkout restores old mtimes.
+                if not dst.exists() or dst.read_bytes() != f.read_bytes():
+                    shutil.copy2(f, dst)
+                synced.append(f"batchdesc/{rel.as_posix()}")
         # Icons. CADE owns icons/normal/ and refreshes those files from
         # icon_provider on every command generation. Project-drawn custom
         # icons (any size, e.g. 24x24 panel buttons) live in icons/custom/ —

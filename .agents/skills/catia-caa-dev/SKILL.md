@@ -1171,7 +1171,8 @@ python skills/run.py --dev D:\workspace   # 编译 + 挂载 Runtime View 启动�
 from run import (
     start_catia_runtime,   # CNEXT
     run_catia_macro,       # CNEXT -macro
-    run_catia_batch,       # CNEXT -batch
+    run_catia_batch,       # CNEXT -batch（脚本批处理，入口 CATMain）
+    run_caa_batch,         # CATBatch.exe（编译型 Batch，入口 batchmain）
     stop_catia,
     check_catia_running,
 )
@@ -1193,7 +1194,15 @@ result = run_catia_with_env("CATIA_P3.V5-6R2018.B28", workspace_path="D:/workspa
 
 # Batch 模式（必须带 workspace）
 result = run_catia_batch(workspace_path="D:/workspace")
+
+# 编译型 CAA Batch（CATBatch.exe）—— 与上面的 run_catia_batch 不是同一机制
+# 先预检（--dry-run 对等）：描述符、库、batchmain 导出、输入文件
+result = run_caa_batch("D:/workspace/Param.xml", workspace_path="D:/workspace", dry_run=True)
 ```
+
+> ⚠️ `run_catia_batch` 与 `run_caa_batch` **不可互换**。前者用 `CNEXT -batch -macro`
+> 跑脚本、需 `CATMain`；后者用 `CATBatch.exe` 加载库、需 `batchmain` 和批描述符。
+> 判据看 DLL 导出表。详见 [`knowledge/infrastructure/batch_infrastructure.md`](knowledge/infrastructure/batch_infrastructure.md)。
 
 ### 3. 清理工作区
 
@@ -1426,7 +1435,8 @@ python tests/test_master.py --quick
 │   │   ├── fp_imakefile_link.md
 │   │   ├── fp_missing_include.md
 │   │   └── fp_undeclared_class.md
-│   └── infrastructure/               # 基础设施: Selection、CodeStyle、Memory
+│   └── infrastructure/               # 基础设施: Selection、CodeStyle、Memory、Batch
+│       ├── batch_infrastructure.md   # CAA Batch: CATBatch / batchmain / 描述符
 │
 ├── patterns/                          # 开发模式库 (Coarse + Block)
 │   ├── analyzer/                     # 粗模式: 几何分析、规则检查

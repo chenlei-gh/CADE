@@ -2531,6 +2531,7 @@ class Kernel:
             "stop_catia",
             "macro",
             "batch",
+            "caa_batch",
             "runtime_view",
             "setup_prerequisites",
             "dev",
@@ -2570,6 +2571,7 @@ class Kernel:
             "stop_catia": {"force"},
             "macro": {"macro_path"},
             "batch": {"batch_script"},
+            "caa_batch": {"param_file", "dry_run", "timeout"},
             "runtime_view": set(),
             "setup_prerequisites": set(),
             "dev": set(),
@@ -2762,6 +2764,42 @@ class Kernel:
                 "status": "ok" if is_ok else "error",
                 "message": res.get("message", "Batch executed") if isinstance(res, dict) else "Batch executed",
                 "data": res if isinstance(res, dict) else {},
+            }
+
+        elif action == "caa_batch":
+            # Descriptor-driven CATBatch run. Paths are confined to the
+            # workspace by the same rules as macro/batch, so an authorized
+            # plan cannot point CATBatch at an arbitrary file.
+            param_file = params.get("param_file")
+            if not isinstance(param_file, str) or not param_file:
+                return {"status": "error", "message": "param_file is required"}
+            if ".." in param_file or param_file.startswith(("/", "\\")):
+                return {"status": "error", "message": "param_file traversal is forbidden"}
+            target_param = (curr_ws / param_file).resolve()
+            if not str(target_param).lower().startswith(str(curr_ws).lower()):
+                return {"status": "error", "message": "param_file must be within workspace"}
+            if not target_param.is_file():
+                return {"status": "error", "message": f"Parameter file does not exist: {param_file}"}
+
+            dry_run = params.get("dry_run", False)
+            if not isinstance(dry_run, bool):
+                return {"status": "error", "message": "dry_run must be a boolean"}
+            timeout = params.get("timeout", 900)
+            if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
+                return {"status": "error", "message": "timeout must be a positive integer"}
+
+            from run import run_caa_batch
+            res = run_caa_batch(
+                param_file=str(target_param),
+                workspace_path=str(self.workspace_root),
+                timeout=timeout,
+                dry_run=dry_run,
+            )
+            is_ok = res.get("status") in ("success", "dry_run")
+            return {
+                "status": "ok" if is_ok else "error",
+                "message": res.get("message", "CAA batch completed"),
+                "data": res,
             }
 
         elif action == "runtime_view":

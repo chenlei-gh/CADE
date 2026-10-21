@@ -10,6 +10,20 @@
 
 ## [未发布]
 
+### ✨ 新增：CAA Batch（CATBatch.exe）能力 + 修复批描述符不同步
+
+**问题**：CADE 只有脚本批处理（`CNEXT -batch -macro`，入口 `CATMain`），没有编译型 CAA Batch（`CATBatch.exe`，入口 `batchmain`）。两者不是同一功能的两个入口，而是两套独立机制。用户只能手写 14 个 `run_*.bat` 维护环境变量，其中 `CATInstallPath` 已漂移出 3 种取值。
+
+同时，`sync_runtime_view` 只同步 `dictionary` / `msgcatalog` / `icons`，**完全漏了 `batchdesc/`**。描述符改了不进 Runtime View，而 CATBatch 找不到描述符时会回落到官方同名描述符，报出误导性的 `Entry point <batchmain> not found` —— 实测中 `batch_name="BatchSample"` 正是这样命中官方 `BatchSample.xml` 并弹出 AFWIN。
+
+- `sync_runtime_view` 增加 `batchdesc/` 分支（`*.xml` / `*.dtd`，内容比对而非 mtime，避免 git checkout 恢复旧时间戳导致漏刷）。
+- 新增 `run.run_caa_batch()`：启动前做四项预检 —— 描述符存在、库存在、库导出 `batchmain`、声明的输入文件存在。预检不过则**不启动** CATBatch，AFWIN 弹窗无从发生。
+- `_pe_exports()` 用 `struct` 解析 PE 导出表（纯标准库，与真实 DLL 实测结果一致）。
+- 新增 CLI `cade batch <param.xml> [workspace] [--dry-run] [--timeout N]` 与 kernel 动作 `caa_batch`（路径限制在 workspace 内）。
+- 登记 `capabilities.yaml` 的 `run_caa_batch`，`forbidden` 明确禁止用 `cade run --batch` 跑 CATBatch 批次。
+- 新增 `knowledge/infrastructure/batch_infrastructure.md`：两套机制的判据、三个文件（描述符 / 参数 / `batchmain`）、描述符查找顺序、AFWIN 根因、`OpenDocument returned NULL` 的含义、日志位置。
+- 新增 `tests/test_caa_batch.py`（29 项），登记进 master SUITES。
+
 ### 🔧 修复：打开 CATIA 不带工作区会落到裸 CATSTART，自定义环境不加载
 
 **问题**：`CATSTART.exe` 只是安装探测路径和「不带 workspace」的裸机回退。直接运行它不会设置 `CATDLLPath` / `CATDictionaryPath` / `CATMsgCatalogPath`，所以 CATIA 起来了但任何自定义 CAA DLL 都不加载。`status=started` 不能当成环境已挂载。

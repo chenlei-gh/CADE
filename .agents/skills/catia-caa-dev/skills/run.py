@@ -9,6 +9,8 @@ Output: JSON with runtime status
 import argparse
 import glob
 import os
+import re
+import struct
 import subprocess
 import sys
 import tempfile
@@ -1003,6 +1005,300 @@ def run_catia_with_env(
     return start_catia_runtime(
         workspace_path=workspace_path, env_name=env_name, timeout=timeout
     )
+
+
+def _pe_exports(dll_path: Path):
+    """Return the export names of a PE DLL, or _pe_exports on failure.
+
+    Pure stdlib (struct only) — the project ships no dependencies and the
+    task is a read-only header walk, so a ctypes/PyWin32 binding would add
+    risk without adding information.
+    """
+    try:
+        data = Path(dll_path).read_bytes()
+        if len(data) < 0x40 or data[:2] != b"MZ":
+            return None
+        e_lfanew = struct.unpack_from("<I", data, 0x3C)[0]
+        if data[e_lfanew:e_lfanew + 4] != b"PE\0\0":
+            return None
+        coff = e_lfanew + 4
+        n_sections = struct.unpack_from("<H", data, coff + 2)[0]
+        opt_size = struct.unpack_from("<H", data, coff + 16)[0]
+        opt = coff + 20
+        magic = struct.unpack_from("<H", data, opt)[0]
+        if magic == 0x20B:      # PE32+
+            dd_off = opt + 112
+        elif magic == 0x10B:    # PE32
+            dd_off = opt + 96
+        else:
+            return None
+        export_rva, export_size = struct.unpack_from("<II", data, dd_off)
+        if not export_rva or not export_size:
+            return []
+        sec_off = opt + opt_size
+        sections = []
+        for i in range(n_sections):
+            base = sec_off + i * 40
+            vsize, vaddr, rsize, raddr = struct.unpack_from("<IIII", data, base + 8)
+            sections.append((vaddr, max(vsize, rsize), raddr))
+
+        def rva_to_off(rva):
+            for vaddr, span, raddr in sections:
+                if vaddr <= rva < vaddr + span:
+                    return raddr + (rva - vaddr)
+            return None
+
+        hdr = rva_to_off(export_rva)
+        if hdr is None or hdr + 40 > len(data):
+            return None
+        n_names = struct.unpack_from("<I", data, hdr + 24)[0]
+        names_rva = struct.unpack_from("<I", data, hdr + 32)[0]
+        names_off = rva_to_off(names_rva)
+        if names_off is None:
+            return None
+        out = []
+        for i in range(min(n_names, 4096)):
+            str_rva = struct.unpack_from("<I", data, names_off + i * 4)[0]
+            s_off = rva_to_off(str_rva)
+            if s_off is None:
+                continue
+            end = data.find(b"\0", s_off)
+            if end < 0:
+                continue
+            out.append(data[s_off:end].decode("ascii", "replace"))
+        return out
+    except (OSError, struct.error, ValueError):
+        return None
+
+
+def _batch_search_dirs(caa_env, workspace_path):
+    """Directories CATBatch scans for a batch descriptor, highest priority first.
+
+    CATBatch resolves a parameter file's `batch_name` against every
+    `batchdesc/` directory reachable from BATCH_PATH (string evidence in
+    CATBatchUtils.dll), falling back to the CATIA install's own resources.
+    The Runtime View must come first so a workspace descriptor shadows an
+    official one of the same name.
+    """
+    dirs = []
+    arch = caa_env.get_architecture() or "win_b64"
+    if workspace_path:
+        rv = Path(workspace_path) / arch / "resources" / "batchdesc"
+        dirs.append(rv)
+    catia_path = Path(caa_env.config.get("CATIA_INSTALL", "") or "")
+    if str(catia_path) not in ("", "."):
+        dirs.append(catia_path / arch / "resources" / "batchdesc")
+    return dirs
+
+
+def _read_batch_param(param_file: Path):
+    """Extract batch_name + declared input files from a CATBatch parameter XML."""
+    import xml.etree.ElementTree as ET
+
+    info = {"batch_name": None, "inputs": [], "outputs": []}
+    try:
+        root = ET.parse(str(param_file)).getroot()
+    except (ET.ParseError, OSError) as e:
+        return info, f"parameter file is not well-formed XML: {e}"
+    info["batch_name"] = root.get("batch_name")
+    for tag, key in (("inputParameters", "inputs"), ("outputParameters", "outputs")):
+        for section in root.findall(tag):
+            for node in section:
+                path = node.get("filePath") or node.get("folderPath")
+                if path:
+                    info[key].append(path)
+    return info, None
+
+
+def run_caa_batch(
+    param_file: str,
+    workspace_path: str = None,
+    timeout: int = 900,
+    dry_run: bool = False,
+) -> dict:
+    """Run a compiled CAA batch through CATBatch.exe (descriptor-driven).
+
+    This is NOT the same mechanism as run_catia_batch: that one runs a
+    *script* through `CNEXT -batch -macro` and needs a CATMain entry point.
+    CATBatch loads a *library* and calls its `batchmain` export, resolving
+    the library from a descriptor named by the parameter file's batch_name.
+
+    Preflight is the point of this function. CATBatch's own failure mode is
+    an AFWIN modal dialog plus a non-zero exit code with no stdout, so every
+    check that can be done statically is done before the process starts:
+    descriptor found, referenced DLL present, DLL exports `batchmain`, and
+    declared input files exist.
+    """
+    caa_env = CAAEnvironment()
+    caa_env.load_config()
+
+    pf = Path(param_file)
+    checks = []
+
+    def add(name, ok, detail=""):
+        checks.append({"check": name, "ok": bool(ok), "detail": detail})
+        return ok
+
+    if not add("parameter_file_exists", pf.is_file(), str(pf)):
+        return {"status": "error", "message": f"Parameter file not found: {pf}",
+                "checks": checks}
+
+    info, parse_err = _read_batch_param(pf)
+    if not add("parameter_file_parses", parse_err is None, parse_err or str(pf)):
+        return {"status": "error", "message": parse_err, "checks": checks}
+
+    batch_name = info.get("batch_name")
+    if not add("batch_name_present", bool(batch_name),
+               f"batch_name={batch_name!r}"):
+        return {"status": "error",
+                "message": "parameter file has no batch_name attribute",
+                "checks": checks}
+
+    # Descriptor resolution — the exact place the BatchSample collision happened:
+    # a wrong batch_name silently matched an official descriptor and reported
+    # "Entry point <batchmain> not found" for a DLL the author never wrote.
+    search_dirs = _batch_search_dirs(caa_env, workspace_path)
+    descriptor = None
+    searched = []
+    for d in search_dirs:
+        candidate = d / f"{batch_name}.xml"
+        searched.append(str(candidate))
+        if candidate.is_file():
+            descriptor = candidate
+            break
+    if not add("descriptor_found", descriptor is not None,
+               f"batch_name={batch_name!r} searched={searched}"):
+        return {"status": "error",
+                "message": (f"No batch descriptor named '{batch_name}.xml'. "
+                            f"CATBatch would fall back to an official "
+                            f"descriptor of the same name and report a "
+                            f"misleading 'batchmain not found'."),
+                "checks": checks, "searched": searched}
+
+    import xml.etree.ElementTree as ET
+    try:
+        descriptor_root = ET.parse(str(descriptor)).getroot()
+    except (ET.ParseError, OSError) as e:
+        add("descriptor_parses", False, f"{descriptor}: {e}")
+        return {"status": "error", "message": f"Descriptor is not well-formed XML: {e}",
+                "checks": checks}
+    add("descriptor_parses", True, str(descriptor))
+
+    commandline = (descriptor_root.get("commandline") or "").strip()
+    tokens = commandline.split()
+    library = tokens[1] if len(tokens) >= 2 else None
+    if not add("descriptor_has_commandline", bool(library),
+               f"commandline={commandline!r}"):
+        return {"status": "error",
+                "message": "descriptor commandline must be 'CATBatch <Library>'",
+                "checks": checks}
+
+    # Locate the library on CATDLLPath (Runtime View first, then the install).
+    arch = caa_env.get_architecture() or "win_b64"
+    dll_dirs = []
+    if workspace_path:
+        dll_dirs.append(Path(workspace_path) / arch / "code" / "bin")
+    catia_path = Path(caa_env.config.get("CATIA_INSTALL", "") or "")
+    if str(catia_path) not in ("", "."):
+        dll_dirs.append(catia_path / arch / "code" / "bin")
+    dll_path = None
+    for d in dll_dirs:
+        candidate = d / f"{library}.dll"
+        if candidate.is_file():
+            dll_path = candidate
+            break
+    if not add("library_found", dll_path is not None,
+               f"{library}.dll searched={[str(d) for d in dll_dirs]}"):
+        return {"status": "error",
+                "message": (f"Descriptor '{batch_name}' points at "
+                            f"'{library}.dll', which is not on CATDLLPath. "
+                            f"Build the module first."),
+                "checks": checks}
+
+    exports = _pe_exports(dll_path)
+    if exports is None:
+        add("exports_batchmain", None, "could not parse PE export table")
+    else:
+        if not add("exports_batchmain", "batchmain" in exports,
+                   f"{dll_path.name} exports={sorted(exports)}"):
+            return {"status": "error",
+                    "message": (f"{dll_path.name} does not export 'batchmain'. "
+                                f"A CATBatch library is entered through "
+                                f"batchmain, not CATMain."),
+                    "checks": checks}
+
+    missing_inputs = [p for p in info["inputs"] if not Path(p).exists()]
+    add("input_files_exist", not missing_inputs,
+        f"missing={missing_inputs}" if missing_inputs else f"{len(info['inputs'])} ok")
+
+    result = {
+        "status": "dry_run" if dry_run else "pending",
+        "param_file": str(pf),
+        "batch_name": batch_name,
+        "descriptor": str(descriptor),
+        "library": library,
+        "dll": str(dll_path) if dll_path else None,
+        "checks": checks,
+        "preflight_ok": all(c["ok"] is not False for c in checks),
+    }
+
+    if missing_inputs or result["preflight_ok"] is False or dry_run:
+        if dry_run:
+            result["status"] = "dry_run"
+            result["message"] = "Preflight completed; CATBatch not started."
+        else:
+            result["status"] = "error"
+            result["message"] = "Preflight failed; CATBatch not started."
+        return result
+
+    catbatch = catia_path / arch / "code" / "bin" / "CATBatch.exe"
+    if not catbatch.is_file():
+        result["status"] = "error"
+        result["message"] = f"CATBatch.exe not found: {catbatch}"
+        return result
+
+    # CATIA writes its run log to %TEMP%/<32-hex>/. Snapshot the directory set
+    # so the log for THIS run can be identified instead of guessing by mtime.
+    temp_root = Path(tempfile.gettempdir())
+    before = {p.name for p in temp_root.iterdir() if p.is_dir()} if temp_root.is_dir() else set()
+
+    launch_env = caa_env.initialize(workspace_path=workspace_path) or os.environ.copy()
+    if workspace_path:
+        rv = Path(workspace_path) / arch
+        launch_env["BATCH_PATH"] = str(rv)
+
+    try:
+        proc = subprocess.run(
+            [str(catbatch), str(pf)],
+            capture_output=True, timeout=timeout, text=True,
+            encoding="utf-8", errors="replace", env=launch_env,
+            cwd=str(workspace_path) if workspace_path else None,
+        )
+    except subprocess.TimeoutExpired:
+        result["status"] = "timeout"
+        result["message"] = f"CATBatch timed out after {timeout}s"
+        return result
+    except OSError as e:
+        result["status"] = "error"
+        result["message"] = f"Failed to launch CATBatch: {e}"
+        return result
+
+    after = {p.name for p in temp_root.iterdir() if p.is_dir()} if temp_root.is_dir() else set()
+    log_dirs = sorted(after - before)
+    result["exit_code"] = proc.returncode
+    result["log_dirs"] = [str(temp_root / d) for d in log_dirs]
+    result["stdout"] = (proc.stdout or "").strip()[-2000:]
+    result["stderr"] = (proc.stderr or "").strip()[-2000:]
+    result["status"] = "success" if proc.returncode == 0 else "failed"
+    if proc.returncode != 0 and not result["stdout"] and not result["stderr"]:
+        result["message"] = (
+            f"CATBatch exited {proc.returncode} with no console output. "
+            f"This is the AFWIN signature — read the log under "
+            f"{result['log_dirs'] or '%TEMP%/<uuid>/'} for the real cause."
+        )
+    else:
+        result["message"] = f"CATBatch completed (exit {proc.returncode})"
+    return result
 
 
 def main():

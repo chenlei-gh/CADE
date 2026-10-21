@@ -333,7 +333,7 @@ sh scripts/install-git-hooks.sh
 
 That copies `scripts/git-hooks/pre-push` into `.git/hooks/`. `.git/hooks` is not distributed with the repo, so a fresh clone does not get the gate until the installer is run. Bypass a single push with `git push --no-verify`.
 
-> **Test baseline**: 47 suites (46 fast suites + 1 CATIA lifecycle suite) · Fast regression: 46/46 passing.
+> **Test baseline**: 48 suites (47 fast suites + 1 CATIA lifecycle suite) · Fast regression: 47/47 passing.
 
 ---
 

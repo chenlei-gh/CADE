@@ -274,6 +274,24 @@ capabilities:
       - 不带 workspace 调用 run.py / start_catia_runtime（裸机启动，status=started 不代表环境已挂载）
     note: python binding 仅覆盖启动；停止/宏/状态分别见 run.stop_catia / run.run_catia_macro / run.check_catia_running。验证自定义工具必须带 workspace，返回看 runtime_view_mounted 而不是 status=started
 
+  - name: run_caa_batch
+    description: 跑编译型 CAA Batch（CATBatch.exe + 批描述符 + 参数 XML，DLL 的 batchmain 入口）
+    triggers:
+      - CAA batch
+      - CATBatch
+      - 批处理
+      - 批量运行
+      - 参数XML
+      - batchmain
+      - 描述符
+    bindings:
+      cli: cade batch <param.xml> [workspace] [--dry-run] [--timeout N]
+      python: run.run_caa_batch
+    forbidden:
+      - 用 cade run --batch 跑 CATBatch 批次（-batch -macro 走 CATMain、喂的是脚本；CATBatch 走 batchmain、喂的是参数 XML，静默不生效）
+      - 手工改环境变量后裸调 CATBatch.exe（绕过预检，失败只弹 AFWIN 且退出码不可信）
+    note: 与 run_catia 的 --batch 不是同一机制。CATBatch 由 descriptor 解析库名、调 batchmain；预检会提前拦住描述符缺失/batchmain 缺失/输入文件缺失，避免 AFWIN 弹窗
+
   - name: dev_cycle
     description: 编译+运行一键闭环（build 后立即启动 CATIA 验证）
     triggers:

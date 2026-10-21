@@ -21,6 +21,8 @@ Usage:
   cade run --stop                  # Stop CATIA
   cade run --macro path.CATScript  # Run macro
   cade run --status                # Check if running
+  cade batch <param.xml> [ws]      # Run a compiled CAA batch (CATBatch.exe)
+  cade batch <param.xml> --dry-run # Preflight only; do not start CATBatch
 
   cade create command <name> <module> [--dialog] [--wb name]
   cade create feature <name> <module>
@@ -261,6 +263,8 @@ def main():
         cmd_develop(args)
     elif cmd == "run":
         cmd_run(args)
+    elif cmd == "batch":
+        rc = cmd_batch(args)
     elif cmd == "create":
         cmd_create(args)
     elif cmd == "analyze":
@@ -519,6 +523,56 @@ def cmd_run(args):
         result = start_catia_runtime(workspace_path=ws, entrypoint="cade_cli", orchestrated_by_kernel=False)
 
     return _print_result(result)
+
+
+# ─── Batch (CATBatch) ──────────────────────────────────────────
+
+
+def cmd_batch(args):
+    """Run a compiled CAA batch through CATBatch.exe.
+    Usage: cade batch <param.xml> [workspace] [--dry-run] [--timeout N]
+
+    Distinct from `cade run --batch`: that runs a *script* via CNEXT's -batch
+    option and needs a CATMain entry point. CATBatch loads a *library* and
+    calls its batchmain export, resolved through a descriptor.
+    """
+    from run import run_caa_batch
+
+    opts = _get_flags(args)
+    positional = [a for a in args if not a.startswith("--")]
+
+    # --timeout takes a value, so drop it and its operand from positionals.
+    timeout = 900
+    if "--timeout" in args:
+        idx = args.index("--timeout")
+        if idx + 1 < len(args):
+            try:
+                timeout = int(args[idx + 1])
+            except ValueError:
+                print("Error: --timeout expects an integer number of seconds")
+                return 1
+            positional = [a for a in positional if a != args[idx + 1]]
+
+    if not positional:
+        print("Usage: cade batch <param.xml> [workspace] [--dry-run] [--timeout N]")
+        return 1
+
+    param_file = positional[0]
+    # Not _get_ws(): its fallback takes the first non-flag arg, which here is
+    # the parameter file itself — the batch would then look for a Runtime View
+    # under <Param.xml>/win_b64.
+    ws = _parse_flag(args, "--workspace", "-w")
+    if not ws and len(positional) > 1:
+        ws = positional[1]
+
+    result = run_caa_batch(
+        param_file=param_file,
+        workspace_path=ws,
+        timeout=timeout,
+        dry_run="--dry-run" in opts,
+    )
+    _print_result(result)
+    return 0 if result.get("status") in ("success", "dry_run") else 1
 
 
 # ─── Create ───────────────────────────────────────────────────────

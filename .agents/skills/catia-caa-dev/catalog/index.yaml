@@ -188,6 +188,7 @@ Kernel 检索时自动展开：用户搜 "倒角" → 匹配 chamfer, bevel, edg
 | infra.memory | knowledge/infrastructure/memory_management.md | memory, AddRef, Release, leak, smart pointer | CATBaseUnknown, AddRef | R19+ |
 | infra.naming | knowledge/infrastructure/naming_conventions.md | naming, convention, prefix, suffix | | R19+ |
 | infra.state_commands | knowledge/infrastructure/state_commands.md | state command, BuildGraph, transition, wizard | CATStateCommand, CATDialogState | R19+ |
+| infra.batch_infrastructure | knowledge/infrastructure/batch_infrastructure.md | batch, CATBatch, batchmain, descriptor, batchdesc, parameter file, AFWIN, BATCH_PATH | CATBatchUtils | R19+ |
 
 ### Pattern 索引
 

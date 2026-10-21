@@ -87,6 +87,8 @@ SUITES = {
     "MCP Stdio Encoding": "test_mcp_stdio_encoding.py",
     # ── Official call chain explorer (evidence-grounded CAA workflow recovery) ──
     "Call Chain Explorer": "test_chain_explorer.py",
+    # ── CATBatch descriptor path (distinct from CNEXT -batch -macro) ──
+    "CAA Batch": "test_caa_batch.py",
     }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
