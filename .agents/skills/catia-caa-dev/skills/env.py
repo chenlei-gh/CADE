@@ -407,7 +407,12 @@ class CAAEnvironment:
         return None
 
     def get_catstart_path(self) -> Optional[Path]:
-        """Get full path to CATSTART.exe (recommended for normal startup)"""
+        """Locate CATSTART.exe. Bare fallback only — not the workspace entry.
+
+        A workspace launch must go through run.start_catia_runtime(workspace_path),
+        which uses mkrun and mounts the Runtime View. Calling this exe directly
+        does not set CATDLLPath/CATDictionaryPath/CATMsgCatalogPath.
+        """
         if not self.config:
             self.load_config()
 

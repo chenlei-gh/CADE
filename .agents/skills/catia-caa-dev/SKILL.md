@@ -1154,7 +1154,7 @@ cmd_list, cmd_display = env.run_command("mkwhereami", "D:/workspace")
 python skills/run.py [workspace] [options]
 ```
 
-**重要**: `workspace` 是位置参数（不是 `--workspace` flag）。必须带上 workspace 路径才会挂载该工作区的 Runtime View（`CATDLLPath`/`CATDictionaryPath`/`CATMsgCatalogPath`），否则任何自定义 CAA DLL（不管新旧、不管是否已验收过）都不会被 CATIA 加载。这种“裸机启动”仍会返回 `"status": "started"`，看上去成功但工具不生效，需要靠返回 JSON 里的 `runtime_view_mounted` 字段或 stderr 的 `[WARNING]` 提示辨别。
+**重要**: `workspace` 是位置参数（不是 `--workspace` flag）。必须带上 workspace 路径才会走 `mkrun` 并挂载该工作区的 Runtime View（`CATDLLPath`/`CATDictionaryPath`/`CATMsgCatalogPath`）。不带路径会回退到 `CATSTART.exe -run CNEXT.exe`，这是裸机启动：任何自定义 CAA DLL 都不会加载，但仍会返回 `"status": "started"`。看 `runtime_view_mounted`，不要只看 `status`。禁止直接运行安装目录里的 `CATSTART.exe` / `CNEXT.exe`。宏和 batch 同样：带 workspace 走 `mkrun`，不带则是裸机。
 
 **示例**:
 ```bash

@@ -10,6 +10,15 @@
 
 ## [未发布]
 
+### 🔧 修复：打开 CATIA 不带工作区会落到裸 CATSTART，自定义环境不加载
+
+**问题**：`CATSTART.exe` 只是安装探测路径和「不带 workspace」的裸机回退。直接运行它不会设置 `CATDLLPath` / `CATDictionaryPath` / `CATMsgCatalogPath`，所以 CATIA 起来了但任何自定义 CAA DLL 都不加载。`status=started` 不能当成环境已挂载。
+
+- 带 workspace 的交互启动继续走 `mkrun`（`tck_init` → `tck_profile` → `mkinit` → Runtime View → `mkrun`）。缺 `CATSTART.exe` 不再误伤这条路径。
+- `run_catia_macro` / `run_catia_batch` 带 workspace 时改走同一条 `mkrun`，不再直接拉 `CATSTART`。返回增加 `runtime_view_mounted` 和 `launcher`。
+- Kernel 的 macro / batch 动作补上 `workspace_path`。`cade run --batch` 不再把位置参数 workspace 误当成脚本路径。
+- `capabilities.yaml` 的 `run_catia` 禁止直接运行 `CATSTART.exe` / `CNEXT.exe`，以及不带 workspace 的裸机启动。
+
 ### 🔍 修复：官方样例在安装目录，编辑器读不了
 
 **问题**：`UseCaseIndex` 只记录 token 存在性和 CAADoc 相对路径。编辑器 `read_file` 不能打开 CATIA 安装目录，于是读样例只能绕过 CADE，用临时 Python 把源码打到 stdout。

@@ -249,6 +249,107 @@ def _reclaim_stale_run_bats(logger=None) -> int:
     return reclaimed
 
 
+def _runtime_view_state(caa_env, workspace_path):
+    """Return (mounted, warning). mounted is True only when <ws>/<arch> exists."""
+    if not workspace_path:
+        return False, None
+    caa_env.load_config()
+    arch = caa_env.get_architecture() or "win_b64"
+    runtime_view = Path(workspace_path) / arch
+    if runtime_view.exists():
+        return True, None
+    return False, (
+        f"Runtime View directory not found: {runtime_view} — "
+        "CATDLLPath/CATDictionaryPath/CATMsgCatalogPath will NOT include "
+        "this workspace's DLLs. Run build.py first to generate the Runtime View."
+    )
+
+
+def _mkrun_cmd(caa_env, workspace_path, cnext_args=None, detach=True):
+    """Build the mkrun launcher used by every workspace launch.
+
+    CATSTART cannot mount a workspace Runtime View. mkrun, after tck_init /
+    tck_profile / mkinit, is the CAA development entry. cnext_args (for
+    example -macro / -batch) are appended to `call mkrun` and therefore
+    reach CNEXT with the Runtime View paths already set.
+
+    detach=True (interactive start) returns as soon as the window is up, so
+    CATIA outlives the Python process. detach=False (macro/batch) runs the
+    batch in the foreground so the exit code and timeout belong to CNEXT,
+    not to `start`. Returns (cmd_args, batfile).
+    """
+    caa_env.load_config()
+    catia_path = Path(caa_env.config.get("CATIA_INSTALL", ""))
+    arch = caa_env.get_architecture() or "win_b64"
+    tck_init = catia_path / arch / "code" / "command" / "tck_init.bat"
+    tck_profile = catia_path / arch / "TCK" / "command" / "tck_profile.bat"
+    mkinit = catia_path / arch / "code" / "command" / "mkinit.bat"
+    code_bin = catia_path / arch / "code" / "bin"
+    code_command = catia_path / arch / "code" / "command"
+    rv = f"{workspace_path}\\{arch}"
+    tck_id = caa_env.resolve_tck_id()
+    tck_profile_line = (
+        f'call "{tck_profile}" {tck_id} > NUL 2>&1\r\n'
+        if tck_profile.exists() and tck_id
+        else ""
+    )
+    mkrun_tail = "call mkrun"
+    if cnext_args:
+        mkrun_tail += ""
+        for arg in cnext_args:
+            mkrun_tail += ' "' + str(arg).replace('"', '') + '"'
+    bat_content = (
+        "@echo off\r\n"
+        f'call "{tck_init}" > NUL 2>&1\r\n'
+        f"{tck_profile_line}"
+        f'call "{mkinit}" > NUL 2>&1\r\n'
+        f"set PATH={code_bin};{code_command};%PATH%\r\n"
+        f"set CATDLLPath={rv}\\code\\bin;%CATDLLPath%\r\n"
+        f"set CATDictionaryPath={rv}\\code\\dictionary;%CATDictionaryPath%\r\n"
+        f"set CATMsgCatalogPath={rv}\\resources\\msgcatalog;%CATMsgCatalogPath%\r\n"
+        f"set CATReffilesPath={rv}\\reffiles;%CATReffilesPath%\r\n"
+        f"set CATGraphicPath={rv}\\resources\\graphic;%CATGraphicPath%\r\n"
+        f'cd /d "{workspace_path}"\r\n'
+        f"{mkrun_tail}\r\n"
+        # Self-delete once the script is done. The interpreter exits long
+        # before a detached batch does, so a finally-block unlink races the
+        # file handle. `(goto)` aborts the interpreter and releases it.
+        '(goto) 2>nul & del "%~f0"\r\n'
+    )
+    # newline="" prevents text-mode \n -> \r\n translation from doubling the
+    # \r\n already embedded in bat_content.
+    with tempfile.NamedTemporaryFile(
+        suffix=".bat", prefix="cade_run_", delete=False,
+        mode="w", encoding="ascii", newline="",
+    ) as f:
+        f.write(bat_content)
+        batfile = f.name
+    # List form, not a pre-joined string: a TEMP path with spaces must stay
+    # one argument, and quoting it inside `start` makes `start` treat it as
+    # the window title. See start_catia_runtime.
+    if detach:
+        return ["cmd", "/c", "start", "/min", "cmd", "/c", batfile], batfile
+    return ["cmd", "/c", batfile], batfile
+
+
+def _catstart_cmd(caa_env, env_name, extra_args):
+    """Bare CATSTART launcher. Does not mount any workspace Runtime View."""
+    catstart = caa_env.get_catstart_path()
+    if not catstart or not catstart.exists():
+        return None, None, {"status": "error", "message": "CATSTART.exe not found"}
+    if not env_name:
+        env_name = caa_env.get_default_env()
+    env_dir = caa_env.get_catenv_dir()
+    cmd = [
+        str(catstart),
+        "-run", "CNEXT.exe",
+        "-env", env_name,
+        "-direnv", env_dir,
+    ]
+    cmd.extend(extra_args)
+    return cmd, os.environ.copy(), None
+
+
 def start_catia_runtime(
     workspace_path: str = None,
     env_name: str = None,
@@ -342,101 +443,25 @@ def start_catia_runtime(
             logger.write(warn, "WARNING")
             print(f"[WARNING] {warn}", file=sys.stderr)
 
-    # Get CATSTART path (use CATSTART with proper parameters)
-    catstart_path = caa_env.get_catstart_path()
-    if not catstart_path or not catstart_path.exists():
-        error_msg = f"CATSTART.exe not found"
-        logger.write(error_msg, "ERROR")
-        return {"status": "error", "message": error_msg}
-
-    executable_path = catstart_path
-    logger.write(f"Using CATSTART: {catstart_path}")
-
-    # Build command with proper parameters.
-    # When workspace is provided, use mkrun (standard CAA dev workflow)
-    # instead of CATSTART, because mkrun properly initializes Runtime View paths.
+    # Workspace -> mkrun (CAA dev entry, Runtime View mounted).
+    # No workspace -> CATSTART. That is a bare session: status can still be
+    # "started" while no custom CAA DLL is loaded. Do not treat that as the
+    # prescribed entry for verifying workspace tools.
     if workspace_path:
-        catia_path = Path(caa_env.config.get("CATIA_INSTALL", ""))
-        arch = caa_env.get_architecture() or "win_b64"
-        tck_init = catia_path / arch / "code" / "command" / "tck_init.bat"
-        tck_profile = catia_path / arch / "TCK" / "command" / "tck_profile.bat"
-        mkinit = catia_path / arch / "code" / "command" / "mkinit.bat"
-        code_bin = catia_path / arch / "code" / "bin"
-        code_command = catia_path / arch / "code" / "command"
-
-        # Use NamedTemporaryFile for safe temp file creation (P2-008 fix)
-        rv = f"{workspace_path}\\{arch}"
-        # tck_profile.bat requires a TCK identifier as its first positional
-        # argument (e.g. "V5_6R2018_B28"), never a workspace path — passing
-        # none/invalid args here silently degrades to a partial license env.
-        tck_id = caa_env.resolve_tck_id()
-        tck_profile_line = (
-            f'call "{tck_profile}" {tck_id} > NUL 2>&1\r\n'
-            if tck_profile.exists() and tck_id
-            else ""
-        )
-        bat_content = (
-            "@echo off\r\n"
-            f'call "{tck_init}" > NUL 2>&1\r\n'
-            f"{tck_profile_line}"
-            f'call "{mkinit}" > NUL 2>&1\r\n'
-            f"set PATH={code_bin};{code_command};%PATH%\r\n"
-            # Workspace Runtime View paths (prepend to CNEXT search order)
-            f"set CATDLLPath={rv}\\code\\bin;%CATDLLPath%\r\n"
-            f"set CATDictionaryPath={rv}\\code\\dictionary;%CATDictionaryPath%\r\n"
-            f"set CATMsgCatalogPath={rv}\\resources\\msgcatalog;%CATMsgCatalogPath%\r\n"
-            f"set CATReffilesPath={rv}\\reffiles;%CATReffilesPath%\r\n"
-            f"set CATGraphicPath={rv}\\resources\\graphic;%CATGraphicPath%\r\n"
-            f'cd /d "{workspace_path}"\r\n'
-            f"call mkrun\r\n"
-            # Self-delete once the script is done. Python launches this batch
-            # through a detached `start /min cmd /c`, so the interpreter exits
-            # long before the batch does and cannot unlink it in a finally
-            # block — without this line every launch leaks a .bat in %TEMP%
-            # (207 had accumulated). `(goto)` with no target forces the
-            # interpreter to abort and release the file handle so del succeeds.
-            f'(goto) 2>nul & del "%~f0"\r\n'
-        )
-        # Reclaim .bat files orphaned by previously killed host cmd.exe
-        # processes. Runs before creating ours so the new file is never a
-        # candidate (it is also too young to qualify).
+        # Reclaim orphaned bats before creating ours so the new file is not
+        # a candidate (it is also too young to qualify).
         _reclaim_stale_run_bats(logger)
-        # newline="" prevents text-mode \n -> \r\n translation from doubling
-        # the \r\n already embedded in bat_content (see env.py build_time_command
-        # for the full explanation of the \r\r\n corruption this caused).
-        with tempfile.NamedTemporaryFile(suffix=".bat", prefix="cade_run_", delete=False, mode="w", encoding="ascii", newline="") as f:
-            f.write(bat_content)
-            batfile = f.name
-        # Argument list, not a pre-joined string: run.py must survive a TEMP
-        # path containing spaces (e.g. C:\Users\John Smith\...). As a single
-        # string, `start /min cmd /c <path>` splits on the space and the batch
-        # is never executed, yet cmd still exits 0 — a silent launch failure.
-        # Wrapping the path in quotes does NOT help: `start` then treats it as
-        # the new window's title. The list form lets the argument layer quote
-        # the path while leaving `cmd` unquoted, which is what stops `start`
-        # from misreading it as a title (verified against a spaced temp dir).
-        cmd_args = ["cmd", "/c", "start", "/min", "cmd", "/c", batfile]
+        cmd_args, _batfile = _mkrun_cmd(caa_env, workspace_path)
         logger.write(f"Using mkrun (workspace): {workspace_path}")
     else:
-        # No workspace — use CATSTART for a plain CATIA launch.
-        # WARNING: this does NOT set CATDLLPath/CATDictionaryPath/
-        # CATMsgCatalogPath for any workspace Runtime View, so custom CAA
-        # DLLs (new or previously-accepted) will NOT be loaded by CATIA.
-        # This mode looks like a normal successful start (status="started")
-        # but is a "bare" CATIA session — only use it when you deliberately
-        # do NOT need any custom CAA tool loaded.
-        if not env_name:
-            env_name = caa_env.get_default_env()
-        env_dir = caa_env.get_catenv_dir()
-        cmd_args = [
-            str(catstart_path),
-            "-run", "CNEXT.exe",
-            "-env", env_name,
-            "-direnv", env_dir,
-            "-nowindow",
-        ]
-        logger.write(f"Using CATSTART: {catstart_path}")
-        logger.write(f"Environment: {env_name}")
+        cmd_args, _launch_env, bare_err = _catstart_cmd(
+            caa_env, env_name, ["-nowindow"]
+        )
+        if bare_err:
+            logger.write(bare_err["message"], "ERROR")
+            return bare_err
+        logger.write(f"Using CATSTART: {cmd_args[0]}")
+        logger.write(f"Environment: {cmd_args[4]}")
         warning_msg = (
             "No workspace provided — starting a BARE CATIA session. "
             "Runtime View (CATDLLPath/CATDictionaryPath/CATMsgCatalogPath) is "
@@ -835,77 +860,49 @@ def run_catia_macro(
     workspace_path: str = None,
 ) -> dict:
     """
-    Run a CATScript macro in CATIA (CNEXT -macro)
+    Run a CATScript macro in CATIA (CNEXT -macro).
+
+    A workspace uses the same mkrun launcher as start_catia_runtime, so
+    CATDLLPath/CATDictionaryPath/CATMsgCatalogPath come from the Runtime
+    View. CATSTART is only the no-workspace fallback and does not load
+    custom CAA DLLs.
 
     Args:
         macro_path: Path to .CATScript file
-        env_name: CATIA environment name
+        env_name: CATIA environment name (bare CATSTART fallback only)
         timeout: Timeout in seconds
-        workspace_path: Optional workspace path whose Runtime View DLLs/
-            addins/commands should be visible to CNEXT (mirrors the env
-            injection done by start_catia_runtime for `cade run`).
+        workspace_path: Workspace whose Runtime View must be visible
 
     Returns:
         Dictionary with execution result
     """
-    # Validate macro file exists
     mp = Path(macro_path)
     if not mp.exists():
         return {"status": "error", "message": f"Macro file not found: {macro_path}"}
 
     caa_env = CAAEnvironment()
-    if not env_name:
-        env_name = caa_env.get_default_env()
-    env_dir = caa_env.get_catenv_dir()
-
-    catstart = caa_env.get_catstart_path()
-    if not catstart or not catstart.exists():
-        return {"status": "error", "message": "CATSTART.exe not found"}
-
-    cmd_args = [
-        str(catstart),
-        "-run",
-        "CNEXT.exe",
-        "-env",
-        env_name,
-        "-direnv",
-        env_dir,
-        "-nowindow",
-        "-macro",
-        str(macro_path),
-    ]
-
-    # Inject workspace Runtime View paths (same vars as start_catia_runtime)
-    # so addins/commands built in the workspace are visible to the macro.
-    env_vars = os.environ.copy()
-    if workspace_path:
-        caa_env.load_config()
-        arch = caa_env.get_architecture()
-        runtime_view = Path(workspace_path) / arch if arch else None
-        if runtime_view and runtime_view.exists():
-            rv = str(runtime_view)
-            existing = env_vars.get("CATDLLPath", "")
-            env_vars["CATDLLPath"] = os.path.join(rv, "code", "bin") + (
-                os.pathsep + existing if existing else ""
-            )
-            existing = env_vars.get("CATDictionaryPath", "")
-            env_vars["CATDictionaryPath"] = os.path.join(rv, "code", "dictionary") + (
-                os.pathsep + existing if existing else ""
-            )
-            existing = env_vars.get("CATMsgCatalogPath", "")
-            env_vars["CATMsgCatalogPath"] = os.path.join(rv, "resources", "msgcatalog") + (
-                os.pathsep + existing if existing else ""
-            )
-            existing = env_vars.get("CATReffilesPath", "")
-            env_vars["CATReffilesPath"] = os.path.join(rv, "reffiles") + (
-                os.pathsep + existing if existing else ""
-            )
-            existing = env_vars.get("CATGraphicPath", "")
-            env_vars["CATGraphicPath"] = os.path.join(rv, "resources", "graphic") + (
-                os.pathsep + existing if existing else ""
-            )
+    mounted, missing = _runtime_view_state(caa_env, workspace_path)
+    if missing:
+        print(f"[WARNING] {missing}", file=sys.stderr)
 
     try:
+        if workspace_path:
+            cmd_args, _bat = _mkrun_cmd(
+                caa_env, workspace_path, ["-macro", str(mp)], detach=False
+            )
+            launch_env = None
+        else:
+            cmd_args, launch_env, bare_err = _catstart_cmd(
+                caa_env, env_name, ["-nowindow", "-macro", str(mp)]
+            )
+            if bare_err:
+                return bare_err
+            print(
+                "[WARNING] No workspace provided — macro runs in a BARE "
+                "CATIA session. Custom CAA DLLs will NOT be loaded.",
+                file=sys.stderr,
+            )
+
         result = subprocess.run(
             cmd_args,
             capture_output=True,
@@ -913,13 +910,15 @@ def run_catia_macro(
             text=True,
             encoding="utf-8",
             errors="replace",
-            env=env_vars,
+            env=launch_env,
         )
         return {
             "status": "success" if result.returncode == 0 else "failed",
             "message": f"Macro execution completed (exit {result.returncode})",
             "macro": str(macro_path),
             "exit_code": result.returncode,
+            "runtime_view_mounted": mounted,
+            "launcher": "mkrun" if workspace_path else "CATSTART",
         }
     except subprocess.TimeoutExpired:
         return {"status": "timeout", "message": f"Macro timed out after {timeout}s"}
@@ -928,42 +927,53 @@ def run_catia_macro(
 
 
 def run_catia_batch(
-    batch_script: str = None, env_name: str = None, timeout: int = 600
+    batch_script: str = None,
+    env_name: str = None,
+    timeout: int = 600,
+    workspace_path: str = None,
 ) -> dict:
     """
-    Run CATIA in batch mode (CNEXT -batch)
+    Run CATIA in batch mode (CNEXT -batch).
+
+    Same launcher split as run_catia_macro: workspace -> mkrun with the
+    Runtime View mounted; no workspace -> bare CATSTART, no custom DLLs.
 
     Args:
         batch_script: Optional batch script path
-        env_name: CATIA environment name
+        env_name: CATIA environment name (bare CATSTART fallback only)
         timeout: Timeout in seconds
+        workspace_path: Workspace whose Runtime View must be visible
 
     Returns:
         Dictionary with execution result
     """
     caa_env = CAAEnvironment()
-    if not env_name:
-        env_name = caa_env.get_default_env()
-    env_dir = caa_env.get_catenv_dir()
+    mounted, missing = _runtime_view_state(caa_env, workspace_path)
+    if missing:
+        print(f"[WARNING] {missing}", file=sys.stderr)
 
-    catstart = caa_env.get_catstart_path()
-    if not catstart or not catstart.exists():
-        return {"status": "error", "message": "CATSTART.exe not found"}
-
-    cmd_args = [
-        str(catstart),
-        "-run",
-        "CNEXT.exe",
-        "-env",
-        env_name,
-        "-direnv",
-        env_dir,
-        "-batch",
-    ]
+    extra = ["-batch"]
     if batch_script:
-        cmd_args.extend(["-macro", batch_script])
+        extra.extend(["-macro", batch_script])
 
     try:
+        if workspace_path:
+            cmd_args, _bat = _mkrun_cmd(
+                caa_env, workspace_path, extra, detach=False
+            )
+            launch_env = None
+        else:
+            cmd_args, launch_env, bare_err = _catstart_cmd(
+                caa_env, env_name, extra
+            )
+            if bare_err:
+                return bare_err
+            print(
+                "[WARNING] No workspace provided — batch runs in a BARE "
+                "CATIA session. Custom CAA DLLs will NOT be loaded.",
+                file=sys.stderr,
+            )
+
         result = subprocess.run(
             cmd_args,
             capture_output=True,
@@ -971,11 +981,14 @@ def run_catia_batch(
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=launch_env,
         )
         return {
             "status": "success" if result.returncode == 0 else "failed",
             "message": f"Batch execution completed (exit {result.returncode})",
             "exit_code": result.returncode,
+            "runtime_view_mounted": mounted,
+            "launcher": "mkrun" if workspace_path else "CATSTART",
         }
     except subprocess.TimeoutExpired:
         return {"status": "timeout", "message": f"Batch timed out after {timeout}s"}

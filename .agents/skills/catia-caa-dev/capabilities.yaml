@@ -269,7 +269,10 @@ capabilities:
     bindings:
       cli: cade run [workspace] [--stop|--macro|--status]
       python: run.start_catia_runtime
-    note: python binding 仅覆盖启动；停止/宏/状态分别见 run.stop_catia / run.run_catia_macro / run.check_catia_running
+    forbidden:
+      - 直接运行 CATSTART.exe 或 CNEXT.exe（不挂 Runtime View，自定义 CAA DLL 不加载）
+      - 不带 workspace 调用 run.py / start_catia_runtime（裸机启动，status=started 不代表环境已挂载）
+    note: python binding 仅覆盖启动；停止/宏/状态分别见 run.stop_catia / run.run_catia_macro / run.check_catia_running。验证自定义工具必须带 workspace，返回看 runtime_view_mounted 而不是 status=started
 
   - name: dev_cycle
     description: 编译+运行一键闭环（build 后立即启动 CATIA 验证）

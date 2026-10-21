@@ -2731,8 +2731,14 @@ class Kernel:
                     }
 
             from run import run_catia_macro
-            res = run_catia_macro(macro_path)
-            return {"status": "ok", "message": "Macro executed"}
+            res = run_catia_macro(
+                str(target_macro_file), workspace_path=str(self.workspace_root)
+            )
+            return {
+                "status": "ok" if res.get("status") not in ("error", "timeout", "failed") else "error",
+                "message": res.get("message", "Macro executed"),
+                "data": res,
+            }
 
         elif action == "batch":
             batch_script = params.get("batch_script")
@@ -2748,8 +2754,15 @@ class Kernel:
                     return {"status": "error", "message": f"Batch script does not exist: {batch_script}"}
 
             from run import run_catia_batch
-            res = run_catia_batch(batch_script=batch_script)
-            return {"status": "ok", "message": "Batch executed", "data": res if isinstance(res, dict) else {}}
+            res = run_catia_batch(
+                batch_script=batch_script, workspace_path=str(self.workspace_root)
+            )
+            is_ok = res.get("status") not in ("error", "timeout", "failed") if isinstance(res, dict) else False
+            return {
+                "status": "ok" if is_ok else "error",
+                "message": res.get("message", "Batch executed") if isinstance(res, dict) else "Batch executed",
+                "data": res if isinstance(res, dict) else {},
+            }
 
         elif action == "runtime_view":
             # Kernel's runtime_view action is a BUILD action (create/mkCreateRuntimeView),
@@ -3830,7 +3843,9 @@ class Kernel:
                         data={"execute_plan": plan, "preview": True},
                     ).to_dict()
 
-                r = run_catia_macro(macro_name)
+                r = run_catia_macro(
+                    macro_name, workspace_path=str(self.workspace_root)
+                )
                 self._state = KernelState.COMPLETED
                 return KernelResult(status="ok", mode="develop", state=self._state.value,
                     message="Macro executed.").to_dict()
@@ -3856,7 +3871,7 @@ class Kernel:
                         data={"execute_plan": plan, "preview": True},
                     ).to_dict()
 
-                r = run_catia_batch()
+                r = run_catia_batch(workspace_path=str(self.workspace_root))
                 self._state = KernelState.COMPLETED
                 return KernelResult(status="ok", mode="develop", state=self._state.value,
                     message="Batch executed.").to_dict()

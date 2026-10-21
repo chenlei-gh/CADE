@@ -506,7 +506,15 @@ def cmd_run(args):
         path = args[idx + 1] if idx + 1 < len(args) else ""
         result = run_catia_macro(path, workspace_path=ws)
     elif "--batch" in opts:
-        result = run_catia_batch()
+        # `--batch` is a switch. A following token is a script only when it
+        # is not the positional workspace (`cade run <ws> --batch` used to
+        # swallow <ws> as the script and then launch with no workspace).
+        script = None
+        if "--batch" in args:
+            idx = args.index("--batch")
+            if idx + 1 < len(args) and not args[idx + 1].startswith("-") and args[idx + 1] != ws:
+                script = args[idx + 1]
+        result = run_catia_batch(batch_script=script, workspace_path=ws)
     else:
         result = start_catia_runtime(workspace_path=ws, entrypoint="cade_cli", orchestrated_by_kernel=False)
 
