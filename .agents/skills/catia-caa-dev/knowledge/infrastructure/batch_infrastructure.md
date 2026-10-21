@@ -184,10 +184,59 @@ GSO factory available             : 0
 - `CATInstallPath` 用符号链接拼的精简安装 → 不影响，`batchmain` 照常进入
 - 描述符缺 `NeedsVisu` / `catutil` 属性 → 不影响
 - `NOLICENSECHECK` 环境变量 → 不影响
+- **走 mkrun 完整 TCK 环境启动 CATBatch** → 不影响，结果完全一致
 
-因此 `0x80004005` 会话层的根因**尚未定位**，不要凭症状去改 `env.py`。
-若需要文档级操作，先确认同机器上 `run_catia`（CNEXT 图形会话）能正常开会话，
-再用它做对照隔离。
+### 对照实验结论：CNEXT 能建会话，CATBatch 不能
+
+同一台机器、同一时间、同一份 Runtime View，用同一条 mkrun 链路分别跑：
+
+| 启动方式 | `Documents.Add("Part")` | `Documents.Open(...CATPart)` |
+|---|---|---|
+| `mkrun -c "CNEXT -batch -macro x.CATScript"` | 成功 | 成功 |
+| `mkrun -c "CATBatch <param.xml>"` | `0x80004005` | `0x80004005` |
+
+两个结论：
+
+1. **安装、授权、Runtime View 都是好的**。CNEXT 能正常新建并打开 CATPart，
+   说明 `0x80004005` 不是“安装缺资源”也不是“没有许可证”。
+2. **差别在启动器本身**。CATBatch 以托管模式自己管会话生命周期，
+   它没把会话建成，`batchmain` 里再调 `Create_Session` 也补不回来。
+
+因此在 CATBatch 里做文档级操作的**前置条件尚未满足**，
+这不是调用方式或环境变量能修的，也不在 CADE 能覆盖的范围内。
+需要文档级批量处理时，优先用 `run_catia --batch` / `run --macro`
+（CNEXT 脚本路径，实测可用）。
+
+### 为什么 `run --macro` / `run --batch` 曾经静默无效
+
+`mkrun` 有它自己的 argv，`-macro` / `-batch` 是 **CNEXT** 的开关。
+把它们直接拼在 `mkrun` 后面，mkrun 会报
+`mkrunM: illegal option -- 'batch'` 并以 RC=1 退出，CNEXT 根本不会启动；
+而调用方拿到的是启动脚本的退出码，于是表现为「返回 0、什么也没发生」。
+正确形式是 `mkrun -c "CNEXT <开关>"`。已修。
+
+### 硬限制：`mkrun -c` 的实参不能含空格
+
+`mkrun` 对 `-c` 的值**不做 CRT 命令行解析**，而是按空格简单切分后再拉起 CNEXT。
+B28 实测三种写法全部失败，参数都在第一个空格处被截断
+（`C:\temp\space dir\...` → `Cannot open library C:\temp\space.dll`）：
+
+| 写法 | 结果 |
+|---|---|
+| 裸路径 `mkrun -c "CATBatch C:\temp\space dir\x.xml"` | ❌ 截断 |
+| 嵌套双引号 `mkrun -c "CATBatch "C:\temp\space dir\x.xml""` | ❌ 截断 |
+| 反斜杠转义 `mkrun -c "CATBatch \"C:\temp\space dir\x.xml\""` | ❌ 截断 |
+
+推断（未反汇编验证）：mkrun 先按空格切分载荷，转义在任何阶段都没机会生效。
+
+因此 **workspace 模式（mkrun 链路）要求宏/参数文件路径不含空格**。
+CADE 对此 fail-fast：`_mkrun_payload_error()` 前置校验，命中时
+`run_catia_macro` / `run_catia_batch` 返回 `status: error` 并提示两条出路
+（移到无空格路径；或去掉 workspace 走 CATSTART，代价是不加载自定义 DLL），
+不会生成注定失败的启动脚本。
+
+注意 CATIA 自身装在 `C:\Program Files\...` 不影响：安装路径只进
+`tck_init.bat` / `mkinit.bat` 的 `call` 行，不进 `-c` 载荷。
 
 ### 环境变量漂移
 

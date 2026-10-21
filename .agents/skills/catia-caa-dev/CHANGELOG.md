@@ -10,6 +10,42 @@
 
 ## [未发布]
 
+### 🔧 修复：`mkrun` 收到 CNEXT 开关就整个不启动，宏/脚本 batch 静默失效
+
+**问题**：`_mkrun_cmd()` 把 `-macro` / `-batch` 直接拼在 `mkrun` 后面。
+但那两个是 **CNEXT** 的开关，不是 `mkrun` 的；`mkrun` 解析自己的 argv，
+遇到不认识的选项直接 `illegal option -- 'batch'` 并以 RC=1 退出，CNEXT 从未启动。
+调用方看到的是启动脚本的退出码，于是表现为「`status: success`、`exit_code: 0`、
+什么都没发生」——这是最难查的一类失败。
+
+- 改为 `mkrun -c "CNEXT <开关>"`，开关通过 `-c` 传给 CNEXT。
+- 含空格的参数改为**快速失败**：`_mkrun_payload_error()` 前置校验，
+  `run_catia_macro` / `run_catia_batch` 直接返回 `status: error` 并说明原因，
+  不再生成一个注定失败的启动脚本。详见下一条。
+
+**实测**：修复前 `cade run --macro` 返回 0 但宏中的 `Documents.Add("Part")`、
+`Documents.Open(...)` 从未执行（探针日志文件未生成）；修复后两者都成功执行。
+
+### ⚠️ 已知限制：`mkrun -c` 的实参不能含空格
+
+`mkrun` 对 `-c` 的值**不做 CRT 命令行解析**，而是按空格简单切分后再拉起 CNEXT。
+B28 上三种写法全部实测失败，参数都在第一个空格处被截断
+（`C:\temp\space dir\...` → `Cannot open library C:\temp\space.dll`）：
+
+| 写法 | 结果 |
+|---|---|
+| 裸路径 `mkrun -c "CATBatch C:\temp\space dir\x.xml"` | ❌ 截断 |
+| 嵌套双引号 `mkrun -c "CATBatch "C:\temp\space dir\x.xml""` | ❌ 截断 |
+| 反斜杠转义 `mkrun -c "CATBatch \"C:\temp\space dir\x.xml\""` | ❌ 截断 |
+
+推断（未反汇编验证）：mkrun 先按空格切分 `-c` 载荷，转义在任何阶段都没机会生效。
+
+因此 CADE 的选择是 **fail-fast**：`run_catia_macro` / `run_catia_batch` 在
+workspace 模式下遇到含空格的宏/参数路径，直接返回
+`status: error` + `mkrun cannot pass an argument containing a space: ...` 并给出两条出路
+（把文件移到无空格路径；或去掉 workspace 走 CATSTART，代价是不加载自定义 CAA DLL）。
+不会静默地「返回 0、什么都没发生」。
+
 ### 🔧 修复：环境变量与 V5 环境文件对齐，Runtime View 进入 CATInstallPath
 
 **问题**：`CAAEnvironment.initialize()` 发布的环境与安装器写下的

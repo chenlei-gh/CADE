@@ -284,6 +284,79 @@ check("4.2 run_caa_batch requires a param file (no script arg)",
 check("4.3 run_catia_batch has no descriptor logic",
       "batchdesc" not in run_mod.run_catia_batch.__code__.co_consts.__str__())
 
+# ═══ 5. mkrun launcher argument passing ═══
+print("\n" + "=" * 70)
+print("  5. mkrun launcher: CNEXT switches go through -c")
+print("=" * 70)
+
+# mkrun parses its OWN argv: -macro/-batch appended after `mkrun` make it exit
+# with "illegal option" and CNEXT never starts, which surfaces as exit_code 0
+# with no side effects. The switches must ride inside -c "CNEXT ...".
+
+
+def _launcher_line(cnext_args):
+    """Return the mkrun invocation line _mkrun_cmd would emit."""
+    caa_env = run_mod.CAAEnvironment()
+    caa_env.load_config()
+    _args, batfile = run_mod._mkrun_cmd(
+        caa_env, str(WS), cnext_args, detach=False
+    )
+    try:
+        text = Path(batfile).read_text(encoding="ascii", errors="replace")
+    finally:
+        try:
+            Path(batfile).unlink()
+        except OSError:
+            pass
+    for line in text.splitlines():
+        if "mkrun" in line:
+            return line.strip()
+    return ""
+
+
+line_macro = _launcher_line(["-macro", "C:/tmp/x.CATScript"])
+line_plain = _launcher_line(None)
+
+check("5.1 CNEXT switches go through -c",
+      '-c "CNEXT' in line_macro, line_macro)
+check("5.2 -macro is not appended after bare mkrun",
+      not line_macro.rstrip().endswith('mkrun "-macro"'), line_macro)
+check("5.3 -macro survives inside the -c payload",
+      "-macro" in line_macro, line_macro)
+
+# mkrun splits the -c payload on spaces, so a spaced path can never survive:
+# bare, nested quotes and backslash escapes all truncate at the first space on
+# B28. The launcher must refuse instead of emitting something that fails.
+
+
+space_path = "C:\\Program Files\\x y.CATScript"
+try:
+    spaced_line = _launcher_line(["-macro", space_path])
+    space_failed_loud = False
+except ValueError as e:
+    spaced_line = str(e)
+    space_failed_loud = "cannot pass an argument containing a space" in str(e)
+
+check("5.4 argument with a space fails fast instead of escaping",
+      space_failed_loud and "x y.CATScript" in spaced_line, spaced_line[:100])
+check("5.5 fail-fast message names the remedy",
+      "without spaces" in spaced_line, spaced_line[:100])
+check("5.6 no switch means a plain mkrun call",
+      line_plain.startswith("call mkrun") and "-c" not in line_plain,
+      line_plain)
+
+# The same guard must be reachable through the public entry point, not only
+# through _mkrun_cmd: a caller gets a structured error, never a silent run.
+spaced_macro = WS / "spaced macro.CATScript"
+spaced_macro.write_text("Language=\"VBScript\"\n", encoding="ascii")
+macro_result = run_mod.run_catia_macro(
+    str(spaced_macro), workspace_path=str(WS), timeout=1
+)
+check("5.7 a spaced macro path reports an error, not a silent no-op",
+      macro_result.get("status") == "error" and
+      "space" in macro_result.get("message", ""),
+      macro_result.get("message", "")[:100])
+
 # ═══ Summary ═══
 print("\n" + "=" * 70)
 print(f"  CAA Batch: {passed}/{total}")

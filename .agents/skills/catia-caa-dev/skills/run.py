@@ -267,18 +267,45 @@ def _runtime_view_state(caa_env, workspace_path):
     )
 
 
+def _mkrun_payload_error(cnext_args):
+    """Return an error message if cnext_args cannot survive `mkrun -c`.
+
+    mkrun does not parse the -c value with CRT rules: it splits it on plain
+    spaces before re-launching CNEXT. All three spellings of a path with a
+    space were tried on B28 and all truncate at the first space
+    (``Cannot open library C:\\temp\\space``): bare, nested quotes, and
+    backslash-escaped quotes. That is an mkrun limitation, not something the
+    caller can escape, so refuse instead of writing a launcher that is
+    guaranteed to fail silently.
+    """
+    spaced = [a for a in (cnext_args or []) if " " in str(a)]
+    if not spaced:
+        return None
+    return (
+        "mkrun cannot pass an argument containing a space: "
+        + ", ".join('"%s"' % str(a) for a in spaced)
+        + ". mkrun splits the -c payload on spaces before relaunching CNEXT, "
+        "so quoting and escaping are both lost and the path is truncated at "
+        "the first space. Move the macro/parameter file to a path without "
+        "spaces, or run without a workspace so CATSTART is used instead."
+    )
+
+
 def _mkrun_cmd(caa_env, workspace_path, cnext_args=None, detach=True):
     """Build the mkrun launcher used by every workspace launch.
 
     CATSTART cannot mount a workspace Runtime View. mkrun, after tck_init /
     tck_profile / mkinit, is the CAA development entry. cnext_args (for
-    example -macro / -batch) are appended to `call mkrun` and therefore
-    reach CNEXT with the Runtime View paths already set.
+    example -macro / -batch) are handed to CNEXT through `mkrun -c` and
+    therefore reach it with the Runtime View paths already set.
 
     detach=True (interactive start) returns as soon as the window is up, so
     CATIA outlives the Python process. detach=False (macro/batch) runs the
     batch in the foreground so the exit code and timeout belong to CNEXT,
     not to `start`. Returns (cmd_args, batfile).
+
+    Raises ValueError when cnext_args cannot be expressed through `mkrun -c`
+    (see _mkrun_payload_error).
     """
     caa_env.load_config()
     catia_path = Path(caa_env.config.get("CATIA_INSTALL", ""))
@@ -295,11 +322,21 @@ def _mkrun_cmd(caa_env, workspace_path, cnext_args=None, detach=True):
         if tck_profile.exists() and tck_id
         else ""
     )
-    mkrun_tail = "call mkrun"
+    # -macro / -batch are CNEXT switches, not mkrun switches. mkrun parses its
+    # own argv and aborts on anything it does not know, so appending them after
+    # `mkrun` yields "illegal option" and CNEXT never starts. The command to
+    # launch is passed through -c, so they have to be spelled
+    #   mkrun -c "CNEXT <switches>"
+    # mkrun splits that payload on plain spaces, so an argument containing one
+    # cannot be expressed at all — fail loudly rather than emit a broken script.
     if cnext_args:
-        mkrun_tail += ""
-        for arg in cnext_args:
-            mkrun_tail += ' "' + str(arg).replace('"', '') + '"'
+        payload_error = _mkrun_payload_error(cnext_args)
+        if payload_error:
+            raise ValueError(payload_error)
+        parts = [str(arg).replace('"', "") for arg in cnext_args]
+        mkrun_tail = 'call mkrun -c "CNEXT ' + " ".join(parts) + '"'
+    else:
+        mkrun_tail = "call mkrun"
     bat_content = (
         "@echo off\r\n"
         f'call "{tck_init}" > NUL 2>&1\r\n'
@@ -889,8 +926,13 @@ def run_catia_macro(
 
     try:
         if workspace_path:
+            macro_args = ["-macro", str(mp)]
+            payload_error = _mkrun_payload_error(macro_args)
+            if payload_error:
+                return {"status": "error", "message": payload_error,
+                        "macro": str(macro_path), "launcher": "mkrun"}
             cmd_args, _bat = _mkrun_cmd(
-                caa_env, workspace_path, ["-macro", str(mp)], detach=False
+                caa_env, workspace_path, macro_args, detach=False
             )
             launch_env = None
         else:
@@ -960,6 +1002,10 @@ def run_catia_batch(
 
     try:
         if workspace_path:
+            payload_error = _mkrun_payload_error(extra)
+            if payload_error:
+                return {"status": "error", "message": payload_error,
+                        "launcher": "mkrun"}
             cmd_args, _bat = _mkrun_cmd(
                 caa_env, workspace_path, extra, detach=False
             )
