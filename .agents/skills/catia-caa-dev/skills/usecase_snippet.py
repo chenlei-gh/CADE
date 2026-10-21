@@ -55,9 +55,10 @@ def resolve_caadoc_root(retrieval, skill_root: Path) -> Optional[Path]:
         return root if root.is_dir() else None
 
     try:
-        if str(skill_root) not in sys.path:
-            sys.path.insert(0, str(skill_root))
-        from skills.env import CAAEnvironment
+        skills_dir = skill_root / "skills"
+        if str(skills_dir) not in sys.path:
+            sys.path.insert(0, str(skills_dir))
+        from env import CAAEnvironment
         env = CAAEnvironment()
         env.load_config()
         catia = env.config.get("CATIA_INSTALL", "")
