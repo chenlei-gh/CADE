@@ -290,7 +290,8 @@ capabilities:
     forbidden:
       - 用 cade run --batch 跑 CATBatch 批次（-batch -macro 走 CATMain、喂的是脚本；CATBatch 走 batchmain、喂的是参数 XML，静默不生效）
       - 手工改环境变量后裸调 CATBatch.exe（绕过预检，失败只弹 AFWIN 且退出码不可信）
-    note: 与 run_catia 的 --batch 不是同一机制。CATBatch 由 descriptor 解析库名、调 batchmain；预检会提前拦住描述符缺失/batchmain 缺失/输入文件缺失，避免 AFWIN 弹窗
+      - 在 batchmain 里做文档级操作（Documents.Add / Documents.Open）：CATBatch 托管会话建不起来，B28 实测必返 0x80004005；需文档操作改用 run_catia_batch / run_catia_macro
+    note: 与 run_catia 的 --batch 不是同一机制。CATBatch 由 descriptor 解析库名、调 batchmain；预检会提前拦住描述符缺失/batchmain 缺失/输入文件缺失，避免 AFWIN 弹窗。B28 实测：描述符解析与 batchmain 进入均正常，但托管会话建不起来，Documents.Add/Open 一律 0x80004005（同一 Runtime View 下 CNEXT 脚本路径两者都成功，差别在启动器），属 CATBatch 层面限制、不在 CADE 修复范围——纯计算/文件读写可用，文档级操作请走 run_catia_batch / run_catia_macro
 
   - name: dev_cycle
     description: 编译+运行一键闭环（build 后立即启动 CATIA 验证）

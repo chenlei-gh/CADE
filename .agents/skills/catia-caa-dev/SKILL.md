@@ -1204,6 +1204,19 @@ result = run_caa_batch("D:/workspace/Param.xml", workspace_path="D:/workspace", 
 > 跑脚本、需 `CATMain`；后者用 `CATBatch.exe` 加载库、需 `batchmain` 和批描述符。
 > 判据看 DLL 导出表。详见 [`knowledge/infrastructure/batch_infrastructure.md`](knowledge/infrastructure/batch_infrastructure.md)。
 
+> 🚫 **CATBatch 不能做文档级操作**（B28 实测）。`run_caa_batch` 的预检和描述符解析都是好的，
+> 库能加载、`batchmain` 能进入，但托管会话建不起来：`batchmain` 里调 `Create_Session` 后
+> `Documents.Add("Part")` / `Documents.Open(...CATPart)` 一律返回 `0x80004005`。
+> 对照实验证明安装、授权、Runtime View 都正常（同一份 Runtime View 下
+> `mkrun -c "CNEXT -batch -macro ..."` 两种调用都成功），**差别在启动器本身**，
+> 属 CATBatch/DASSAULT 层面限制，CADE 侧不修。
+> 所以：`batchmain` 里做**纯计算 / 文件读写**没问题；
+> 要打开或新建 CATIA 文档，请走 `run_catia_batch` / `run_catia_macro`（CNEXT 脚本路径，实测可用）。
+
+> ℹ️ workspace 模式（mkrun 链路）下，宏/参数文件路径**不能含空格**：
+> `mkrun` 把 `-c` 载荷按空格简单切分，裸路径、嵌套引号、反斜杠转义三种写法实测全部截断。
+> CADE 对此 fail-fast，返回 `status: error` 并说明。`run_caa_batch` 不走 mkrun，不受此限。
+
 ### 3. 清理工作区
 
 **输出**:
