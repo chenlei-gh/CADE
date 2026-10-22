@@ -123,18 +123,24 @@ def create_runtime_view(
         cmd = [str(mk_cmd)]
         logger.write(f"Using mkCreateRuntimeView: {mk_cmd}")
 
-    # Execute command with Build Time environment
-    # mkCreateRuntimeView is a Build Time tool that requires mkinit.bat initialization
+    # Execute command with the same Build Time chain as build.py.
+    # mkCreateRuntimeView loads every framework IdentityCard. mkinit alone
+    # does not register the TCK or the prerequisite workspace, so every
+    # framework fails with "Unable to load component". The chain must be
+    # tck_init -> tck_profile <TCK id> -> mkinit -> mkGetPreq -p -> command.
     # Declared before the try so the finally below can clean up on every exit
     # path — including the early return for a missing mkinit.bat, which fires
     # before these are assigned.
     tmpfile = None
     batfile = None
     try:
-        # Use Build Time environment initialization
         catia_install = caa_env.config.get("CATIA_INSTALL", "")
-        mkinit_bat = (
-            Path(catia_install) / architecture / "code" / "command" / "mkinit.bat"
+        code_command = Path(catia_install) / architecture / "code" / "command"
+        code_bin = Path(catia_install) / architecture / "code" / "bin"
+        mkinit_bat = code_command / "mkinit.bat"
+        tck_init_bat = code_command / "tck_init.bat"
+        tck_profile_bat = (
+            Path(catia_install) / architecture / "TCK" / "command" / "tck_profile.bat"
         )
 
         if not mkinit_bat.exists():
@@ -146,11 +152,24 @@ def create_runtime_view(
         tmpfile = workspace_path / ".mkcreate_output.tmp"
         batfile = workspace_path / ".mkcreate_run.bat"
 
-        # Build command string
+        # Same order as CAAEnvironment.build_time_command(). tck_profile's
+        # first argument must be the TCK id (V5_6R2018_B28), never a path.
+        steps = []
+        if tck_init_bat.exists():
+            steps.append(f'call "{tck_init_bat}" >nul 2>&1')
+        tck_id = caa_env.resolve_tck_id()
+        if tck_profile_bat.exists() and tck_id:
+            steps.append(f'call "{tck_profile_bat}" {tck_id} >nul 2>&1')
+        steps.append(f'call "{mkinit_bat}" >nul 2>&1')
+        steps.append(f"set PATH={code_bin};{code_command};%PATH%")
+        steps.append(f'cd /d "{workspace_path}"')
+        if catia_install:
+            steps.append(f'call mkGetPreq -p "{catia_install};" >nul 2>&1')
         if mk_cmd:
-            cmd_str = f'call "{mkinit_bat}" >nul 2>&1 && cd /d "{workspace_path}" && "{mk_cmd}"'
+            steps.append(f'"{mk_cmd}"')
         else:
-            cmd_str = f'call "{mkinit_bat}" >nul 2>&1 && cd /d "{workspace_path}" && mkmk -rtv'
+            steps.append("mkmk -rtv")
+        cmd_str = " && ".join(steps)
 
         logger.write(f"Command: {cmd_str}")
 

@@ -896,6 +896,9 @@ try:
             def initialize(self):
                 return {"ok": True}
 
+            def resolve_tck_id(self):
+                return None
+
         with patch.object(runtime_view_module, "CAAEnvironment", _Env), patch.object(
             runtime_view_module, "Logger", _SilentLogger
         ), patch.object(runtime_view_module, "Cache", _SilentCache), patch.object(
