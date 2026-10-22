@@ -23,6 +23,17 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install Pillow
+
+      - name: Prepare environment config stub
+        shell: bash
+        run: |
+          python -c "from pathlib import Path; p = Path('.agents/skills/catia-caa-dev/config/caa_env_config.txt'); p.parent.mkdir(parents=True, exist_ok=True); p.write_text('CATIA_INSTALL=C:\\Program Files\\Dassault Systemes\\B28\nCATIA_VERSION=B28\nCAA_INSTALL=C:\\Program Files\\Dassault Systemes\\B28\nWORKSPACE=C:\\temp\\workspace\n', encoding='utf-8') if not p.exists() else None"
+
       - name: Run Static Audit
         shell: bash
         run: |
