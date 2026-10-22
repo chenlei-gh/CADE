@@ -239,6 +239,38 @@ CADE 对此 fail-fast：`_mkrun_payload_error()` 前置校验，命中时
 注意 CATIA 自身装在 `C:\Program Files\...` 不影响：安装路径只进
 `tck_init.bat` / `mkinit.bat` 的 `call` 行，不进 `-c` 载荷。
 
+### `mkrun -c` 接 exe 绝对路径 → AFWIN「未知CatiaV5或CAA产品或目录错误」
+
+`-c` 的载荷是交给 CATIA 运行时解析的命令行，不是通用程序启动器。
+仓库里已验证的形态只有两种：
+
+```
+mkrun -c "CNEXT <开关>"          # CNEXT 脚本/交互
+mkrun -c "CATBatch <param.xml>"  # 编译型 Batch
+```
+
+把工作区里 `LOAD MODULE` + `int main` 的独立 exe 绝对路径直接当载荷
+（`mkrun -c "D:\...\CAASkinFlattenG2ProbeCmd.exe"`），mkrun 会把它当成
+CATIA 产品/组件名去解析（`mkrun.bat` 先设 `CATICPath`/`CATDictionaryPath`
+再调 `mkrunM`），解析失败弹出 AFWIN 模态对话框：
+
+> 未知CatiaV5或CAA产品或目录错误，请检查！
+
+模态意味着**进程挂起等人工点击**，不返回、不超时——自动化链路里最差的一类
+失败，表现就是「命令一直不返回」。
+
+诚实边界：「载荷被当产品名解析」是从 `mkrun.bat` 行为与弹窗文案推出的
+强推断，非官方文档断言；「只有 CNEXT/CATBatch 两种已验证载荷」是对仓库
+全部已验证用法的归纳。
+
+**对策**：
+
+- 凡是拉起 CATIA 相关进程，只走 `run.py` 的封装（`_mkrun_cmd()` 只产
+  `CNEXT ...` 载荷）；封装不覆盖的场景先查本节契约，不手写启动链。
+- standalone exe（`int main` 探针）的正确启动方式当前**未验证**，
+  不要假设 `mkrun -c` 能接它。这类 exe 走 `build.py` 编译没问题，
+  但启动契约是另一回事，未确认前不要盲试。
+
 ### 环境变量漂移
 
 手工写 `run_*.bat` 时，`CATInstallPath` / `CATDLLPath` / `CATDictionaryPath`
