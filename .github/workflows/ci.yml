@@ -1,0 +1,39 @@
+# CI Workflow for CADE
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  audit-and-test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run Static Audit (Cross-Reference & Deep Audit)
+        shell: bash
+        run: |
+          PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python scripts/static_audit.py
+
+      - name: Run CADE Test Suite (Quick Mode: 48 suites)
+        shell: bash
+        run: |
+          PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python .agents/skills/catia-caa-dev/tests/test_master.py --quick
