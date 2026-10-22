@@ -26,9 +26,9 @@ jobs:
       - name: Run Static Audit
         shell: bash
         run: |
-          PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python scripts/static_audit.py
+          python -c "import subprocess, sys, os; env = os.environ.copy(); env['PYTHONIOENCODING'] = 'utf-8'; env['PYTHONUTF8'] = '1'; res = subprocess.run([sys.executable, 'scripts/static_audit.py'], capture_output=True, text=True, env=env); print(res.stdout); print(res.stderr, file=sys.stderr); [print('::error title=Audit Error::' + line) for line in (res.stdout + res.stderr).splitlines() if '[FAIL]' in line or 'FAIL ' in line or 'Traceback' in line or 'Error:' in line][:10]; sys.exit(res.returncode)"
 
       - name: Run CADE Test Suite (Quick Mode)
         shell: bash
         run: |
-          PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python .agents/skills/catia-caa-dev/tests/test_master.py --quick
+          python -c "import subprocess, sys, os; env = os.environ.copy(); env['PYTHONIOENCODING'] = 'utf-8'; env['PYTHONUTF8'] = '1'; res = subprocess.run([sys.executable, '.agents/skills/catia-caa-dev/tests/test_master.py', '--quick'], capture_output=True, text=True, env=env); print(res.stdout); print(res.stderr, file=sys.stderr); [print('::error title=Test Error::' + line) for line in (res.stdout + res.stderr).splitlines() if 'FAIL' in line or 'Traceback' in line or 'Error:' in line][:10]; sys.exit(res.returncode)"
