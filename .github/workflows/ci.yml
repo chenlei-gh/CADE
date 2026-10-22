@@ -8,6 +8,7 @@ on:
 
 jobs:
   test:
+    name: Test (Python ${{ matrix.python-version }})
     runs-on: windows-latest
     env:
       TEMP: D:\tmp
@@ -45,9 +46,34 @@ jobs:
       - name: Run Static Audit
         shell: bash
         run: |
-          python -c "import subprocess, sys, os; env = os.environ.copy(); env['PYTHONIOENCODING'] = 'utf-8'; env['PYTHONUTF8'] = '1'; res = subprocess.run([sys.executable, 'scripts/static_audit.py'], capture_output=True, text=True, env=env); print(res.stdout); print(res.stderr, file=sys.stderr); [print('::error title=Audit Error::' + line) for line in (res.stdout + res.stderr).splitlines() if '[FAIL]' in line or 'FAIL ' in line or 'Traceback' in line or 'Error:' in line][:10]; sys.exit(res.returncode)"
+          export PYTHONIOENCODING=utf-8
+          export PYTHONUTF8=1
+          python scripts/static_audit.py
 
-      - name: Run CADE Test Suite (Quick Mode)
+      - name: Run CADE Core Test Suites
         shell: bash
         run: |
-          python -c "import subprocess, sys, os; env = os.environ.copy(); env['PYTHONIOENCODING'] = 'utf-8'; env['PYTHONUTF8'] = '1'; res = subprocess.run([sys.executable, '.agents/skills/catia-caa-dev/tests/test_master.py', '--quick'], capture_output=True, text=True, env=env); print(res.stdout); print(res.stderr, file=sys.stderr); [print('::error title=Test Error::' + line) for line in (res.stdout + res.stderr).splitlines() if 'FAIL' in line or 'Traceback' in line or 'Error:' in line][:10]; sys.exit(res.returncode)"
+          export PYTHONIOENCODING=utf-8
+          export PYTHONUTF8=1
+          python -c "
+          import subprocess, sys
+          suites = [
+              '.agents/skills/catia-caa-dev/tests/test_full_integration.py',
+              '.agents/skills/catia-caa-dev/tests/test_icons.py',
+              '.agents/skills/catia-caa-dev/tests/test_phase2_intents.py',
+              '.agents/skills/catia-caa-dev/tests/test_l4_architecture.py',
+              '.agents/skills/catia-caa-dev/tests/test_l5_semantic.py',
+              '.agents/skills/catia-caa-dev/tests/test_l6_fault_injection.py',
+              '.agents/skills/catia-caa-dev/tests/test_intent_gate.py',
+          ]
+          failed = 0
+          for s in suites:
+              print(f'==> Running {s}')
+              res = subprocess.run([sys.executable, s])
+              if res.returncode != 0:
+                  print(f'FAIL {s}', file=sys.stderr)
+                  failed += 1
+          if failed:
+              sys.exit(1)
+          print('\n>>> ALL CORE SUITES PASSED <<<')
+          "
