@@ -9,6 +9,9 @@ on:
 jobs:
   test:
     runs-on: windows-latest
+    env:
+      TEMP: D:\tmp
+      TMP: D:\tmp
     strategy:
       fail-fast: false
       matrix:
@@ -22,6 +25,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Create clean temp directory
+        shell: bash
+        run: |
+          mkdir -p D:/tmp
 
       - name: Install dependencies
         shell: bash
