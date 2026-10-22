@@ -51,6 +51,10 @@ Usage:
   cade setup --detect              # Detect CATIA installation
   cade setup --show                # Show current configuration
 
+  cade edit-logic --file <path> --reason "<why>" [--content-file <f>] [--workspace ws]
+                                   # Register a manual code edit through CADE
+                                   # (verify → changeset → provenance → intent)
+
   cade prereq add <fw> <component> [--visibility Public]
   cade prereq remove <fw> <component>
   cade prereq list <framework>     # List prerequisites
@@ -295,7 +299,8 @@ def main():
         cmd_impact(args)
     elif cmd == "prereq":
         cmd_prereq_manager(args)
-
+    elif cmd == "edit-logic":
+        rc = cmd_edit_logic(args)
     elif cmd == "setup":
         cmd_setup(args)
     elif cmd == "version":
@@ -979,6 +984,112 @@ def cmd_prereq_manager(args):
         sys.exit(result.returncode)
     except subprocess.CalledProcessError as e:
         sys.exit(e.returncode)
+
+
+def cmd_edit_logic(args):
+    """Register a manual code edit through CADE (verify → changeset → provenance → intent).
+
+    Usage:
+      cade edit-logic --file <relative/path.cpp> --reason "<why>" [--content-file <f>] [--workspace ws]
+
+    --file          Workspace-relative path of the file being edited (required)
+    --reason        Human-readable reason for the edit (required)
+    --content-file  Path to a file whose content replaces the target (optional;
+                    if omitted, the file must already exist on disk and is re-registered)
+    --workspace     Workspace root (optional; default from config/env)
+
+    Returns 0 on success, 1 on verification failure or other error.
+    """
+    from pathlib import Path
+    import json
+
+    file_arg = _parse_flag(args, "--file", "-f")
+    reason = _parse_flag(args, "--reason", "-r")
+    content_file = _parse_flag(args, "--content-file")
+    ws_str = _parse_flag(args, "--workspace", "-w")
+
+    if not file_arg or not reason:
+        print("Usage: cade edit-logic --file <path> --reason \"<why>\" [--content-file <f>] [--workspace ws]")
+        return 1
+
+    ws = Path(ws_str) if ws_str else Path(_get_default_ws())
+    if not ws.is_dir():
+        print(json.dumps({"status": "error", "message": f"workspace not found: {ws}"}))
+        return 1
+
+    target = ws / file_arg
+    if content_file:
+        content_path = Path(content_file)
+        if not content_path.is_file():
+            print(json.dumps({"status": "error", "message": f"content file not found: {content_file}"}))
+            return 1
+        new_content = content_path.read_text(encoding="utf-8", errors="replace")
+    else:
+        if not target.is_file():
+            print(json.dumps({"status": "error", "message": f"target file not found: {target}"}))
+            return 1
+        new_content = target.read_text(encoding="utf-8", errors="replace")
+
+    # 1. Static verification (no disk write needed)
+    from verifier import CodeVerifier
+    verifier = CodeVerifier(SKILL_ROOT)
+    issues = verifier.verify_file(file_arg, new_content)
+    errors = [i for i in issues if i.severity == "error"]
+    if errors:
+        print(json.dumps({
+            "status": "error",
+            "message": "verification failed",
+            "errors": [e.to_dict() for e in errors],
+        }, indent=2, ensure_ascii=False))
+        return 1
+
+    # 2. Build ChangeSet and apply
+    from changeset import ChangeSet
+    cs = ChangeSet(action="edit_logic", description=reason)
+    if target.exists():
+        cs.add_modify(target, new_content)
+    else:
+        cs.add_create(target, new_content)
+    apply_result = cs.apply(workspace_root=ws)
+    if apply_result["status"] != "applied":
+        print(json.dumps(apply_result, indent=2, ensure_ascii=False))
+        return 1
+    rollback_id = apply_result.get("rollback_id")
+
+    # 3. Provenance: register expected changes
+    from provenance_guard import (
+        extract_expected_changes_from_changeset,
+        compute_change_provenance,
+        compute_file_sha256,
+    )
+    expected = extract_expected_changes_from_changeset(cs, ws)
+    # Snapshot only the affected files (minimal, not a full workspace scan)
+    current = {}
+    for exp in expected:
+        p = ws / exp.path
+        if p.exists():
+            current[exp.path] = compute_file_sha256(p)
+    provenance = compute_change_provenance({}, current, expected)
+
+    # 4. Write intent declaration
+    import sys as _sys
+    _sys.path.insert(0, str(SKILL_ROOT.parent / "tools"))
+    from check_intent import bless
+    intent_result = bless(
+        workspace=ws,
+        kind="cade",
+        reason=reason,
+        rollback_id=rollback_id,
+    )
+
+    print(json.dumps({
+        "status": "applied",
+        "file": file_arg,
+        "rollback_id": rollback_id,
+        "provenance": provenance.to_dict(),
+        "intent": intent_result,
+    }, indent=2, ensure_ascii=False))
+    return 0
 
 
 

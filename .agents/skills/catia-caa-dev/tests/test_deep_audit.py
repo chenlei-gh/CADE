@@ -104,7 +104,7 @@ for py_file in (SKILL_ROOT / "skills").rglob("*.py"):
                 continue
             # tools/ modules use sys.path manipulation
             if imp in ("catia_detector", "setup_environment", "prerequisites_manager",
-                        "setup_wizard", "validate_component_ai"):
+                        "setup_wizard", "validate_component_ai", "check_intent"):
                 continue
             try:
                 __import__(imp)
