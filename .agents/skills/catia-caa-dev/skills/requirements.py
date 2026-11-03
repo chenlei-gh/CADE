@@ -73,6 +73,31 @@ class RequirementDocument:
         }
 
 
+@dataclass
+class TypedRequirement:
+    """Structured CAA requirement bridging business intent to construction plan."""
+    domain: str = "unknown"
+    target_entity: str = "unknown"       # feature | component | document | workbench | unknown
+    behavior_aspect: str = "unknown"     # visualization | event_listening | attribute | interaction | unknown
+    extension_point: str = "unknown"     # interface_implementation | command_action | dialog_ui | unknown
+    user_explicit_type: Optional[str] = None  # CreateCommand | CreateDialog | ... (word-level explicit)
+    ambiguity_state: str = "UNKNOWN"     # CLEAR | AMBIGUOUS | UNKNOWN
+    recommended_intent_type: Optional[str] = None
+    notes: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "domain": self.domain,
+            "target_entity": self.target_entity,
+            "behavior_aspect": self.behavior_aspect,
+            "extension_point": self.extension_point,
+            "user_explicit_type": self.user_explicit_type,
+            "ambiguity_state": self.ambiguity_state,
+            "recommended_intent_type": self.recommended_intent_type,
+            "notes": self.notes,
+        }
+
+
 # ─── ClarificationResult ──────────────────────────────────────────
 
 
@@ -84,9 +109,10 @@ class ClarificationResult:
     goal: str = ""
     resolved: Dict[str, str] = field(default_factory=dict)
     unresolved: List[Decision] = field(default_factory=list)
+    typed_requirement: Optional[TypedRequirement] = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "status": self.status,
             "domain": self.domain,
             "goal": self.goal,
@@ -101,6 +127,9 @@ class ClarificationResult:
                 for d in self.unresolved
             ],
         }
+        if self.typed_requirement:
+            d["typed_requirement"] = self.typed_requirement.to_dict()
+        return d
 
 
 # ─── RequirementsClarifier ────────────────────────────────────────
@@ -131,6 +160,12 @@ class RequirementsClarifier:
                 "命令", "菜单", "工作台", "工具栏"],
         "fta": ["fta", "3d annotation", "pmi", "tolerance", "gd&t", "3d标注",
                  "公差", "基准", "capture"],
+        "visualization": ["visu", "visualization", "color", "rep", "highlight", "material",
+                          "着色", "高亮", "显示", "表现", "材质", "cativisu"],
+        "notification": ["event", "callback", "listener", "notification", "dispatch",
+                         "监听", "回调", "事件", "通知", "变更", "结构变化"],
+        "knowledge": ["parameter", "attribute", "relation", "formula", "cke", "userparameter",
+                      "参数", "属性", "公式", "知识", "自定义属性"],
     }
 
     def analyze(self, request: str) -> ClarificationResult:
@@ -177,6 +212,9 @@ class RequirementsClarifier:
         elif domain == "ui":
             resolved, unresolved = self._clarify_ui(request_lower)
 
+        # Step 4: Build TypedRequirement bridging business domain to CAA constructs
+        typed_req = self._build_typed_requirement(request, domain, goal)
+
         # If the request is already clear enough
         if self._is_clear_command(request_lower):
             return ClarificationResult(
@@ -185,13 +223,13 @@ class RequirementsClarifier:
                 goal=goal,
                 resolved=resolved,
                 unresolved=[],
+                typed_requirement=typed_req,
             )
 
         # UI Generator 4-axis clarification (behavior target / commit timing /
         # value dependency / selection cardinality). Domain-agnostic: triggers
         # only on selection/edit/constraint signals, so non-UI requests pass
-        # through unchanged. No domain_context is passed — upstream Domain
-        # Resolution is a future prerequisite, not a current dependency.
+        # through unchanged.
         ui_result = UIGeneratorClarifier().analyze(request)
         resolved.update(ui_result.resolved)
         unresolved.extend(ui_result.unresolved)
@@ -205,6 +243,7 @@ class RequirementsClarifier:
                 goal=goal,
                 resolved=resolved,
                 unresolved=unresolved,
+                typed_requirement=typed_req,
             )
         else:
             return ClarificationResult(
@@ -213,6 +252,7 @@ class RequirementsClarifier:
                 goal=goal,
                 resolved=resolved,
                 unresolved=[],
+                typed_requirement=typed_req,
             )
 
     # ─── Domain Detection ──────────────────────────────────────
@@ -240,12 +280,106 @@ class RequirementsClarifier:
             "check": "check" in request or "检查" in request or "验证" in request,
             "fix": "fix" in request or "repair" in request or "修复" in request,
             "statistics": "statistic" in request or "统计" in request,
-            "visualize": "visualiz" in request or "color" in request or "着色" in request,
+            "visualize": "visualiz" in request or "color" in request or "着色" in request or "高亮" in request or "表现" in request,
+            "notify": "listen" in request or "callback" in request or "监听" in request or "回调" in request or "通知" in request,
+            "attribute": "attribute" in request or "param" in request or "属性" in request or "参数" in request,
         }
         for goal, found in goals.items():
             if found:
                 return goal
         return request[:50]  # truncate
+
+    def _build_typed_requirement(self, request: str, domain: str, goal: str) -> TypedRequirement:
+        """Construct TypedRequirement from request, domain, and goal."""
+        req_lower = request.lower()
+
+        # 1. Check explicit component keywords (Highest Priority - never override user intent)
+        # Note: "feature" is both a CAA construct (CreateFeature) and a CAD target entity (Pad/Pocket/Feature).
+        # When preceded by target prepositions (给/为/对/针对/面向/for/to/on) or paired with visualization/attributes,
+        # it denotes the target entity rather than the intent to create a feature construct.
+        is_target_feature = any(p in req_lower for p in (
+            "给零件特征", "给特征", "为特征", "对特征", "针对特征", "面向特征",
+            "for feature", "to feature", "on feature", "in feature"
+        )) or (domain in ("visualization", "notification") and not any(k in req_lower for k in ("创建特征", "新建特征", "create feature", "make feature")))
+
+        explicit_mapping = [
+            (("对话框", "dialog"), "CreateDialog"),
+            (("命令", "command"), "CreateCommand"),
+            (("特征", "feature"), "CreateFeature"),
+            (("扩展", "extension"), "CreateExtension"),
+            (("接口", "interface"), "CreateInterface"),
+            (("工作台", "workbench"), "CreateWorkbench"),
+            (("组件", "component"), "CreateComponent"),
+            (("模块", "module"), "CreateModule"),
+            (("框架", "framework"), "CreateFramework"),
+        ]
+        user_explicit = None
+        for keywords, itype in explicit_mapping:
+            if itype == "CreateFeature" and is_target_feature:
+                continue
+            if any(k in req_lower for k in keywords):
+                user_explicit = itype
+                break
+
+        typed = TypedRequirement(
+            domain=domain,
+            user_explicit_type=user_explicit,
+        )
+
+        if user_explicit:
+            typed.ambiguity_state = "CLEAR"
+            typed.recommended_intent_type = user_explicit
+            typed.notes.append(f"Explicit construct keyword matched: {user_explicit}")
+            return typed
+
+        # 2. Derive typed requirement based on domain and behavioral aspects
+        if domain == "visualization":
+            typed.behavior_aspect = "visualization"
+            typed.target_entity = "feature" if any(k in req_lower for k in ("feature", "hole", "特征", "孔", "面", "圆角")) else "component"
+            typed.extension_point = "interface_implementation"
+            typed.recommended_intent_type = "CreateExtension"
+            typed.ambiguity_state = "CLEAR"
+            typed.notes.append("Domain visualization maps to extension implementing CATIVisu")
+        elif domain == "notification":
+            typed.behavior_aspect = "event_listening"
+            typed.target_entity = "document" if any(k in req_lower for k in ("document", "product", "文档", "结构", "装配")) else "component"
+            typed.extension_point = "interface_implementation"
+            typed.recommended_intent_type = "CreateExtension"
+            typed.ambiguity_state = "CLEAR"
+            typed.notes.append("Domain notification maps to event callback/listener extension")
+        elif domain == "knowledge":
+            typed.behavior_aspect = "attribute"
+            typed.target_entity = "feature"
+            typed.extension_point = "interface_implementation"
+            if any(k in req_lower for k in ("创建特征", "新建特征", "create feature", "make feature")):
+                typed.recommended_intent_type = "CreateFeature"
+                typed.notes.append("Domain knowledge with feature creation context maps to CreateFeature")
+            else:
+                typed.recommended_intent_type = "CreateExtension"
+                typed.notes.append("Domain knowledge with attribute/parameter context maps to CreateExtension")
+            typed.ambiguity_state = "CLEAR"
+        elif domain == "ui":
+            typed.behavior_aspect = "interaction"
+            typed.extension_point = "dialog_ui" if any(k in req_lower for k in ("dialog", "对话框", "界面")) else "command_action"
+            typed.recommended_intent_type = "CreateDialog" if typed.extension_point == "dialog_ui" else "CreateCommand"
+            typed.ambiguity_state = "CLEAR"
+        elif domain in ("product", "part", "drawing", "surface"):
+            # Action verbs that indicate a standalone user command
+            if any(k in req_lower for k in ("export", "导出", "统计", "statistic", "check", "检查", "analyze", "分析", "生成", "计算")):
+                typed.behavior_aspect = "interaction"
+                typed.extension_point = "command_action"
+                typed.recommended_intent_type = "CreateCommand"
+                typed.ambiguity_state = "CLEAR"
+            else:
+                typed.ambiguity_state = "AMBIGUOUS"
+                typed.recommended_intent_type = None
+                typed.notes.append("Domain clear but no concrete action or construct specified")
+        else:
+            typed.ambiguity_state = "UNKNOWN"
+            typed.recommended_intent_type = None
+            typed.notes.append("Unknown domain and no explicit construct keyword")
+
+        return typed
 
     # ─── Domain-specific clarifications ────────────────────────
 

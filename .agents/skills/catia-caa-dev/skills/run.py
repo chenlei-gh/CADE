@@ -106,6 +106,153 @@ def _check_process_running_win32(process_name: str):
         return None
 
 
+def get_processes_snapshot_win32() -> list:
+    """Return snapshot of all running processes with pid, parent_pid, and name (Win32)."""
+    if sys.platform != "win32":
+        return []
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        TH32CS_SNAPPROCESS = 0x00000002
+        h_snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        if h_snap == -1:
+            return []
+
+        class PROCESSENTRY32(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", wintypes.DWORD),
+                ("cntUsage", wintypes.DWORD),
+                ("th32ProcessID", wintypes.DWORD),
+                ("th32DefaultHeapID", ctypes.c_size_t),
+                ("th32ModuleID", wintypes.DWORD),
+                ("cntThreads", wintypes.DWORD),
+                ("th32ParentProcessID", wintypes.DWORD),
+                ("pcPriClassBase", ctypes.c_long),
+                ("dwFlags", wintypes.DWORD),
+                ("szExeFile", ctypes.c_char * 260),
+            ]
+
+        pe = PROCESSENTRY32()
+        pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+        processes = []
+        success = kernel32.Process32First(h_snap, ctypes.byref(pe))
+        while success:
+            exe_name = pe.szExeFile.decode("latin1", errors="replace")
+            processes.append({
+                "pid": int(pe.th32ProcessID),
+                "parent_pid": int(pe.th32ParentProcessID),
+                "name": exe_name,
+            })
+            success = kernel32.Process32Next(h_snap, ctypes.byref(pe))
+        kernel32.CloseHandle(h_snap)
+        return processes
+    except Exception:
+        return []
+
+
+def get_process_creation_time_win32(pid: int) -> float | None:
+    """Return Unix timestamp of process creation time via GetProcessTimes (Win32)."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        PROCESS_QUERY_INFORMATION = 0x0400
+
+        h_proc = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not h_proc:
+            h_proc = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION, False, pid)
+        if not h_proc:
+            return None
+
+        class FILETIME(ctypes.Structure):
+            _fields_ = [
+                ("dwLowDateTime", wintypes.DWORD),
+                ("dwHighDateTime", wintypes.DWORD),
+            ]
+
+        ft_creation = FILETIME()
+        ft_exit = FILETIME()
+        ft_kernel = FILETIME()
+        ft_user = FILETIME()
+
+        ok = kernel32.GetProcessTimes(
+            h_proc,
+            ctypes.byref(ft_creation),
+            ctypes.byref(ft_exit),
+            ctypes.byref(ft_kernel),
+            ctypes.byref(ft_user),
+        )
+        kernel32.CloseHandle(h_proc)
+        if not ok:
+            return None
+
+        intervals = (ft_creation.dwHighDateTime << 32) | ft_creation.dwLowDateTime
+        unix_time = (intervals / 10000000.0) - 11644473600.0
+        return unix_time
+    except Exception:
+        return None
+
+
+def get_process_loaded_modules(pid: int) -> list:
+    """Get absolute paths of all modules loaded in process pid via Win32 PSAPI."""
+    if sys.platform != "win32":
+        return []
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        PROCESS_QUERY_INFORMATION = 0x0400
+        PROCESS_VM_READ = 0x0010
+        LIST_MODULES_ALL = 0x03
+
+        kernel32 = ctypes.windll.kernel32
+        psapi = ctypes.windll.psapi
+
+        h_process = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, pid)
+        if not h_process:
+            return []
+
+        try:
+            h_mods = (wintypes.HMODULE * 1024)()
+            cb_needed = wintypes.DWORD()
+            res = psapi.EnumProcessModulesEx(
+                h_process,
+                ctypes.byref(h_mods),
+                ctypes.sizeof(h_mods),
+                ctypes.byref(cb_needed),
+                LIST_MODULES_ALL,
+            )
+            if not res:
+                return []
+
+            count = cb_needed.value // ctypes.sizeof(wintypes.HMODULE)
+            modules = []
+            filename_buf = ctypes.create_unicode_buffer(1024)
+            for i in range(count):
+                h_mod = h_mods[i]
+                if not h_mod:
+                    continue
+                length = psapi.GetModuleFileNameExW(
+                    h_process,
+                    h_mod,
+                    filename_buf,
+                    len(filename_buf),
+                )
+                if length > 0:
+                    modules.append(filename_buf.value)
+            return modules
+        finally:
+            kernel32.CloseHandle(h_process)
+    except Exception:
+        return []
+
+
 def check_process_running(process_name: str) -> list:
     """
     Check if a process is running using Windows native commands (P2-009 fix).
@@ -116,6 +263,147 @@ def check_process_running(process_name: str) -> list:
     Returns:
         List of dictionaries with process information
     """
+    import re
+    if not process_name or not process_name.strip():
+        return []
+    if not re.match(r'^[a-zA-Z0-9_.\-]+\.exe$', process_name):
+        return []
+
+    # Fast path: sub-10ms native snapshot on Windows
+    native_res = _check_process_running_win32(process_name)
+    if native_res is not None:
+        return native_res
+
+    running_processes = []
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {process_name}"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
+        if result.stdout.strip():
+            for line in result.stdout.strip().split("\n"):
+                if process_name.lower() in line.lower():
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        try:
+                            running_processes.append(
+                                {"pid": int(parts[1]), "name": parts[0]}
+                            )
+                        except (ValueError, IndexError):
+                            pass
+    except Exception:
+        pass
+
+    return running_processes
+
+
+def identify_target_cnext(launcher_pid: int = None, t_start: float = None) -> tuple:
+    """Identify the exact CNEXT.exe instance spawned for this launch (L2).
+
+    Returns:
+        (status, cnext_pid, evidence_dict)
+        status in ("PASS", "FAIL", "AMBIGUOUS")
+    """
+    snapshot = get_processes_snapshot_win32()
+    cnext_procs = [p for p in snapshot if p["name"].lower() == "cnext.exe"]
+
+    if not cnext_procs:
+        running = check_process_running("CNEXT.exe")
+        if not running:
+            return "FAIL", None, {"reason": "no_cnext_process_found"}
+        cnext_procs = [{"pid": r["pid"], "parent_pid": None, "name": "CNEXT.exe"} for r in running]
+
+    # Method 1: Check if launcher_pid is direct parent or ancestor
+    if launcher_pid and snapshot:
+        pid_to_parent = {p["pid"]: p["parent_pid"] for p in snapshot}
+        for cp in cnext_procs:
+            curr = cp["pid"]
+            visited = set()
+            while curr in pid_to_parent and curr not in visited:
+                visited.add(curr)
+                parent = pid_to_parent.get(curr)
+                if parent == launcher_pid:
+                    return "PASS", cp["pid"], {
+                        "cnext_pid": cp["pid"],
+                        "launcher_pid": launcher_pid,
+                        "identification_method": "process_tree_ancestor_match",
+                    }
+                curr = parent
+
+    # Method 2: Check creation time window
+    if t_start:
+        candidates = []
+        for cp in cnext_procs:
+            ctime = get_process_creation_time_win32(cp["pid"])
+            if ctime is not None:
+                # Started after or within 2 seconds of launch initiation
+                if ctime >= t_start - 2.0:
+                    candidates.append((cp["pid"], ctime))
+        if len(candidates) == 1:
+            return "PASS", candidates[0][0], {
+                "cnext_pid": candidates[0][0],
+                "launcher_pid": launcher_pid,
+                "identification_method": "creation_time_window_match",
+                "creation_time": candidates[0][1],
+                "t_start": t_start,
+            }
+        elif len(candidates) > 1:
+            return "AMBIGUOUS", None, {
+                "reason": "multiple_cnext_in_creation_window",
+                "candidate_pids": [c[0] for c in candidates],
+            }
+
+    # Method 3: Exactly one CNEXT in system
+    if len(cnext_procs) == 1:
+        return "PASS", cnext_procs[0]["pid"], {
+            "cnext_pid": cnext_procs[0]["pid"],
+            "launcher_pid": launcher_pid,
+            "identification_method": "single_global_instance",
+        }
+
+    return "AMBIGUOUS", None, {
+        "reason": "multiple_instances_cannot_disambiguate",
+        "observed_pids": [p["pid"] for p in cnext_procs],
+    }
+
+
+def verify_module_loaded(pid: int, expected_dll_path: Path) -> tuple:
+    """Verify L3: Check if expected_dll_path is loaded in process pid.
+
+    Returns:
+        (status, evidence_dict)
+        status in ("PASS", "FAIL", "UNKNOWN", "NOT_RUN")
+    """
+    if not pid:
+        return "NOT_RUN", {"reason": "no_cnext_pid_available"}
+
+    loaded_modules = get_process_loaded_modules(pid)
+    if not loaded_modules:
+        return "UNKNOWN", {"reason": "cannot_enumerate_process_modules_insufficient_privileges_or_exited"}
+
+    exp_resolved = str(Path(expected_dll_path).resolve()).lower()
+    matched = None
+    for mod in loaded_modules:
+        if str(Path(mod).resolve()).lower() == exp_resolved:
+            matched = mod
+            break
+
+    if matched:
+        return "PASS", {
+            "expected_path": exp_resolved,
+            "matched_path": matched,
+            "match_scope": "exact_absolute_physical_path",
+        }
+    else:
+        return "FAIL", {
+            "expected_path": exp_resolved,
+            "total_loaded_modules": len(loaded_modules),
+            "match_found": False,
+        }
     # Validate process_name: only allow alphanumeric + .exe (P2-009 fix)
     # Allow empty/missing to return empty list (graceful degradation)
     import re
@@ -396,6 +684,7 @@ def start_catia_runtime(
     timeout: int = 300,
     entrypoint: str = "python_cli",
     orchestrated_by_kernel: bool = False,
+    target_module: str = None,
 ) -> dict:
     """
     Start CATIA Runtime View (CNEXT)
@@ -525,6 +814,18 @@ def start_catia_runtime(
         cmd_line = " ".join(f'"{a}"' if " " in a else a for a in cmd_args)
         logger.write(f"Launching: {cmd_line}")
 
+        # Layered Evidence: L0 & L1 static asset verification
+        from runtime_view import check_runtime_view_l0, check_runtime_view_l1
+        arch = caa_env.get_architecture() or "win_b64"
+        if workspace_path:
+            l0_res = check_runtime_view_l0(Path(workspace_path), architecture=arch)
+            l1_res = check_runtime_view_l1(Path(workspace_path), architecture=arch, target_module=target_module)
+            runtime_view_present = (l0_res["status"] == "PASS")
+        else:
+            l0_res = {"level": "L0", "status": "NOT_RUN", "check": "runtime_view_directory_present", "evidence": {"reason": "no_workspace_provided"}}
+            l1_res = {"level": "L1", "status": "NOT_RUN", "check": "runtime_asset_integrity", "evidence": {"reason": "no_workspace_provided"}}
+            runtime_view_present = False
+
         if wait_for_exit:
             # Start and wait for completion
             result = subprocess.run(
@@ -540,13 +841,28 @@ def start_catia_runtime(
             logger.write(f"CATIA exited with code: {result.returncode}")
             logger.write(f"Duration: {duration:.1f}s")
 
+            levels = {
+                "L0": l0_res,
+                "L1": l1_res,
+                "L2": {"level": "L2", "status": "NOT_RUN", "check": "target_process_identity", "evidence": {"reason": "process_already_exited"}},
+                "L3": {"level": "L3", "status": "NOT_RUN", "check": "module_loaded_exact_path", "evidence": {"reason": "process_already_exited"}},
+                "L4": {"level": "L4", "status": "NOT_RUN", "check": "addin_runtime_registration", "evidence": {"reason": "process_already_exited"}},
+                "L5": {"level": "L5", "status": "NOT_RUN", "check": "functional_verification", "evidence": {"reason": "process_already_exited"}},
+            }
+            highest_verified = "L1" if l1_res["status"] == "PASS" else ("L0" if l0_res["status"] == "PASS" else "NONE")
+
             runtime_result = {
                 "status": "exited",
                 "message": f"CATIA exited with code {result.returncode}",
                 "exit_code": result.returncode,
                 "duration_seconds": duration,
                 "timestamp": start_time.isoformat(),
-                "runtime_view_mounted": runtime_view_mounted,
+                "runtime_view_present": runtime_view_present,
+                "runtime_view_mounted": runtime_view_present,  # legacy alias
+                "runtime_verification": {
+                    "highest_verified_level": highest_verified,
+                    "levels": levels,
+                },
                 "entrypoint": entrypoint,
                 "orchestrated_by_kernel": orchestrated_by_kernel,
                 "operation": "start_runtime",
@@ -557,44 +873,158 @@ def start_catia_runtime(
             # DETACHED_PROCESS ensures CATIA survives Python exit.
             import subprocess as sp
 
-            sp.Popen(
+            sp_proc = sp.Popen(
                 cmd_args,
                 env=env_vars,
                 creationflags=sp.DETACHED_PROCESS,
                 stdout=sp.DEVNULL,
                 stderr=sp.DEVNULL,
             )
+            raw_launcher_pid = getattr(sp_proc, 'pid', None)
+            launcher_pid = int(raw_launcher_pid) if isinstance(raw_launcher_pid, int) else None
 
-            # Quick poll (shorter intervals, return early if found)
-            logger.write("Waiting for CNEXT...")
+            logger.write(f"Launcher spawned (PID: {launcher_pid}), waiting for CNEXT...")
             runtime_result = None
+            detected_cnext_pid = None
+            cnext_id_status = "FAIL"
+            cnext_id_evidence = {}
+
             for i in range(POLL_MAX_ATTEMPTS):
                 time.sleep(POLL_INTERVAL)
-                running = check_process_running("CNEXT.exe")
-                if running:
+                cnext_id_status, cnext_pid, cnext_id_evidence = identify_target_cnext(
+                    launcher_pid=launcher_pid, t_start=start_time.timestamp()
+                )
+                if cnext_id_status == "PASS" and cnext_pid:
+                    detected_cnext_pid = cnext_pid
                     logger.write(
-                        f"CNEXT detected after {(i + 1) * POLL_INTERVAL:.1f}s"
+                        f"CNEXT target identified (PID: {cnext_pid}) via {cnext_id_evidence.get('identification_method')} after {(i + 1) * POLL_INTERVAL:.1f}s"
                     )
-                    runtime_result = {
-                        "status": "started",
-                        "message": "CATIA started successfully",
-                        "pid": running[0]["pid"],
-                        "timestamp": start_time.isoformat(),
-                        "runtime_view_mounted": runtime_view_mounted,
-                        "entrypoint": entrypoint,
-                        "orchestrated_by_kernel": orchestrated_by_kernel,
-                        "operation": "start_runtime",
-                        "stage": "runtime_start",
+                    break
+                elif cnext_id_status == "AMBIGUOUS":
+                    logger.write(f"CNEXT instances ambiguous after {(i + 1) * POLL_INTERVAL:.1f}s")
+
+            # Layered Evidence: L2 & L3
+            l2_res = {
+                "level": "L2",
+                "status": cnext_id_status,
+                "check": "target_process_identity",
+                "evidence": cnext_id_evidence,
+            }
+
+            if cnext_id_status == "PASS" and detected_cnext_pid and workspace_path and runtime_view_present:
+                target_dll_path = None
+                if target_module:
+                    norm_mod = target_module[:-2] if target_module.endswith(".m") else target_module
+                    target_dll_path = Path(workspace_path) / arch / "code" / "bin" / f"{norm_mod}.dll"
+                else:
+                    bin_dir = Path(workspace_path) / arch / "code" / "bin"
+                    dlls = list(bin_dir.glob("*.dll")) if bin_dir.is_dir() else []
+                    if dlls:
+                        target_dll_path = dlls[0]
+
+                if target_dll_path:
+                    l3_status, l3_ev = verify_module_loaded(detected_cnext_pid, target_dll_path)
+                    l3_res = {
+                        "level": "L3",
+                        "status": l3_status,
+                        "check": "module_loaded_exact_path",
+                        "evidence": l3_ev,
                     }
+                else:
+                    l3_res = {
+                        "level": "L3",
+                        "status": "NOT_RUN",
+                        "check": "module_loaded_exact_path",
+                        "evidence": {"reason": "no_target_dll_specified_or_found"},
+                    }
+            else:
+                l3_res = {
+                    "level": "L3",
+                    "status": "NOT_RUN",
+                    "check": "module_loaded_exact_path",
+                    "evidence": {"reason": "cnext_pid_or_workspace_unavailable"},
+                }
+
+            # L4: Honest boundary — no public uninstrumented probe in B28
+            l4_res = {
+                "level": "L4",
+                "status": "UNKNOWN" if detected_cnext_pid else "NOT_RUN",
+                "check": "addin_runtime_registration",
+                "evidence": {
+                    "reason": "no_runtime_hook_in_b28",
+                    "note": "CAA V5 B28 provides no public uninstrumented probe for dictionary activation",
+                },
+            }
+
+            # L5: Functional check (macro/StartCommand not yet invoked)
+            l5_res = {
+                "level": "L5",
+                "status": "NOT_RUN",
+                "check": "functional_verification",
+                "evidence": {"reason": "no_functional_test_performed"},
+            }
+
+            levels = {
+                "L0": l0_res,
+                "L1": l1_res,
+                "L2": l2_res,
+                "L3": l3_res,
+                "L4": l4_res,
+                "L5": l5_res,
+            }
+
+            # Compute highest verified level
+            highest_verified = "NONE"
+            for lvl in ("L5", "L4", "L3", "L2", "L1", "L0"):
+                if levels[lvl]["status"] == "PASS":
+                    highest_verified = lvl
                     break
 
-            if runtime_result is None:
+            if detected_cnext_pid:
+                runtime_result = {
+                    "status": "started",
+                    "message": "CATIA started successfully",
+                    "pid": detected_cnext_pid,
+                    "timestamp": start_time.isoformat(),
+                    "runtime_view_present": runtime_view_present,
+                    "runtime_view_mounted": runtime_view_present,  # legacy alias
+                    "runtime_verification": {
+                        "highest_verified_level": highest_verified,
+                        "levels": levels,
+                    },
+                    "entrypoint": entrypoint,
+                    "orchestrated_by_kernel": orchestrated_by_kernel,
+                    "operation": "start_runtime",
+                    "stage": "runtime_start",
+                }
+            elif cnext_id_status == "AMBIGUOUS":
+                runtime_result = {
+                    "status": "ambiguous",
+                    "message": "Multiple CATIA instances detected but cannot unambiguously associate with launcher",
+                    "timestamp": start_time.isoformat(),
+                    "runtime_view_present": runtime_view_present,
+                    "runtime_view_mounted": runtime_view_present,
+                    "runtime_verification": {
+                        "highest_verified_level": highest_verified,
+                        "levels": levels,
+                    },
+                    "entrypoint": entrypoint,
+                    "orchestrated_by_kernel": orchestrated_by_kernel,
+                    "operation": "start_runtime",
+                    "stage": "runtime_start",
+                }
+            else:
                 logger.write("CNEXT still initializing (continuing in background)")
                 runtime_result = {
                     "status": "launching",
                     "message": "CATIA launch initiated (still initializing)",
                     "timestamp": start_time.isoformat(),
-                    "runtime_view_mounted": runtime_view_mounted,
+                    "runtime_view_present": runtime_view_present,
+                    "runtime_view_mounted": runtime_view_present,
+                    "runtime_verification": {
+                        "highest_verified_level": highest_verified,
+                        "levels": levels,
+                    },
                     "entrypoint": entrypoint,
                     "orchestrated_by_kernel": orchestrated_by_kernel,
                     "operation": "start_runtime",
@@ -614,13 +1044,14 @@ def start_catia_runtime(
                 "status": "not_run",
                 "check": "none",
                 "evidence": {
-                    "reason": "launcher_exit_code_does_not_prove_cnext_lifecycle"
+                    "reason": "launcher_exit_code_does_not_prove_cnext_lifecycle",
+                    "levels": runtime_result["runtime_verification"]["levels"],
                 },
             }
-        elif cur_status == "started":
+        elif cur_status in ("started", "ambiguous"):
             runtime_result["execution"] = {
                 "status": "completed",
-                "action_result": "started",
+                "action_result": cur_status,
                 "raw": raw_snapshot,
             }
             runtime_result["verification"] = {
@@ -632,6 +1063,8 @@ def start_catia_runtime(
                     "pid": runtime_result.get("pid"),
                     "match_found": True,
                     "instance_scope": "global_image_name_snapshot_only",
+                    "highest_verified_level": highest_verified,
+                    "levels": runtime_result["runtime_verification"]["levels"],
                 },
             }
         elif cur_status == "launching":
@@ -646,6 +1079,8 @@ def start_catia_runtime(
                 "evidence": {
                     "reason": "launch_initiated_polling_window_expired",
                     "v1_classification": "not_specified_in_v1",
+                    "highest_verified_level": highest_verified,
+                    "levels": runtime_result["runtime_verification"]["levels"],
                 },
             }
         else:

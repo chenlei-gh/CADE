@@ -447,7 +447,7 @@ class Kernel:
 
         # Phase 2: Intent → Plan → Generate
         self._state = KernelState.PLANNING
-        plan = self._build_develop_plan(request)
+        plan = self._build_develop_plan(request, clarification=clarification)
 
         if plan is None:
             self._state = KernelState.FAILED
@@ -872,29 +872,47 @@ class Kernel:
 
     # ─── Develop Plan Helpers ──────────────────────────────────
 
-    def _build_develop_plan(self, request: str) -> Optional[dict]:
-        """Build a development plan from natural language request"""
+    def _build_develop_plan(self, request: str, clarification: Optional[Any] = None) -> Optional[dict]:
+        """Build a development plan from natural language request, grounded in TypedRequirement."""
         try:
             from intent.models import Intent, IntentType
             from intent.planner import Planner
         except ImportError:
             return None
 
-        # Detect intent type from request
+        # Extract typed_requirement from clarification if available
+        typed_req = getattr(clarification, 'typed_requirement', None) if clarification else None
+
+        # Detect intent type from request + typed requirement (no blind fallback)
         request_lower = request.lower()
-        intent_type = self._detect_intent_type(request_lower)
+        intent_type = self._detect_intent_type(request_lower, typed_req=typed_req)
+
+        if not intent_type:
+            return None
 
         # Extract name and module
         name, module, framework = self._extract_entities(request)
 
         if not name:
-            return None
+            # Fallback default names based on resolved intent_type
+            if intent_type == "CreateExtension":
+                name = "MyVisuExtension" if any(k in request_lower for k in ("visu", "着色", "高亮")) else "MyExtension"
+            elif intent_type == "CreateCommand":
+                name = "MyCommand"
+            elif intent_type == "CreateDialog":
+                name = "MyDialog"
+            elif intent_type == "CreateFeature":
+                name = "MyFeature"
+            elif intent_type == "CreateWorkbench":
+                name = "MyWorkbench"
+            else:
+                return None
 
         # Convert string to IntentType enum
         try:
             itype = IntentType(intent_type)
         except (ValueError, TypeError):
-            itype = IntentType.CREATE_COMMAND
+            return None
 
         # Auto-detect framework if not specified (prefer .edu with modules)
         if not framework:
@@ -2878,8 +2896,15 @@ class Kernel:
 
     # ─── Intent Detection ──────────────────────────────────────
 
-    def _detect_intent_type(self, request: str) -> str:
-        """Detect IntentType from natural language request (EN + CN)"""
+    def _detect_intent_type(self, request: str, typed_req: Optional[Any] = None) -> Optional[str]:
+        """Detect IntentType from natural language request and optional TypedRequirement.
+
+        Resolution Priority:
+        1. Explicit user construct keywords (highest priority, never overridden)
+        2. TypedRequirement recommendation (from domain + behavioral analysis)
+        3. Fallback domain-specific heuristic detection (if called without typed_req)
+        4. None (never blind fallback to CreateCommand)
+        """
         import re
 
         # Modifiers that sit AFTER the module separator (e.g.
@@ -2902,12 +2927,7 @@ class Kernel:
         # Order matters: more specific matches first
         # Chinese keywords first (more specific in CN context)
         # English keywords with word-boundary check (avoid substring matches like testmodule→module)
-        # Bare dialog/对话框 is CreateDialog. Command+dialog is already
-        # handled above ("with dialog" / "带对话框"). Do not map the
-        # dialog keyword itself to CreateCommandWithDialog — that made
-        # `cade create dialog` generate a command instead of a dialog.
         mapping = [
-            # Chinese keywords (most specific in CN context)
             ("对话框", "CreateDialog"),
             ("命令", "CreateCommand"),
             ("特征", "CreateFeature"),
@@ -2917,7 +2937,6 @@ class Kernel:
             ("组件", "CreateComponent"),
             ("模块", "CreateModule"),
             ("框架", "CreateFramework"),
-            # English keywords (check with word boundaries to avoid substring matches)
         ]
         en_mapping = [
             ("dialog", "CreateDialog"),
@@ -2930,23 +2949,59 @@ class Kernel:
             ("module", "CreateModule"),
             ("framework", "CreateFramework"),
         ]
-        # Try intent part first (CN keywords)
+        # If TypedRequirement is provided by upstream clarifier, it already evaluated
+        # explicit constructs, target entities (e.g. "给特征做高亮" vs "创建特征"), and domain mapping.
+        if typed_req:
+            user_explicit = getattr(typed_req, 'user_explicit_type', None)
+            if user_explicit:
+                return user_explicit
+            rec = getattr(typed_req, 'recommended_intent_type', None)
+            ambiguity = getattr(typed_req, 'ambiguity_state', "CLEAR")
+            if rec and ambiguity != "AMBIGUOUS":
+                return rec
+            if ambiguity in ("AMBIGUOUS", "UNKNOWN"):
+                return None
+
+        # Fallback path when called standalone without typed_req:
+        # Avoid treating "给特征/for feature" as CreateFeature construct
+        is_target_feature = any(p in request for p in (
+            "给零件特征", "给特征", "为特征", "对特征", "针对特征",
+            "for feature", "to feature", "on feature", "in feature"
+        )) or any(k in request for k in ("visu", "着色", "高亮", "渲染", "giverep", "catvisu"))
+
+        # 1. Try intent part first (CN keywords)
         for keyword, intent_type in mapping:
+            if intent_type == "CreateFeature" and is_target_feature:
+                continue
             if keyword in intent_part:
                 return intent_type
         # Try intent part with EN keywords (word-boundary aware)
         for keyword, intent_type in en_mapping:
+            if intent_type == "CreateFeature" and is_target_feature:
+                continue
             if re.search(r'\b' + keyword + r'\b', intent_part):
                 return intent_type
-        # Fallback: check full request (CN)
+        # Check full request (CN)
         for keyword, intent_type in mapping:
+            if intent_type == "CreateFeature" and is_target_feature:
+                continue
             if keyword in request:
                 return intent_type
-        # Fallback: check full request (EN)
+        # Check full request (EN)
         for keyword, intent_type in en_mapping:
+            if intent_type == "CreateFeature" and is_target_feature:
+                continue
             if re.search(r'\b' + keyword + r'\b', request):
                 return intent_type
-        return "CreateCommand"  # default
+
+        # 3. Domain heuristics if called without typed_req or typed_req was empty
+        if any(k in request for k in ("visu", "着色", "高亮", "渲染", "giverep", "catvisu", "cati3dgeovisu")):
+            return "CreateExtension"
+        if any(k in request for k in ("listener", "callback", "监听", "回调", "通知")):
+            return "CreateExtension"
+
+        # 4. No blind fallback — return None if undetermined
+        return None
 
     def _extract_entities(self, request: str) -> tuple:
         """Extract (name, module, framework) from natural language request (EN + CN)"""

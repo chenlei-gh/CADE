@@ -285,15 +285,105 @@ def create_runtime_view(
                 pass
 
 
-def check_runtime_view(workspace_path: Path) -> dict:
+def check_runtime_view_l0(workspace_path: Path, architecture: str = None) -> dict:
+    """Check L0: Physical Runtime View directory presence."""
+    if architecture is None:
+        try:
+            architecture = CAAEnvironment().get_architecture() or "win_b64"
+        except Exception:
+            architecture = "win_b64"
+
+    target_dir = Path(workspace_path) / architecture
+    exists = target_dir.is_dir()
+    return {
+        "level": "L0",
+        "status": "PASS" if exists else "FAIL",
+        "check": "runtime_view_directory_present",
+        "evidence": {
+            "target_path": str(target_dir),
+            "architecture": architecture,
+            "exists": exists,
+            "scope": "physical_directory_check",
+        },
+    }
+
+
+def check_runtime_view_l1(
+    workspace_path: Path, architecture: str = None, target_module: str = None
+) -> dict:
+    """Check L1: Runtime View asset integrity (DLLs, DICO, CATNls)."""
+    l0 = check_runtime_view_l0(workspace_path, architecture)
+    if l0["status"] != "PASS":
+        return {
+            "level": "L1",
+            "status": "NOT_RUN",
+            "check": "runtime_asset_integrity",
+            "evidence": {
+                "reason": "l0_directory_not_present",
+                "target_module": target_module,
+            },
+        }
+
+    arch_dir = Path(l0["evidence"]["target_path"])
+    bin_dir = arch_dir / "code" / "bin"
+    dico_dir = arch_dir / "code" / "dictionary"
+    msg_dir = arch_dir / "resources" / "msgcatalog"
+
+    # Scan DLLs
+    dll_files = []
+    if bin_dir.is_dir():
+        dll_files = [f for f in bin_dir.glob("*.dll") if f.is_file() and f.stat().st_size > 0]
+
+    # Scan DICOs
+    dico_files = []
+    if dico_dir.is_dir():
+        dico_files = [f for f in dico_dir.glob("*.dico") if f.is_file() and f.stat().st_size > 0]
+
+    # Scan MsgCatalogs
+    nls_files = []
+    if msg_dir.is_dir():
+        nls_files = [f for f in msg_dir.glob("*.CATNls") if f.is_file() and f.stat().st_size > 0]
+
+    # Target module check if requested
+    target_dll_found = False
+    if target_module:
+        norm_mod = target_module[:-2] if target_module.endswith(".m") else target_module
+        expected_dll_name = f"{norm_mod}.dll".lower()
+        target_dll_found = any(f.name.lower() == expected_dll_name for f in dll_files)
+
+    # Evaluation
+    if target_module:
+        passed = target_dll_found and len(dico_files) > 0
+    else:
+        passed = len(dll_files) > 0 and len(dico_files) > 0
+
+    return {
+        "level": "L1",
+        "status": "PASS" if passed else "FAIL",
+        "check": "runtime_asset_integrity",
+        "evidence": {
+            "target_module": target_module,
+            "target_dll_found": target_dll_found if target_module else None,
+            "dll_count": len(dll_files),
+            "dico_count": len(dico_files),
+            "nls_count": len(nls_files),
+            "bin_dir_exists": bin_dir.is_dir(),
+            "dico_dir_exists": dico_dir.is_dir(),
+            "scope": "asset_filesystem_integrity_check",
+        },
+    }
+
+
+def check_runtime_view(workspace_path: Path, target_module: str = None) -> dict:
     """
-    Check if Runtime View exists
+    Check Runtime View with layered evidence (L0 and L1).
 
     Args:
         workspace_path: Path to workspace directory
+        target_module: Optional target module to verify in L1
 
     Returns:
-        Dictionary with runtime view status
+        Dictionary with runtime view status and verification levels
     """
     logger = Logger("runtime_view.log")
 
@@ -312,11 +402,31 @@ def check_runtime_view(workspace_path: Path) -> dict:
     except Exception:
         configured_arch = "win_b64"
 
+    l0_res = check_runtime_view_l0(workspace_path, configured_arch)
+    l1_res = check_runtime_view_l1(workspace_path, configured_arch, target_module=target_module)
+
+    levels = {
+        "L0": l0_res,
+        "L1": l1_res,
+        "L2": {"level": "L2", "status": "NOT_RUN", "check": "target_process_identity", "evidence": {"reason": "static_probe_only"}},
+        "L3": {"level": "L3", "status": "NOT_RUN", "check": "module_loaded_exact_path", "evidence": {"reason": "static_probe_only"}},
+        "L4": {"level": "L4", "status": "NOT_RUN", "check": "addin_runtime_registration", "evidence": {"reason": "static_probe_only"}},
+        "L5": {"level": "L5", "status": "NOT_RUN", "check": "functional_verification", "evidence": {"reason": "static_probe_only"}},
+    }
+
+    highest = "L1" if l1_res["status"] == "PASS" else ("L0" if l0_res["status"] == "PASS" else "NONE")
+
     if runtime_dirs:
         res = {
             "status": "found",
             "message": f"Found {len(runtime_dirs)} Runtime View(s)",
             "runtime_views": runtime_dirs,
+            "runtime_view_present": True,
+            "runtime_view_mounted": True,  # legacy alias
+            "runtime_verification": {
+                "highest_verified_level": highest,
+                "levels": levels,
+            },
         }
         raw_snapshot = dict(res)
         if len(runtime_dirs) == 1:
@@ -343,6 +453,7 @@ def check_runtime_view(workspace_path: Path) -> dict:
                 "architecture_matched": arch_matched,
                 "exists": True,
                 "instance_scope": "path_existence_predicate_only",
+                "levels": levels,
             },
         }
         return res
@@ -351,6 +462,12 @@ def check_runtime_view(workspace_path: Path) -> dict:
             "status": "not_found",
             "message": "No Runtime View found",
             "runtime_views": [],
+            "runtime_view_present": False,
+            "runtime_view_mounted": False,  # legacy alias
+            "runtime_verification": {
+                "highest_verified_level": "NONE",
+                "levels": levels,
+            },
         }
         raw_snapshot = dict(res)
         res["execution"] = {
@@ -366,6 +483,7 @@ def check_runtime_view(workspace_path: Path) -> dict:
                 "configured_architecture": configured_arch,
                 "architecture_matched": False,
                 "exists": False,
+                "levels": levels,
             },
         }
         return res
