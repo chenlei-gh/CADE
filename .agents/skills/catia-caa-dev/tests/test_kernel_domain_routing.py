@@ -17,7 +17,7 @@ SKILL_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL_ROOT / "skills"))
 
 from requirements import RequirementsClarifier, TypedRequirement
-from kernel import Kernel
+from kernel import Kernel, KernelMode, KernelState
 
 total = passed = 0
 
@@ -108,9 +108,18 @@ for req in undetermined_cases:
     plan = kernel._build_develop_plan(req, clarification=res)
     ck(f"Plan building returns None for undetermined intent", plan is None, f"got {plan}")
 
+    # R-01: End-to-end kernel.execute must transition to NEEDS_CLARIFICATION, NOT FAILED / error
+    exec_res = kernel.execute(KernelMode.DEVELOP, req)
+    ck(f"E2E kernel execution returns needs_clarification: '{req[:20]}...'",
+       exec_res.get("status") == "needs_clarification",
+       f"got status={exec_res.get('status')}")
+    ck(f"Kernel state is CLARIFYING: '{req[:20]}...'",
+       kernel._state == KernelState.CLARIFYING,
+       f"got state={kernel._state}")
 
-# ── 4. End-to-End Plan Generation for Visu Extension ───────────
-print("\n[4] End-to-End Plan Generation")
+
+# ── 4. End-to-End Plan Generation for Visu Extension & Semantic Injection (R-05) ───
+print("\n[4] End-to-End Plan Generation & Semantic Field Injection")
 
 visu_req = "给特征增加3D几何可视化表现 MyVisuExtension in VisualizationModule.m"
 res_visu = clarifier.analyze(visu_req)
@@ -120,6 +129,25 @@ if plan_visu:
     intent_data = plan_visu.get("intent", {})
     ck("Visu intent is CreateExtension", intent_data.get("type") == "CreateExtension", f"got {intent_data.get('type')}")
     ck("Visu target module extracted", "VisualizationModule.m" in intent_data.get("module", ""), f"got {intent_data.get('module')}")
+    # R-05 checks
+    params = intent_data.get("params", {})
+    ck("Semantic params injected into Intent: behavior_aspect", params.get("behavior_aspect") == "visualization", f"got {params.get('behavior_aspect')}")
+    ck("Semantic params injected into Intent: target_entity", params.get("target_entity") == "feature", f"got {params.get('target_entity')}")
+    ck("Semantic candidate_interfaces contains CATIVisu", "CATIVisu" in params.get("candidate_interfaces", []), f"got {params.get('candidate_interfaces')}")
+    plan_typed_req = plan_visu.get("typed_requirement", {})
+    ck("TypedRequirement present in plan dict", plan_typed_req.get("domain") == "visualization")
+
+
+# ── 5. Multi-Domain Detection & Disambiguation (R-06) ───────────
+print("\n[5] Multi-Domain Detection")
+
+multi_req = "对装配结构进行3D表现并监听变化"
+res_multi = clarifier.analyze(multi_req)
+typed_multi = getattr(res_multi, "typed_requirement", None)
+ck("Multi-domain detected flag is True", typed_multi is not None and typed_multi.is_multi_domain is True)
+ck("Matched domains includes visualization & notification",
+   set(["visualization", "notification"]).issubset(set(getattr(typed_multi, "matched_domains", []))),
+   f"got {getattr(typed_multi, 'matched_domains', [])}")
 
 print("\n" + "=" * 70)
 print(f"  Result: {passed}/{total} tests passed ({'ALL PASS' if passed == total else 'SOME FAILED'})")

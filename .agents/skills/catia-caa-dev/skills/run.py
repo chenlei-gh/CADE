@@ -219,7 +219,8 @@ def get_process_loaded_modules(pid: int) -> list:
             return []
 
         try:
-            h_mods = (wintypes.HMODULE * 1024)()
+            initial_count = 1024
+            h_mods = (wintypes.HMODULE * initial_count)()
             cb_needed = wintypes.DWORD()
             res = psapi.EnumProcessModulesEx(
                 h_process,
@@ -230,6 +231,20 @@ def get_process_loaded_modules(pid: int) -> list:
             )
             if not res:
                 return []
+
+            # Dynamic expansion if buffer was insufficient (R-08 fix)
+            if cb_needed.value > ctypes.sizeof(h_mods):
+                needed_count = cb_needed.value // ctypes.sizeof(wintypes.HMODULE)
+                h_mods = (wintypes.HMODULE * needed_count)()
+                res = psapi.EnumProcessModulesEx(
+                    h_process,
+                    ctypes.byref(h_mods),
+                    ctypes.sizeof(h_mods),
+                    ctypes.byref(cb_needed),
+                    LIST_MODULES_ALL,
+                )
+                if not res:
+                    return []
 
             count = cb_needed.value // ctypes.sizeof(wintypes.HMODULE)
             modules = []
@@ -357,12 +372,14 @@ def identify_target_cnext(launcher_pid: int = None, t_start: float = None) -> tu
                 "candidate_pids": [c[0] for c in candidates],
             }
 
-    # Method 3: Exactly one CNEXT in system
+    # Method 3: Unverified global instances (R-02 fix: cannot prove correlation without tree or time evidence)
     if len(cnext_procs) == 1:
-        return "PASS", cnext_procs[0]["pid"], {
+        return "UNKNOWN", cnext_procs[0]["pid"], {
             "cnext_pid": cnext_procs[0]["pid"],
             "launcher_pid": launcher_pid,
-            "identification_method": "single_global_instance",
+            "identification_method": "single_global_instance_unverified",
+            "reason": "sole_cnext_without_tree_or_time_correlation",
+            "note": "Single global CNEXT detected but lacked parentage or creation-window correlation to this launch",
         }
 
     return "AMBIGUOUS", None, {
@@ -858,7 +875,8 @@ def start_catia_runtime(
                 "duration_seconds": duration,
                 "timestamp": start_time.isoformat(),
                 "runtime_view_present": runtime_view_present,
-                "runtime_view_mounted": runtime_view_present,  # legacy alias
+                "runtime_view_mounted": runtime_view_present,  # deprecated alias: directory presence only
+                "runtime_view_mounted_deprecated_notice": "runtime_view_mounted only asserts candidate directory presence. Refer to runtime_verification.levels for L0-L5 layered evidence.",
                 "runtime_verification": {
                     "highest_verified_level": highest_verified,
                     "levels": levels,
@@ -886,6 +904,7 @@ def start_catia_runtime(
             logger.write(f"Launcher spawned (PID: {launcher_pid}), waiting for CNEXT...")
             runtime_result = None
             detected_cnext_pid = None
+            unverified_cnext_pid = None
             cnext_id_status = "FAIL"
             cnext_id_evidence = {}
 
@@ -900,29 +919,32 @@ def start_catia_runtime(
                         f"CNEXT target identified (PID: {cnext_pid}) via {cnext_id_evidence.get('identification_method')} after {(i + 1) * POLL_INTERVAL:.1f}s"
                     )
                     break
+                elif cnext_id_status == "UNKNOWN" and cnext_pid:
+                    unverified_cnext_pid = cnext_pid
+                    # If single unverified instance exists without launcher correlation,
+                    # break early to avoid unbounded polling stall (e.g. in test mocks or pre-existing instances)
+                    if i >= 1 or not launcher_pid:
+                        logger.write(f"CNEXT observed (PID: {cnext_pid}) but lacks provenance correlation")
+                        break
                 elif cnext_id_status == "AMBIGUOUS":
                     logger.write(f"CNEXT instances ambiguous after {(i + 1) * POLL_INTERVAL:.1f}s")
 
+            effective_pid = detected_cnext_pid or unverified_cnext_pid
+
             # Layered Evidence: L2 & L3
+            # R-02 fix: If unverified_cnext_pid, L2 status MUST be UNKNOWN, never PASS
+            l2_status = "PASS" if detected_cnext_pid else ("UNKNOWN" if unverified_cnext_pid else cnext_id_status)
             l2_res = {
                 "level": "L2",
-                "status": cnext_id_status,
+                "status": l2_status,
                 "check": "target_process_identity",
                 "evidence": cnext_id_evidence,
             }
 
-            if cnext_id_status == "PASS" and detected_cnext_pid and workspace_path and runtime_view_present:
-                target_dll_path = None
+            if l2_status == "PASS" and detected_cnext_pid and workspace_path and runtime_view_present:
                 if target_module:
                     norm_mod = target_module[:-2] if target_module.endswith(".m") else target_module
                     target_dll_path = Path(workspace_path) / arch / "code" / "bin" / f"{norm_mod}.dll"
-                else:
-                    bin_dir = Path(workspace_path) / arch / "code" / "bin"
-                    dlls = list(bin_dir.glob("*.dll")) if bin_dir.is_dir() else []
-                    if dlls:
-                        target_dll_path = dlls[0]
-
-                if target_dll_path:
                     l3_status, l3_ev = verify_module_loaded(detected_cnext_pid, target_dll_path)
                     l3_res = {
                         "level": "L3",
@@ -931,24 +953,30 @@ def start_catia_runtime(
                         "evidence": l3_ev,
                     }
                 else:
+                    # R-04 fix: Do NOT substitute arbitrary first DLL; require explicit target_module
                     l3_res = {
                         "level": "L3",
                         "status": "NOT_RUN",
                         "check": "module_loaded_exact_path",
-                        "evidence": {"reason": "no_target_dll_specified_or_found"},
+                        "evidence": {
+                            "reason": "target_module_not_specified",
+                            "note": "L3 exact module verification requires explicit target_module parameter",
+                        },
                     }
             else:
                 l3_res = {
                     "level": "L3",
                     "status": "NOT_RUN",
                     "check": "module_loaded_exact_path",
-                    "evidence": {"reason": "cnext_pid_or_workspace_unavailable"},
+                    "evidence": {
+                        "reason": "target_process_not_verified" if unverified_cnext_pid else "cnext_pid_or_workspace_unavailable"
+                    },
                 }
 
             # L4: Honest boundary — no public uninstrumented probe in B28
             l4_res = {
                 "level": "L4",
-                "status": "UNKNOWN" if detected_cnext_pid else "NOT_RUN",
+                "status": "UNKNOWN" if effective_pid else "NOT_RUN",
                 "check": "addin_runtime_registration",
                 "evidence": {
                     "reason": "no_runtime_hook_in_b28",
@@ -980,14 +1008,15 @@ def start_catia_runtime(
                     highest_verified = lvl
                     break
 
-            if detected_cnext_pid:
+            if effective_pid:
                 runtime_result = {
                     "status": "started",
-                    "message": "CATIA started successfully",
-                    "pid": detected_cnext_pid,
+                    "message": "CATIA started successfully" if detected_cnext_pid else "CATIA process detected (unverified correlation)",
+                    "pid": effective_pid,
                     "timestamp": start_time.isoformat(),
                     "runtime_view_present": runtime_view_present,
-                    "runtime_view_mounted": runtime_view_present,  # legacy alias
+                    "runtime_view_mounted": runtime_view_present,  # deprecated alias
+                    "runtime_view_mounted_deprecated_notice": "runtime_view_mounted only asserts candidate directory presence. Refer to runtime_verification.levels for L0-L5 layered evidence.",
                     "runtime_verification": {
                         "highest_verified_level": highest_verified,
                         "levels": levels,

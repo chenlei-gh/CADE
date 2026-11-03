@@ -94,13 +94,25 @@ with tempfile.TemporaryDirectory(prefix="cade_l1_") as tmp_dir:
     ck("L1 FAIL on 0-byte assets", res_zero["status"] == "FAIL", f"got {res_zero['status']}")
 
     # Populate valid assets -> PASS
+    # Minimal valid Windows PE: MZ header + e_lfanew pointing to PE\0\0
+    import struct
+    pe_header = b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x40) + b"PE\x00\x00" + b"\x00" * 16
     valid_dll = bin_dir / "MyModule.dll"
-    valid_dll.write_bytes(b"MZ_DUMMY_BINARY_DATA")
+    valid_dll.write_bytes(pe_header)
     valid_dico = dico_dir / "MyModule.dico"
-    valid_dico.write_bytes(b"MyClass CATIInterface libMyModule")
+    valid_dico.write_bytes(b"MyClass CATIInterface libMyModule\n")
 
     res_valid = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
     ck("L1 PASS on valid target module assets", res_valid["status"] == "PASS", f"got {res_valid['status']}")
+    ck("L1 reports valid PE count in assets", res_valid["evidence"]["assets"]["dll"]["valid_pe_count"] == 1)
+    ck("L1 reports valid DICO syntax in assets", res_valid["evidence"]["assets"]["dico"]["valid_syntax"] is True)
+
+    # Invalidate PE header (non-PE DLL) -> FAIL
+    valid_dll.write_bytes(b"NON_PE_CORRUPT_BYTES_DATA")
+    res_corrupt_pe = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("L1 FAIL when DLL fails PE format validation", res_corrupt_pe["status"] == "FAIL", f"got {res_corrupt_pe['status']}")
+    # Restore valid PE
+    valid_dll.write_bytes(pe_header)
 
     res_mismatch = check_runtime_view_l1(ws, architecture="win_b64", target_module="NonExistentModule.m")
     ck("L1 FAIL when target module DLL missing", res_mismatch["status"] == "FAIL", f"got {res_mismatch['status']}")
@@ -149,6 +161,19 @@ with patch("run.get_processes_snapshot_win32", return_value=fake_snapshot_time),
     st, pid, ev = identify_target_cnext(launcher_pid=9999, t_start=t_now)
     ck("L2 marks AMBIGUOUS when multiple instances cannot disambiguate", st == "AMBIGUOUS", f"status={st}")
 
+# Case D: R-02 Fix — Single global instance WITHOUT tree or time correlation must be UNKNOWN, NEVER PASS
+fake_single_unverified = [
+    {"pid": 7001, "parent_pid": 1, "name": "CNEXT.exe"},
+]
+with patch("run.get_processes_snapshot_win32", return_value=fake_single_unverified), \
+     patch("run.get_process_creation_time_win32", return_value=None):
+    st_single, pid_single, ev_single = identify_target_cnext(launcher_pid=9999, t_start=None)
+    ck("R-02: Single global instance without correlation returns UNKNOWN, never PASS",
+       st_single == "UNKNOWN" and pid_single == 7001,
+       f"status={st_single}, pid={pid_single}")
+    ck("R-02: Method recorded as single_global_instance_unverified",
+       ev_single.get("identification_method") == "single_global_instance_unverified")
+
 
 # ── 4. L3 Module Loaded Verification ───────────────────────────
 print("\n[4] L3: Target Module Loaded Exact Path")
@@ -188,8 +213,10 @@ with tempfile.TemporaryDirectory(prefix="cade_full_rt_") as tmp_dir:
     dic_p = rt_win / "code" / "dictionary"
     bin_p.mkdir(parents=True)
     dic_p.mkdir(parents=True)
-    (bin_p / "TestModule.dll").write_bytes(b"DLL_CONTENT")
-    (dic_p / "TestModule.dico").write_bytes(b"DICO_CONTENT")
+    import struct
+    pe_bytes = b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x40) + b"PE\x00\x00" + b"\x00" * 16
+    (bin_p / "TestModule.dll").write_bytes(pe_bytes)
+    (dic_p / "TestModule.dico").write_bytes(b"TestClass CATIInterface libTestModule\n")
 
     mock_loaded = [str(bin_p / "TestModule.dll")]
 
@@ -231,6 +258,29 @@ with tempfile.TemporaryDirectory(prefix="cade_full_rt_") as tmp_dir:
 
         ck("Highest verified level is L3", verif.get("highest_verified_level") == "L3",
            f"got {verif.get('highest_verified_level')}")
+        ck("Deprecated alias notice present", "runtime_view_mounted_deprecated_notice" in result)
+
+    # R-04: Test start_catia_runtime without target_module: L3 MUST be NOT_RUN, never pick arbitrary first DLL
+    with patch("subprocess.Popen") as mock_popen, \
+         patch("run.identify_target_cnext", return_value=("PASS", 8888, {"identification_method": "mock_test"})), \
+         patch("run.get_process_loaded_modules", return_value=mock_loaded), \
+         patch("run.stop_catia"), \
+         patch("run.check_process_running", return_value=[]):
+
+        mock_proc = mock_popen.return_value
+        mock_proc.pid = 7777
+
+        result_no_mod = start_catia_runtime(
+            workspace_path=str(ws),
+            target_module=None,  # omitted
+            wait_for_exit=False,
+        )
+        l3_no_mod = result_no_mod.get("runtime_verification", {}).get("levels", {}).get("L3", {})
+        ck("R-04: L3 is NOT_RUN when target_module is omitted",
+           l3_no_mod.get("status") == "NOT_RUN",
+           f"status={l3_no_mod.get('status')}")
+        ck("R-04: L3 reason explains target_module_not_specified",
+           l3_no_mod.get("evidence", {}).get("reason") == "target_module_not_specified")
 
 
 print("\n" + "=" * 70)

@@ -83,6 +83,9 @@ class TypedRequirement:
     user_explicit_type: Optional[str] = None  # CreateCommand | CreateDialog | ... (word-level explicit)
     ambiguity_state: str = "UNKNOWN"     # CLEAR | AMBIGUOUS | UNKNOWN
     recommended_intent_type: Optional[str] = None
+    candidate_interfaces: List[str] = field(default_factory=list)
+    matched_domains: List[str] = field(default_factory=list)
+    is_multi_domain: bool = False
     notes: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -94,6 +97,9 @@ class TypedRequirement:
             "user_explicit_type": self.user_explicit_type,
             "ambiguity_state": self.ambiguity_state,
             "recommended_intent_type": self.recommended_intent_type,
+            "candidate_interfaces": self.candidate_interfaces,
+            "matched_domains": self.matched_domains,
+            "is_multi_domain": self.is_multi_domain,
             "notes": self.notes,
         }
 
@@ -191,8 +197,11 @@ class RequirementsClarifier:
 
         request_lower = request.lower()
 
-        # Step 1: Detect domain
-        domain = self._detect_domain(request_lower)
+        # Step 1: Detect domain(s)
+        matched_domains_scored = self._detect_domains(request_lower)
+        matched_domains = [d for d, _ in matched_domains_scored]
+        is_multi_domain = len(matched_domains) > 1
+        domain = matched_domains[0] if matched_domains else "general"
 
         # Step 2: Detect goal
         goal = self._detect_goal(request_lower)
@@ -213,10 +222,14 @@ class RequirementsClarifier:
             resolved, unresolved = self._clarify_ui(request_lower)
 
         # Step 4: Build TypedRequirement bridging business domain to CAA constructs
-        typed_req = self._build_typed_requirement(request, domain, goal)
+        typed_req = self._build_typed_requirement(
+            request, domain, goal,
+            matched_domains=matched_domains,
+            is_multi_domain=is_multi_domain,
+        )
 
-        # If the request is already clear enough
-        if self._is_clear_command(request_lower):
+        # If the request is already clear enough with clear construct mapping
+        if self._is_clear_command(request_lower) and typed_req.ambiguity_state == "CLEAR":
             return ClarificationResult(
                 status="ok",
                 domain=domain,
@@ -234,11 +247,29 @@ class RequirementsClarifier:
         resolved.update(ui_result.resolved)
         unresolved.extend(ui_result.unresolved)
 
+        # Provide candidate paths when ambiguity remains and no decisions are open
+        if not unresolved and typed_req.ambiguity_state in ("UNKNOWN", "AMBIGUOUS"):
+            if typed_req.ambiguity_state == "UNKNOWN":
+                unresolved.append(Decision(
+                    id="construct_intent",
+                    question=f"无法从输入推断目标 CAA 构件或操作类型: '{request}'。请澄清目标实现形式：",
+                    options=["CreateCommand (创建独立命令)", "CreateExtension (扩展已有对象)", "CreateDialog (创建对话框界面)", "CreateFeature (创建特征定义)"],
+                    default="CreateCommand (创建独立命令)",
+                ))
+            elif typed_req.ambiguity_state == "AMBIGUOUS":
+                unresolved.append(Decision(
+                    id="action_intent",
+                    question=f"请求所属领域为 [{domain}]，但未指定具体动作或构件形式。请选择拟实施路径：",
+                    options=["CreateCommand (创建领域操作命令)", "CreateExtension (实现领域接口扩展)"],
+                    default="CreateCommand (创建领域操作命令)",
+                ))
+
         # Limit unresolved questions
         unresolved = unresolved[:self.MAX_QUESTIONS]
 
-        if unresolved:
+        if unresolved or typed_req.ambiguity_state in ("UNKNOWN", "AMBIGUOUS"):
             return ClarificationResult(
+                status="needs_clarification",
                 domain=domain,
                 goal=goal,
                 resolved=resolved,
@@ -257,8 +288,8 @@ class RequirementsClarifier:
 
     # ─── Domain Detection ──────────────────────────────────────
 
-    def _detect_domain(self, request: str) -> str:
-        """Detect CAA domain from request keywords"""
+    def _detect_domains(self, request: str) -> List[Tuple[str, int]]:
+        """Detect all matched CAA domains with scores, sorted descending."""
         scores = {}
         for domain, keywords in self.DOMAIN_KEYWORDS.items():
             score = sum(1 for kw in keywords if kw in request)
@@ -266,9 +297,17 @@ class RequirementsClarifier:
                 scores[domain] = score
 
         if not scores:
-            return "general"
+            return []
 
-        return max(scores, key=scores.get)
+        # Sort by score descending
+        return sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+    def _detect_domain(self, request: str) -> str:
+        """Detect primary CAA domain from request keywords"""
+        scored = self._detect_domains(request)
+        if not scored:
+            return "general"
+        return scored[0][0]
 
     def _detect_goal(self, request: str) -> str:
         """Extract the primary goal from the request"""
@@ -289,7 +328,14 @@ class RequirementsClarifier:
                 return goal
         return request[:50]  # truncate
 
-    def _build_typed_requirement(self, request: str, domain: str, goal: str) -> TypedRequirement:
+    def _build_typed_requirement(
+        self,
+        request: str,
+        domain: str,
+        goal: str,
+        matched_domains: Optional[List[str]] = None,
+        is_multi_domain: bool = False,
+    ) -> TypedRequirement:
         """Construct TypedRequirement from request, domain, and goal."""
         req_lower = request.lower()
 
@@ -324,7 +370,40 @@ class RequirementsClarifier:
         typed = TypedRequirement(
             domain=domain,
             user_explicit_type=user_explicit,
+            matched_domains=matched_domains or ([domain] if domain != "general" else []),
+            is_multi_domain=is_multi_domain,
         )
+
+        if is_multi_domain and matched_domains:
+            typed.notes.append(f"Multiple domains detected: {matched_domains}")
+
+        # 2. Enrich semantic domain attributes
+        if domain == "visualization":
+            typed.behavior_aspect = "visualization"
+            typed.target_entity = "feature" if ("feature" in req_lower or "特征" in req_lower) else "component"
+            typed.extension_point = "interface_implementation"
+            typed.candidate_interfaces = ["CATIVisu", "CATI3DGeoVisu"]
+            typed.notes.append("Domain visualization maps to extension implementing CATIVisu")
+        elif domain == "notification":
+            typed.behavior_aspect = "event_listening"
+            typed.target_entity = "document" if any(k in req_lower for k in ("document", "product", "文档", "结构", "装配")) else "component"
+            typed.extension_point = "interface_implementation"
+            typed.candidate_interfaces = ["CATIModelEvents", "CATIEventSubscriber"]
+            typed.notes.append("Domain notification maps to event callback/listener extension")
+        elif domain == "knowledge":
+            typed.behavior_aspect = "attribute"
+            typed.target_entity = "feature"
+            typed.extension_point = "interface_implementation"
+            typed.candidate_interfaces = ["CATIValue", "CATIParmPublisher"]
+            typed.notes.append("Domain knowledge maps to attribute/parameter extension")
+        elif domain == "ui":
+            typed.behavior_aspect = "interaction"
+            typed.extension_point = "dialog_ui" if any(k in req_lower for k in ("dialog", "对话框", "界面")) else "command_action"
+            typed.candidate_interfaces = ["CATDlgDialog"] if typed.extension_point == "dialog_ui" else ["CATCommand"]
+        elif domain in ("product", "part", "drawing", "surface"):
+            if any(k in req_lower for k in ("export", "导出", "统计", "statistic", "check", "检查", "analyze", "分析", "生成", "计算")):
+                typed.behavior_aspect = "interaction"
+                typed.extension_point = "command_action"
 
         if user_explicit:
             typed.ambiguity_state = "CLEAR"
@@ -332,42 +411,24 @@ class RequirementsClarifier:
             typed.notes.append(f"Explicit construct keyword matched: {user_explicit}")
             return typed
 
-        # 2. Derive typed requirement based on domain and behavioral aspects
+        # 3. Domain-driven Typed Requirement inference (when user did NOT specify a construct)
         if domain == "visualization":
-            typed.behavior_aspect = "visualization"
-            typed.target_entity = "feature" if any(k in req_lower for k in ("feature", "hole", "特征", "孔", "面", "圆角")) else "component"
-            typed.extension_point = "interface_implementation"
             typed.recommended_intent_type = "CreateExtension"
             typed.ambiguity_state = "CLEAR"
-            typed.notes.append("Domain visualization maps to extension implementing CATIVisu")
         elif domain == "notification":
-            typed.behavior_aspect = "event_listening"
-            typed.target_entity = "document" if any(k in req_lower for k in ("document", "product", "文档", "结构", "装配")) else "component"
-            typed.extension_point = "interface_implementation"
             typed.recommended_intent_type = "CreateExtension"
             typed.ambiguity_state = "CLEAR"
-            typed.notes.append("Domain notification maps to event callback/listener extension")
         elif domain == "knowledge":
-            typed.behavior_aspect = "attribute"
-            typed.target_entity = "feature"
-            typed.extension_point = "interface_implementation"
             if any(k in req_lower for k in ("创建特征", "新建特征", "create feature", "make feature")):
                 typed.recommended_intent_type = "CreateFeature"
-                typed.notes.append("Domain knowledge with feature creation context maps to CreateFeature")
             else:
                 typed.recommended_intent_type = "CreateExtension"
-                typed.notes.append("Domain knowledge with attribute/parameter context maps to CreateExtension")
             typed.ambiguity_state = "CLEAR"
         elif domain == "ui":
-            typed.behavior_aspect = "interaction"
-            typed.extension_point = "dialog_ui" if any(k in req_lower for k in ("dialog", "对话框", "界面")) else "command_action"
             typed.recommended_intent_type = "CreateDialog" if typed.extension_point == "dialog_ui" else "CreateCommand"
             typed.ambiguity_state = "CLEAR"
         elif domain in ("product", "part", "drawing", "surface"):
-            # Action verbs that indicate a standalone user command
-            if any(k in req_lower for k in ("export", "导出", "统计", "statistic", "check", "检查", "analyze", "分析", "生成", "计算")):
-                typed.behavior_aspect = "interaction"
-                typed.extension_point = "command_action"
+            if typed.behavior_aspect == "interaction":
                 typed.recommended_intent_type = "CreateCommand"
                 typed.ambiguity_state = "CLEAR"
             else:

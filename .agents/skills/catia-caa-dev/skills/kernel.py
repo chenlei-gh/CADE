@@ -293,9 +293,15 @@ class Kernel:
         Returns:
             dict with keys: status, mode, message, + mode-specific data
         """
+        if isinstance(mode, str):
+            try:
+                mode = KernelMode(mode.lower())
+            except ValueError:
+                pass
+
         if not request or not request.strip():
             return KernelResult(
-                status="error", mode=mode.value,
+                status="error", mode=mode.value if hasattr(mode, "value") else str(mode),
                 message="Empty request — please provide a description of what you want to do.",
             ).to_dict()
 
@@ -425,6 +431,7 @@ class Kernel:
             clarification = clarifier.analyze(request)
 
             if hasattr(clarification, 'status') and clarification.status == "needs_clarification":
+                self._state = KernelState.CLARIFYING
                 return KernelResult(
                     status="needs_clarification", mode="develop",
                     state=self._state.value,
@@ -450,6 +457,22 @@ class Kernel:
         plan = self._build_develop_plan(request, clarification=clarification)
 
         if plan is None:
+            # Fall back to needs_clarification if intent is ambiguous or unknown (R-01)
+            typed_req = getattr(clarification, 'typed_requirement', None) if clarification else None
+            if typed_req and typed_req.ambiguity_state in ("UNKNOWN", "AMBIGUOUS"):
+                self._state = KernelState.CLARIFYING
+                candidates = ["CreateCommand", "CreateExtension", "CreateDialog", "CreateFeature"]
+                return KernelResult(
+                    status="needs_clarification", mode="develop", state=self._state.value,
+                    message=f"Ambiguous or unknown intent for: '{request}'. Please clarify target construct type.",
+                    data={
+                        "clarification": clarification.to_dict() if clarification else {},
+                        "candidate_constructs": candidates,
+                        "ambiguity_state": typed_req.ambiguity_state,
+                        "notes": typed_req.notes,
+                    },
+                ).to_dict()
+
             self._state = KernelState.FAILED
             return KernelResult(
                 status="error", mode="develop", state=self._state.value,
@@ -931,11 +954,24 @@ class Kernel:
             except Exception:
                 pass
 
+        intent_params = {}
+        if typed_req:
+            intent_params.update({
+                "target_entity": getattr(typed_req, "target_entity", "unknown"),
+                "behavior_aspect": getattr(typed_req, "behavior_aspect", "unknown"),
+                "extension_point": getattr(typed_req, "extension_point", "unknown"),
+                "candidate_interfaces": getattr(typed_req, "candidate_interfaces", []),
+                "matched_domains": getattr(typed_req, "matched_domains", []),
+                "is_multi_domain": getattr(typed_req, "is_multi_domain", False),
+            })
+
         intent = Intent(
             type=itype,
             name=name,
             module=(module or "MyModule") + ("" if (module or "").endswith(".m") else ".m"),
             framework=framework or "MyFramework",
+            params=intent_params,
+            requirements=typed_req.to_dict() if (typed_req and hasattr(typed_req, "to_dict")) else None,
         )
 
         # Plan
@@ -946,9 +982,15 @@ class Kernel:
                 "intent": intent.to_dict(),
                 "plan": plan.to_dict() if plan else {},
                 "steps": len(plan.steps) if plan and hasattr(plan, 'steps') else 0,
+                "typed_requirement": typed_req.to_dict() if (typed_req and hasattr(typed_req, "to_dict")) else None,
             }
         except Exception:
-            return {"intent": intent.to_dict(), "plan": {}, "steps": 0}
+            return {
+                "intent": intent.to_dict(),
+                "plan": {},
+                "steps": 0,
+                "typed_requirement": typed_req.to_dict() if (typed_req and hasattr(typed_req, "to_dict")) else None,
+            }
 
     def _determine_evidence_demand(self, plan: dict, request: str) -> str:
         """Determine knowledge evidence demand for DEVELOP pipeline.

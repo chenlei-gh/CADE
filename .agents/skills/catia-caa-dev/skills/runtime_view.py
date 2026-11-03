@@ -308,6 +308,51 @@ def check_runtime_view_l0(workspace_path: Path, architecture: str = None) -> dic
     }
 
 
+def _verify_pe_file(path: Path) -> bool:
+    """Verify that a file has basic valid Windows PE header (MZ + PE signature)."""
+    try:
+        if not path.is_file() or path.stat().st_size < 0x40:
+            return False
+        with open(path, "rb") as f:
+            header = f.read(0x40)
+            if len(header) < 0x40 or header[:2] != b"MZ":
+                return False
+            import struct
+            pe_offset = struct.unpack_from("<I", header, 0x3C)[0]
+            if pe_offset <= 0 or pe_offset > path.stat().st_size - 4:
+                return False
+            f.seek(pe_offset)
+            pe_sig = f.read(4)
+            return pe_sig == b"PE\x00\x00"
+    except Exception:
+        return False
+
+
+def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
+    """Validate CAA .dico file syntax (triplet entries) and target module linkage."""
+    entries_count = 0
+    mentions_target = False
+    norm_mod = (target_module[:-2] if target_module.endswith(".m") else target_module).lower() if target_module else None
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 3:
+                    entries_count += 1
+                    if norm_mod and any(norm_mod in p.lower() for p in parts[2:]):
+                        mentions_target = True
+    except Exception:
+        pass
+    return {
+        "valid_syntax": entries_count > 0,
+        "entry_count": entries_count,
+        "mentions_target_module": mentions_target if target_module else None,
+    }
+
+
 def check_runtime_view_l1(
     workspace_path: Path, architecture: str = None, target_module: str = None
 ) -> dict:
@@ -329,15 +374,21 @@ def check_runtime_view_l1(
     dico_dir = arch_dir / "code" / "dictionary"
     msg_dir = arch_dir / "resources" / "msgcatalog"
 
-    # Scan DLLs
+    # Scan DLLs & verify PE format
     dll_files = []
+    pe_valid_dlls = []
     if bin_dir.is_dir():
         dll_files = [f for f in bin_dir.glob("*.dll") if f.is_file() and f.stat().st_size > 0]
+        pe_valid_dlls = [f for f in dll_files if _verify_pe_file(f)]
 
-    # Scan DICOs
+    # Scan DICOs & verify syntax
     dico_files = []
+    dico_reports = []
     if dico_dir.is_dir():
         dico_files = [f for f in dico_dir.glob("*.dico") if f.is_file() and f.stat().st_size > 0]
+        for df in dico_files:
+            rep = _verify_dico_syntax(df, target_module=target_module)
+            dico_reports.append({"file": df.name, **rep})
 
     # Scan MsgCatalogs
     nls_files = []
@@ -346,16 +397,24 @@ def check_runtime_view_l1(
 
     # Target module check if requested
     target_dll_found = False
+    target_dll_valid_pe = False
     if target_module:
         norm_mod = target_module[:-2] if target_module.endswith(".m") else target_module
         expected_dll_name = f"{norm_mod}.dll".lower()
-        target_dll_found = any(f.name.lower() == expected_dll_name for f in dll_files)
+        for f in dll_files:
+            if f.name.lower() == expected_dll_name:
+                target_dll_found = True
+                target_dll_valid_pe = _verify_pe_file(f)
+                break
+
+    # Syntax validity of DICOs
+    any_valid_dico = any(r["valid_syntax"] for r in dico_reports)
 
     # Evaluation
     if target_module:
-        passed = target_dll_found and len(dico_files) > 0
+        passed = target_dll_found and target_dll_valid_pe and any_valid_dico
     else:
-        passed = len(dll_files) > 0 and len(dico_files) > 0
+        passed = len(pe_valid_dlls) > 0 and any_valid_dico
 
     return {
         "level": "L1",
@@ -364,11 +423,31 @@ def check_runtime_view_l1(
         "evidence": {
             "target_module": target_module,
             "target_dll_found": target_dll_found if target_module else None,
+            "target_dll_valid_pe": target_dll_valid_pe if target_module else None,
             "dll_count": len(dll_files),
+            "pe_valid_dll_count": len(pe_valid_dlls),
             "dico_count": len(dico_files),
+            "dico_reports": dico_reports,
             "nls_count": len(nls_files),
             "bin_dir_exists": bin_dir.is_dir(),
             "dico_dir_exists": dico_dir.is_dir(),
+            "assets": {
+                "dll": {
+                    "count": len(dll_files),
+                    "valid_pe_count": len(pe_valid_dlls),
+                    "target_found": target_dll_found if target_module else None,
+                    "target_valid_pe": target_dll_valid_pe if target_module else None,
+                },
+                "dico": {
+                    "count": len(dico_files),
+                    "valid_syntax": any_valid_dico,
+                    "reports": dico_reports,
+                },
+                "nls": {
+                    "count": len(nls_files),
+                    "present": len(nls_files) > 0,
+                },
+            },
             "scope": "asset_filesystem_integrity_check",
         },
     }
