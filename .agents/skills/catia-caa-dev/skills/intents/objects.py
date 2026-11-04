@@ -630,7 +630,7 @@ def create_extension(
             "second definition would silently drop the module's own libraries."
         )
     next_steps.append(
-        "L4 add-in registration remains UNKNOWN. L5 command verification remains NOT_RUN."
+        "L4 Object Modeler dictionary resolution / extension activation remains UNKNOWN. L5 visual verification remains NOT_RUN."
     )
     if prereq_state == "DECLARED":
         next_steps.append(

@@ -1019,7 +1019,7 @@ def start_catia_runtime(
                 "L1": l1_res,
                 "L2": {"level": "L2", "status": "NOT_RUN", "check": "target_process_identity", "evidence": {"reason": "process_already_exited"}},
                 "L3": {"level": "L3", "status": "NOT_RUN", "check": "module_loaded_exact_path", "evidence": {"reason": "process_already_exited"}},
-                "L4": {"level": "L4", "status": "NOT_RUN", "check": "addin_runtime_registration", "evidence": {"reason": "process_already_exited"}},
+                "L4": {"level": "L4", "status": "NOT_RUN", "check": "object_modeler_dictionary_resolution_and_extension_activation", "evidence": {"reason": "process_already_exited"}},
                 "L5": {"level": "L5", "status": "NOT_RUN", "check": "functional_verification", "evidence": {"reason": "process_already_exited"}},
             }
             highest_verified = "L1" if l1_res["status"] == "PASS" else ("L0" if l0_res["status"] == "PASS" else "NONE")
@@ -1184,10 +1184,10 @@ def start_catia_runtime(
             l4_res = {
                 "level": "L4",
                 "status": "UNKNOWN" if (effective_pid and l2_status in ("PASS", "UNKNOWN")) else "NOT_RUN",
-                "check": "addin_runtime_registration",
+                "check": "object_modeler_dictionary_resolution_and_extension_activation",
                 "evidence": {
                     "reason": "no_runtime_hook_in_b28",
-                    "note": "CAA V5 B28 provides no public uninstrumented probe for dictionary activation",
+                    "note": "CAA V5 B28 provides no public uninstrumented probe for Object Modeler dictionary resolution and extension activation",
                 },
             }
 

@@ -554,6 +554,22 @@ with tempfile.TemporaryDirectory() as td_e2e:
 
     e2e_kernel = Kernel(workspace_root=str(e2e_ws))
     plan_a = e2e_kernel._build_develop_plan(req_a, clarification=clar_a)
+
+    # Intermediate parameter passing assertions (Intent & Plan steps)
+    intent_a = plan_a.get("intent", {})
+    intent_params_a = intent_a.get("params", {})
+    step_ext_a = next(s for s in plan_a.get("plan", {}).get("steps", []) if s.get("action") == "create_extension")
+    step_params_a = step_ext_a.get("params", {})
+
+    ck("R-05-A E2E: Intent.params carries target_late_type=CAAMmrMeasureSet",
+       intent_params_a.get("target_late_type") == "CAAMmrMeasureSet", f"got {intent_params_a.get('target_late_type')}")
+    ck("R-05-A E2E: Intent.params carries target_entity=feature separately",
+       intent_params_a.get("target_entity") == "feature", f"got {intent_params_a.get('target_entity')}")
+    ck("R-05-A E2E: Plan step params carries target_object=CAAMmrMeasureSet",
+       step_params_a.get("target_object") == "CAAMmrMeasureSet", f"got {step_params_a.get('target_object')}")
+    ck("R-05-A E2E: Plan step params carries target_late_type=CAAMmrMeasureSet",
+       step_params_a.get("target_late_type") == "CAAMmrMeasureSet", f"got {step_params_a.get('target_late_type')}")
+
     exec_a = e2e_kernel._execute_develop_plan(plan_a)
 
     ck("R-05-A E2E: develop plan execution succeeds", exec_a.get("status") in ("ok", "pending"))
@@ -600,6 +616,36 @@ with tempfile.TemporaryDirectory() as td_e2e:
        exec_b.get("status") == "error", f"status={exec_b.get('status')}")
     ck("R-05-A E2E: error message explicitly explains late type requirement",
        "target_object must be the late type" in str(exec_b.get("message", "")))
+
+    # Case C: Public Entry Point e2e_kernel.execute(KernelMode.DEVELOP, ...)
+    mod2_cs = create_module(e2e_ctx, framework_name="AcceptanceFw.edu", module_name="AcceptanceMod2")
+    ChangeSet.from_dict(mod2_cs["changeset"]).apply(workspace_root=e2e_ws)
+    e2e_ctx.refresh(force=True)
+    if e2e_kernel._action_context:
+        e2e_kernel._action_context.refresh(force=True)
+
+    # C1. Public Entry with real component: succeeds through entire Kernel lifecycle
+    req_c1 = "在 AcceptanceFw 框架的 AcceptanceMod2 模块中为 CAAMmrMeasureSet 特征实现 CATIVisu 可视化扩展"
+    pub_res_c1 = e2e_kernel.execute(KernelMode.DEVELOP, req_c1)
+    ck("R-05-A Public Entry: execute(KernelMode.DEVELOP) returns status=ok",
+       pub_res_c1.get("status") == "ok", f"status={pub_res_c1.get('status')} msg={pub_res_c1.get('message')}")
+    
+    cpp_c1 = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "src" / "MyVisuExtension.cpp"
+    dico_c1 = e2e_ws / "AcceptanceFw.edu" / "CNext" / "code" / "dictionary" / "AcceptanceFw.dico"
+    ck("R-05-A Public Entry: C++ file generated via public entry point exists", cpp_c1.exists())
+    ck("R-05-A Public Entry: DICO contains CAAMmrMeasureSet via public entry",
+       "CAAMmrMeasureSet CATI3DGeoVisu libAcceptanceMod2" in (dico_c1.read_text(encoding="utf-8") if dico_c1.exists() else ""))
+
+    # C2. Public Entry with generic category: gated at clarification level
+    req_c2 = "在 AcceptanceFw 框架的 AcceptanceMod2 模块中为 feature 特征实现 CATIVisu 可视化扩展"
+    pub_res_c2 = e2e_kernel.execute(KernelMode.DEVELOP, req_c2)
+    ck("R-05-A Public Entry: category request gated as needs_clarification",
+       pub_res_c2.get("status") == "needs_clarification", f"status={pub_res_c2.get('status')}")
+    # Inspect clarification gate payload
+    gate_data = pub_res_c2.get("data", {})
+    ck("R-05-A Public Entry: clarification payload flags ambiguous target_late_type",
+       gate_data.get("target_late_type_state") == "AMBIGUOUS" or "target_late_type" in str(gate_data),
+       f"gate_data_keys={list(gate_data.keys())}")
 
 
 # ── 5. Multi-Domain Detection & Disambiguation (R-06) ───────────
