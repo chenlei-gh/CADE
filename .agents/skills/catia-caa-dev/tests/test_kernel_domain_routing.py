@@ -682,9 +682,10 @@ with tempfile.TemporaryDirectory() as td_e2e:
         ck("R-05-A Public Entry: manifest modified list exactly equals applied changeset modified files",
            set(modified_paths) == set(applied_modified),
            f"manifest_modified={modified_paths} vs applied_modified={applied_modified}")
-        cs_action = apply_res.get("action", mf_obj.get("action"))
+        ck("R-05-A Public Entry: apply_result independently provides action create_extension",
+           apply_res.get("action") == "create_extension")
         ck("R-05-A Public Entry: manifest action matches applied changeset action",
-           mf_obj.get("action") == cs_action and mf_obj.get("action") == "create_extension")
+           mf_obj.get("action") == apply_res.get("action"))
 
     cpp_c1 = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "src" / "MyVisuExtension.cpp"
     h_c1 = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "LocalInterfaces" / "MyVisuExtension.h"
