@@ -629,10 +629,24 @@ with tempfile.TemporaryDirectory() as td_e2e:
     pub_res_c1 = e2e_kernel.execute(KernelMode.DEVELOP, req_c1)
     ck("R-05-A Public Entry: execute(KernelMode.DEVELOP) returns status=ok",
        pub_res_c1.get("status") == "ok", f"status={pub_res_c1.get('status')} msg={pub_res_c1.get('message')}")
-    
+    ck("R-05-A Public Entry: rollback_id generated and recorded",
+       bool(pub_res_c1.get("data", {}).get("rollback_id") or "rollback_id" in str(pub_res_c1.get("message", ""))))
+
     cpp_c1 = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "src" / "MyVisuExtension.cpp"
+    h_c1 = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "LocalInterfaces" / "MyVisuExtension.h"
     dico_c1 = e2e_ws / "AcceptanceFw.edu" / "CNext" / "code" / "dictionary" / "AcceptanceFw.dico"
     ck("R-05-A Public Entry: C++ file generated via public entry point exists", cpp_c1.exists())
+    ck("R-05-A Public Entry: Header file generated via public entry point exists", h_c1.exists())
+    
+    cpp_text_c1 = cpp_c1.read_text(encoding="utf-8") if cpp_c1.exists() else ""
+    h_text_c1 = h_c1.read_text(encoding="utf-8") if h_c1.exists() else ""
+    ck("R-05-A Public Entry: C++ file binds TIE_CATI3DGeoVisu and real late type CAAMmrMeasureSet",
+       "TIE_CATI3DGeoVisu(MyVisuExtension);" in cpp_text_c1 and
+       "CATImplementClass(MyVisuExtension, DataExtension, CATExtIVisu, CAAMmrMeasureSet);" in cpp_text_c1)
+    ck("R-05-A Public Entry: C++ file implements BuildRep",
+       "BuildRep" in cpp_text_c1)
+    ck("R-05-A Public Entry: Header inherits CATExtIVisu",
+       "public CATExtIVisu" in h_text_c1)
     ck("R-05-A Public Entry: DICO contains CAAMmrMeasureSet via public entry",
        "CAAMmrMeasureSet CATI3DGeoVisu libAcceptanceMod2" in (dico_c1.read_text(encoding="utf-8") if dico_c1.exists() else ""))
 
@@ -643,9 +657,24 @@ with tempfile.TemporaryDirectory() as td_e2e:
        pub_res_c2.get("status") == "needs_clarification", f"status={pub_res_c2.get('status')}")
     # Inspect clarification gate payload
     gate_data = pub_res_c2.get("data", {})
-    ck("R-05-A Public Entry: clarification payload flags ambiguous target_late_type",
-       gate_data.get("target_late_type_state") == "AMBIGUOUS" or "target_late_type" in str(gate_data),
-       f"gate_data_keys={list(gate_data.keys())}")
+    tr_c2 = gate_data.get("typed_requirement", {})
+    c2_late_type_state = (tr_c2.get("target_late_type_state") if isinstance(tr_c2, dict)
+                          else getattr(tr_c2, "target_late_type_state", None)) or gate_data.get("target_late_type_state")
+    ck("R-05-A Public Entry: clarification payload strictly flags target_late_type_state=AMBIGUOUS",
+       c2_late_type_state == "AMBIGUOUS", f"state={c2_late_type_state}")
+    
+    questions = gate_data.get("questions", [])
+    has_late_type_question = any(q.get("id") == "target_late_type" for q in questions if isinstance(q, dict))
+    ck("R-05-A Public Entry: clarification asks user for real target_late_type with options",
+       has_late_type_question)
+    
+    # Assert that NO invalid code or DICO entries were emitted for generic category
+    c2_stray_cpp = list(e2e_ws.glob("**/feature*.cpp")) + list(e2e_ws.glob("**/feature*.h"))
+    ck("R-05-A Public Entry: clarification gate emitted NO stray code files on disk",
+       len(c2_stray_cpp) == 0, f"found stray={c2_stray_cpp}")
+    dico_cur = dico_c1.read_text(encoding="utf-8") if dico_c1.exists() else ""
+    ck("R-05-A Public Entry: DICO never registers generic 'feature' category as late type",
+       "feature CATI" not in dico_cur and "feature CATIVisu" not in dico_cur)
 
 
 # ── 5. Multi-Domain Detection & Disambiguation (R-06) ───────────
