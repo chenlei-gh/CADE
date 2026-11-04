@@ -19,6 +19,7 @@ import sys
 import time
 import tempfile
 import pathlib
+from pathlib import Path
 
 TESTS_DIR = pathlib.Path(__file__).parent
 SKILL_ROOT = TESTS_DIR.parent
@@ -63,18 +64,35 @@ ck("Line B: Official DICO registration verified", uc["parsed_dico"]["parsed"] is
 ck("Line B: Official blueprint fully verified end-to-end", uc["official_blueprint_verified"] is True)
 
 # Negative test for Line B: non-DataExtension blueprint rejection
-uc_fake = dict(uc)
-uc_fake_ast = dict(uc["parsed_cpp_ast"])
-uc_fake_ast["extension_type"] = "CodeExtension"
-blueprint_rejected = not (
-    uc_fake_ast["parsed"]
-    and uc_fake_ast["extension_type"] == "DataExtension"
-    and uc_fake["target_component_verified_from_ast"] == "CAAMmrMeasureSet"
-    and uc_fake["target_interface_verified_from_ast"] == "CATI3DGeoVisu"
-    and uc_fake_ast["base_class"] == "CATExtIVisu"
-    and uc["parsed_dico"]["parsed"]
-)
-ck("Line B: Non-DataExtension AST strictly rejected from blueprint verification", blueprint_rejected is True)
+# Test Level 1: Direct test against pure production method OMActivationDriver.verify_blueprint_contract
+fake_ast_code = dict(uc["parsed_cpp_ast"], extension_type="CodeExtension")
+fake_ast_comp = dict(uc["parsed_cpp_ast"], target_late_type="WrongLateType")
+fake_ast_iface = dict(uc["parsed_cpp_ast"], tie_interface="WrongInterface")
+fake_ast_base = dict(uc["parsed_cpp_ast"], base_class="WrongBaseClass")
+
+ck("Line B: verify_blueprint_contract rejects CodeExtension",
+   OMActivationDriver.verify_blueprint_contract(fake_ast_code, uc["parsed_dico"]) is False)
+ck("Line B: verify_blueprint_contract rejects mismatched component",
+   OMActivationDriver.verify_blueprint_contract(fake_ast_comp, uc["parsed_dico"]) is False)
+ck("Line B: verify_blueprint_contract rejects mismatched interface",
+   OMActivationDriver.verify_blueprint_contract(fake_ast_iface, uc["parsed_dico"]) is False)
+ck("Line B: verify_blueprint_contract rejects mismatched base class",
+   OMActivationDriver.verify_blueprint_contract(fake_ast_base, uc["parsed_dico"]) is False)
+
+# Test Level 2: End-to-end negative test invoking production inspect_official_usecase with overridden source
+with tempfile.TemporaryDirectory() as td:
+    fake_cpp_path = Path(td) / "CAAEMmrFakeVisu.cpp"
+    fake_cpp_path.write_text(
+        '#include "CAAEMmrFakeVisu.h"\n'
+        'CATImplementClass(CAAEMmrFakeVisu, CodeExtension, CATExtIVisu, CAAMmrMeasureSet);\n'
+        'TIE_CATI3DGeoVisu(CAAEMmrFakeVisu);\n',
+        encoding="utf-8"
+    )
+    uc_fake_prod = driver.inspect_official_usecase(cpp_path_override=fake_cpp_path)
+    ck("Line B: Production inspect_official_usecase parses overridden CodeExtension",
+       uc_fake_prod["parsed_cpp_ast"]["extension_type"] == "CodeExtension")
+    ck("Line B: Production inspect_official_usecase strictly rejects CodeExtension blueprint",
+       uc_fake_prod["official_blueprint_verified"] is False)
 
 # ── 2. Line C: Dictionary Conflict Analysis ─────────────────────────
 print("\n[2] System Dictionary Conflict & Precedence Analysis")
@@ -227,6 +245,51 @@ with tempfile.TemporaryDirectory() as td_rt:
     ck("L4: Missing credentials fail-closed to UNKNOWN", ev_l4_no_cred["L4"]["status"] == "UNKNOWN")
     ck("L4: Reason explicitly states missing credentials",
        ev_l4_no_cred["L4"]["evidence"]["reason"] == "missing_mandatory_credentials_nonce_pid_or_session_time")
+
+    # Case G2 (Strict Type Boundary Defense): Reject bool PID (isinstance(True, int) is True)
+    ev_l4_bool_pid = driver.evaluate_layered_evidence(
+        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        expected_nonce=test_nonce, expected_cnext_pid=True, session_start_time=now - 5
+    )
+    ck("L4: bool PID (True) strictly rejected by type guard", ev_l4_bool_pid["L4"]["status"] == "UNKNOWN")
+    ck("L4: bool PID fails credentials_provided",
+       ev_l4_bool_pid["L4"]["evidence"]["probe_contract"]["credentials_provided"] is False)
+
+    # Case G3 (Strict Type Boundary Defense): Reject bool session_start_time
+    ev_l4_bool_time = driver.evaluate_layered_evidence(
+        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=True
+    )
+    ck("L4: bool session_start_time (True) strictly rejected by type guard", ev_l4_bool_time["L4"]["status"] == "UNKNOWN")
+    ck("L4: bool time fails credentials_provided",
+       ev_l4_bool_time["L4"]["evidence"]["probe_contract"]["credentials_provided"] is False)
+
+    # Case G4 (Strict Type Boundary Defense): Reject non-finite session_start_time (inf, nan)
+    import math
+    ev_l4_inf_time = driver.evaluate_layered_evidence(
+        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=float("inf")
+    )
+    ck("L4: inf session_start_time strictly rejected", ev_l4_inf_time["L4"]["status"] == "UNKNOWN")
+
+    ev_l4_nan_time = driver.evaluate_layered_evidence(
+        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=float("nan")
+    )
+    ck("L4: nan session_start_time strictly rejected", ev_l4_nan_time["L4"]["status"] == "UNKNOWN")
+
+    # Case G5 (Strict Value Boundary Defense): Reject non-positive PID and whitespace nonce
+    ev_l4_zero_pid = driver.evaluate_layered_evidence(
+        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        expected_nonce=test_nonce, expected_cnext_pid=0, session_start_time=now - 5
+    )
+    ck("L4: PID=0 strictly rejected", ev_l4_zero_pid["L4"]["status"] == "UNKNOWN")
+
+    ev_l4_blank_nonce = driver.evaluate_layered_evidence(
+        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        expected_nonce="   ", expected_cnext_pid=test_pid, session_start_time=now - 5
+    )
+    ck("L4: whitespace nonce strictly rejected", ev_l4_blank_nonce["L4"]["status"] == "UNKNOWN")
 
     # Case H (Critical Negative): Multi-line splicing attack must NOT pass
     # Three lines each satisfy one condition, but NO single atomic record satisfies all!

@@ -645,11 +645,17 @@ with tempfile.TemporaryDirectory() as td_e2e:
         mf_obj = _json.loads(manifest_path.read_text(encoding="utf-8"))
         ck("R-05-A Public Entry: manifest backup_id matches rollback_id",
            mf_obj.get("backup_id") == rb_id)
-        affected_files = len(mf_obj.get("created", [])) + len(mf_obj.get("modified", []))
-        ck("R-05-A Public Entry: manifest links applied files (>=3 affected files)",
-           affected_files >= 3, f"affected_count={affected_files}")
+        ck("R-05-A Public Entry: manifest metadata records action as create_extension",
+           mf_obj.get("action") == "create_extension")
         
-        # Rigorous check: Manifest created list MUST contain the exact generated files
+        # Verify apply_result status and link to manifest
+        apply_res = pub_res_c1.get("data", {}).get("apply_result", {})
+        ck("R-05-A Public Entry: apply_result status is strictly applied",
+           apply_res.get("status") == "applied")
+        ck("R-05-A Public Entry: apply_result rollback_id matches manifest",
+           apply_res.get("rollback_id") == rb_id)
+
+        # Rigorous check: Manifest created list MUST contain exact generated source & header
         created_paths = [os.path.normpath(p) for p in mf_obj.get("created", [])]
         expected_cpp = os.path.normpath(str(e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "src" / "MyVisuExtension.cpp"))
         expected_h = os.path.normpath(str(e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "LocalInterfaces" / "MyVisuExtension.h"))
@@ -657,6 +663,24 @@ with tempfile.TemporaryDirectory() as td_e2e:
            expected_cpp in created_paths)
         ck("R-05-A Public Entry: manifest accurately records generated header in created list",
            expected_h in created_paths)
+
+        # Rigorous check: Manifest modified list MUST contain updated dictionary and build files
+        modified_paths = [os.path.normpath(p) for p in mf_obj.get("modified", [])]
+        expected_dico = os.path.normpath(str(e2e_ws / "AcceptanceFw.edu" / "CNext" / "code" / "dictionary" / "AcceptanceFw.dico"))
+        expected_imake = os.path.normpath(str(e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "Imakefile.mk"))
+        ck("R-05-A Public Entry: manifest accurately records updated AcceptanceFw.dico in modified list",
+           expected_dico in modified_paths)
+        ck("R-05-A Public Entry: manifest accurately records updated Imakefile.mk in modified list",
+           expected_imake in modified_paths)
+
+        # Exact boundary alignment: verify manifest file set matches applied ChangeSet file set exactly
+        applied_created = [os.path.normpath(p) for p in apply_res.get("created", [])]
+        applied_modified = [os.path.normpath(p) for p in apply_res.get("modified", [])]
+        ck("R-05-A Public Entry: manifest created list exactly equals applied changeset created list",
+           set(created_paths) == set(applied_created),
+           f"manifest_created={created_paths} vs applied_created={applied_created}")
+        ck("R-05-A Public Entry: manifest modified list covers all applied changeset modified files",
+           set(applied_modified).issubset(set(modified_paths)))
 
     cpp_c1 = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "src" / "MyVisuExtension.cpp"
     h_c1 = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "LocalInterfaces" / "MyVisuExtension.h"
@@ -703,12 +727,22 @@ with tempfile.TemporaryDirectory() as td_e2e:
     ck("R-05-A Public Entry: candidate options contain only valid late type strings, never 'feature'",
        all(isinstance(o, str) and len(o) > 0 and o != "feature" for o in c2_options))
     
-    # Rigorous cross-verification: EVERY candidate option must resolve as genuine late type in local index
+    # Rigorous cross-verification Level 1: EVERY candidate option must resolve as genuine late type in local index
     from late_type_resolver import LateTypeResolver
     lt_resolver = LateTypeResolver()
     ck("R-05-A Public Entry: every candidate option exists in genuine local late type index",
        all(lt_resolver.is_known_late_type(o) for o in c2_options),
        f"non_components={[o for o in c2_options if not lt_resolver.is_known_late_type(o)]}")
+
+    # Rigorous cross-verification Level 2: Candidate options MUST have verifiable implementation evidence for requested interface
+    interface_candidates = set(lt_resolver.candidates_for_interface("CATI3DGeoVisu")) | set(lt_resolver.candidates_for_interface("CATIVisu"))
+    ck("R-05-A Public Entry: candidate options are verified implementers of CATI3DGeoVisu or CATIVisu",
+       all(o in interface_candidates for o in c2_options),
+       f"options={c2_options} vs interface_candidates_subset={list(interface_candidates)[:5]}")
+    for opt in c2_options:
+        desc = lt_resolver.describe(opt)
+        ck(f"R-05-A Public Entry: candidate {opt} has verifiable interface mapping evidence",
+           desc.get("is_late_type") is True and len(desc.get("interfaces", [])) > 0)
     
     # Assert that NO invalid code or DICO entries were emitted for generic category
     c2_stray_cpp = list(e2e_ws.glob("**/feature*.cpp")) + list(e2e_ws.glob("**/feature*.h"))

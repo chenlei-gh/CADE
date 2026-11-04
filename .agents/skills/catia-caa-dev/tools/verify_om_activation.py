@@ -14,6 +14,7 @@ import sys
 import re
 import glob
 import json
+import math
 import uuid
 import time
 import argparse
@@ -154,7 +155,42 @@ class OMActivationDriver:
         return analysis
 
     # ── Line B: Official Use Case AST & DICO Parser ───────────────────────
-    def inspect_official_usecase(self) -> Dict[str, Any]:
+    @classmethod
+    def verify_blueprint_contract(
+        cls,
+        parsed_cpp: Dict[str, Any],
+        parsed_dico: Dict[str, Any],
+        target_component: str = "CAAMmrMeasureSet",
+        target_interface: str = "CATI3DGeoVisu",
+        expected_base_class: str = "CATExtIVisu",
+    ) -> bool:
+        """
+        Pure verification function enforcing genuine CAA Object Modeler contract:
+        1. C++ AST was successfully parsed;
+        2. extension_type is strictly 'DataExtension';
+        3. target_late_type matches target_component;
+        4. tie_interface matches target_interface;
+        5. base_class matches expected_base_class;
+        6. DICO contains at least one matching entry mapping (component, interface).
+        """
+        if not parsed_cpp.get("parsed", False):
+            return False
+        if parsed_cpp.get("extension_type") != "DataExtension":
+            return False
+        if parsed_cpp.get("target_late_type") != target_component:
+            return False
+        if parsed_cpp.get("tie_interface") != target_interface:
+            return False
+        if parsed_cpp.get("base_class") != expected_base_class:
+            return False
+        dico_entry_match = len(parsed_dico.get("matching_entries", [])) > 0
+        return bool(dico_entry_match)
+
+    def inspect_official_usecase(
+        self,
+        cpp_path_override: Optional[pathlib.Path] = None,
+        dico_path_override: Optional[pathlib.Path] = None,
+    ) -> Dict[str, Any]:
         """
         Verify the existence and parse genuine Dassault official CAAMechanicalModeler.edu assets:
         - CAAMmrMultiMeasureAndMeasureSet.CATPart (real model containing CAAMmrMeasureSet)
@@ -163,8 +199,8 @@ class OMActivationDriver:
         """
         edu_dir = self.b28_root / "CAADoc" / "CAAMechanicalModeler.edu"
         catpart = edu_dir / "InputData" / "CAAMmrMultiMeasureAndMeasureSet.CATPart"
-        cpp_src = edu_dir / "CAAMmrMultiMeasureAndMeasureSet.m" / "src" / "CAAEMmrMeasureSetVisu.cpp"
-        dico_src = edu_dir / "CAAMechanicalModelerEduRscCNext.m" / "src" / "CNext" / "code" / "dictionary" / "CAAMechanicalModeler.edu.dico"
+        cpp_src = cpp_path_override or (edu_dir / "CAAMmrMultiMeasureAndMeasureSet.m" / "src" / "CAAEMmrMeasureSetVisu.cpp")
+        dico_src = dico_path_override or (edu_dir / "CAAMechanicalModelerEduRscCNext.m" / "src" / "CNext" / "code" / "dictionary" / "CAAMechanicalModeler.edu.dico")
 
         parsed_cpp = {
             "parsed": False,
@@ -217,20 +253,17 @@ class OMActivationDriver:
             except Exception as e:
                 parsed_dico["parse_error"] = str(e)
 
-        # Cross-validate parsed AST against target specifications
+        # Cross-validate parsed AST against target specifications via dedicated blueprint verifier
         cpp_late_type = parsed_cpp.get("target_late_type")
         cpp_iface = parsed_cpp.get("tie_interface")
         cpp_ext_type = parsed_cpp.get("extension_type")
         cpp_base_class = parsed_cpp.get("base_class")
-        dico_entry_match = len(parsed_dico.get("matching_entries", [])) > 0
 
-        blueprint_verified = bool(
-            parsed_cpp["parsed"]
-            and cpp_ext_type == "DataExtension"
-            and cpp_late_type == self.target_component
-            and cpp_iface == self.target_interface
-            and cpp_base_class == "CATExtIVisu"
-            and dico_entry_match
+        blueprint_verified = self.verify_blueprint_contract(
+            parsed_cpp=parsed_cpp,
+            parsed_dico=parsed_dico,
+            target_component=self.target_component,
+            target_interface=self.target_interface,
         )
 
         return {
@@ -351,15 +384,24 @@ class OMActivationDriver:
 
         # L4: Object Modeler Resolution & Extension Activation (Strict Atomic 4-Factor Contract)
         # Factors:
-        # 1. Mandatory credentials provided (valid non-empty nonce, positive pid, non-zero session_start_time)
+        # 1. Mandatory credentials provided with strict type bounds:
+        #    - expected_nonce: non-empty string
+        #    - expected_cnext_pid: strictly positive int, explicitly rejecting bool
+        #    - session_start_time: finite, positive int/float, explicitly rejecting bool
         # 2. QI S_OK (0x0)
         # 3. File Freshness (mtime >= session_start_time - 1.0)
         # 4. Atomic Event Record: ACTION=CONSTRUCTOR_ACTIVATED, NONCE, PID, COMPONENT all match on the SAME line!
         l4_status = "UNKNOWN"
         credentials_valid = bool(
-            expected_nonce and isinstance(expected_nonce, str) and expected_nonce.strip()
-            and expected_cnext_pid and isinstance(expected_cnext_pid, int) and expected_cnext_pid > 0
-            and session_start_time and isinstance(session_start_time, (int, float)) and session_start_time > 0
+            isinstance(expected_nonce, str)
+            and bool(expected_nonce.strip())
+            and type(expected_cnext_pid) is int
+            and not isinstance(expected_cnext_pid, bool)
+            and expected_cnext_pid > 0
+            and (type(session_start_time) in (int, float))
+            and not isinstance(session_start_time, bool)
+            and math.isfinite(session_start_time)
+            and session_start_time > 0
         )
 
         probe_contract = {
