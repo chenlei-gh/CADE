@@ -94,22 +94,37 @@ with tempfile.TemporaryDirectory(prefix="cade_l1_") as tmp_dir:
     ck("L1 FAIL on 0-byte assets", res_zero["status"] == "FAIL", f"got {res_zero['status']}")
 
     # Populate valid assets -> PASS
-    # Minimal valid 64-bit Windows PE (AMD64 + PE32+) for win_b64
+    # Minimal but internally consistent 64-bit Windows PE (AMD64 + PE32+).
+    # Self-consistency matters: SizeOfHeaders must cover the DOS stub + PE
+    # headers + the whole Section Table, stay within the file, and each
+    # section's virtual range must fit inside SizeOfImage.
     import struct
+
+    FILE_ALIGN = 512
+    SEC_ALIGN = 0x1000
+
     def make_valid_pe(
         machine=0x8664,
         opt_magic=0x020B,
         num_sections=1,
         characteristics=0x2002,
-        file_alignment=512,
-        section_alignment=0x1000,
-        size_of_image=0x1000,
-        size_of_headers=512,
+        file_alignment=FILE_ALIGN,
+        section_alignment=SEC_ALIGN,
+        size_of_image=0x2000,
+        size_of_headers=FILE_ALIGN,
+        section_virt_addr=SEC_ALIGN,
+        section_virt_size=0x100,
+        section_raw_ptr=FILE_ALIGN,
+        section_raw_size=FILE_ALIGN,
+        pad_to=FILE_ALIGN * 2,
     ):
+        size_opt_hdr = 240
         dos_hdr = b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x40)
         pe_sig = b"PE\x00\x00"
-        coff_hdr = struct.pack("<HHIIIHH", machine, num_sections, 0, 0, 0, 240, characteristics)
-        opt = bytearray(240)
+        coff_hdr = struct.pack(
+            "<HHIIIHH", machine, num_sections, 0, 0, 0, size_opt_hdr, characteristics
+        )
+        opt = bytearray(size_opt_hdr)
         struct.pack_into("<H", opt, 0, opt_magic)
         struct.pack_into("<I", opt, 32, section_alignment)
         struct.pack_into("<I", opt, 36, file_alignment)
@@ -118,12 +133,16 @@ with tempfile.TemporaryDirectory(prefix="cade_l1_") as tmp_dir:
         opt_hdr = bytes(opt)
         sec_hdr = b""
         if num_sections > 0:
-            # VirtualAddress is a multiple of SectionAlignment. Raw size/pointer 0
-            # are multiples of FileAlignment.
-            sec_hdr = b".text\x00\x00\x00" + struct.pack("<IIII", 0x1000, 0x1000, 0, 0) + b"\x00" * 16
-        return dos_hdr + pe_sig + coff_hdr + opt_hdr + sec_hdr
+            one = b".text\x00\x00\x00" + struct.pack(
+                "<IIII", section_virt_size, section_virt_addr, section_raw_size, section_raw_ptr
+            ) + b"\x00" * 16
+            sec_hdr = one * num_sections
+        blob = dos_hdr + pe_sig + coff_hdr + opt_hdr + sec_hdr
+        if pad_to and len(blob) < pad_to:
+            blob += b"\x00" * (pad_to - len(blob))
+        return blob
 
-    pe_header = make_valid_pe(machine=0x8664, opt_magic=0x020B)
+    pe_header = make_valid_pe()
     valid_dll = bin_dir / "MyModule.dll"
     valid_dll.write_bytes(pe_header)
     valid_dico = dico_dir / "MyModule.dico"
@@ -151,10 +170,8 @@ with tempfile.TemporaryDirectory(prefix="cade_l1_") as tmp_dir:
     res_dico_substr = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
     ck("R-03: L1 FAIL when DICO only has substring match (libMyModuleExtra vs MyModule)", res_dico_substr["status"] == "FAIL", f"got {res_dico_substr['status']}")
 
-    # R-03: PE Section boundary out of bounds -> FAIL
-    sec_oob = b".text\x00\x00\x00" + struct.pack("<IIII", 0x1000, 0x1000, 0x2000, 0x2000) + b"\x00" * 16
-    pe_oob = b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x40) + b"PE\x00\x00" + struct.pack("<HHIIIHH", 0x8664, 1, 0, 0, 0, 240, 0x0002) + struct.pack("<H", 0x020B) + b"\x00" * 238 + sec_oob
-    valid_dll.write_bytes(pe_oob)
+    # R-03: PE Section raw data outside the file -> FAIL
+    valid_dll.write_bytes(make_valid_pe(section_raw_ptr=0x2000, section_raw_size=0x2000))
     res_sec_oob = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
     ck("R-03: L1 FAIL when PE section raw_ptr + raw_size exceeds file boundary", res_sec_oob["status"] == "FAIL", f"got {res_sec_oob['status']}")
 
@@ -179,16 +196,42 @@ with tempfile.TemporaryDirectory(prefix="cade_l1_") as tmp_dir:
     ck("R-03: L1 FAIL when SectionAlignment, SizeOfImage and SizeOfHeaders are zero",
        res_zero_image["status"] == "FAIL", f"got {res_zero_image['status']}")
 
+    # R-03: SizeOfHeaders larger than the file it describes -> FAIL
+    valid_dll.write_bytes(make_valid_pe(size_of_headers=0x2000, pad_to=FILE_ALIGN * 2))
+    res_hdr_oob = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("R-03: L1 FAIL when SizeOfHeaders exceeds the actual file size",
+       res_hdr_oob["status"] == "FAIL", f"got {res_hdr_oob['status']}")
+
+    # R-03: SizeOfHeaders smaller than headers + section table -> FAIL.
+    # 6 sections put the table at 0x148 + 240 = 0x238, past SizeOfHeaders=512.
+    valid_dll.write_bytes(
+        make_valid_pe(num_sections=6, size_of_headers=FILE_ALIGN, pad_to=FILE_ALIGN * 4)
+    )
+    res_hdr_short = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("R-03: L1 FAIL when SizeOfHeaders does not cover the section table",
+       res_hdr_short["status"] == "FAIL", f"got {res_hdr_short['status']}")
+
+    # R-03: Section virtual range beyond SizeOfImage -> FAIL
+    valid_dll.write_bytes(make_valid_pe(section_virt_addr=SEC_ALIGN, section_virt_size=0x2000))
+    res_virt_oob = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("R-03: L1 FAIL when a section's virtual range exceeds SizeOfImage",
+       res_virt_oob["status"] == "FAIL", f"got {res_virt_oob['status']}")
+
     valid_dll.write_bytes(pe_header)
     valid_dico.write_bytes(b"MyClass CATIInterface libMyModule extra\n")
     res_four = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
     ck("R-03: L1 FAIL when DICO has an unverified fourth token",
        res_four["status"] == "FAIL", f"got {res_four['status']}")
 
+    # R-03: an unprefixed library token IS valid CAA output.
+    # Measured on the local B28 install: 423/423 shipped .dico lines have exactly
+    # 3 tokens, and 6 of them omit the `lib` prefix (e.g.
+    # "CAAOsmAdd CATIBuild CAAOsmBuildUpdate"). Rejecting the prefix-less form
+    # would flag real CAA products.
     valid_dico.write_bytes(b"MyClass CATIInterface MyModule\n")
     res_unprefixed = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
-    ck("R-03: L1 FAIL when DICO library token omits the lib prefix",
-       res_unprefixed["status"] == "FAIL", f"got {res_unprefixed['status']}")
+    ck("R-03: L1 accepts the attested unprefixed library token",
+       res_unprefixed["status"] == "PASS", f"got {res_unprefixed['status']}")
 
     # Restore valid assets
     valid_dll.write_bytes(pe_header)
@@ -523,6 +566,43 @@ with tempfile.TemporaryDirectory(prefix="cade_full_rt_") as tmp_dir:
         ck("R-02: PASS is not downgraded by a later UNKNOWN",
            l2_hold.get("status") == "PASS" and res_hold.get("pid") == 6002 and pass_calls["n"] == 1,
            f"l2_status={l2_hold.get('status')} pid={res_hold.get('pid')} calls={pass_calls['n']}")
+
+    # R-02: a new PID appearing after a FAIL must not inherit the old PID's
+    # evidence. UNKNOWN(5001) -> FAIL(process_disappeared) -> UNKNOWN(6001)
+    # must end as UNKNOWN on 6001, with 6001 recorded as unverified and no
+    # reuse of 5001's disappearance classification.
+    with patch("subprocess.Popen") as mock_popen, \
+         patch("run.identify_target_cnext", side_effect=_poll_sequence([
+             ("UNKNOWN", 5001, {"reason": "sole_cnext_without_tree_or_time_correlation"}),
+             ("FAIL", None, {"reason": "no_cnext_process_found"}),
+             ("UNKNOWN", 6001, {
+                 "cnext_pid": 6001,
+                 "identification_method": "single_global_instance_unverified",
+                 "reason": "sole_cnext_without_tree_or_time_correlation",
+             }),
+         ])), \
+         patch("run.stop_catia"), \
+         patch("run.time.sleep", return_value=None), \
+         patch("run.check_process_running", return_value=[]):
+        mock_popen.return_value.pid = 1111
+        res_switch = start_catia_runtime(wait_for_exit=False)
+        l2_switch = res_switch.get("runtime_verification", {}).get("levels", {}).get("L2", {})
+        ev_switch = l2_switch.get("evidence", {}) or {}
+        ck("R-02: new PID after FAIL stays UNKNOWN, never PASS",
+           l2_switch.get("status") == "UNKNOWN",
+           f"l2_status={l2_switch.get('status')}")
+        ck("R-02: new PID after FAIL is the newly observed one, not the old PID",
+           res_switch.get("pid") == 6001,
+           f"pid={res_switch.get('pid')}")
+        ck("R-02: new PID evidence is explicitly unverified for 6001",
+           ev_switch.get("cnext_pid") == 6001
+           and ev_switch.get("identification_method") == "single_global_instance_unverified",
+           f"evidence={ev_switch}")
+        ck("R-02: old PID 5001 disappearance is not reused as 6001 evidence",
+           ev_switch.get("reason") != "process_disappeared"
+           and ev_switch.get("previous_pid") != 5001
+           and 5001 not in (ev_switch.get("observed_pids") or []),
+           f"reason={ev_switch.get('reason')} previous_pid={ev_switch.get('previous_pid')}")
 
     def _failed_snapshot():
         _failed_snapshot.last_status = "failed"

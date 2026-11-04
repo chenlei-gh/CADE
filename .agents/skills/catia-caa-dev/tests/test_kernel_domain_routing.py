@@ -137,6 +137,17 @@ if plan_visu:
     plan_typed_req = plan_visu.get("typed_requirement", {})
     ck("TypedRequirement present in plan dict", plan_typed_req.get("domain") == "visualization")
 
+    # R-05-A: the requirement category must NOT become the late type.
+    ck("R-05-A: 'feature' is not forwarded as the late type",
+       params.get("target_late_type") is None and "target" not in params,
+       f"target_late_type={params.get('target_late_type')} target={params.get('target')}")
+    ck("R-05-A: late type state is reported, not guessed",
+       params.get("target_late_type_state") == "AMBIGUOUS",
+       f"got {params.get('target_late_type_state')}")
+    ck("R-05-A: real candidate components are offered for clarification",
+       bool(params.get("target_late_type_candidates")),
+       f"got {params.get('target_late_type_candidates')}")
+
     # R-05: Construction Plan steps actually consumed candidate_interfaces, behavior_aspects, target
     steps = plan_visu.get("plan", {}).get("steps", [])
     create_step = next((t for t in steps if t.get("action") == "create_extension"), None)
@@ -144,12 +155,27 @@ if plan_visu:
     if create_step:
         step_params = create_step.get("params", {})
         ck("Step params consumed interfaces (CATIVisu)", "CATIVisu" in step_params.get("interfaces", []), f"got {step_params.get('interfaces')}")
-        ck("Step params consumed target_object (feature)", step_params.get("target_object") == "feature", f"got {step_params.get('target_object')}")
         ck("Step params consumed behavior_aspects", "visualization" in step_params.get("behavior_aspects", []), f"got {step_params.get('behavior_aspects')}")
+        ck("R-05-A: step target_object is empty, not 'feature'",
+           step_params.get("target_object") == "", f"got {step_params.get('target_object')!r}")
+        ck("R-05-A: step keeps the requirement category separately",
+           step_params.get("target_entity") == "feature", f"got {step_params.get('target_entity')}")
 
     gen_args = kernel._construction_generation_args(plan_visu)
     ck("Generation args carry CATIVisu", "CATIVisu" in gen_args.get("interfaces", []), f"got {gen_args}")
-    ck("Generation args carry feature target", gen_args.get("target_object") == "feature", f"got {gen_args.get('target_object')}")
+    ck("R-05-A: generation target is empty, never the category",
+       gen_args.get("target_object") == "", f"got {gen_args.get('target_object')!r}")
+    ck("R-05-A: generation args expose candidates for the clarification",
+       bool(gen_args.get("late_type_candidates")), f"got {gen_args.get('late_type_candidates')}")
+
+    # R-05-A end-to-end: an unresolved late type stops at needs_clarification.
+    gate = kernel._extension_late_type_gate(plan_visu, res_visu)
+    ck("R-05-A: kernel gate returns needs_clarification for a category target",
+       gate is not None and gate.get("status") == "needs_clarification",
+       f"got {(gate or {}).get('status')}")
+    ck("R-05-A: gate carries real candidate components",
+       bool((gate or {}).get("data", {}).get("target_late_type_candidates")),
+       f"got {(gate or {}).get('data', {}).get('target_late_type_candidates')}")
 
     from unittest.mock import MagicMock, patch
     with patch("intents.create_extension", return_value={"status": "error", "message": "stopped-before-apply"}) as mocked:
@@ -157,7 +183,8 @@ if plan_visu:
         called = mocked.call_args.kwargs if mocked.called else {}
         ck("Executor calls create_extension", mocked.called, f"status={exec_visu.get('status')}")
         ck("Executor passes CATIVisu as implements", "CATIVisu" in (called.get("implements") or []), f"got {called.get('implements')}")
-        ck("Executor passes feature target_object", called.get("target_object") == "feature", f"got {called.get('target_object')}")
+        ck("R-05-A: executor passes an empty target, not 'feature'",
+           called.get("target_object") == "", f"got {called.get('target_object')!r}")
         ck("Executor passes visualization behavior", "visualization" in (called.get("behavior_aspects") or []), f"got {called.get('behavior_aspects')}")
 
     ctx = MagicMock()
@@ -197,6 +224,43 @@ if plan_visu:
            missing_target.get("status") == "error" and missing_target.get("changeset") is None,
            f"status={missing_target.get('status')}")
 
+        # R-05-A: a requirement category is not a CATIA component. Registering
+        # it would emit CATImplementClass(..., DataExtension, CATExtIVisu, feature).
+        category_target = create_extension(
+            ctx, name="VisuExt", target_object="feature", module="VisualizationModule.m",
+            implements=["CATIVisu"],
+        )
+        ck("R-05-A: requirement category 'feature' is rejected as a late type",
+           category_target.get("status") == "error" and category_target.get("changeset") is None
+           and "late type" in category_target.get("message", ""),
+           f"status={category_target.get('status')} message={category_target.get('message')}")
+
+        from late_type_resolver import LateTypeResolver
+        _resolver = LateTypeResolver()
+        ck("R-05-A: resolver confirms real components from local evidence",
+           _resolver.is_known_late_type("CAAMmrMeasureSet")
+           and _resolver.is_known_late_type("CATPart")
+           and not _resolver.is_known_late_type("feature")
+           and not _resolver.is_known_late_type("component"),
+           "late type ground truth mismatch")
+        _resolved = _resolver.resolve(
+            request="create extension on CAAMmrMeasureSet",
+            entity="feature", interfaces=["CATIVisu", "CATI3DGeoVisu"],
+        )
+        ck("R-05-A: an explicitly named real component resolves CLEAR",
+           _resolved["status"] == "CLEAR" and _resolved["late_type"] == "CAAMmrMeasureSet",
+           f"got {_resolved['status']}/{_resolved['late_type']}")
+        _unresolved = _resolver.resolve(
+            request="给特征增加3D表现", entity="feature", interfaces=["CATIVisu"]
+        )
+        ck("R-05-A: a category with no named component is AMBIGUOUS with candidates",
+           _unresolved["status"] == "AMBIGUOUS" and _unresolved["late_type"] is None
+           and bool(_unresolved["candidates"]),
+           f"got {_unresolved['status']} candidates={_unresolved['candidates'][:3]}")
+        ck("R-05-A: offered candidates are all real components",
+           all(_resolver.is_known_late_type(c) for c in _unresolved["candidates"]),
+           f"got {_unresolved['candidates']}")
+
         unverified = create_extension(
             ctx, name="EventExt", target_object="CAAMmrMeasureSet", module="VisualizationModule.m",
             implements=["CATIVisu", "CATIModelEvents"],
@@ -212,6 +276,106 @@ if plan_visu:
         ck("R-05: data-only extension does not use the fake Execute component template",
            data_only.get("status") == "error" and "Execute" in data_only.get("message", ""),
            f"status={data_only.get('status')}")
+
+    # R-05-B: the skeleton links CATExtIVisu::BuildRep and new CAT3DBagRep, so
+    # the module must link CATVisualization/CATViz/JS0GROUP or it fails at link
+    # time (LNK2019) after compiling cleanly.
+    import tempfile
+
+    class _StubFramework:
+        def __init__(self, root: Path):
+            self.root = root
+
+        def dictionary_path(self) -> Path:
+            return self.root / "code" / "dictionary" / "Stub.dico"
+
+    class _StubModule:
+        def __init__(self, root: Path):
+            self.root = root
+            self.framework = _StubFramework(root)
+
+        def local_interfaces_dir(self) -> Path:
+            d = self.root / "LocalInterfaces"
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+        def src_dir_path(self) -> Path:
+            d = self.root / "src"
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+        def imakefile_path(self) -> Path:
+            return self.root / "Imakefile.mk"
+
+    class _StubSnapshot:
+        def __init__(self, module):
+            self._module = module
+
+        def get_module(self, module, framework=None):
+            return self._module
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        stub = _StubModule(root)
+        # Shape copied from the official B28 sample Imakefile
+        # (CAAMmrCCDataExtension.m): a LINK_WITH continuation chain.
+        stub.imakefile_path().write_text(
+            "BUILT_OBJECT_TYPE = SHARED LIBRARY\n"
+            "LINK_WITH = \\\n"
+            "            JS0GROUP \\\n"
+            "            CATMechanicalModeler\n"
+            "LOCAL_CCFLAGS= -DSPECDEBUG\n",
+            encoding="utf-8",
+        )
+        ctx2 = MagicMock()
+        ctx2.workspace_root = root
+        ctx2.snapshot = _StubSnapshot(stub)
+        with patch("intents.objects.validate_module", return_value={"status": "ok"}):
+            linked = create_extension(
+                ctx2, name="LinkExt", target_object="CAAMmrMeasureSet",
+                module="VisualizationModule.m", implements=["CATIVisu"],
+            )
+            info = linked.get("extension", {})
+            modified = (linked.get("changeset") or {}).get("modified", {})
+            patched = "".join(str(v) for v in modified.values())
+            ck("R-05-B: required libraries are declared as evidence-driven",
+               info.get("required_libraries") == ["CATVisualization", "CATViz", "JS0GROUP"],
+               f"got {info.get('required_libraries')}")
+            ck("R-05-B: LINK_WITH was extended, not silently skipped",
+               info.get("link_with_injected") is True, f"got {info.get('link_with_injected')}")
+            ck("R-05-B: only the genuinely missing libraries are reported",
+               info.get("link_with_added") == ["CATVisualization", "CATViz"],
+               f"got {info.get('link_with_added')}")
+            ck("R-05-B: patched Imakefile still holds the module's own libraries",
+               "JS0GROUP" in patched and "CATMechanicalModeler" in patched,
+               f"own libraries were dropped: {patched!r}")
+            ck("R-05-B: the variable after LINK_WITH is not swallowed by a stray backslash",
+               "LOCAL_CCFLAGS= -DSPECDEBUG" in patched
+               and "CATViz" in patched,
+               f"LOCAL_CCFLAGS corrupted: {patched!r}")
+            ck("R-05-B: LINK_WITH is still the only definition",
+               patched.count("LINK_WITH") == 1, f"got {patched.count('LINK_WITH')}")
+
+            from intents.objects import _inject_link_with as _inj
+            ck("R-05-B: injection is idempotent on an already-patched file",
+               _inj(patched, ("CATVisualization", "CATViz", "JS0GROUP")) is None,
+               "second injection was not a no-op")
+
+    # A module with no Imakefile must not be reported as linked.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        stub = _StubModule(root)
+        ctx3 = MagicMock()
+        ctx3.workspace_root = root
+        ctx3.snapshot = _StubSnapshot(stub)
+        with patch("intents.objects.validate_module", return_value={"status": "ok"}):
+            no_imake = create_extension(
+                ctx3, name="NoImakeExt", target_object="CAAMmrMeasureSet",
+                module="VisualizationModule.m", implements=["CATIVisu"],
+            )
+            ck("R-05-B: no Imakefile means link_with_injected is False, not a false claim",
+               no_imake.get("extension", {}).get("link_with_injected") is False,
+               f"got {no_imake.get('extension', {}).get('link_with_injected')}")
 
 
 # ── 5. Multi-Domain Detection & Disambiguation (R-06) ───────────

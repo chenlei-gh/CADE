@@ -64,8 +64,24 @@ class Planner:
                     params["candidate_interfaces"] = intent.params["candidate_interfaces"]
                 if "behavior_aspects" not in params and intent.params.get("behavior_aspects"):
                     params["behavior_aspects"] = intent.params["behavior_aspects"]
-                if "target_object" not in params and (intent.params.get("target") or intent.params.get("target_entity")):
-                    params["target_object"] = intent.params.get("target") or intent.params.get("target_entity")
+                # target_object is the CATIA late type, never the requirement
+                # category. A missing late type must reach the action empty so
+                # the generator can refuse instead of emitting CATImplementClass
+                # for a name no dictionary contains.
+                if "target_object" not in params:
+                    params["target_object"] = intent.params.get("target_late_type") or ""
+                if "target_late_type" not in params:
+                    params["target_late_type"] = intent.params.get("target_late_type")
+                if "target_late_type_state" not in params:
+                    params["target_late_type_state"] = intent.params.get(
+                        "target_late_type_state", "UNKNOWN"
+                    )
+                if "target_late_type_candidates" not in params:
+                    params["target_late_type_candidates"] = intent.params.get(
+                        "target_late_type_candidates", []
+                    )
+                if "target_entity" not in params:
+                    params["target_entity"] = intent.params.get("target_entity")
                 if "extension_point" not in params and intent.params.get("extension_point"):
                     params["extension_point"] = intent.params["extension_point"]
 
@@ -151,7 +167,17 @@ class Planner:
                 elif key == "interface_name":
                     result[k] = intent.params.get("interface", f"I{intent.name}")
                 elif key in ("target", "target_object"):
-                    result[k] = intent.params.get("target") or intent.params.get("target_entity", "")
+                    # Late type only. Falling back to target_entity here is what
+                    # produced CATImplementClass(..., feature) before.
+                    result[k] = intent.params.get("target_late_type") or ""
+                elif key == "target_late_type":
+                    result[k] = intent.params.get("target_late_type")
+                elif key == "target_late_type_state":
+                    result[k] = intent.params.get("target_late_type_state", "UNKNOWN")
+                elif key == "target_late_type_candidates":
+                    result[k] = intent.params.get("target_late_type_candidates", [])
+                elif key == "target_entity":
+                    result[k] = intent.params.get("target_entity")
                 elif key in ("candidate_interfaces", "interfaces"):
                     result[k] = intent.params.get("candidate_interfaces", [])
                 elif key == "behavior_aspects":

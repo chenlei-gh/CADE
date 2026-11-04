@@ -254,13 +254,20 @@ def _psapi_buffer_status(needed_bytes: int, capacity_bytes: int, attempt: int, m
 def get_process_loaded_modules(pid: int, return_details: bool = False):
     """
     Get full list of module file paths loaded into a process via Win32 PSAPI EnumProcessModulesEx.
-    
+
     Args:
         pid: Process ID to inspect
-        return_details: If True, return (modules: list, is_complete: bool)
-    
+        return_details: If True, return (modules: list, paths_complete: bool)
+
     Returns:
-        List of module file path strings (or tuple of (list, bool) if return_details=True).
+        List of module file path strings (or tuple if return_details=True).
+
+    Two different completeness facts are tracked, because they fail
+    independently:
+      * handle enumeration complete — EnumProcessModulesEx fit the buffer
+      * module paths complete — every enumerated handle also yielded a path
+    A truncated path buffer is not a full module list, so callers that need
+    exact-path evidence must be told about it.
     """
     if sys.platform != "win32" or not pid:
         return ([], True) if return_details else []
@@ -346,6 +353,7 @@ def get_process_loaded_modules(pid: int, return_details: bool = False):
             actual_count = needed_count
             modules = []
             filename_buf = ctypes.create_unicode_buffer(1024)
+            paths_complete = True
             for i in range(actual_count):
                 h_mod = h_mods[i]
                 if not h_mod:
@@ -356,10 +364,21 @@ def get_process_loaded_modules(pid: int, return_details: bool = False):
                     filename_buf,
                     len(filename_buf),
                 )
-                if length > 0:
-                    modules.append(filename_buf.value)
+                if length <= 0:
+                    # Handle enumerated but path unavailable: the list is short.
+                    paths_complete = False
+                    continue
+                if length >= len(filename_buf):
+                    # Truncated path. Treat as incomplete rather than pass a
+                    # clipped string off as an exact absolute path.
+                    paths_complete = False
+                    continue
+                modules.append(filename_buf.value)
 
-            return _finish(modules, True)
+            # is_complete covers handle enumeration; a caller that needs exact
+            # paths must also respect paths_complete. Both are surfaced so the
+            # caller can fail closed instead of silently accepting a short list.
+            return _finish(modules, paths_complete)
         finally:
             kernel32.CloseHandle(h_process)
     except Exception:
@@ -564,8 +583,12 @@ def verify_module_loaded(pid: int, expected_dll_path: Path) -> tuple:
         return "UNKNOWN", {
             "reason": "module_enumeration_incomplete_capacity_exceeded",
             "enumeration_complete": False,
+            "module_paths_complete": False,
             "total_loaded_modules": len(loaded_modules or []),
-            "note": "PSAPI buffer did not hold every module, or enumeration failed. Not a FAIL and not a module list.",
+            "note": (
+                "PSAPI buffer did not hold every module, enumeration failed, or at least "
+                "one module path could not be read in full. Not a FAIL and not a module list."
+            ),
         }
     if not loaded_modules:
         return "UNKNOWN", {"reason": "cannot_enumerate_process_modules_insufficient_privileges_or_exited"}
@@ -583,12 +606,14 @@ def verify_module_loaded(pid: int, expected_dll_path: Path) -> tuple:
             "matched_path": matched,
             "match_scope": "exact_absolute_physical_path",
             "enumeration_complete": True,
+            "module_paths_complete": True,
         }
     return "FAIL", {
         "expected_path": exp_resolved,
         "total_loaded_modules": len(loaded_modules),
         "match_found": False,
         "enumeration_complete": True,
+        "module_paths_complete": True,
     }
 
 
@@ -1634,7 +1659,9 @@ def run_catia_macro(
             "message": f"Macro execution completed (exit {result.returncode})",
             "macro": str(macro_path),
             "exit_code": result.returncode,
-            "runtime_view_mounted": mounted,
+            "runtime_view_present": mounted,
+            "runtime_view_mounted": mounted,  # deprecated alias: directory presence only
+            "runtime_view_mounted_deprecated_notice": "runtime_view_mounted only asserts candidate directory presence. It is not evidence that CATIA mounted the workspace.",
             "launcher": "mkrun" if workspace_path else "CATSTART",
         }
     except subprocess.TimeoutExpired:
@@ -1708,7 +1735,9 @@ def run_catia_batch(
             "status": "success" if result.returncode == 0 else "failed",
             "message": f"Batch execution completed (exit {result.returncode})",
             "exit_code": result.returncode,
-            "runtime_view_mounted": mounted,
+            "runtime_view_present": mounted,
+            "runtime_view_mounted": mounted,  # deprecated alias: directory presence only
+            "runtime_view_mounted_deprecated_notice": "runtime_view_mounted only asserts candidate directory presence. It is not evidence that CATIA mounted the workspace.",
             "launcher": "mkrun" if workspace_path else "CATSTART",
         }
     except subprocess.TimeoutExpired:

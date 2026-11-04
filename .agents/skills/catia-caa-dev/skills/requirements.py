@@ -91,12 +91,23 @@ class TypedRequirement:
     domain_constructs: Dict[str, Optional[str]] = field(default_factory=dict)
     unresolved_domains: List[str] = field(default_factory=list)
     domain_targets: Dict[str, str] = field(default_factory=dict)
+    # CATIA late type the extension is registered against. Distinct from
+    # target_entity, which is a requirement category (feature/component/...).
+    # None means "not established from local evidence" — generation must stop.
+    target_late_type: Optional[str] = None
+    target_late_type_state: str = "UNKNOWN"   # CLEAR | AMBIGUOUS | UNKNOWN
+    target_late_type_candidates: List[str] = field(default_factory=list)
+    target_late_type_reason: str = ""
     notes: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
             "domain": self.domain,
             "target_entity": self.target_entity,
+            "target_late_type": self.target_late_type,
+            "target_late_type_state": self.target_late_type_state,
+            "target_late_type_candidates": self.target_late_type_candidates,
+            "target_late_type_reason": self.target_late_type_reason,
             "behavior_aspect": self.behavior_aspect,
             "behavior_aspects": self.behavior_aspects,
             "extension_point": self.extension_point,
@@ -240,6 +251,11 @@ class RequirementsClarifier:
             is_multi_domain=is_multi_domain,
         )
 
+        # Step 4.5: Resolve the CATIA late type for extension intents.
+        # target_entity is a requirement category; the dictionary and
+        # CATImplementClass need a component that really exists.
+        self._resolve_late_type(typed_req, request)
+
         # If the request is already clear enough with clear construct mapping
         if self._is_clear_command(request_lower) and typed_req.ambiguity_state == "CLEAR":
             return ClarificationResult(
@@ -276,6 +292,11 @@ class RequirementsClarifier:
                     default="CreateCommand (创建领域操作命令)",
                 ))
 
+        # A resolved construct still cannot be generated when the extension
+        # target is not a real component. Ask for a concrete late type rather
+        # than emitting CATImplementClass for a requirement category.
+        self._ask_for_late_type(typed_req, request, unresolved)
+
         # Limit unresolved questions
         unresolved = unresolved[:self.MAX_QUESTIONS]
 
@@ -296,6 +317,80 @@ class RequirementsClarifier:
                 resolved=resolved,
                 unresolved=[],
                 typed_requirement=typed_req,
+            )
+
+    # ─── Late Type Resolution ───────
+
+    def _ask_for_late_type(self, typed: "TypedRequirement", request: str, unresolved: List[Decision]) -> None:
+        """Add one clarification decision when the extension target is unknown.
+
+        Only for extension intents whose construct is otherwise resolved: a
+        missing late type is the last thing standing between the plan and a
+        real dictionary registration.
+        """
+        if typed is None or typed.recommended_intent_type != "CreateExtension":
+            return
+        if typed.target_late_type_state == "CLEAR":
+            return
+        if any(d.id == "target_late_type" for d in unresolved):
+            return
+        candidates = typed.target_late_type_candidates or []
+        if not candidates:
+            candidates = ["（无本地证据候选，请指定已安装的 CAA 组件名）"]
+        unresolved.append(Decision(
+            id="target_late_type",
+            question=(
+                f"扩展需要注册到真实 CATIA 组件（late type），但 '{typed.target_entity}' "
+                f"是需求分类而非组件名（{typed.target_late_type_reason or '未解析'}）。"
+                "请指定扩展的目标组件："
+            ),
+            options=candidates,
+            default=candidates[0] if candidates else "",
+        ))
+
+    def _resolve_late_type(self, typed: "TypedRequirement", request: str) -> None:
+        """Attach the real late type an extension would register against.
+
+        Only extension intents need it: they emit CATImplementClass and a
+        dictionary line, both of which must name a component that exists.
+        Other constructs (command/dialog/workbench/module) do not register an
+        extension target, so their state stays UNKNOWN by construction rather
+        than being silently marked CLEAR.
+        """
+        if typed is None:
+            return
+        construct = typed.recommended_intent_type or typed.user_explicit_type
+        if construct != "CreateExtension":
+            typed.target_late_type_state = "NOT_APPLICABLE"
+            typed.target_late_type_reason = f"construct_{construct or 'unknown'}_has_no_extension_target"
+            return
+
+        try:
+            from late_type_resolver import LateTypeResolver
+        except ImportError:
+            typed.target_late_type_state = "UNKNOWN"
+            typed.target_late_type_reason = "late_type_resolver_unavailable"
+            return
+
+        resolver = LateTypeResolver()
+        result = resolver.resolve(
+            request=request,
+            entity=typed.target_entity,
+            interfaces=typed.candidate_interfaces,
+        )
+        typed.target_late_type_state = result["status"]
+        typed.target_late_type = result.get("late_type")
+        typed.target_late_type_candidates = list(result.get("candidates") or [])
+        typed.target_late_type_reason = result.get("reason", "")
+        if result["status"] == "CLEAR":
+            typed.notes.append(
+                f"Late type resolved to {typed.target_late_type} ({result['reason']})."
+            )
+        else:
+            typed.notes.append(
+                f"Late type {result['status']} ({result.get('reason')}): "
+                f"target_entity '{typed.target_entity}' is not a component name. "
+                f"Candidates: {typed.target_late_type_candidates}"
             )
 
     # ─── Domain Detection ──────────────────────────────────────
@@ -718,6 +813,16 @@ class UIGeneratorClarifier:
     # Valid behavior-target values supplied via domain_context
     VALID_FIELD_TARGETS = {"catia", "ui_draft", "read_only"}
 
+    # Construct-level requests. "create extension X on Type" contains no
+    # editable field, so an edit/commit axis would be a false positive.
+    CONSTRUCT_ONLY_VERBS = ["create", "make", "generate", "build", "add",
+                            "创建", "新建", "生成", "添加", "增加", "建立",
+                            "实现", "implement"]
+    CONSTRUCT_NOUNS = ["extension", "component", "interface", "command",
+                       "dialog", "workbench", "feature", "addin", "module",
+                       "framework", "扩展", "组件", "接口", "命令", "对话框",
+                       "工作台", "特征", "模块", "框架"]
+
     # ── Public API ──────────────────────────────────────────
 
     def analyze(self, intent: str,
@@ -749,12 +854,15 @@ class UIGeneratorClarifier:
 
         # Read-only displays: suppress edit-related axes.
         negated = self._has_negation(text)
+        # A pure construct request ("create extension X on Type") edits no
+        # field, so edit axes do not apply to it.
+        construct_only = self._is_construct_only(text)
 
         cardinality = self._check_selection_cardinality(text)
         if cardinality is not None:
             unresolved.append(cardinality)
 
-        if not negated:
+        if not negated and not construct_only:
             behavior_target = self._check_behavior_target(text, ctx)
             if behavior_target is not None:
                 unresolved.append(behavior_target)
@@ -785,6 +893,19 @@ class UIGeneratorClarifier:
 
     def _has_negation(self, text: str) -> bool:
         return any(s in text for s in self.NEGATION_SIGNALS)
+
+    def _is_construct_only(self, text: str) -> bool:
+        """True when the request only names a construct and its target.
+
+        Requires a construct verb AND a construct noun AND no value field:
+        "create extension X on CAAMmrMeasureSet" qualifies, while
+        "做一个按钮，把当前零件背景设为白色" (a field edit) does not.
+        """
+        if not any(n in text for n in self.CONSTRUCT_NOUNS):
+            return False
+        if not any(v in text for v in self.CONSTRUCT_ONLY_VERBS):
+            return False
+        return not any(f in text for f in self.FIELD_WORDS)
 
     def _has_entity_object(self, text: str) -> bool:
         """True if text mentions a selectable entity object.

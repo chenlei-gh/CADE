@@ -1386,6 +1386,7 @@ python tests/test_master.py --quick
 │   ├── header_map.py                # CAA header→module→framework 映射（缓存；位置: header_map.py <Name>；声明窗口: --show，禁止读安装路径）
 │   ├── method_index.py             # 类型→方法存在性检查（继承链；CLI: python skills/method_index.py <Type> <Method...>）
 │   ├── dic_index.py                # 随产品发布的 .dic 事实索引（接口↔实现组件；CLI: python skills/dic_index.py <Name>）
+│   ├── late_type_resolver.py       # 需求实体 → 真实 CATIA 组件（late type）解析，无证据则拒绝生成（CLI: python skills/late_type_resolver.py <Name>）
 │   ├── sample_data_index.py        # 随产品发布的样件索引（.CATPart/.CATProduct/.CATDrawing；CLI: python skills/sample_data_index.py）
 │   ├── usecase_snippet.py          # 官方样例只读源码窗口（安装目录不在编辑器内；CLI: python skills/usecase_snippet.py）
 │   ├── jev_judge.py                # Jev 判定层（路由/排序/措辞，非证据源；无 key 或网络失败自动降级）

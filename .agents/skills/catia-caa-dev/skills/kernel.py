@@ -480,6 +480,15 @@ class Kernel:
             ).to_dict()
 
         self._state = KernelState.GENERATING
+
+        # A late type is a real component name, not a requirement category.
+        # When it is not established, stop before generation and ask for the
+        # target instead of emitting CATImplementClass for 'feature'.
+        late_type_gate = self._extension_late_type_gate(plan, clarification)
+        if late_type_gate is not None:
+            self._state = KernelState.CLARIFYING
+            return late_type_gate
+
         result = self._execute_develop_plan(plan, preview=preview, extras=extras)
 
         if isinstance(result, dict) and result.get("status") in ("error", "blocked"):
@@ -956,10 +965,16 @@ class Kernel:
 
         intent_params = {}
         if typed_req:
-            target_ent = getattr(typed_req, "target_entity", "unknown")
+            # target_entity is a requirement category (feature/document/...).
+            # It must NOT double as the CATIA late type: CATImplementClass and
+            # the .dico line need a component that exists. Keep both fields
+            # separate and let the generator refuse a missing late type.
             intent_params.update({
-                "target": target_ent,
-                "target_entity": target_ent,
+                "target_entity": getattr(typed_req, "target_entity", "unknown"),
+                "target_late_type": getattr(typed_req, "target_late_type", None),
+                "target_late_type_state": getattr(typed_req, "target_late_type_state", "UNKNOWN"),
+                "target_late_type_candidates": getattr(typed_req, "target_late_type_candidates", []),
+                "target_late_type_reason": getattr(typed_req, "target_late_type_reason", ""),
                 "behavior_aspect": getattr(typed_req, "behavior_aspect", "unknown"),
                 "behavior_aspects": getattr(typed_req, "behavior_aspects", []),
                 "extension_point": getattr(typed_req, "extension_point", "unknown"),
@@ -994,6 +1009,45 @@ class Kernel:
                 "steps": 0,
                 "typed_requirement": typed_req.to_dict() if (typed_req and hasattr(typed_req, "to_dict")) else None,
             }
+
+    def _extension_late_type_gate(self, plan: dict, clarification) -> Optional[dict]:
+        """Block extension generation until the target is a real component.
+
+        Returns a needs_clarification result, or None when generation may
+        proceed (including every non-extension intent, which has no late type).
+        """
+        intent_data = plan.get("intent", {}) if isinstance(plan, dict) else {}
+        intent_type = str(intent_data.get("type", ""))
+        if "Extension" not in intent_type:
+            return None
+
+        generation = self._construction_generation_args(plan)
+        if generation.get("target_object"):
+            return None
+
+        candidates = list(generation.get("late_type_candidates") or [])
+        state = generation.get("late_type_state") or "UNKNOWN"
+        entity = generation.get("target_entity") or "unknown"
+        return KernelResult(
+            status="needs_clarification", mode="develop", state=self._state.value,
+            message=(
+                f"Extension target '{entity}' is a requirement category, not a CATIA late type. "
+                "Name the real component the extension must register against."
+            ),
+            data={
+                "clarification": clarification.to_dict() if clarification else {},
+                "target_entity": entity,
+                "target_late_type": None,
+                "target_late_type_state": state,
+                "target_late_type_candidates": candidates,
+                "reason": "target_entity_is_not_a_late_type",
+                "notes": (
+                    "CATImplementClass and the .dico line need a component from the shipped "
+                    "dictionary or the CAADoc samples. Regenerating with a category name "
+                    "would register an unknown type."
+                ),
+            },
+        ).to_dict()
 
     def _determine_evidence_demand(self, plan: dict, request: str) -> str:
         """Determine knowledge evidence demand for DEVELOP pipeline.
@@ -2469,11 +2523,27 @@ class Kernel:
         if isinstance(aspects, str):
             aspects = [aspects] if aspects else []
 
-        target = step_params.get("target_object") or params.get("target") or params.get("target_entity") or ""
+        target = (
+            step_params.get("target_object")
+            or step_params.get("target_late_type")
+            or params.get("target_late_type")
+            or ""
+        )
         return {
             "interfaces": list(interfaces),
             "behavior_aspects": list(aspects),
             "target_object": target,
+            "target_entity": step_params.get("target_entity") or params.get("target_entity"),
+            "late_type_state": (
+                step_params.get("target_late_type_state")
+                or params.get("target_late_type_state")
+                or "UNKNOWN"
+            ),
+            "late_type_candidates": (
+                step_params.get("target_late_type_candidates")
+                or params.get("target_late_type_candidates")
+                or []
+            ),
             "extension_point": step_params.get("extension_point") or params.get("extension_point"),
         }
 
@@ -2520,6 +2590,8 @@ class Kernel:
                     framework=framework,
                     implements=generation.get("interfaces") or None,
                     behavior_aspects=generation.get("behavior_aspects") or None,
+                    target_late_type_state=generation.get("late_type_state"),
+                    target_late_type_candidates=generation.get("late_type_candidates"),
                 )
             elif intent_type == "CreateFramework":
                 result = create_framework(ctx, name=name)

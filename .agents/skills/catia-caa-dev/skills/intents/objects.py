@@ -61,6 +61,62 @@ _VISU_DICTIONARY_INTERFACE = "CATI3DGeoVisu"
 _VISU_ADAPTER = "CATExtIVisu"
 _VISU_TIE = "TIE_CATI3DGeoVisu"
 
+# Libraries the generated skeleton actually needs, established by scanning the
+# shipped import libraries for the exact symbols the skeleton references
+# (B28/win_b64/code/lib on this machine):
+#   CATExtIVisu  -> CATVisualization.lib (331 hits, 0 elsewhere)
+#   CAT3DBagRep  -> CATViz.lib (448) and CATVisualization.lib (25)
+#   CATRep       -> CATViz.lib (2740), CATVisualization.lib (1025)
+#   CATMetaClass (CATDeclareClass/CATImplementClass) -> JS0GROUP.lib (1818)
+# The official sample Imakefile additionally links MechanicalModeler,
+# ObjectModelerBase, SpecsModeler, KnowledgeItf, etc. Those serve the sample's
+# CATIDescendants/CATVisManager business code, which this generator does not
+# emit, so they are deliberately not injected.
+_VISU_LINK_WITH = ("CATVisualization", "CATViz", "JS0GROUP")
+
+
+def _inject_link_with(imake_text: str, libs: tuple) -> Optional[str]:
+    """Return Imakefile.mk text with missing `libs` added to LINK_WITH.
+
+    Returns None when every library is already present, so callers add no
+    patch at all. Only an existing `LINK_WITH` continuation block is extended;
+    a file without one is left alone rather than having a second LINK_WITH
+    definition appended (mkmk honours the last one, which would silently drop
+    the module's own libraries).
+    """
+    present = {tok for tok in re.findall(r"[A-Za-z0-9_]+", imake_text)}
+    missing = [lib for lib in libs if lib not in present]
+    if not missing:
+        return None
+
+    nl = "\r\n" if "\r\n" in imake_text else "\n"
+    lines = imake_text.splitlines()
+    start = None
+    for idx, line in enumerate(lines):
+        if re.match(r"^[ \t]*LINK_WITH[ \t]*=", line):
+            start = idx
+    if start is None:
+        return None
+
+    # Walk to the end of the continuation chain (trailing backslash).
+    end = start
+    while end < len(lines) and lines[end].rstrip().endswith("\\"):
+        end += 1
+    if end >= len(lines):
+        # Chain runs to EOF; appending a new line is safe there.
+        last = len(lines) - 1
+    else:
+        last = end
+
+    # Append to the chain's final line, keeping whether it continues. Adding a
+    # trailing backslash where none existed would make the next statement (e.g.
+    # LOCAL_CCFLAGS) part of LINK_WITH, silently dropping it.
+    target = lines[last].rstrip()
+    if target == "":
+        return None
+    lines[last] = target + " " + " ".join(missing)
+    return nl.join(lines) + (nl if imake_text.endswith(("\r\n", "\n")) else "")
+
 
 def _extension_error(message: str, **extra) -> Dict:
     payload = {
@@ -167,6 +223,8 @@ def create_extension(
     data_members: Optional[List[Dict]] = None,
     implements: Optional[List[str]] = None,
     behavior_aspects: Optional[List[str]] = None,
+    target_late_type_state: str = None,
+    target_late_type_candidates: Optional[List[str]] = None,
 ) -> Dict:
     """Create an extension only when a verified B28 recipe exists.
 
@@ -175,6 +233,10 @@ def create_extension(
     a missing late type, or a data-only request returns error. The generic
     Component template is not used: its Execute() method is not an interface
     implementation.
+
+    target_object must be a CATIA component that exists in local evidence
+    (shipped .dic or CAADoc samples). A requirement category such as
+    ``feature`` is rejected instead of being registered as a late type.
     """
     ctx.refresh()
 
@@ -215,6 +277,29 @@ def create_extension(
             "and as the dictionary component name. An empty or non-identifier target cannot be emitted.",
             extension={"name": name, "target": target_object, "interfaces": iface_list},
         )
+
+    # A requirement category (feature/component/document) is not a CATIA
+    # component. Registering it would produce CATImplementClass(..., feature)
+    # and a dictionary line no CATIA install can bind.
+    try:
+        from late_type_resolver import LateTypeResolver
+        late_type_info = LateTypeResolver().describe(str(target_object))
+    except Exception:  # noqa: BLE001 - resolver absence must not fake a pass
+        late_type_info = {"is_late_type": False, "reason": "late_type_resolver_unavailable"}
+    if not late_type_info.get("is_late_type"):
+        return _extension_error(
+            f"'{target_object}' is not a CATIA late type (absent from the shipped .dic "
+            "and CAADoc sample dictionaries). An extension target must be a real "
+            "component; a requirement category cannot be registered as one.",
+            extension={
+                "name": name,
+                "target": target_object,
+                "interfaces": iface_list,
+                "target_late_type_state": target_late_type_state or "UNKNOWN",
+                "target_late_type_candidates": list(target_late_type_candidates or []),
+            },
+        )
+
     if not name or not _CPP_IDENT.match(name):
         return _extension_error(
             f"Extension name '{name}' is not a C++ identifier.",
@@ -254,6 +339,27 @@ def create_extension(
     master_cs.add_create(header_path, rendered["header"])
     master_cs.add_create(source_path, rendered["source"])
 
+    # Link contract: the skeleton calls CATExtIVisu::BuildRep and new
+    # CAT3DBagRep, so the module must link CATVisualization/CATViz/JS0GROUP.
+    # Without this the skeleton compiles but fails at link time (LNK2019).
+    link_with_injected = False
+    link_with_added: List[str] = []
+    imake_path = mod.imakefile_path()
+    imake_old = None
+    if imake_path.exists():
+        raw_imake = imake_path.read_text(encoding="utf-8", errors="replace")
+        # Only a real file body can be patched; a non-str here would mean the
+        # snapshot handed back a placeholder, and rewriting it would corrupt
+        # the Imakefile.
+        if isinstance(raw_imake, str):
+            imake_old = raw_imake
+            imake_new = _inject_link_with(imake_old, _VISU_LINK_WITH)
+            if imake_new is not None:
+                master_cs.add_modify(imake_path, imake_new)
+                link_with_injected = True
+                present = {tok for tok in re.findall(r"[A-Za-z0-9_]+", imake_old)}
+                link_with_added = [lib for lib in _VISU_LINK_WITH if lib not in present]
+
     dico_path = fw.dictionary_path()
     entry = rendered["dictionary_line"]
     if isinstance(dico_path, Path) and dico_path.exists():
@@ -286,7 +392,10 @@ def create_extension(
             ),
         },
         "required_frameworks": rendered["required_frameworks"],
-        "link_with_injected": False,
+        "required_libraries": list(_VISU_LINK_WITH),
+        "link_with_injected": link_with_injected,
+        "link_with_added": link_with_added,
+        "imakefile_present": imake_old is not None,
         "b28_compiled": False,
         "runtime_registration": "UNKNOWN",
         "functional_verification": "NOT_RUN",
@@ -306,10 +415,30 @@ def create_extension(
     )
     next_steps = [
         "Review the CATExtIVisu skeleton. It has not been compiled on B28.",
-        "LINK_WITH for Visualization and VisualizationBase was not injected; "
-        "the official sample Imakefile was not retrieved, so library tokens were not guessed.",
-        "L4 add-in registration remains UNKNOWN. L5 command verification remains NOT_RUN.",
     ]
+    if link_with_injected:
+        next_steps.append(
+            "LINK_WITH was extended with "
+            + ", ".join(link_with_added)
+            + " (established by scanning the shipped import libraries for "
+            "CATExtIVisu, CAT3DBagRep, CATRep and CATMetaClass)."
+        )
+    elif imake_old is None:
+        next_steps.append(
+            "The module has no Imakefile.mk yet, so LINK_WITH was not extended. "
+            "The skeleton needs "
+            + ", ".join(_VISU_LINK_WITH)
+            + " to link."
+        )
+    else:
+        next_steps.append(
+            "LINK_WITH already contained "
+            + ", ".join(_VISU_LINK_WITH)
+            + "; no Imakefile patch was needed."
+        )
+    next_steps.append(
+        "L4 add-in registration remains UNKNOWN. L5 command verification remains NOT_RUN."
+    )
     if data_members:
         next_steps.append(
             "Requested data members were recorded but not emitted; there is no verified member recipe."

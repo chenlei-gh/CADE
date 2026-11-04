@@ -93,12 +93,28 @@ class TestRuntimeVerification(unittest.TestCase):
         self.assertNotEqual(res["verification"]["status"], "failed")
 
     def test_start_catia_process_detected_started(self):
-        """wait_for_exit=False when CNEXT.exe detected: observed status with pid evidence."""
+        """wait_for_exit=False when CNEXT.exe detected: observed status with pid evidence.
+
+        Isolation note: identify_target_cnext() reads the live Win32 process
+        snapshot first. Patching only check_process_running leaves that path
+        hitting the real process table, so any CNEXT.exe already running on the
+        host leaks into the result. Both the snapshot and the creation-time
+        probe are pinned here to keep the assertions deterministic.
+        """
         mock_popen = MagicMock()
-        mock_running = [{"pid": 8888, "name": "CNEXT.exe"}]
+        mock_popen.pid = 4321
+        # Unrelated parent: process-tree correlation must NOT succeed, so the
+        # observable outcome stays the unverified single-instance snapshot.
+        mock_snapshot = MagicMock(return_value=[{"pid": 8888, "parent_pid": 1, "name": "CNEXT.exe"}])
+        mock_snapshot.last_status = "ok"
+        mock_snapshot.last_reason = None
+        mock_ctime = MagicMock(return_value=None)
+        mock_ctime.last_reason = None
 
         with patch("subprocess.Popen", return_value=mock_popen), \
-             patch("run.check_process_running", return_value=mock_running):
+             patch("run.check_process_running", return_value=[]), \
+             patch("run.get_processes_snapshot_win32", mock_snapshot), \
+             patch("run.get_process_creation_time_win32", mock_ctime):
             res = start_catia_runtime(
                 workspace_path=self.workspace,
                 wait_for_exit=False,
@@ -123,13 +139,25 @@ class TestRuntimeVerification(unittest.TestCase):
         self.assertNotIn(res["verification"]["status"], ["passed", "failed"])
 
     def test_start_catia_preexisting_process_scope_boundary(self):
-        """Pre-existing CNEXT.exe detection records snapshot evidence without proving invocation causality."""
+        """Pre-existing CNEXT.exe detection records snapshot evidence without proving invocation causality.
+
+        The snapshot exposes a single CNEXT PID that is neither a descendant of
+        the launcher nor provably created inside the launch window, so the only
+        admissible verdict is UNKNOWN plus snapshot-scoped evidence.
+        """
         mock_popen = MagicMock()
-        # Pre-existing PID 1234 returned by global tasklist
-        mock_running = [{"pid": 1234, "name": "CNEXT.exe"}]
+        mock_popen.pid = 4321
+        # Unrelated PID 1234: present in the snapshot, never shown to be ours
+        mock_snapshot = MagicMock(return_value=[{"pid": 1234, "parent_pid": 1, "name": "CNEXT.exe"}])
+        mock_snapshot.last_status = "ok"
+        mock_snapshot.last_reason = None
+        mock_ctime = MagicMock(return_value=None)
+        mock_ctime.last_reason = None
 
         with patch("subprocess.Popen", return_value=mock_popen), \
-             patch("run.check_process_running", return_value=mock_running):
+             patch("run.check_process_running", return_value=[]), \
+             patch("run.get_processes_snapshot_win32", mock_snapshot), \
+             patch("run.get_process_creation_time_win32", mock_ctime):
             res = start_catia_runtime(
                 workspace_path=self.workspace,
                 wait_for_exit=False,
@@ -154,9 +182,15 @@ class TestRuntimeVerification(unittest.TestCase):
     def test_start_catia_polling_exhausted_launching(self):
         """wait_for_exit=False when polling exhausted: status launching, v1_classification not_specified_in_v1."""
         mock_popen = MagicMock()
+        # Empty snapshot AND empty tasklist fallback: no CNEXT anywhere, without
+        # touching the host's real process table.
+        mock_snapshot = MagicMock(return_value=[])
+        mock_snapshot.last_status = "ok"
+        mock_snapshot.last_reason = None
 
         with patch("subprocess.Popen", return_value=mock_popen), \
              patch("run.check_process_running", return_value=[]), \
+             patch("run.get_processes_snapshot_win32", mock_snapshot), \
              patch("time.sleep", return_value=None):
             res = start_catia_runtime(
                 workspace_path=self.workspace,

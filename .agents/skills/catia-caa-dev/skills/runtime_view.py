@@ -309,18 +309,25 @@ def check_runtime_view_l0(workspace_path: Path, architecture: str = None) -> dic
 
 
 def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
-    """Verify that path is a valid Windows PE file with complete COFF, Optional, and Section headers.
+    """Verify that path is a structurally consistent Windows PE image.
 
     Checks:
     1. DOS header magic (MZ) and minimum file size
     2. e_lfanew pointer validity within file boundaries
     3. PE signature (PE\\0\\0)
-    4. COFF File Header (20 bytes): 0 <= NumberOfSections <= 96, SizeOfOptionalHeader >= 2
+    4. COFF File Header (20 bytes): 1 <= NumberOfSections <= 96, SizeOfOptionalHeader >= 2
     5. Machine architecture matching (win_b64 -> 0x8664 AMD64, intel_a -> 0x014c i386)
     6. Optional Header magic (0x020B PE32+ for 64-bit, 0x010B PE32 for 32-bit)
     7. SizeOfOptionalHeader fully contained within file boundaries
-    8. Section Table (40 bytes per section) fully contained within file boundaries
-    9. Section raw data pointers and sizes within file boundaries (R-03 fix)
+    8. SizeOfHeaders covers the DOS stub, PE headers and the whole Section Table,
+       and does not exceed the file (R-03)
+    9. Section Table (40 bytes per section) fully contained within file boundaries
+    10. Section raw data pointers and sizes within file boundaries
+    11. Each section's virtual range (VirtualAddress + max(VirtualSize, SizeOfRawData))
+        stays inside SizeOfImage (R-03)
+
+    Scope: this is a structural precheck, not loader acceptance. It cannot prove
+    that Windows or CATIA can load the image; only an actual load can.
     """
     try:
         import struct
@@ -417,11 +424,19 @@ def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
                 return False
             if size_of_headers > size_of_image:
                 return False
+            # SizeOfHeaders describes bytes that must exist in the file. A header
+            # size beyond EOF is a self-inconsistent image, not a loadable one.
+            if size_of_headers > file_size:
+                return False
 
             # Validate Section Table boundary
             sec_table_offset = opt_hdr_offset + size_opt_hdr
             sec_table_size = num_sections * 40
             if sec_table_offset + sec_table_size > file_size:
+                return False
+            # SizeOfHeaders must cover the DOS stub, both headers and the whole
+            # section table. Otherwise the table lives outside the mapped headers.
+            if size_of_headers < sec_table_offset + sec_table_size:
                 return False
 
             f.seek(sec_table_offset)
@@ -438,6 +453,11 @@ def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
                     return False
                 if raw_size > 0 and raw_ptr + raw_size > file_size:
                     return False
+                # The loader maps sections into the image described by
+                # SizeOfImage; a section reaching past it is inconsistent.
+                mapped = virt_size if virt_size > raw_size else raw_size
+                if mapped and virt_addr + mapped > size_of_image:
+                    return False
 
             return True
     except Exception:
@@ -445,28 +465,39 @@ def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
 
 
 def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
-    """Validate CAA .dico file syntax and verify explicit target module linkage.
+    """Validate CAA .dico line structure and target-module linkage.
 
-    Rules, from the verified extension dictionary comment and existing add-in lines:
-    - Every non-empty, non-comment line must contain exactly 3 identifier tokens:
-      <LateType> <InterfaceName> lib<Module>
-    - A fourth token is not accepted. .fact pairs are not .dico syntax.
-    - If target_module is provided, the library token must equal lib{Module}
-      exactly. Substring and unprefixed matches do not bind the target.
+    Structural rules, measured on the 49 ``.dico`` files shipped in the local
+    B28 installation (CAADoc samples + framework-private dictionaries):
+
+    - 423 of 423 non-comment, non-empty lines carry exactly 3 identifier
+      tokens: ``<LateType> <InterfaceName> <Library>``. 0 exceptions.
+    - 6 of those 423 lines use a library token WITHOUT the ``lib`` prefix
+      (e.g. ``CAAOsmAdd CATIBuild CAAOsmBuildUpdate``), so requiring ``lib``
+      is not a valid rule and would reject real CAA output.
+    - A fourth token, dots, or free text never appear in a shipped line.
+
+    Target linkage: when ``target_module`` is given, the library token must
+    equal ``lib<Module>`` or ``<Module>`` exactly. Substring matches do not
+    bind the target, and an unrelated dictionary cannot stand in for it.
+
+    Scope: this is a structural precheck of the line grammar, not a complete
+    CATIA B28 dictionary parser and not proof that CATIA accepts the entry.
     """
     import re
     entries_count = 0
     syntax_errors = 0
     mentions_target = False
 
-    expected_lib = None
+    expected_libs = set()
     if target_module:
         bare = target_module[:-2] if target_module.endswith(".m") else target_module
         if bare.lower().endswith(".dll"):
             bare = bare[:-4]
         elif bare.lower().endswith(".so"):
             bare = bare[:-3]
-        expected_lib = "lib" + bare
+        # Both spellings are attested in shipped dictionaries.
+        expected_libs = {"lib" + bare, bare}
 
     # Official .dico tokens are identifiers, not free text. Dots are .fact syntax, not .dico.
     id_pattern = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
@@ -481,7 +512,7 @@ def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
                 # Exactly three identifier tokens. One good line cannot launder the rest.
                 if len(parts) == 3 and all(id_pattern.match(p) for p in parts):
                     entries_count += 1
-                    if expected_lib and parts[2] == expected_lib:
+                    if expected_libs and parts[2] in expected_libs:
                         mentions_target = True
                 else:
                     syntax_errors += 1

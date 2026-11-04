@@ -1,8 +1,8 @@
 # PLAN-P0-INTENT-ROUTING-AND-RUNTIME-EVIDENCE: CADE 业务意图链路修复与 Runtime 分层证据实施计划与审查闭环
 
-> **状态**: `FINAL_IMPLEMENTATION_AND_VERIFIED`（已完成第三轮深度整改与全量实测闭环）  
-> **更新日期**: 2026-11-04  
-> **目标基准**: Commit `fdafbea`（初始实施）+ `51f1660`（二次整改）+ 本轮深度整改提交  
+> **状态**: `IMPLEMENTED_PENDING_REAL_RUNTIME_EVIDENCE`（P0-1 语义链路已闭环；P0-2 静态预检已加强，L4/L5 仍无真实运行证据）
+> **更新日期**: 2026-11-04
+> **目标基准**: Commit `fdafbea`（初始实施）+ `51f1660`（二次整改）+ `5644b231`（第三轮）+ `7918198`（第四轮）+ `e49dd5f`（第五轮）+ 本轮第七轮整改
 > **涉及核心缺陷**: 
 > 1. P0-1 业务意图到 CAA 构件上下文映射断链与暴力 fallback（以及多领域语义融合）
 > 2. P0-2 CATIA Runtime 虚假启动判定与 Add-in 挂载证据缺失（以及严格资源与进程匹配）  
@@ -269,7 +269,7 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
 
 已实现：
 
-- R-05：`create_extension()` 不再调用通用 Component 模板。`CATIVisu` / `CATI3DGeoVisu` 生成独立骨架：继承已核实的 `CATExtIVisu`，`TIE_CATI3DGeoVisu`，`CATImplementClass(..., DataExtension, CATExtIVisu, TargetLateType)`，`BuildRep()` 返回空 `CAT3DBagRep`，字典行是 `{target} CATI3DGeoVisu lib{module}`。请求的 `CATIVisu` 映射到这条已核实路径，不生成 `CATIVisu.h`。没有核实配方的接口、空 late type、仅数据成员的请求返回 `error`，不再 pending。该骨架未在 B28 编译。官方样例 Imakefile 未检索到，因此没有猜测 LINK_WITH 库名。
+- R-05：`create_extension()` 不再调用通用 Component 模板。`CATIVisu` / `CATI3DGeoVisu` 生成独立骨架：继承已核实的 `CATExtIVisu`，`TIE_CATI3DGeoVisu`，`CATImplementClass(..., DataExtension, CATExtIVisu, TargetLateType)`，`BuildRep()` 返回空 `CAT3DBagRep`，字典行是 `{target} CATI3DGeoVisu lib{module}`。请求的 `CATIVisu` 映射到这条已核实路径，不生成 `CATIVisu.h`。没有核实配方的接口、空 late type、仅数据成员的请求返回 `error`，不再 pending。该骨架未在 B28 编译。官方样例 Imakefile 当时未核对，因此没有猜测 LINK_WITH 库名（本轮第七节已按本机证据补齐）。
 - R-02：轮询补上 `FAIL`。`UNKNOWN → FAIL` 清掉未验证 PID，并把随后的空轮询保持为 `process_disappeared`。`AMBIGUOUS → FAIL` 不保留过期歧义。`PASS` 立即锁定，不被后续 UNKNOWN 降级。快照失败使用 `process_snapshot_failed`，不与 `no_cnext_process_found` 混用。未在真实 CNEXT 进程树上复跑。
 - R-03：PE 结构预检增加 `SectionAlignment`、`SizeOfImage`、`SizeOfHeaders` 及其与 `FileAlignment` 的关系。这不是 Windows 加载器验收。DICO 只接受恰好三个标识符，库名必须精确等于 `lib{Module}`。
 - R-06：增加中文组合测试，没有新增装配/零件/特征/视图关键词。不同领域的目标保存在 `domain_targets`。关键词路由仍然不是语义分类器。
@@ -286,3 +286,87 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
 - `python tests/test_kernel_domain_routing.py`：83/83 PASS。
 - `python tests/test_runtime_layered_verification.py`：63/63 PASS。其中本进程 PSAPI 枚举返回了模块列表；这不是 CNEXT 加载证据。
 - `python tests/test_master.py --quick`：50/50 suites PASS，跳过 Int-1 Build & Run。未执行真实 mkmk，也未启动 CATIA 做 Add-in 验收。
+
+### 5.6 第七轮修正（关闭 e49dd5f 复审的四项遗留，仍不是最终验收）
+
+本轮仍把文档状态保留为 `IMPLEMENTED_PENDING_REAL_RUNTIME_EVIDENCE`。L4 仍是 `UNKNOWN`，L5 仍是 `NOT_RUN`。生成的可视化扩展仍未在 B28 编译，也没有真实 CNEXT 关联证据。
+
+#### R-05-A 需求实体与 CATIA Late Type 彻底拆分
+
+- 新增 `skills/late_type_resolver.py`：只把「本机真实存在的组件」当作 late type。
+  - 证据源：`cache/caadoc_index.json` 的 `sdk_dic_entries`（随产品发布的 `.dic`，实测 14782 个组件 / 12946 个接口）与 `dico_entries`（CAADoc 样例 `.dico`，151 个组件）。
+  - 不包含任何 `feature -> CATPart` 之类硬编码映射表。实体类别解析不出来就是 `AMBIGUOUS`/`UNKNOWN`，不会编一个名字。
+  - CLI：`python skills/late_type_resolver.py <Name>`、`--candidates <Interface>`。
+  - 实测：`CAAMmrMeasureSet`、`CATPart`、`Pad` 是真实组件；`feature`、`component`、`CATI3DGeoVisu`（接口）不是。
+- `TypedRequirement` 新增 `target_late_type` / `target_late_type_state` / `target_late_type_candidates` / `target_late_type_reason`。
+  - 只有 `CreateExtension` 会去解析 late type；其它构件的状态是 `NOT_APPLICABLE`。
+  - 解析不出唯一组件时，`ClarificationResult.unresolved` 增加 `target_late_type` 决策，选项是真实候选组件。
+- `kernel._build_develop_plan()` 不再把 `target_entity` 写进 `target` / `target_object`。计划步骤与构造参数里 `target_object` 只承载 late type，缺失时是空串，实体类别另存 `target_entity`。
+- `kernel._extension_late_type_gate()`：扩展意图若没有 late type，直接返回 `needs_clarification` 并附候选，不再进入生成器。
+- `create_extension()` 用 `LateTypeResolver` 复核 `target_object`：寄存器名不存在则 `status=error`，不产出 `CATImplementClass(..., feature)`。
+- `UIGeneratorClarifier._is_construct_only()`：`create extension X on CAAMmrMeasureSet` 这类纯构件请求不再被误问 `commit_timing`。
+
+已知边界：这是把「不可能注册成功」的错误挡住，并把候选交给澄清；它不等于 CADE 已经知道某个需求在业务上「应该」扩展哪个组件。真实工程里仍需要用户指定目标组件。
+
+#### R-05-B 构建契约：按本机证据注入 LINK_WITH
+
+- 骨架调用 `CATExtIVisu::BuildRep()` 并 `new CAT3DBagRep()`，缺库时是「编译过、链接挂」（LNK2019），所以只生成源码不够。
+- 库名不是抄样例、也不是猜的，而是扫描本机 shipped import library 的符号归属：
+
+  | 符号 | 命中 | 结论 |
+  |---|---|---|
+  | `CATExtIVisu` | `CATVisualization.lib` (331)，其余 0 | 必须链 `CATVisualization` |
+  | `CAT3DBagRep` | `CATViz.lib` (448)、`CATVisualization.lib` (25) | 链 `CATViz` |
+  | `CATRep` | `CATViz.lib` (2740)、`CATVisualization.lib` (1025) | 同上 |
+  | `CATMetaClass`（`CATDeclareClass` / `CATImplementClass`） | `JS0GROUP.lib` (1818) | 必须链 `JS0GROUP` |
+
+- 官方样例 Imakefile（`CAAMmrCCDataExtension.m` 等）还链了 MechanicalModeler / ObjectModelerBase / SpecsModeler / KnowledgeItf——那是给样例自己的 `CATIDescendants` / `CATVisManager` 业务代码用的，本生成器不产出那些代码，因此**故意不注入**。
+- `_inject_link_with()` 行为约束（均有测试）：
+  - 只扩展已存在的 `LINK_WITH` 链，**不追加第二个 `LINK_WITH` 定义**（mkmk 取最后一个，会静默丢掉模块原有库）；
+  - 追加到链的最后一行并**保留该行原本是否续行**，不会凭空补 `\` 而吞掉下一行变量（如 `LOCAL_CCFLAGS`）；
+  - 已全部存在时返回 `None`（幂等，不产生空 patch）；
+  - 无 `LINK_WITH` 或无 Imakefile 时**不假装成功**：`link_with_injected=False` 并在 `next_steps` 说明缺什么。
+- 返回体的 `required_libraries` / `link_with_injected` / `link_with_added` / `imakefile_present` 如实反映实际发生的事。
+
+边界：这证明的是「生成器知道该链什么、并把它写进 Imakefile」，**不证明在 B28 链接通过**。真实链接验证仍未执行。
+
+#### R-03 PE 结构自洽与 DICO 实证规则
+
+- `_verify_pe_file()` 新增三条边界（此前缺失，可被自相矛盾的测试样本骗过）：
+  - `SizeOfHeaders <= file_size`
+  - `SizeOfHeaders >= 节表偏移 + 节表长度`
+  - 每个节区 `VirtualAddress + max(VirtualSize, SizeOfRawData) <= SizeOfImage`
+- 测试夹具 `make_valid_pe()` 重写为内部自洽的映像：`SizeOfHeaders=512` 覆盖 DOS stub + 两个头 + 节表，文件补齐到 1024 字节，节区虚拟范围落在 `SizeOfImage` 内。
+  - 新增三条反向用例：`SizeOfHeaders` 超过文件、`SizeOfHeaders` 盖不住节表（6 个节区）、节区虚拟范围超过 `SizeOfImage`。
+- DICO 规则按本机 B28 实证修正：
+  - 实测 49 个 `.dico`（CAADoc 44 + 框架私有 5），有效行 **423/423 恰好 3 token**，保留「恰好 3 token」。
+  - 6 行库名**没有** `lib` 前缀（如 `CAAOsmAdd CATIBuild CAAOsmBuildUpdate`），因此取消「必须 `lib` 前缀」这一推断规则；目标模块匹配接受 `lib<Module>` 与 `<Module>` 两种拼写。
+  - docstring 写明样本来源与统计口径。这仍是行级结构预检，不是 CATIA B28 字典解析器，也不证明 CATIA 会接受该条目。
+
+#### R-02 新旧 PID 身份不可继承
+
+- 补测试 `UNKNOWN(5001) → FAIL(process_disappeared) → UNKNOWN(6001)`，四条断言：最终 `UNKNOWN`、PID=6001、证据标明 6001 未验证、5001 的 `process_disappeared` 不被复用。
+- 轮询状态机本轮未改动（`e49dd5f` 的转移逻辑已覆盖），只补齐验证。
+- 仍未在真实 CNEXT 进程树上复跑。
+
+#### R-08 模块句柄枚举与模块路径完整性分离
+
+- `get_process_loaded_modules()` 的第二返回值语义收紧为「所有模块路径都完整取得」：`GetModuleFileNameExW` 返回 0 或缓冲区截断时置为 `False`，不再把短路径列表当完整列表返回。
+- `verify_module_loaded()` 在该状态下返回 `UNKNOWN`，证据里区分 `enumeration_complete` 与 `module_paths_complete`。
+- 仍未对真实 CNEXT 的模块规模做实测。
+
+#### 本轮本地验证（已实际执行，不是 GitHub CI）
+
+- `python tests/test_kernel_domain_routing.py`：**103/103 PASS**
+- `python tests/test_runtime_layered_verification.py`：**70/70 PASS**
+- `python tests/test_runtime_verification.py`：**13/13 PASS**（本轮新修：三个用例未隔离真实进程快照，已改为注入确定性快照）
+- `python tests/test_intent_planner.py`：**39/39 PASS**
+- `python tests/test_master.py --quick`：**50/50 suites PASS**（Int-1 Build & Run 仍跳过）
+- 受影响的存量回归：`test_full_regression.py` 351/351、`test_kernel_edge_cases.py` 178/178、`test_skill_ai_coordination.py` 119/119、`test_ai_integration.py` 46/46、`test_kernel_routing.py` 47/47、`test_requirements.py` 23/23、`test_ui_generator_clarifier.py` 28/28、`test_phase4_enhanced.py` 通过。
+
+#### 仍未获得证据
+
+- 生成的 `CATExtIVisu` 骨架**没有在 B28 编译**。`LINK_WITH` 已按本机证据注入（见下节 R-05-B），但「注入库名」与「在 B28 链接通过」是两件事，后者仍未验证。
+- L4 Add-in / Dictionary 初始化：`UNKNOWN`。
+- L5 命令 / Workbench 功能可用性：`NOT_RUN`。
+- GitHub 没有为本轮提交返回 CI 状态记录；上述数字是本地实测，不是 CI 结论。

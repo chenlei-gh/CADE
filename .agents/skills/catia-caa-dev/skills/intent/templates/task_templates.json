@@ -46,7 +46,7 @@
     "risk": "medium",
     "steps": [
       {"action": "ensure_module",       "params": {"name": "$module", "framework": "$framework"}},
-      {"action": "create_extension",    "params": {"name": "$name", "target_object": "$target", "module": "$module", "interfaces": "$candidate_interfaces", "behavior_aspects": "$behavior_aspects", "extension_point": "$extension_point"}},
+      {"action": "create_extension",    "params": {"name": "$name", "target_object": "$target", "target_late_type": "$target_late_type", "target_late_type_state": "$target_late_type_state", "target_late_type_candidates": "$target_late_type_candidates", "target_entity": "$target_entity", "module": "$module", "interfaces": "$candidate_interfaces", "behavior_aspects": "$behavior_aspects", "extension_point": "$extension_point"}},
       {"action": "register_catalog",    "params": {"name": "$name", "framework": "$framework"}},
       {"action": "update_imakefile",    "params": {"module": "$module"}}
     ]
