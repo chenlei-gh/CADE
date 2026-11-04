@@ -956,8 +956,10 @@ class Kernel:
 
         intent_params = {}
         if typed_req:
+            target_ent = getattr(typed_req, "target_entity", "unknown")
             intent_params.update({
-                "target_entity": getattr(typed_req, "target_entity", "unknown"),
+                "target": target_ent,
+                "target_entity": target_ent,
                 "behavior_aspect": getattr(typed_req, "behavior_aspect", "unknown"),
                 "behavior_aspects": getattr(typed_req, "behavior_aspects", []),
                 "extension_point": getattr(typed_req, "extension_point", "unknown"),

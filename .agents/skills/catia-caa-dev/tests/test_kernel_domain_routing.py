@@ -137,6 +137,16 @@ if plan_visu:
     plan_typed_req = plan_visu.get("typed_requirement", {})
     ck("TypedRequirement present in plan dict", plan_typed_req.get("domain") == "visualization")
 
+    # R-05: Construction Plan steps actually consumed candidate_interfaces, behavior_aspects, target
+    steps = plan_visu.get("plan", {}).get("steps", [])
+    create_step = next((t for t in steps if t.get("action") == "create_extension"), None)
+    ck("Plan contains create_extension step", create_step is not None)
+    if create_step:
+        step_params = create_step.get("params", {})
+        ck("Step params consumed interfaces (CATIVisu)", "CATIVisu" in step_params.get("interfaces", []), f"got {step_params.get('interfaces')}")
+        ck("Step params consumed target_object (feature)", step_params.get("target_object") == "feature", f"got {step_params.get('target_object')}")
+        ck("Step params consumed behavior_aspects", "visualization" in step_params.get("behavior_aspects", []), f"got {step_params.get('behavior_aspects')}")
+
 
 # ── 5. Multi-Domain Detection & Disambiguation (R-06) ───────────
 print("\n[5] Multi-Domain Detection & Semantic Aggregation")
@@ -167,6 +177,22 @@ typed_conflict = getattr(res_conflict, "typed_requirement", None)
 ck("Multi-domain construct conflict returns AMBIGUOUS",
    typed_conflict is not None and typed_conflict.ambiguity_state == "AMBIGUOUS",
    f"state={getattr(typed_conflict, 'ambiguity_state', None)}")
+
+# R-06: Multi-domain with unresolved action domain alongside action domain -> AMBIGUOUS (not silently dropped to CLEAR)
+unresolved_action_req = "对装配结构进行3D表现，并处理产品结构"
+res_unres = clarifier.analyze(unresolved_action_req)
+typed_unres = getattr(res_unres, "typed_requirement", None)
+ck("R-06: Unresolved parallel action domain triggers AMBIGUOUS",
+   typed_unres is not None and typed_unres.ambiguity_state == "AMBIGUOUS",
+   f"state={getattr(typed_unres, 'ambiguity_state', None)}")
+
+# R-06: Cross-domain target_entity priority aggregation (feature > document > component)
+target_prio_req = "在装配体文档中为零件特征增加3D表现"
+res_target = clarifier.analyze(target_prio_req)
+typed_target = getattr(res_target, "typed_requirement", None)
+ck("R-06: Target entity priority selects 'feature' over generic document/component",
+   typed_target is not None and typed_target.target_entity == "feature",
+   f"target_entity={getattr(typed_target, 'target_entity', None)}")
 
 print("\n" + "=" * 70)
 print(f"  Result: {passed}/{total} tests passed ({'ALL PASS' if passed == total else 'SOME FAILED'})")

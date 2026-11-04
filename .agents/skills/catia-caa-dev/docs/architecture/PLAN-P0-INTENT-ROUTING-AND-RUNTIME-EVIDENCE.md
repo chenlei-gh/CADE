@@ -212,18 +212,39 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
    - `instance_scope` 根据 L2 真实状态动态输出：L2 PASS 为 `target_instance_verified`，L2 UNKNOWN 为 `global_image_name_snapshot_only`，L2 AMBIGUOUS 为 `multiple_instances_unresolved`。
    - 所有返回分支（`exited`, `started`, `ambiguous`, `launching`）统一注入 `runtime_view_mounted_deprecated_notice`。
 
+### 5.3 第四轮终极闭环整改事实与严谨落地 (2026-11-04)
+
+针对第三轮技术审查提出的 5 项核心遗留缺陷（R-02、R-03、R-05、R-06、R-08），进行了彻底、严谨的代码实现与测试覆盖：
+
+1. **R-02 进程状态机覆盖彻底修复 (`skills/run.py`)**：
+   - 在轮询循环中，当检测到 `AMBIGUOUS` 状态时，立即将 `unverified_cnext_pid` 置为 `None`，杜绝早期单实例未验证观察结果泄露。
+   - 循环结束后严格按优先级判定最终状态（`detected_cnext_pid` PASS > `cnext_id_status == 'AMBIGUOUS'` > `unverified_cnext_pid` UNKNOWN > FAIL），确保多实例冲突时绝不回退为 UNKNOWN 误报旧 PID。
+2. **R-03 完整 PE / Section / DICO 语法与目标绑定严密化 (`skills/runtime_view.py`)**：
+   - 扩展 `_verify_pe_file()`：不仅校验 COFF 和 Optional Header，还严格校验 Section Table 物理边界（0 <= NumberOfSections <= 96，40 bytes/section），以及每个节区的 `raw_ptr + raw_size <= file_size`，杜绝虚假伪造 PE。
+   - 强化 `_verify_dico_syntax()`：消除子串模糊匹配，改为对目标模块名进行严格精确匹配（如 `libMyModule` 与 `MyModule` 完全对应，拒绝 `libMyModuleExtra` 这类包含子串的误判）；三元组/四元组标识符严格格式校验。
+3. **R-05 Planner 与 Construction Plan 语义字段真正消费落地 (`skills/kernel.py`, `skills/intent/planner.py`, `skills/intent/templates/task_templates.json`)**：
+   - 在 `task_templates.json` 的 `CreateExtension` 任务模板中显式注入 `interfaces`, `behavior_aspects`, `extension_point`, `target_object` 参数占位符。
+   - 在 `planner.py` 的 `_resolve_params()` 中解析 `$candidate_interfaces`, `$behavior_aspects`, `$target` 等占位符，并在 `plan()` 中对具体构件生成步骤自动继承上述语义参数。
+   - 在 `kernel.py` 的 `_build_develop_plan()` 中对齐 `target` 与 `target_entity`，使生成的 Construction Plan 中的每一个步骤参数都真实且明确地指导生成器实现 `CATIVisu` 等目标接口，真正完成语义驱动。
+4. **R-06 多领域消歧与 target_entity 跨域优先级聚合 (`skills/requirements.py`)**：
+   - 在 `_build_typed_requirement()` 中区分实体上下文领域（装配体/产品/零件/视图）与操作动作领域；若多领域中存在并列动作意图且该领域未解析出构件类型（含有“导出/统计/计算/生成/处理”等动作谓词），严格返回 `AMBIGUOUS` 退回澄清，禁止忽略未解析领域误报 `CLEAR`。
+   - 建立实体目标优先级聚合机制（`feature` > `document`/`product` > 通用 `component`），精准识别零件特征与装配环境。
+5. **R-08 PSAPI 扩容上限截断防护 (`skills/run.py`)**：
+   - `get_process_loaded_modules()` 返回 `(modules, is_complete)` 追踪状态。
+   - 若达到扩容上限（4次，8192 句柄）仍发生截断，明确标记 `is_complete = False`；在 `verify_module_loaded()` 中对未命中模块且枚举不完整的场景返回 `UNKNOWN`（`module_enumeration_incomplete_capacity_exceeded`），坚决不伪造 `FAIL`。
+
 ---
 
 ## 6. 最终验证与回归测试矩阵
 
 全量测试已在当前工作区实测执行并通过，无任何遗留错误或回归破坏：
 
-1. **`test_kernel_domain_routing.py`**: **51/51 PASS** (涵盖显式构件优先、领域意图推导、消除盲目 fallback、语义注入、多域识别与语义融合、冲突消歧)
-2. **`test_runtime_layered_verification.py`**: **38/38 PASS** (涵盖 L0~L5 分层、COFF/PE 完整校验、DICO 目标模块强绑定、R-02 双向时间窗口与 baseline 过滤、R-04 目标模块限定、动态 Envelope scope、L4/L5 诚实边界)
+1. **`test_kernel_domain_routing.py`**: **57/57 PASS** (涵盖显式构件优先、领域意图推导、消除盲目 fallback、Plan 步骤真实消费语义参数、多域识别与语义融合、未决操作领域冲突消歧、实体目标优先级聚合)
+2. **`test_runtime_layered_verification.py`**: **42/42 PASS** (涵盖 L0~L5 分层、COFF/PE/Section 越界防护校验、DICO 目标模块精确强绑定、R-02 轮询 AMBIGUOUS 清空 UNKNOWN PID 状态机防护、R-08 PSAPI 截断返回 UNKNOWN、L4/L5 诚实边界)
 3. **`test_runtime_verification.py`**: **13/13 PASS** (P5.3 Envelope 历史双包结构完全兼容，未验证实例边界测试零失败)
 4. **`test_kernel_routing.py`**: **47/47 PASS** (37 个存量工具与 10 个 Native Investigation 路由完全正常)
 5. **`test_kernel_edge_cases.py`**: **178/178 PASS** (极端边界、特殊字符、状态机、知识探测、Framework/Module/Dialog 生成等零破坏)
 6. **`test_build_and_run.py`**: **53/53 PASS** (构建与运行环境、进程生命周期全面正常)
 7. **`test_runtime_feedback.py`**: **3/3 PASS** (运行时反馈机制正常)
 
-**累计实测用例数**: **383/383 全部 PASS** (通过率 100%)。
+**累计实测用例数**: **393/393 全部 PASS** (通过率 100%)。

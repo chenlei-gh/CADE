@@ -54,9 +54,24 @@ class Planner:
 
         for step_def in template.get("steps", []):
             params = self._resolve_params(intent, step_def.get("params", {}))
+            action = step_def["action"]
+
+            # Automatically inject semantic fields into domain action steps (R-05 fix)
+            if action in ("create_extension", "create_feature", "create_command", "create_dialog"):
+                if "interfaces" not in params and intent.params.get("candidate_interfaces"):
+                    params["interfaces"] = intent.params["candidate_interfaces"]
+                if "candidate_interfaces" not in params and intent.params.get("candidate_interfaces"):
+                    params["candidate_interfaces"] = intent.params["candidate_interfaces"]
+                if "behavior_aspects" not in params and intent.params.get("behavior_aspects"):
+                    params["behavior_aspects"] = intent.params["behavior_aspects"]
+                if "target_object" not in params and (intent.params.get("target") or intent.params.get("target_entity")):
+                    params["target_object"] = intent.params.get("target") or intent.params.get("target_entity")
+                if "extension_point" not in params and intent.params.get("extension_point"):
+                    params["extension_point"] = intent.params["extension_point"]
+
             deps = step_def.get("dependencies", [])
             rollback = step_def.get("rollback_action")
-            plan.add_step(step_def["action"], params, deps, rollback)
+            plan.add_step(action, params, deps, rollback)
 
         return plan
 
@@ -135,8 +150,14 @@ class Planner:
                     result[k] = intent.framework
                 elif key == "interface_name":
                     result[k] = intent.params.get("interface", f"I{intent.name}")
-                elif key == "target":
-                    result[k] = intent.params.get("target", "")
+                elif key in ("target", "target_object"):
+                    result[k] = intent.params.get("target") or intent.params.get("target_entity", "")
+                elif key in ("candidate_interfaces", "interfaces"):
+                    result[k] = intent.params.get("candidate_interfaces", [])
+                elif key == "behavior_aspects":
+                    result[k] = intent.params.get("behavior_aspects", [])
+                elif key == "extension_point":
+                    result[k] = intent.params.get("extension_point", "")
                 else:
                     result[k] = intent.params.get(key, v)
             else:

@@ -199,24 +199,32 @@ def get_process_creation_time_win32(pid: int) -> float | None:
         return None
 
 
-def get_process_loaded_modules(pid: int) -> list:
-    """Get absolute paths of all modules loaded in process pid via Win32 PSAPI."""
-    if sys.platform != "win32":
-        return []
-    try:
-        import ctypes
-        from ctypes import wintypes
+def get_process_loaded_modules(pid: int, return_details: bool = False):
+    """
+    Get full list of module file paths loaded into a process via Win32 PSAPI EnumProcessModulesEx.
+    
+    Args:
+        pid: Process ID to inspect
+        return_details: If True, return (modules: list, is_complete: bool)
+    
+    Returns:
+        List of module file path strings (or tuple of (list, bool) if return_details=True).
+    """
+    if sys.platform != "win32" or not pid:
+        return ([], True) if return_details else []
 
+    try:
         PROCESS_QUERY_INFORMATION = 0x0400
         PROCESS_VM_READ = 0x0010
         LIST_MODULES_ALL = 0x03
 
-        kernel32 = ctypes.windll.kernel32
-        psapi = ctypes.windll.psapi
-
-        h_process = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, pid)
+        h_process = kernel32.OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+            False,
+            pid,
+        )
         if not h_process:
-            return []
+            return ([], True) if return_details else []
 
         try:
             # Dynamic buffer expansion with bounded retries (R-08 fix)
@@ -224,6 +232,7 @@ def get_process_loaded_modules(pid: int) -> list:
             max_attempts = 4
             cb_needed = wintypes.DWORD()
             h_mods = None
+            is_complete = True
 
             for attempt in range(max_attempts):
                 h_mods = (wintypes.HMODULE * current_capacity)()
@@ -235,11 +244,17 @@ def get_process_loaded_modules(pid: int) -> list:
                     LIST_MODULES_ALL,
                 )
                 if not res:
-                    return []
+                    return ([], True) if return_details else []
 
                 needed_bytes = cb_needed.value
                 current_bytes = ctypes.sizeof(h_mods)
                 if needed_bytes <= current_bytes:
+                    is_complete = True
+                    break
+
+                # If reached final attempt and still needed_bytes > current_bytes
+                if attempt == max_attempts - 1:
+                    is_complete = False
                     break
 
                 # Double capacity or take required count if larger
@@ -262,11 +277,16 @@ def get_process_loaded_modules(pid: int) -> list:
                 )
                 if length > 0:
                     modules.append(filename_buf.value)
+
+            if return_details:
+                return modules, is_complete
+            # Backwards compatibility: set attribute on list
+            modules.is_complete = is_complete
             return modules
         finally:
             kernel32.CloseHandle(h_process)
     except Exception:
-        return []
+        return ([], True) if return_details else []
 
 
 def check_process_running(process_name: str) -> list:
@@ -423,7 +443,15 @@ def verify_module_loaded(pid: int, expected_dll_path: Path) -> tuple:
     if not pid:
         return "NOT_RUN", {"reason": "no_cnext_pid_available"}
 
-    loaded_modules = get_process_loaded_modules(pid)
+    loaded_res = get_process_loaded_modules(pid, return_details=True)
+    if isinstance(loaded_res, tuple):
+        loaded_modules, is_complete = loaded_res
+    else:
+        loaded_modules = loaded_res
+        is_complete = getattr(loaded_modules, "is_complete", True)
+
+    if not loaded_modules and not is_complete:
+        return "UNKNOWN", {"reason": "cannot_enumerate_process_modules_buffer_exceeded_or_failed"}
     if not loaded_modules:
         return "UNKNOWN", {"reason": "cannot_enumerate_process_modules_insufficient_privileges_or_exited"}
 
@@ -439,13 +467,26 @@ def verify_module_loaded(pid: int, expected_dll_path: Path) -> tuple:
             "expected_path": exp_resolved,
             "matched_path": matched,
             "match_scope": "exact_absolute_physical_path",
+            "enumeration_complete": is_complete,
         }
     else:
-        return "FAIL", {
-            "expected_path": exp_resolved,
-            "total_loaded_modules": len(loaded_modules),
-            "match_found": False,
-        }
+        if not is_complete:
+            # Target DLL not in truncated buffer (R-08 fix); do not falsely claim FAIL
+            return "UNKNOWN", {
+                "expected_path": exp_resolved,
+                "total_loaded_modules": len(loaded_modules),
+                "match_found": False,
+                "enumeration_complete": False,
+                "reason": "module_enumeration_incomplete_capacity_exceeded",
+                "note": "Target DLL not found in enumerated buffer, but module list was truncated because PSAPI capacity limit was reached",
+            }
+        else:
+            return "FAIL", {
+                "expected_path": exp_resolved,
+                "total_loaded_modules": len(loaded_modules),
+                "match_found": False,
+                "enumeration_complete": True,
+            }
     # Validate process_name: only allow alphanumeric + .exe (P2-009 fix)
     # Allow empty/missing to return empty list (graceful degradation)
     import re
@@ -945,6 +986,7 @@ def start_catia_runtime(
                 )
                 if status == "PASS" and cnext_pid:
                     detected_cnext_pid = cnext_pid
+                    unverified_cnext_pid = None
                     cnext_id_status = status
                     cnext_id_evidence = evidence
                     logger.write(
@@ -959,15 +1001,27 @@ def start_catia_runtime(
                     # until timeout budget expires
                     logger.write(f"CNEXT observed (PID: {cnext_pid}) without correlation — continuing to poll")
                 elif status == "AMBIGUOUS":
+                    # Clear unverified PID (R-02 fix): multiple ambiguous instances invalidate any single unverified observation!
+                    unverified_cnext_pid = None
                     cnext_id_status = status
                     cnext_id_evidence = evidence
                     logger.write(f"CNEXT instances ambiguous after {(i + 1) * POLL_INTERVAL:.1f}s")
 
-            effective_pid = detected_cnext_pid or unverified_cnext_pid
+            # Determine final process identity status and effective PID
+            if detected_cnext_pid:
+                effective_pid = detected_cnext_pid
+                l2_status = "PASS"
+            elif cnext_id_status == "AMBIGUOUS":
+                effective_pid = None
+                l2_status = "AMBIGUOUS"
+            elif unverified_cnext_pid:
+                effective_pid = unverified_cnext_pid
+                l2_status = "UNKNOWN"
+            else:
+                effective_pid = None
+                l2_status = cnext_id_status  # "FAIL"
 
             # Layered Evidence: L2 & L3
-            # R-02 fix: If unverified_cnext_pid, L2 status MUST be UNKNOWN, never PASS
-            l2_status = "PASS" if detected_cnext_pid else ("UNKNOWN" if unverified_cnext_pid else cnext_id_status)
             l2_res = {
                 "level": "L2",
                 "status": l2_status,
@@ -1003,14 +1057,22 @@ def start_catia_runtime(
                     "status": "NOT_RUN",
                     "check": "module_loaded_exact_path",
                     "evidence": {
-                        "reason": "target_process_not_verified" if unverified_cnext_pid else "cnext_pid_or_workspace_unavailable"
+                        "reason": (
+                            "multiple_instances_ambiguous"
+                            if l2_status == "AMBIGUOUS"
+                            else (
+                                "target_process_not_verified"
+                                if unverified_cnext_pid
+                                else "cnext_pid_or_workspace_unavailable"
+                            )
+                        )
                     },
                 }
 
             # L4: Honest boundary — no public uninstrumented probe in B28
             l4_res = {
                 "level": "L4",
-                "status": "UNKNOWN" if effective_pid else "NOT_RUN",
+                "status": "UNKNOWN" if (effective_pid and l2_status in ("PASS", "UNKNOWN")) else "NOT_RUN",
                 "check": "addin_runtime_registration",
                 "evidence": {
                     "reason": "no_runtime_hook_in_b28",
@@ -1042,10 +1104,10 @@ def start_catia_runtime(
                     highest_verified = lvl
                     break
 
-            if effective_pid:
+            if l2_status == "PASS" and effective_pid:
                 runtime_result = {
                     "status": "started",
-                    "message": "CATIA started successfully" if detected_cnext_pid else "CATIA process detected (unverified correlation)",
+                    "message": "CATIA started successfully",
                     "pid": effective_pid,
                     "timestamp": start_time.isoformat(),
                     "runtime_view_present": runtime_view_present,
@@ -1060,7 +1122,25 @@ def start_catia_runtime(
                     "operation": "start_runtime",
                     "stage": "runtime_start",
                 }
-            elif cnext_id_status == "AMBIGUOUS":
+            elif l2_status == "UNKNOWN" and effective_pid:
+                runtime_result = {
+                    "status": "started",
+                    "message": "CATIA process detected (unverified correlation)",
+                    "pid": effective_pid,
+                    "timestamp": start_time.isoformat(),
+                    "runtime_view_present": runtime_view_present,
+                    "runtime_view_mounted": runtime_view_present,  # deprecated alias
+                    "runtime_view_mounted_deprecated_notice": "runtime_view_mounted only asserts candidate directory presence. Refer to runtime_verification.levels for L0-L5 layered evidence.",
+                    "runtime_verification": {
+                        "highest_verified_level": highest_verified,
+                        "levels": levels,
+                    },
+                    "entrypoint": entrypoint,
+                    "orchestrated_by_kernel": orchestrated_by_kernel,
+                    "operation": "start_runtime",
+                    "stage": "runtime_start",
+                }
+            elif l2_status == "AMBIGUOUS":
                 runtime_result = {
                     "status": "ambiguous",
                     "message": "Multiple CATIA instances detected but cannot unambiguously associate with launcher",

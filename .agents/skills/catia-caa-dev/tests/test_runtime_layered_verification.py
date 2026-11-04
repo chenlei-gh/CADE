@@ -101,7 +101,11 @@ with tempfile.TemporaryDirectory(prefix="cade_l1_") as tmp_dir:
         pe_sig = b"PE\x00\x00"
         coff_hdr = struct.pack("<HHIIIHH", machine, num_sections, 0, 0, 0, 240, 0x0002)
         opt_hdr = struct.pack("<H", opt_magic) + b"\x00" * 238
-        return dos_hdr + pe_sig + coff_hdr + opt_hdr
+        sec_hdr = b""
+        if num_sections > 0:
+            # 40 bytes section header: Name(8) + VirtSize(4) + VirtAddr(4) + RawSize(4) + RawPtr(4) + ...
+            sec_hdr = b".text\x00\x00\x00" + struct.pack("<IIII", 0x1000, 0x1000, 0, 0) + b"\x00" * 16
+        return dos_hdr + pe_sig + coff_hdr + opt_hdr + sec_hdr
 
     pe_header = make_valid_pe(machine=0x8664, opt_magic=0x020B)
     valid_dll = bin_dir / "MyModule.dll"
@@ -125,6 +129,21 @@ with tempfile.TemporaryDirectory(prefix="cade_l1_") as tmp_dir:
     valid_dico.write_bytes(b"OtherClass CATIInterface libOtherModule\n")
     res_dico_unbound = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
     ck("R-03: L1 FAIL when DICO does not mention target module", res_dico_unbound["status"] == "FAIL", f"got {res_dico_unbound['status']}")
+
+    # R-03: DICO substring match rejected (e.g. libMyModuleExtra must NOT match MyModule)
+    valid_dico.write_bytes(b"MyClass CATIInterface libMyModuleExtra\n")
+    res_dico_substr = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("R-03: L1 FAIL when DICO only has substring match (libMyModuleExtra vs MyModule)", res_dico_substr["status"] == "FAIL", f"got {res_dico_substr['status']}")
+
+    # R-03: PE Section boundary out of bounds -> FAIL
+    sec_oob = b".text\x00\x00\x00" + struct.pack("<IIII", 0x1000, 0x1000, 0x2000, 0x2000) + b"\x00" * 16
+    pe_oob = b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x40) + b"PE\x00\x00" + struct.pack("<HHIIIHH", 0x8664, 1, 0, 0, 0, 240, 0x0002) + struct.pack("<H", 0x020B) + b"\x00" * 238 + sec_oob
+    valid_dll.write_bytes(pe_oob)
+    res_sec_oob = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("R-03: L1 FAIL when PE section raw_ptr + raw_size exceeds file boundary", res_sec_oob["status"] == "FAIL", f"got {res_sec_oob['status']}")
+
+    # Restore valid assets
+    valid_dll.write_bytes(pe_header)
     valid_dico.write_bytes(b"MyClass CATIInterface libMyModule\n")
 
     # Invalidate PE header (non-PE DLL) -> FAIL
@@ -229,10 +248,11 @@ with patch("run.get_process_loaded_modules", return_value=fake_loaded):
     ck("L3 match_scope is exact_absolute_physical_path",
        ev_match.get("match_scope") == "exact_absolute_physical_path")
 
-    # Mismatch path
-    target_mismatch = Path(r"D:\Vault\Other\win_b64\code\bin\OtherModule.dll")
-    st_miss, ev_miss = verify_module_loaded(pid=2000, expected_dll_path=target_mismatch)
-    ck("L3 FAIL when module not in loaded list", st_miss == "FAIL", f"status={st_miss}")
+    # Case E: R-08 Fix — Truncated module enumeration returns UNKNOWN, not fake FAIL
+    with patch("run.get_process_loaded_modules", return_value=(fake_loaded, False)):
+        st_trunc, ev_trunc = verify_module_loaded(pid=2000, expected_dll_path=Path(r"D:\Vault\Unlisted.dll"))
+        ck("R-08: L3 UNKNOWN on incomplete PSAPI buffer truncation", st_trunc == "UNKNOWN", f"status={st_trunc}")
+        ck("R-08: Reason indicates buffer capacity exceeded", ev_trunc.get("reason") == "module_enumeration_incomplete_capacity_exceeded")
 
     # No PID available
     st_nopid, _ = verify_module_loaded(pid=None, expected_dll_path=target_match)
@@ -323,6 +343,28 @@ with tempfile.TemporaryDirectory(prefix="cade_full_rt_") as tmp_dir:
            f"status={l3_no_mod.get('status')}")
         ck("R-04: L3 reason explains target_module_not_specified",
            l3_no_mod.get("evidence", {}).get("reason") == "target_module_not_specified")
+
+    # Case F: R-02 Fix — Polling state clearing: UNKNOWN followed by AMBIGUOUS clears unverified PID
+    poll_steps = [
+        ("UNKNOWN", 5001, {"reason": "sole_cnext"}),
+        ("AMBIGUOUS", None, {"reason": "multiple"}),
+    ]
+    def mock_poll_cnext(**kwargs):
+        if poll_steps:
+            return poll_steps.pop(0)
+        return ("AMBIGUOUS", None, {"reason": "multiple"})
+
+    with patch("subprocess.Popen") as mock_popen, \
+         patch("run.identify_target_cnext", side_effect=mock_poll_cnext), \
+         patch("run.stop_catia"), \
+         patch("run.check_process_running", return_value=[]):
+        mock_proc = mock_popen.return_value
+        mock_proc.pid = 1111
+        res_amb = start_catia_runtime(wait_for_exit=False)
+        l2_amb = res_amb.get("runtime_verification", {}).get("levels", {}).get("L2", {})
+        ck("R-02: L2 AMBIGUOUS clears previous UNKNOWN PID (does not leak 5001)",
+           l2_amb.get("status") == "AMBIGUOUS" and res_amb.get("pid") is None,
+           f"l2_status={l2_amb.get('status')}, pid={res_amb.get('pid')}")
 
 
 print("\n" + "=" * 70)

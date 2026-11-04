@@ -309,21 +309,23 @@ def check_runtime_view_l0(workspace_path: Path, architecture: str = None) -> dic
 
 
 def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
-    """Verify that path is a valid Windows PE file with complete COFF and Optional headers.
+    """Verify that path is a valid Windows PE file with complete COFF, Optional, and Section headers.
 
     Checks:
     1. DOS header magic (MZ) and minimum file size
     2. e_lfanew pointer validity within file boundaries
     3. PE signature (PE\\0\\0)
-    4. COFF File Header (20 bytes): NumberOfSections > 0, SizeOfOptionalHeader >= 2
+    4. COFF File Header (20 bytes): 0 <= NumberOfSections <= 96, SizeOfOptionalHeader >= 2
     5. Machine architecture matching (win_b64 -> 0x8664 AMD64, intel_a -> 0x014c i386)
     6. Optional Header magic (0x020B PE32+ for 64-bit, 0x010B PE32 for 32-bit)
+    7. SizeOfOptionalHeader fully contained within file boundaries
+    8. Section Table (40 bytes per section) fully contained within file boundaries
+    9. Section raw data pointers and sizes within file boundaries (R-03 fix)
     """
     try:
         import struct
 
         file_size = path.stat().st_size
-        # Minimum size: DOS Header (64 bytes) + PE Sig (4 bytes) + COFF Header (20 bytes) + Optional Magic (2 bytes) = 90 bytes
         if file_size < 90:
             return False
 
@@ -333,7 +335,6 @@ def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
                 return False
 
             pe_offset = struct.unpack_from("<I", header, 0x3C)[0]
-            # Must leave room for PE sig (4) + COFF (20) + Optional Magic (2)
             if pe_offset <= 0 or pe_offset > file_size - 26:
                 return False
 
@@ -347,7 +348,12 @@ def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
                 return False
 
             machine, num_sections, _, _, _, size_opt_hdr, _ = struct.unpack("<HHIIIHH", coff_bytes)
-            if num_sections <= 0 or size_opt_hdr < 2:
+            if num_sections < 0 or num_sections > 96 or size_opt_hdr < 2:
+                return False
+
+            # Check Optional Header boundary
+            opt_hdr_offset = pe_offset + 4 + 20
+            if opt_hdr_offset + size_opt_hdr > file_size:
                 return False
 
             opt_magic_bytes = f.read(2)
@@ -372,6 +378,23 @@ def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
                 elif machine not in (0x8664, 0x014C):
                     return False
 
+            # Validate Section Table boundary
+            sec_table_offset = opt_hdr_offset + size_opt_hdr
+            sec_table_size = num_sections * 40
+            if sec_table_offset + sec_table_size > file_size:
+                return False
+
+            if num_sections > 0:
+                f.seek(sec_table_offset)
+                for _ in range(num_sections):
+                    sec_bytes = f.read(40)
+                    if len(sec_bytes) < 40:
+                        return False
+                    _, virt_size, virt_addr, raw_size, raw_ptr = struct.unpack("<8sIIII", sec_bytes[:24])
+                    if raw_ptr > 0 and raw_size > 0:
+                        if raw_ptr + raw_size > file_size:
+                            return False
+
             return True
     except Exception:
         return False
@@ -381,15 +404,30 @@ def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
     """Validate CAA .dico file syntax and verify explicit target module linkage.
 
     Rules:
-    - Every non-empty, non-comment line must contain at least 3 whitespace-separated tokens
-      (interface, implementation/class, and shared library).
-    - If target_module is provided, at least one entry must explicitly bind to that module's
-      runtime library (e.g. libTargetModule or TargetModule).
+    - Every non-empty, non-comment line must contain 3 or 4 whitespace-separated tokens:
+      <ClassName> <InterfaceName> <LibraryName> [optional_entry_type]
+    - ClassName, InterfaceName, LibraryName must be valid identifiers.
+    - If target_module is provided, at least one entry must explicitly and exactly
+      bind to that module's runtime library (e.g. libTargetModule or TargetModule).
+      No substring matching.
     """
+    import re
     entries_count = 0
     syntax_errors = 0
     mentions_target = False
-    norm_mod = (target_module[:-2] if target_module.endswith(".m") else target_module).lower() if target_module else None
+
+    # Normalize target_module for exact matching (R-03 fix)
+    norm_mod = None
+    unpref_mod = None
+    if target_module:
+        norm_mod = (target_module[:-2] if target_module.endswith(".m") else target_module).lower()
+        if norm_mod.endswith(".dll"):
+            norm_mod = norm_mod[:-4]
+        elif norm_mod.endswith(".so"):
+            norm_mod = norm_mod[:-3]
+        unpref_mod = norm_mod[3:] if norm_mod.startswith("lib") else norm_mod
+
+    id_pattern = re.compile(r'^[a-zA-Z0-9_.]+$')
 
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
@@ -398,15 +436,20 @@ def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
                 if not line or line.startswith("#"):
                     continue
                 parts = line.split()
-                if len(parts) >= 3:
+                # A CAA dico entry must have 3 or 4 tokens and valid identifiers
+                if len(parts) in (3, 4) and all(id_pattern.match(p) for p in parts[:3]):
                     entries_count += 1
                     if norm_mod:
-                        # Third column and beyond specify the shared library/module
-                        for p in parts[2:]:
-                            p_clean = p.lower()
-                            if norm_mod == p_clean or f"lib{norm_mod}" == p_clean or norm_mod in p_clean:
-                                mentions_target = True
-                                break
+                        lib_tok = parts[2].lower()
+                        if lib_tok.endswith(".dll"):
+                            lib_tok = lib_tok[:-4]
+                        elif lib_tok.endswith(".so"):
+                            lib_tok = lib_tok[:-3]
+                        unpref_tok = lib_tok[3:] if lib_tok.startswith("lib") else lib_tok
+
+                        # Strict exact token matching (no substring matches)
+                        if lib_tok == norm_mod or unpref_tok == unpref_mod:
+                            mentions_target = True
                 else:
                     syntax_errors += 1
     except Exception:
