@@ -79,6 +79,7 @@ class TypedRequirement:
     domain: str = "unknown"
     target_entity: str = "unknown"       # feature | component | document | workbench | unknown
     behavior_aspect: str = "unknown"     # visualization | event_listening | attribute | interaction | unknown
+    behavior_aspects: List[str] = field(default_factory=list) # multi-domain behavior aspects
     extension_point: str = "unknown"     # interface_implementation | command_action | dialog_ui | unknown
     user_explicit_type: Optional[str] = None  # CreateCommand | CreateDialog | ... (word-level explicit)
     ambiguity_state: str = "UNKNOWN"     # CLEAR | AMBIGUOUS | UNKNOWN
@@ -93,6 +94,7 @@ class TypedRequirement:
             "domain": self.domain,
             "target_entity": self.target_entity,
             "behavior_aspect": self.behavior_aspect,
+            "behavior_aspects": self.behavior_aspects,
             "extension_point": self.extension_point,
             "user_explicit_type": self.user_explicit_type,
             "ambiguity_state": self.ambiguity_state,
@@ -155,7 +157,7 @@ class RequirementsClarifier:
     # Domain detection keywords
     DOMAIN_KEYWORDS = {
         "product": ["assembly", "product", "bom", "part", "component", "装配", "零件",
-                     "bom", "物料", "统计", "export"],
+                     "bom", "物料", "统计", "导出", "export"],
         "part": ["part", "feature", "fillet", "hole", "chamfer", "pad", "pocket",
                  "圆角", "孔", "倒角", "特征"],
         "drawing": ["drawing", "sheet", "view", "annotation", "dimension", "工程图",
@@ -377,33 +379,78 @@ class RequirementsClarifier:
         if is_multi_domain and matched_domains:
             typed.notes.append(f"Multiple domains detected: {matched_domains}")
 
-        # 2. Enrich semantic domain attributes
-        if domain == "visualization":
-            typed.behavior_aspect = "visualization"
-            typed.target_entity = "feature" if ("feature" in req_lower or "特征" in req_lower) else "component"
-            typed.extension_point = "interface_implementation"
-            typed.candidate_interfaces = ["CATIVisu", "CATI3DGeoVisu"]
-            typed.notes.append("Domain visualization maps to extension implementing CATIVisu")
-        elif domain == "notification":
-            typed.behavior_aspect = "event_listening"
-            typed.target_entity = "document" if any(k in req_lower for k in ("document", "product", "文档", "结构", "装配")) else "component"
-            typed.extension_point = "interface_implementation"
-            typed.candidate_interfaces = ["CATIModelEvents", "CATIEventSubscriber"]
-            typed.notes.append("Domain notification maps to event callback/listener extension")
-        elif domain == "knowledge":
-            typed.behavior_aspect = "attribute"
-            typed.target_entity = "feature"
-            typed.extension_point = "interface_implementation"
-            typed.candidate_interfaces = ["CATIValue", "CATIParmPublisher"]
-            typed.notes.append("Domain knowledge maps to attribute/parameter extension")
-        elif domain == "ui":
-            typed.behavior_aspect = "interaction"
-            typed.extension_point = "dialog_ui" if any(k in req_lower for k in ("dialog", "对话框", "界面")) else "command_action"
-            typed.candidate_interfaces = ["CATDlgDialog"] if typed.extension_point == "dialog_ui" else ["CATCommand"]
-        elif domain in ("product", "part", "drawing", "surface"):
-            if any(k in req_lower for k in ("export", "导出", "统计", "statistic", "check", "检查", "analyze", "分析", "生成", "计算")):
-                typed.behavior_aspect = "interaction"
-                typed.extension_point = "command_action"
+        # 2. Enrich semantic domain attributes (with multi-domain aggregation)
+        all_domains = matched_domains if matched_domains else ([domain] if domain != "general" else [])
+        collected_interfaces = []
+        collected_aspects = []
+        domain_recommended_types = {}
+
+        def _resolve_single_domain_attributes(d_name: str):
+            aspect = "unknown"
+            target = "component"
+            ext_pt = "unknown"
+            ifaces = []
+            rec_type = None
+
+            if d_name == "visualization":
+                aspect = "visualization"
+                target = "feature" if ("feature" in req_lower or "特征" in req_lower) else "component"
+                ext_pt = "interface_implementation"
+                ifaces = ["CATIVisu", "CATI3DGeoVisu"]
+                rec_type = "CreateExtension"
+            elif d_name == "notification":
+                aspect = "event_listening"
+                target = "document" if any(k in req_lower for k in ("document", "product", "文档", "结构", "装配")) else "component"
+                ext_pt = "interface_implementation"
+                ifaces = ["CATIModelEvents", "CATIEventSubscriber"]
+                rec_type = "CreateExtension"
+            elif d_name == "knowledge":
+                aspect = "attribute"
+                target = "feature"
+                ext_pt = "interface_implementation"
+                ifaces = ["CATIValue", "CATIParmPublisher"]
+                if any(k in req_lower for k in ("创建特征", "新建特征", "create feature", "make feature")):
+                    rec_type = "CreateFeature"
+                else:
+                    rec_type = "CreateExtension"
+            elif d_name == "ui":
+                aspect = "interaction"
+                if any(k in req_lower for k in ("dialog", "对话框", "界面")):
+                    ext_pt = "dialog_ui"
+                    ifaces = ["CATDlgDialog"]
+                    rec_type = "CreateDialog"
+                else:
+                    ext_pt = "command_action"
+                    ifaces = ["CATCommand"]
+                    rec_type = "CreateCommand"
+            elif d_name in ("product", "part", "drawing", "surface"):
+                if any(k in req_lower for k in ("export", "导出", "统计", "statistic", "check", "检查", "analyze", "分析", "生成", "计算")):
+                    aspect = "interaction"
+                    ext_pt = "command_action"
+                    rec_type = "CreateCommand"
+                else:
+                    rec_type = None  # ambiguous
+            return aspect, target, ext_pt, ifaces, rec_type
+
+        # Primary domain baseline
+        pri_aspect, pri_target, pri_ext_pt, pri_ifaces, pri_rec = _resolve_single_domain_attributes(domain)
+        typed.behavior_aspect = pri_aspect
+        typed.target_entity = pri_target
+        typed.extension_point = pri_ext_pt
+
+        # Aggregate across all matched domains
+        for d in all_domains:
+            asp, tgt, ext, ifs, rt = _resolve_single_domain_attributes(d)
+            if asp != "unknown" and asp not in collected_aspects:
+                collected_aspects.append(asp)
+            for iface in ifs:
+                if iface not in collected_interfaces:
+                    collected_interfaces.append(iface)
+            if rt:
+                domain_recommended_types[d] = rt
+
+        typed.behavior_aspects = collected_aspects if collected_aspects else ([pri_aspect] if pri_aspect != "unknown" else [])
+        typed.candidate_interfaces = collected_interfaces if collected_interfaces else pri_ifaces
 
         if user_explicit:
             typed.ambiguity_state = "CLEAR"
@@ -412,29 +459,30 @@ class RequirementsClarifier:
             return typed
 
         # 3. Domain-driven Typed Requirement inference (when user did NOT specify a construct)
-        if domain == "visualization":
-            typed.recommended_intent_type = "CreateExtension"
+        # R-06 fix: Handle multi-domain compatibility and conflict resolution
+        unique_rec_types = set(domain_recommended_types.values())
+        if is_multi_domain and len(unique_rec_types) == 1:
+            # Compatible multi-domain request (e.g. visualization + notification -> both CreateExtension)
+            single_rec = list(unique_rec_types)[0]
+            typed.recommended_intent_type = single_rec
             typed.ambiguity_state = "CLEAR"
-        elif domain == "notification":
-            typed.recommended_intent_type = "CreateExtension"
-            typed.ambiguity_state = "CLEAR"
-        elif domain == "knowledge":
-            if any(k in req_lower for k in ("创建特征", "新建特征", "create feature", "make feature")):
-                typed.recommended_intent_type = "CreateFeature"
-            else:
-                typed.recommended_intent_type = "CreateExtension"
-            typed.ambiguity_state = "CLEAR"
-        elif domain == "ui":
-            typed.recommended_intent_type = "CreateDialog" if typed.extension_point == "dialog_ui" else "CreateCommand"
+            typed.notes.append(f"Multi-domain compatible ({all_domains}): aggregated {single_rec} with interfaces {typed.candidate_interfaces}")
+            return typed
+        elif is_multi_domain and len(unique_rec_types) > 1:
+            # Conflicting construct requirements between domains without explicit user keyword
+            typed.ambiguity_state = "AMBIGUOUS"
+            typed.recommended_intent_type = None
+            typed.notes.append(f"Multi-domain construct conflict across {all_domains}: candidates {list(unique_rec_types)}")
+            return typed
+
+        # Single domain inference
+        if pri_rec:
+            typed.recommended_intent_type = pri_rec
             typed.ambiguity_state = "CLEAR"
         elif domain in ("product", "part", "drawing", "surface"):
-            if typed.behavior_aspect == "interaction":
-                typed.recommended_intent_type = "CreateCommand"
-                typed.ambiguity_state = "CLEAR"
-            else:
-                typed.ambiguity_state = "AMBIGUOUS"
-                typed.recommended_intent_type = None
-                typed.notes.append("Domain clear but no concrete action or construct specified")
+            typed.ambiguity_state = "AMBIGUOUS"
+            typed.recommended_intent_type = None
+            typed.notes.append("Domain clear but no concrete action or construct specified")
         else:
             typed.ambiguity_state = "UNKNOWN"
             typed.recommended_intent_type = None

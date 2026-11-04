@@ -94,9 +94,16 @@ with tempfile.TemporaryDirectory(prefix="cade_l1_") as tmp_dir:
     ck("L1 FAIL on 0-byte assets", res_zero["status"] == "FAIL", f"got {res_zero['status']}")
 
     # Populate valid assets -> PASS
-    # Minimal valid Windows PE: MZ header + e_lfanew pointing to PE\0\0
+    # Minimal valid 64-bit Windows PE (AMD64 + PE32+) for win_b64
     import struct
-    pe_header = b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x40) + b"PE\x00\x00" + b"\x00" * 16
+    def make_valid_pe(machine=0x8664, opt_magic=0x020B, num_sections=1):
+        dos_hdr = b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x40)
+        pe_sig = b"PE\x00\x00"
+        coff_hdr = struct.pack("<HHIIIHH", machine, num_sections, 0, 0, 0, 240, 0x0002)
+        opt_hdr = struct.pack("<H", opt_magic) + b"\x00" * 238
+        return dos_hdr + pe_sig + coff_hdr + opt_hdr
+
+    pe_header = make_valid_pe(machine=0x8664, opt_magic=0x020B)
     valid_dll = bin_dir / "MyModule.dll"
     valid_dll.write_bytes(pe_header)
     valid_dico = dico_dir / "MyModule.dico"
@@ -106,6 +113,19 @@ with tempfile.TemporaryDirectory(prefix="cade_l1_") as tmp_dir:
     ck("L1 PASS on valid target module assets", res_valid["status"] == "PASS", f"got {res_valid['status']}")
     ck("L1 reports valid PE count in assets", res_valid["evidence"]["assets"]["dll"]["valid_pe_count"] == 1)
     ck("L1 reports valid DICO syntax in assets", res_valid["evidence"]["assets"]["dico"]["valid_syntax"] is True)
+
+    # R-03: Arch mismatch (32-bit PE in win_b64) -> FAIL
+    pe_32bit = make_valid_pe(machine=0x014C, opt_magic=0x010B)
+    valid_dll.write_bytes(pe_32bit)
+    res_arch_mismatch = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("R-03: L1 FAIL on PE architecture mismatch (32-bit in win_b64)", res_arch_mismatch["status"] == "FAIL", f"got {res_arch_mismatch['status']}")
+    valid_dll.write_bytes(pe_header)
+
+    # R-03: DICO syntax valid but does NOT mention target module -> FAIL
+    valid_dico.write_bytes(b"OtherClass CATIInterface libOtherModule\n")
+    res_dico_unbound = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("R-03: L1 FAIL when DICO does not mention target module", res_dico_unbound["status"] == "FAIL", f"got {res_dico_unbound['status']}")
+    valid_dico.write_bytes(b"MyClass CATIInterface libMyModule\n")
 
     # Invalidate PE header (non-PE DLL) -> FAIL
     valid_dll.write_bytes(b"NON_PE_CORRUPT_BYTES_DATA")
@@ -154,6 +174,23 @@ with patch("run.get_processes_snapshot_win32", return_value=fake_snapshot_time),
     st, pid, ev = identify_target_cnext(launcher_pid=9999, t_start=t_now)
     ck("L2 creation window identifies fresh CNEXT", st == "PASS" and pid == 4002,
        f"status={st}, pid={pid}")
+
+# Case B2: R-02 Fix — Creation time exceeding upper window bound must be rejected
+def mock_creation_time_late(pid):
+    if pid == 4002:
+        return t_now + 35.0  # beyond 30.0s upper bound
+    return t_now - 1000.0
+
+with patch("run.get_processes_snapshot_win32", return_value=fake_snapshot_time), \
+     patch("run.get_process_creation_time_win32", side_effect=mock_creation_time_late):
+    st_late, pid_late, ev_late = identify_target_cnext(launcher_pid=9999, t_start=t_now, max_window_seconds=30.0)
+    ck("R-02: Creation time beyond upper bound rejected from candidate window", st_late != "PASS", f"status={st_late}")
+
+# Case B3: R-02 Fix — Baseline PIDs filtered out
+with patch("run.get_processes_snapshot_win32", return_value=fake_snapshot_time), \
+     patch("run.get_process_creation_time_win32", side_effect=mock_creation_time):
+    st_base, pid_base, ev_base = identify_target_cnext(launcher_pid=9999, t_start=t_now, baseline_pids={4002})
+    ck("R-02: Baseline pre-existing PID filtered from fresh candidates", pid_base != 4002, f"pid={pid_base}")
 
 # Case C: Ambiguous multiple instances
 with patch("run.get_processes_snapshot_win32", return_value=fake_snapshot_time), \
@@ -214,7 +251,7 @@ with tempfile.TemporaryDirectory(prefix="cade_full_rt_") as tmp_dir:
     bin_p.mkdir(parents=True)
     dic_p.mkdir(parents=True)
     import struct
-    pe_bytes = b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x40) + b"PE\x00\x00" + b"\x00" * 16
+    pe_bytes = make_valid_pe(machine=0x8664, opt_magic=0x020B)
     (bin_p / "TestModule.dll").write_bytes(pe_bytes)
     (dic_p / "TestModule.dico").write_bytes(b"TestClass CATIInterface libTestModule\n")
 
@@ -246,6 +283,11 @@ with tempfile.TemporaryDirectory(prefix="cade_full_rt_") as tmp_dir:
         ck("L1 is PASS", levels.get("L1", {}).get("status") == "PASS")
         ck("L2 is PASS", levels.get("L2", {}).get("status") == "PASS")
         ck("L3 is PASS", levels.get("L3", {}).get("status") == "PASS")
+
+        # P5.3 Envelope dynamic instance_scope check
+        env_scope = result.get("verification", {}).get("evidence", {}).get("instance_scope")
+        ck("P5.3 Envelope instance_scope is target_instance_verified on L2 PASS",
+           env_scope == "target_instance_verified", f"scope={env_scope}")
 
         # Crucial honest boundary check:
         l4_status = levels.get("L4", {}).get("status")

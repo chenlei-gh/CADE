@@ -139,7 +139,7 @@ if plan_visu:
 
 
 # ── 5. Multi-Domain Detection & Disambiguation (R-06) ───────────
-print("\n[5] Multi-Domain Detection")
+print("\n[5] Multi-Domain Detection & Semantic Aggregation")
 
 multi_req = "对装配结构进行3D表现并监听变化"
 res_multi = clarifier.analyze(multi_req)
@@ -148,6 +148,25 @@ ck("Multi-domain detected flag is True", typed_multi is not None and typed_multi
 ck("Matched domains includes visualization & notification",
    set(["visualization", "notification"]).issubset(set(getattr(typed_multi, "matched_domains", []))),
    f"got {getattr(typed_multi, 'matched_domains', [])}")
+ck("Multi-domain aggregates candidate interfaces from both domains",
+   "CATIVisu" in getattr(typed_multi, "candidate_interfaces", []) and
+   "CATIModelEvents" in getattr(typed_multi, "candidate_interfaces", []),
+   f"got {getattr(typed_multi, 'candidate_interfaces', [])}")
+ck("Multi-domain aggregates behavior aspects",
+   "visualization" in getattr(typed_multi, "behavior_aspects", []) and
+   "event_listening" in getattr(typed_multi, "behavior_aspects", []),
+   f"got {getattr(typed_multi, 'behavior_aspects', [])}")
+ck("Multi-domain compatible construct recommended as CreateExtension",
+   getattr(typed_multi, "recommended_intent_type", None) == "CreateExtension",
+   f"got {getattr(typed_multi, 'recommended_intent_type', None)}")
+
+# Multi-domain construct conflict without user explicit keywords -> AMBIGUOUS
+conflict_req = "统计零件结构并为模型自定义属性参数"
+res_conflict = clarifier.analyze(conflict_req)
+typed_conflict = getattr(res_conflict, "typed_requirement", None)
+ck("Multi-domain construct conflict returns AMBIGUOUS",
+   typed_conflict is not None and typed_conflict.ambiguity_state == "AMBIGUOUS",
+   f"state={getattr(typed_conflict, 'ambiguity_state', None)}")
 
 print("\n" + "=" * 70)
 print(f"  Result: {passed}/{total} tests passed ({'ALL PASS' if passed == total else 'SOME FAILED'})")

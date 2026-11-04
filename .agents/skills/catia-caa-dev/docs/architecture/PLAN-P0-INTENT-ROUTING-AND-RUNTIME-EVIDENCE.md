@@ -1,11 +1,11 @@
 # PLAN-P0-INTENT-ROUTING-AND-RUNTIME-EVIDENCE: CADE 业务意图链路修复与 Runtime 分层证据实施计划与审查闭环
 
-> **状态**: `IMPLEMENTED_AND_REVIEWED`（已实施并完成第二轮技术审查整改闭环）  
-> **更新日期**: 2026-11-03  
-> **目标基准**: Commit `fdafbea`（初始实施）+ 后续整改闭环提交  
+> **状态**: `FINAL_IMPLEMENTATION_AND_VERIFIED`（已完成第三轮深度整改与全量实测闭环）  
+> **更新日期**: 2026-11-04  
+> **目标基准**: Commit `fdafbea`（初始实施）+ `51f1660`（二次整改）+ 本轮深度整改提交  
 > **涉及核心缺陷**: 
-> 1. P0-1 业务意图到 CAA 构件上下文映射断链与暴力 fallback
-> 2. P0-2 CATIA Runtime 虚假启动判定与 Add-in 挂载证据缺失  
+> 1. P0-1 业务意图到 CAA 构件上下文映射断链与暴力 fallback（以及多领域语义融合）
+> 2. P0-2 CATIA Runtime 虚假启动判定与 Add-in 挂载证据缺失（以及严格资源与进程匹配）  
 > **指导原则**: 变更最小化、强类型解耦、运行时事实证据优先、历史契约零破坏。
 
 ---
@@ -177,9 +177,9 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
 
 ## 5. 第二轮技术审查意见（R-01 至 R-10）与整改落地闭环
 
-在初始提交 `fdafbea` 完成后，经第二轮深度技术审查，共识别出 10 项需整改的关键意见（R-01 至 R-10）。现已全部完成闭环整改：
+在初始提交 `fdafbea` 与二次整改 `51f1660` 完成后，经技术复审，进一步实施了第三轮深度整改，彻底消除剩余的技术边界隐患：
 
-### 5.1 整改项明细与解决证据
+### 5.1 历史整改明细与解决证据 (Commit 51f1660)
 
 | 编号 | 优先级 | 审查意见 | 解决方案与实施代码 | 验证状态 |
 |:---|:---|:---|:---|:---|
@@ -191,8 +191,26 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
 | **R-06** | P1 | 多领域请求被简单压缩为单一 Domain | 增强 `requirements.py`：实现 `_detect_domains()` 多域打分统计，记录所有命中领域并标记 `is_multi_domain=True`。 | **已验证**（`test_kernel_domain_routing.py` Section 5 验证多域标记及领域列表） |
 | **R-07** | P1 | 旧兼容字段 `runtime_view_mounted` 易引起挂载误解 | 修正 `run.py`：保留 `runtime_view_mounted` 作为兼容别名，但明确附加 `runtime_view_mounted_deprecated_notice`，指引调用方优先读取 `runtime_verification.levels`。 | **已验证**（`test_runtime_layered_verification.py` Section 5 校验 deprecated notice） |
 | **R-08** | P1 | Win32 模块枚举固定 1024 句柄缓冲区，存在截断风险 | 修正 `run.py` 中的 `get_process_loaded_modules()`：在 `EnumProcessModulesEx` 后比较 `cb_needed` 与缓冲区大小，必要时动态扩容重试。 | **已验证**（代码审查与模块枚举逻辑核验） |
-| **R-09** | P2 | 架构实施计划仍标记为待执行 | 更新本计划文档为 `IMPLEMENTED_AND_REVIEWED`，记录第一阶段和第二阶段的全部整改事实与最终验收状态。 | **已验证**（本文档自身） |
+| **R-09** | P2 | 架构实施计划仍标记为待执行 | 更新本计划文档，记录第一阶段和第二阶段的全部整改事实与最终验收状态。 | **已验证**（本文档自身） |
 | **R-10** | P2 | 测试与门禁结果缺少可独立核验的记录 | 补齐自动化测试执行记录，确保 `unittest` 标准运行与自执行入口双向兼容，回归测试全量通过。 | **已验证**（所有测试套件实测全部 PASS） |
+
+### 5.2 第三轮深度整改事实与闭环设计 (2026-11-04)
+
+1. **L2 时间窗口双向限定与进程排查强化**：
+   - 在 `identify_target_cnext` 中引入 `t_start - 2.0 <= ctime <= t_start + max_window_seconds`（默认 30s）严格双向时间窗口，严禁无上界的模糊匹配，杜绝启动后无关新实例的假阳性。
+   - 启动前记录系统 `baseline_cnext_pids`，排除启动前已经存在的旧进程。
+   - 轮询时不因单次 `UNKNOWN` 提前中止，保留观察到的未验证 PID 并持续轮询，直到超时或成功识别到强关联的 `PASS` 实例，杜绝早退错失正在启动的实例。
+2. **L1 资源完整性升级**：
+   - `_verify_pe_file()` 升级为完整 Windows PE 结构校验：校验完整 COFF File Header（Machine 匹配目标架构 `win_b64`=0x8664 / `intel_a`=0x014c，`NumberOfSections > 0`，`SizeOfOptionalHeader >= 2`）及 Optional Header Magic（0x020B / 0x010B）。
+   - `_verify_dico_syntax()` 建立目标模块强绑定校验：如果指定了 `target_module`，必须至少有一个合法 DICO 显式声明该模块；若全目录 DICO 均未关联该目标模块，L1 判定为 `FAIL`。
+3. **P0-1 多领域语义融合**：
+   - `_build_typed_requirement()` 遍历 `matched_domains`，多领域联合聚合 `candidate_interfaces`（例如同时聚合 `CATIVisu` 与 `CATIModelEvents`），记录多行为 `behavior_aspects`。
+   - 形态一致时推荐多接口扩展（`tutorial.multi_interface`），存在冲突时返回 `AMBIGUOUS` 退回澄清。
+4. **PSAPI 模块枚举循环动态扩容**：
+   - `get_process_loaded_modules()` 重构为带上限（最多重试 4 次，1024 -> 2048 -> 4096 -> 8192）的 `while` 循环，并使用 `min(needed_count, len(h_mods))` 做越界防御。
+5. **P5.3 Envelope 动态 `instance_scope` 与弃用说明统一**：
+   - `instance_scope` 根据 L2 真实状态动态输出：L2 PASS 为 `target_instance_verified`，L2 UNKNOWN 为 `global_image_name_snapshot_only`，L2 AMBIGUOUS 为 `multiple_instances_unresolved`。
+   - 所有返回分支（`exited`, `started`, `ambiguous`, `launching`）统一注入 `runtime_view_mounted_deprecated_notice`。
 
 ---
 
@@ -200,12 +218,12 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
 
 全量测试已在当前工作区实测执行并通过，无任何遗留错误或回归破坏：
 
-1. **`test_kernel_domain_routing.py`**: **47/47 PASS** (涵盖显式构件优先、领域意图推导、消除盲目 fallback、语义注入、多域识别)
-2. **`test_runtime_layered_verification.py`**: **33/33 PASS** (涵盖 L0~L5 分层、PE 校验、DICO 语法校验、R-02 真实实例判定、R-04 目标模块限定、L4/L5 诚实边界)
-3. **`test_runtime_verification.py`**: **13/13 PASS** (P5.3 Envelope 历史双包结构完全兼容，零超时，零失败)
+1. **`test_kernel_domain_routing.py`**: **51/51 PASS** (涵盖显式构件优先、领域意图推导、消除盲目 fallback、语义注入、多域识别与语义融合、冲突消歧)
+2. **`test_runtime_layered_verification.py`**: **38/38 PASS** (涵盖 L0~L5 分层、COFF/PE 完整校验、DICO 目标模块强绑定、R-02 双向时间窗口与 baseline 过滤、R-04 目标模块限定、动态 Envelope scope、L4/L5 诚实边界)
+3. **`test_runtime_verification.py`**: **13/13 PASS** (P5.3 Envelope 历史双包结构完全兼容，未验证实例边界测试零失败)
 4. **`test_kernel_routing.py`**: **47/47 PASS** (37 个存量工具与 10 个 Native Investigation 路由完全正常)
 5. **`test_kernel_edge_cases.py`**: **178/178 PASS** (极端边界、特殊字符、状态机、知识探测、Framework/Module/Dialog 生成等零破坏)
 6. **`test_build_and_run.py`**: **53/53 PASS** (构建与运行环境、进程生命周期全面正常)
 7. **`test_runtime_feedback.py`**: **3/3 PASS** (运行时反馈机制正常)
 
-**累计实测用例数**: **374/374 全部 PASS** (通过率 100%)。
+**累计实测用例数**: **383/383 全部 PASS** (通过率 100%)。

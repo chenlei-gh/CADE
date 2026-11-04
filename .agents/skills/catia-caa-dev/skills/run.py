@@ -219,23 +219,14 @@ def get_process_loaded_modules(pid: int) -> list:
             return []
 
         try:
-            initial_count = 1024
-            h_mods = (wintypes.HMODULE * initial_count)()
+            # Dynamic buffer expansion with bounded retries (R-08 fix)
+            current_capacity = 1024
+            max_attempts = 4
             cb_needed = wintypes.DWORD()
-            res = psapi.EnumProcessModulesEx(
-                h_process,
-                ctypes.byref(h_mods),
-                ctypes.sizeof(h_mods),
-                ctypes.byref(cb_needed),
-                LIST_MODULES_ALL,
-            )
-            if not res:
-                return []
+            h_mods = None
 
-            # Dynamic expansion if buffer was insufficient (R-08 fix)
-            if cb_needed.value > ctypes.sizeof(h_mods):
-                needed_count = cb_needed.value // ctypes.sizeof(wintypes.HMODULE)
-                h_mods = (wintypes.HMODULE * needed_count)()
+            for attempt in range(max_attempts):
+                h_mods = (wintypes.HMODULE * current_capacity)()
                 res = psapi.EnumProcessModulesEx(
                     h_process,
                     ctypes.byref(h_mods),
@@ -246,10 +237,20 @@ def get_process_loaded_modules(pid: int) -> list:
                 if not res:
                     return []
 
-            count = cb_needed.value // ctypes.sizeof(wintypes.HMODULE)
+                needed_bytes = cb_needed.value
+                current_bytes = ctypes.sizeof(h_mods)
+                if needed_bytes <= current_bytes:
+                    break
+
+                # Double capacity or take required count if larger
+                needed_count = needed_bytes // ctypes.sizeof(wintypes.HMODULE)
+                current_capacity = max(current_capacity * 2, needed_count)
+
+            needed_count = cb_needed.value // ctypes.sizeof(wintypes.HMODULE)
+            actual_count = min(needed_count, len(h_mods))
             modules = []
             filename_buf = ctypes.create_unicode_buffer(1024)
-            for i in range(count):
+            for i in range(actual_count):
                 h_mod = h_mods[i]
                 if not h_mod:
                     continue
@@ -316,12 +317,23 @@ def check_process_running(process_name: str) -> list:
     return running_processes
 
 
-def identify_target_cnext(launcher_pid: int = None, t_start: float = None) -> tuple:
+def identify_target_cnext(
+    launcher_pid: int = None,
+    t_start: float = None,
+    baseline_pids: set = None,
+    max_window_seconds: float = 30.0,
+) -> tuple:
     """Identify the exact CNEXT.exe instance spawned for this launch (L2).
+
+    Args:
+        launcher_pid: PID of the launcher process (e.g. cmd.exe spawned by Popen)
+        t_start: Unix timestamp when launch was initiated
+        baseline_pids: Set of CNEXT PIDs that existed BEFORE launch initiation
+        max_window_seconds: Upper bound for creation time window to reject stale/unrelated launches
 
     Returns:
         (status, cnext_pid, evidence_dict)
-        status in ("PASS", "FAIL", "AMBIGUOUS")
+        status in ("PASS", "FAIL", "UNKNOWN", "AMBIGUOUS")
     """
     snapshot = get_processes_snapshot_win32()
     cnext_procs = [p for p in snapshot if p["name"].lower() == "cnext.exe"]
@@ -332,10 +344,16 @@ def identify_target_cnext(launcher_pid: int = None, t_start: float = None) -> tu
             return "FAIL", None, {"reason": "no_cnext_process_found"}
         cnext_procs = [{"pid": r["pid"], "parent_pid": None, "name": "CNEXT.exe"} for r in running]
 
+    # Filter out baseline PIDs if provided (cannot be the newly spawned instance)
+    if baseline_pids:
+        fresh_cnext_procs = [p for p in cnext_procs if p["pid"] not in baseline_pids]
+    else:
+        fresh_cnext_procs = cnext_procs
+
     # Method 1: Check if launcher_pid is direct parent or ancestor
     if launcher_pid and snapshot:
         pid_to_parent = {p["pid"]: p["parent_pid"] for p in snapshot}
-        for cp in cnext_procs:
+        for cp in fresh_cnext_procs:
             curr = cp["pid"]
             visited = set()
             while curr in pid_to_parent and curr not in visited:
@@ -349,14 +367,16 @@ def identify_target_cnext(launcher_pid: int = None, t_start: float = None) -> tu
                     }
                 curr = parent
 
-    # Method 2: Check creation time window
+    # Method 2: Check creation time window with strict lower AND upper bounds (R-02 fix)
     if t_start:
+        t_lower = t_start - 2.0
+        t_upper = t_start + max_window_seconds
         candidates = []
-        for cp in cnext_procs:
+        for cp in fresh_cnext_procs:
             ctime = get_process_creation_time_win32(cp["pid"])
             if ctime is not None:
-                # Started after or within 2 seconds of launch initiation
-                if ctime >= t_start - 2.0:
+                # Started strictly within the launch window
+                if t_lower <= ctime <= t_upper:
                     candidates.append((cp["pid"], ctime))
         if len(candidates) == 1:
             return "PASS", candidates[0][0], {
@@ -365,6 +385,7 @@ def identify_target_cnext(launcher_pid: int = None, t_start: float = None) -> tu
                 "identification_method": "creation_time_window_match",
                 "creation_time": candidates[0][1],
                 "t_start": t_start,
+                "window": [t_lower, t_upper],
             }
         elif len(candidates) > 1:
             return "AMBIGUOUS", None, {
@@ -372,20 +393,24 @@ def identify_target_cnext(launcher_pid: int = None, t_start: float = None) -> tu
                 "candidate_pids": [c[0] for c in candidates],
             }
 
-    # Method 3: Unverified global instances (R-02 fix: cannot prove correlation without tree or time evidence)
-    if len(cnext_procs) == 1:
-        return "UNKNOWN", cnext_procs[0]["pid"], {
-            "cnext_pid": cnext_procs[0]["pid"],
+    # Method 3: Unverified instances (R-02 fix: cannot prove correlation without tree or time evidence)
+    # Fall back to observing existing unverified instance for P5.3 snapshot evidence (L2 UNKNOWN)
+    target_unverified = fresh_cnext_procs if fresh_cnext_procs else cnext_procs
+    if len(target_unverified) == 1:
+        return "UNKNOWN", target_unverified[0]["pid"], {
+            "cnext_pid": target_unverified[0]["pid"],
             "launcher_pid": launcher_pid,
             "identification_method": "single_global_instance_unverified",
             "reason": "sole_cnext_without_tree_or_time_correlation",
-            "note": "Single global CNEXT detected but lacked parentage or creation-window correlation to this launch",
+            "note": "Single CNEXT detected but lacked parentage or creation-window correlation to this launch",
+        }
+    elif len(target_unverified) > 1:
+        return "AMBIGUOUS", None, {
+            "reason": "multiple_instances_cannot_disambiguate",
+            "observed_pids": [p["pid"] for p in target_unverified],
         }
 
-    return "AMBIGUOUS", None, {
-        "reason": "multiple_instances_cannot_disambiguate",
-        "observed_pids": [p["pid"] for p in cnext_procs],
-    }
+    return "FAIL", None, {"reason": "no_cnext_process_found"}
 
 
 def verify_module_loaded(pid: int, expected_dll_path: Path) -> tuple:
@@ -819,12 +844,15 @@ def start_catia_runtime(
 
     # Check if CATIA is already running
     running_catia = check_process_running("CNEXT.exe")
+    baseline_cnext_pids = set()
     if running_catia:
         logger.write("CATIA is already running — stopping gracefully first")
         stop_catia(force=False)
         time.sleep(2)
         # Clean session files to prevent "热启动不可用" prompt
         _clean_cnext_sessions()
+        # Record any remaining persistent PIDs as baseline to avoid false correlation
+        baseline_cnext_pids = {p["pid"] for p in check_process_running("CNEXT.exe")}
 
     # Start CATIA
     try:
@@ -910,23 +938,29 @@ def start_catia_runtime(
 
             for i in range(POLL_MAX_ATTEMPTS):
                 time.sleep(POLL_INTERVAL)
-                cnext_id_status, cnext_pid, cnext_id_evidence = identify_target_cnext(
-                    launcher_pid=launcher_pid, t_start=start_time.timestamp()
+                status, cnext_pid, evidence = identify_target_cnext(
+                    launcher_pid=launcher_pid,
+                    t_start=start_time.timestamp(),
+                    baseline_pids=baseline_cnext_pids,
                 )
-                if cnext_id_status == "PASS" and cnext_pid:
+                if status == "PASS" and cnext_pid:
                     detected_cnext_pid = cnext_pid
+                    cnext_id_status = status
+                    cnext_id_evidence = evidence
                     logger.write(
-                        f"CNEXT target identified (PID: {cnext_pid}) via {cnext_id_evidence.get('identification_method')} after {(i + 1) * POLL_INTERVAL:.1f}s"
+                        f"CNEXT target identified (PID: {cnext_pid}) via {evidence.get('identification_method')} after {(i + 1) * POLL_INTERVAL:.1f}s"
                     )
                     break
-                elif cnext_id_status == "UNKNOWN" and cnext_pid:
+                elif status == "UNKNOWN" and cnext_pid:
                     unverified_cnext_pid = cnext_pid
-                    # If single unverified instance exists without launcher correlation,
-                    # break early to avoid unbounded polling stall (e.g. in test mocks or pre-existing instances)
-                    if i >= 1 or not launcher_pid:
-                        logger.write(f"CNEXT observed (PID: {cnext_pid}) but lacks provenance correlation")
-                        break
-                elif cnext_id_status == "AMBIGUOUS":
+                    cnext_id_status = status
+                    cnext_id_evidence = evidence
+                    # Do not break immediately (R-02 fix): keep polling for an unambiguously correlated instance
+                    # until timeout budget expires
+                    logger.write(f"CNEXT observed (PID: {cnext_pid}) without correlation — continuing to poll")
+                elif status == "AMBIGUOUS":
+                    cnext_id_status = status
+                    cnext_id_evidence = evidence
                     logger.write(f"CNEXT instances ambiguous after {(i + 1) * POLL_INTERVAL:.1f}s")
 
             effective_pid = detected_cnext_pid or unverified_cnext_pid
@@ -1033,6 +1067,7 @@ def start_catia_runtime(
                     "timestamp": start_time.isoformat(),
                     "runtime_view_present": runtime_view_present,
                     "runtime_view_mounted": runtime_view_present,
+                    "runtime_view_mounted_deprecated_notice": "runtime_view_mounted only asserts candidate directory presence. Refer to runtime_verification.levels for L0-L5 layered evidence.",
                     "runtime_verification": {
                         "highest_verified_level": highest_verified,
                         "levels": levels,
@@ -1050,6 +1085,7 @@ def start_catia_runtime(
                     "timestamp": start_time.isoformat(),
                     "runtime_view_present": runtime_view_present,
                     "runtime_view_mounted": runtime_view_present,
+                    "runtime_view_mounted_deprecated_notice": "runtime_view_mounted only asserts candidate directory presence. Refer to runtime_verification.levels for L0-L5 layered evidence.",
                     "runtime_verification": {
                         "highest_verified_level": highest_verified,
                         "levels": levels,
@@ -1078,6 +1114,13 @@ def start_catia_runtime(
                 },
             }
         elif cur_status in ("started", "ambiguous"):
+            # Dynamic instance_scope based on L2 identity evidence
+            l2_scope = "global_image_name_snapshot_only"
+            if levels.get("L2", {}).get("status") == "PASS":
+                l2_scope = "target_instance_verified"
+            elif levels.get("L2", {}).get("status") == "AMBIGUOUS":
+                l2_scope = "multiple_instances_unresolved"
+
             runtime_result["execution"] = {
                 "status": "completed",
                 "action_result": cur_status,
@@ -1091,7 +1134,7 @@ def start_catia_runtime(
                     "observed_process": "CNEXT.exe",
                     "pid": runtime_result.get("pid"),
                     "match_found": True,
-                    "instance_scope": "global_image_name_snapshot_only",
+                    "instance_scope": l2_scope,
                     "highest_verified_level": highest_verified,
                     "levels": runtime_result["runtime_verification"]["levels"],
                 },

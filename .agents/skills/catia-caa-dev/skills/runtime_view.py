@@ -308,47 +308,119 @@ def check_runtime_view_l0(workspace_path: Path, architecture: str = None) -> dic
     }
 
 
-def _verify_pe_file(path: Path) -> bool:
-    """Verify that a file has basic valid Windows PE header (MZ + PE signature)."""
+def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
+    """Verify that path is a valid Windows PE file with complete COFF and Optional headers.
+
+    Checks:
+    1. DOS header magic (MZ) and minimum file size
+    2. e_lfanew pointer validity within file boundaries
+    3. PE signature (PE\\0\\0)
+    4. COFF File Header (20 bytes): NumberOfSections > 0, SizeOfOptionalHeader >= 2
+    5. Machine architecture matching (win_b64 -> 0x8664 AMD64, intel_a -> 0x014c i386)
+    6. Optional Header magic (0x020B PE32+ for 64-bit, 0x010B PE32 for 32-bit)
+    """
     try:
-        if not path.is_file() or path.stat().st_size < 0x40:
+        import struct
+
+        file_size = path.stat().st_size
+        # Minimum size: DOS Header (64 bytes) + PE Sig (4 bytes) + COFF Header (20 bytes) + Optional Magic (2 bytes) = 90 bytes
+        if file_size < 90:
             return False
+
         with open(path, "rb") as f:
-            header = f.read(0x40)
-            if len(header) < 0x40 or header[:2] != b"MZ":
+            header = f.read(64)
+            if len(header) < 64 or header[:2] != b"MZ":
                 return False
-            import struct
+
             pe_offset = struct.unpack_from("<I", header, 0x3C)[0]
-            if pe_offset <= 0 or pe_offset > path.stat().st_size - 4:
+            # Must leave room for PE sig (4) + COFF (20) + Optional Magic (2)
+            if pe_offset <= 0 or pe_offset > file_size - 26:
                 return False
+
             f.seek(pe_offset)
             pe_sig = f.read(4)
-            return pe_sig == b"PE\x00\x00"
+            if pe_sig != b"PE\x00\x00":
+                return False
+
+            coff_bytes = f.read(20)
+            if len(coff_bytes) < 20:
+                return False
+
+            machine, num_sections, _, _, _, size_opt_hdr, _ = struct.unpack("<HHIIIHH", coff_bytes)
+            if num_sections <= 0 or size_opt_hdr < 2:
+                return False
+
+            opt_magic_bytes = f.read(2)
+            if len(opt_magic_bytes) < 2:
+                return False
+            opt_magic = struct.unpack("<H", opt_magic_bytes)[0]
+
+            # Validate architecture consistency
+            norm_arch = (expected_arch or "").lower()
+            if norm_arch == "win_b64":
+                if machine != 0x8664 or opt_magic != 0x020B:
+                    return False
+            elif norm_arch == "intel_a":
+                if machine != 0x014C or opt_magic != 0x010B:
+                    return False
+            else:
+                # General check: must be either AMD64 (PE32+) or i386 (PE32)
+                if machine == 0x8664 and opt_magic != 0x020B:
+                    return False
+                elif machine == 0x014C and opt_magic != 0x010B:
+                    return False
+                elif machine not in (0x8664, 0x014C):
+                    return False
+
+            return True
     except Exception:
         return False
 
 
 def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
-    """Validate CAA .dico file syntax (triplet entries) and target module linkage."""
+    """Validate CAA .dico file syntax and verify explicit target module linkage.
+
+    Rules:
+    - Every non-empty, non-comment line must contain at least 3 whitespace-separated tokens
+      (interface, implementation/class, and shared library).
+    - If target_module is provided, at least one entry must explicitly bind to that module's
+      runtime library (e.g. libTargetModule or TargetModule).
+    """
     entries_count = 0
+    syntax_errors = 0
     mentions_target = False
     norm_mod = (target_module[:-2] if target_module.endswith(".m") else target_module).lower() if target_module else None
+
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
-            for line in f:
+            for line_idx, line in enumerate(f, 1):
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
                 parts = line.split()
                 if len(parts) >= 3:
                     entries_count += 1
-                    if norm_mod and any(norm_mod in p.lower() for p in parts[2:]):
-                        mentions_target = True
+                    if norm_mod:
+                        # Third column and beyond specify the shared library/module
+                        for p in parts[2:]:
+                            p_clean = p.lower()
+                            if norm_mod == p_clean or f"lib{norm_mod}" == p_clean or norm_mod in p_clean:
+                                mentions_target = True
+                                break
+                else:
+                    syntax_errors += 1
     except Exception:
-        pass
+        return {
+            "valid_syntax": False,
+            "entry_count": 0,
+            "syntax_errors": 1,
+            "mentions_target_module": False if target_module else None,
+        }
+
     return {
-        "valid_syntax": entries_count > 0,
+        "valid_syntax": (entries_count > 0 and syntax_errors == 0),
         "entry_count": entries_count,
+        "syntax_errors": syntax_errors,
         "mentions_target_module": mentions_target if target_module else None,
     }
 
@@ -374,12 +446,12 @@ def check_runtime_view_l1(
     dico_dir = arch_dir / "code" / "dictionary"
     msg_dir = arch_dir / "resources" / "msgcatalog"
 
-    # Scan DLLs & verify PE format
+    # Scan DLLs & verify PE format with architecture matching
     dll_files = []
     pe_valid_dlls = []
     if bin_dir.is_dir():
         dll_files = [f for f in bin_dir.glob("*.dll") if f.is_file() and f.stat().st_size > 0]
-        pe_valid_dlls = [f for f in dll_files if _verify_pe_file(f)]
+        pe_valid_dlls = [f for f in dll_files if _verify_pe_file(f, expected_arch=architecture)]
 
     # Scan DICOs & verify syntax
     dico_files = []
@@ -398,21 +470,26 @@ def check_runtime_view_l1(
     # Target module check if requested
     target_dll_found = False
     target_dll_valid_pe = False
+    target_dico_bound = False
     if target_module:
         norm_mod = target_module[:-2] if target_module.endswith(".m") else target_module
         expected_dll_name = f"{norm_mod}.dll".lower()
         for f in dll_files:
             if f.name.lower() == expected_dll_name:
                 target_dll_found = True
-                target_dll_valid_pe = _verify_pe_file(f)
+                target_dll_valid_pe = _verify_pe_file(f, expected_arch=architecture)
                 break
+        # Strong binding: at least one valid DICO must explicitly mention the target module
+        target_dico_bound = any(r.get("valid_syntax") and r.get("mentions_target_module") for r in dico_reports)
 
-    # Syntax validity of DICOs
+    # General syntax validity of DICOs
     any_valid_dico = any(r["valid_syntax"] for r in dico_reports)
 
     # Evaluation
+    # R-03 fix: If target_module is specified, it MUST have a valid PE DLL AND be declared in a valid DICO.
+    # An unrelated DICO alone cannot satisfy L1 for target_module.
     if target_module:
-        passed = target_dll_found and target_dll_valid_pe and any_valid_dico
+        passed = target_dll_found and target_dll_valid_pe and target_dico_bound
     else:
         passed = len(pe_valid_dlls) > 0 and any_valid_dico
 
@@ -424,6 +501,7 @@ def check_runtime_view_l1(
             "target_module": target_module,
             "target_dll_found": target_dll_found if target_module else None,
             "target_dll_valid_pe": target_dll_valid_pe if target_module else None,
+            "target_dico_bound": target_dico_bound if target_module else None,
             "dll_count": len(dll_files),
             "pe_valid_dll_count": len(pe_valid_dlls),
             "dico_count": len(dico_files),
