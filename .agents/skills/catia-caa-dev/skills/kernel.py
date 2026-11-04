@@ -2442,6 +2442,41 @@ class Kernel:
             }
         ).to_dict()
 
+    def _construction_generation_args(self, plan: dict) -> dict:
+        """Read semantic fields from the construction step, not only Intent.params.
+
+        Planner may already have copied candidate_interfaces into the
+        create_extension step. Execution must use that step. Falling back to
+        Intent.params covers plans built before the template placeholders.
+        """
+        intent_data = plan.get("intent", {}) if isinstance(plan, dict) else {}
+        params = intent_data.get("params") or {}
+        steps = ((plan.get("plan") or {}).get("steps") or []) if isinstance(plan, dict) else []
+        step = next((item for item in steps if item.get("action") == "create_extension"), None)
+        step_params = (step or {}).get("params") or {}
+
+        interfaces = step_params.get("interfaces")
+        if interfaces is None:
+            interfaces = step_params.get("candidate_interfaces")
+        if interfaces is None:
+            interfaces = params.get("candidate_interfaces") or []
+        if isinstance(interfaces, str):
+            interfaces = [interfaces] if interfaces else []
+
+        aspects = step_params.get("behavior_aspects")
+        if aspects is None:
+            aspects = params.get("behavior_aspects") or []
+        if isinstance(aspects, str):
+            aspects = [aspects] if aspects else []
+
+        target = step_params.get("target_object") or params.get("target") or params.get("target_entity") or ""
+        return {
+            "interfaces": list(interfaces),
+            "behavior_aspects": list(aspects),
+            "target_object": target,
+            "extension_point": step_params.get("extension_point") or params.get("extension_point"),
+        }
+
     def _execute_develop_plan(
         self, plan: dict, preview: bool = False, extras: Optional[dict] = None
     ) -> dict:
@@ -2451,6 +2486,7 @@ class Kernel:
         name = intent_data.get("name", "")
         module = intent_data.get("module", "MyModule.m")
         framework = intent_data.get("framework", "MyFramework")
+        generation = self._construction_generation_args(plan)
 
         try:
             from actions import (
@@ -2476,8 +2512,15 @@ class Kernel:
             elif "Feature" in intent_type:
                 result = create_feature(ctx, name=name, module=module, framework=framework)
             elif "Extension" in intent_type:
-                result = create_extension(ctx, name=name, target_object="", module=module,
-                                          framework=framework)
+                result = create_extension(
+                    ctx,
+                    name=name,
+                    target_object=generation.get("target_object") or "",
+                    module=module,
+                    framework=framework,
+                    implements=generation.get("interfaces") or None,
+                    behavior_aspects=generation.get("behavior_aspects") or None,
+                )
             elif intent_type == "CreateFramework":
                 result = create_framework(ctx, name=name)
             elif intent_type == "CreateModule":

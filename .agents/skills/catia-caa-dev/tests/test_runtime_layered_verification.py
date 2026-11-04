@@ -96,14 +96,17 @@ with tempfile.TemporaryDirectory(prefix="cade_l1_") as tmp_dir:
     # Populate valid assets -> PASS
     # Minimal valid 64-bit Windows PE (AMD64 + PE32+) for win_b64
     import struct
-    def make_valid_pe(machine=0x8664, opt_magic=0x020B, num_sections=1):
+    def make_valid_pe(machine=0x8664, opt_magic=0x020B, num_sections=1, characteristics=0x2002, file_alignment=512):
         dos_hdr = b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x40)
         pe_sig = b"PE\x00\x00"
-        coff_hdr = struct.pack("<HHIIIHH", machine, num_sections, 0, 0, 0, 240, 0x0002)
-        opt_hdr = struct.pack("<H", opt_magic) + b"\x00" * 238
+        coff_hdr = struct.pack("<HHIIIHH", machine, num_sections, 0, 0, 0, 240, characteristics)
+        opt = bytearray(240)
+        struct.pack_into("<H", opt, 0, opt_magic)
+        struct.pack_into("<I", opt, 36, file_alignment)
+        opt_hdr = bytes(opt)
         sec_hdr = b""
         if num_sections > 0:
-            # 40 bytes section header: Name(8) + VirtSize(4) + VirtAddr(4) + RawSize(4) + RawPtr(4) + ...
+            # 40 bytes section header. Raw size/pointer 0 are multiples of FileAlignment.
             sec_hdr = b".text\x00\x00\x00" + struct.pack("<IIII", 0x1000, 0x1000, 0, 0) + b"\x00" * 16
         return dos_hdr + pe_sig + coff_hdr + opt_hdr + sec_hdr
 
@@ -141,6 +144,21 @@ with tempfile.TemporaryDirectory(prefix="cade_l1_") as tmp_dir:
     valid_dll.write_bytes(pe_oob)
     res_sec_oob = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
     ck("R-03: L1 FAIL when PE section raw_ptr + raw_size exceeds file boundary", res_sec_oob["status"] == "FAIL", f"got {res_sec_oob['status']}")
+
+    # R-03: missing IMAGE_FILE_DLL, zero FileAlignment, and a bad DICO line are FAIL
+    valid_dll.write_bytes(make_valid_pe(characteristics=0x0002))
+    valid_dico.write_bytes(b"MyClass CATIInterface libMyModule\n")
+    res_not_dll = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("R-03: L1 FAIL when PE lacks IMAGE_FILE_DLL", res_not_dll["status"] == "FAIL", f"got {res_not_dll['status']}")
+
+    valid_dll.write_bytes(make_valid_pe(file_alignment=0))
+    res_align = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("R-03: L1 FAIL when FileAlignment is not a power of two in 512..65536", res_align["status"] == "FAIL", f"got {res_align['status']}")
+
+    valid_dll.write_bytes(pe_header)
+    valid_dico.write_bytes(b"MyClass CATIInterface libMyModule\nthis is not a dico entry\n")
+    res_bad_line = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("R-03: L1 FAIL when one DICO line is illegal", res_bad_line["status"] == "FAIL", f"got {res_bad_line['status']}")
 
     # Restore valid assets
     valid_dll.write_bytes(pe_header)
@@ -366,10 +384,50 @@ with tempfile.TemporaryDirectory(prefix="cade_full_rt_") as tmp_dir:
            l2_amb.get("status") == "AMBIGUOUS" and res_amb.get("pid") is None,
            f"l2_status={l2_amb.get('status')}, pid={res_amb.get('pid')}")
 
+    # Case G: later UNKNOWN must not overwrite an earlier AMBIGUOUS
+    seq = {"n": 0}
+
+    def mock_poll_sticky(**kwargs):
+        seq["n"] += 1
+        if seq["n"] == 1:
+            return ("UNKNOWN", 5001, {"reason": "sole"})
+        if seq["n"] == 2:
+            return ("AMBIGUOUS", None, {"reason": "multiple"})
+        return ("UNKNOWN", 5001, {"reason": "old_pid_again"})
+
+    with patch("subprocess.Popen") as mock_popen, \
+         patch("run.identify_target_cnext", side_effect=mock_poll_sticky), \
+         patch("run.stop_catia"), \
+         patch("run.time.sleep", return_value=None), \
+         patch("run.check_process_running", return_value=[]):
+        mock_proc = mock_popen.return_value
+        mock_proc.pid = 1111
+        res_sticky = start_catia_runtime(wait_for_exit=False)
+        l2_sticky = res_sticky.get("runtime_verification", {}).get("levels", {}).get("L2", {})
+        ck("R-02: later UNKNOWN does not replace AMBIGUOUS or revive PID 5001",
+           l2_sticky.get("status") == "AMBIGUOUS" and res_sticky.get("pid") is None,
+           f"l2_status={l2_sticky.get('status')}, pid={res_sticky.get('pid')}")
+
+from run import _psapi_buffer_status
+ck("R-08: last short buffer is incomplete, not a grow",
+   _psapi_buffer_status(9000, 4096, 3, 4) == "incomplete")
+ck("R-08: fitting buffer is complete",
+   _psapi_buffer_status(100, 4096, 0, 4) == "complete")
+
 
 print("\n" + "=" * 70)
 print(f"  Result: {passed}/{total} tests passed ({'ALL PASS' if passed == total else 'SOME FAILED'})")
 print("=" * 70)
 
-if passed != total:
+import unittest
+
+
+class TestRuntimeLayeredVerificationDiscovery(unittest.TestCase):
+    """Formal discovery entry. The checks above already ran at import."""
+
+    def test_script_checks_passed(self):
+        self.assertEqual(passed, total)
+
+
+if __name__ == "__main__" and passed != total:
     sys.exit(1)

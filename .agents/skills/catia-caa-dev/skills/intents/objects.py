@@ -59,12 +59,16 @@ def create_extension(
     *,
     data_members: Optional[List[Dict]] = None,
     implements: Optional[List[str]] = None,
+    behavior_aspects: Optional[List[str]] = None,
 ) -> Dict:
     """
     Create a data extension for an existing CATIA object.
 
     Automatically creates: Extension class, DataExtension declaration,
     TIE implementation, Dictionary registration, interface implementations.
+
+    ``implements`` is consumed by the component template (primary interface
+    name). Known CAA interfaces such as CATIVisu are bound, not redeclared.
     """
     ctx.refresh()
 
@@ -72,32 +76,50 @@ def create_extension(
     if validation["status"] == "error":
         return validation
 
+    if isinstance(implements, str):
+        iface_list = [implements] if implements else []
+    else:
+        iface_list = [str(item) for item in (implements or []) if item]
+    primary_interface = iface_list[0] if iface_list else None
+    # These already exist in the CAA SDK. Generating a new CATIVisu.h would
+    # be a fake interface, not an implementation of the real one.
+    bind_existing = {
+        "CATIVisu", "CATI3DGeoVisu", "CATIModelEvents", "CATIEventSubscriber",
+        "CATIValue", "CATIParmPublisher", "CATDlgDialog", "CATCommand",
+    }
+
     master_cs = ChangeSet(
         action="create_extension",
         description=f"Create extension '{name}' for '{target_object}'",
     )
 
-    ext_result = create_component(ctx, name=name, module=module, framework=framework)
+    ext_result = create_component(
+        ctx, name=name, module=module, framework=framework, implements=primary_interface,
+    )
     if ext_result["status"] != "error":
         merge_changeset(master_cs, changeset_from_dict(ext_result["changeset"]))
 
     created_interfaces = []
-    if implements:
-        for iface_name in implements:
-            iface_result = create_interface(
-                ctx, name=iface_name, module=module, framework=framework
+    for iface_name in iface_list:
+        if iface_name in bind_existing:
+            continue
+        iface_result = create_interface(
+            ctx, name=iface_name, module=module, framework=framework
+        )
+        if iface_result["status"] != "error":
+            merge_changeset(
+                master_cs, changeset_from_dict(iface_result["changeset"])
             )
-            if iface_result["status"] != "error":
-                merge_changeset(
-                    master_cs, changeset_from_dict(iface_result["changeset"])
-                )
-                created_interfaces.append(iface_name)
+            created_interfaces.append(iface_name)
 
     extension_info = {
         "name": name,
         "target": target_object,
         "data_members": [d.get("name") for d in (data_members or [])],
-        "interfaces": created_interfaces or implements or [],
+        "interfaces": iface_list,
+        "bound_interfaces": iface_list,
+        "created_interfaces": created_interfaces,
+        "behavior_aspects": list(behavior_aspects or []),
     }
 
     master_cs.metadata.update(
@@ -106,6 +128,8 @@ def create_extension(
             "extension": name,
             "target_object": target_object,
             "module": module,
+            "implements": iface_list,
+            "behavior_aspects": list(behavior_aspects or []),
             "components": extension_info,
         }
     )

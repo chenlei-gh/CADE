@@ -87,6 +87,9 @@ class TypedRequirement:
     candidate_interfaces: List[str] = field(default_factory=list)
     matched_domains: List[str] = field(default_factory=list)
     is_multi_domain: bool = False
+    # Per-domain construct recommendation. None is preserved; it must not be dropped.
+    domain_constructs: Dict[str, Optional[str]] = field(default_factory=dict)
+    unresolved_domains: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -102,6 +105,8 @@ class TypedRequirement:
             "candidate_interfaces": self.candidate_interfaces,
             "matched_domains": self.matched_domains,
             "is_multi_domain": self.is_multi_domain,
+            "domain_constructs": self.domain_constructs,
+            "unresolved_domains": self.unresolved_domains,
             "notes": self.notes,
         }
 
@@ -156,12 +161,15 @@ class RequirementsClarifier:
 
     # Domain detection keywords
     DOMAIN_KEYWORDS = {
-        "product": ["assembly", "product", "bom", "part", "component", "装配", "零件",
-                     "bom", "物料", "统计", "导出", "export"],
-        "part": ["part", "feature", "fillet", "hole", "chamfer", "pad", "pocket",
-                 "圆角", "孔", "倒角", "特征"],
-        "drawing": ["drawing", "sheet", "view", "annotation", "dimension", "工程图",
-                     "图纸", "标注", "视图"],
+        # Object nouns such as 装配/零件/特征/视图 are context, not a second
+        # unresolved action. Matching them created false multi-domain hits that
+        # were then dropped. Keep task words only.
+        "product": ["assembly", "product", "bom", "catproduct", "物料清单", "物料",
+                     "统计", "导出", "export"],
+        "part": ["fillet", "hole", "chamfer", "pad", "pocket",
+                 "圆角", "孔", "倒角"],
+        "drawing": ["drawing", "sheet", "annotation", "dimension", "工程图",
+                     "图纸", "标注"],
         "surface": ["surface", "gsd", "extrude", "sweep", "flatten", "offset",
                      "曲面", "拉伸", "扫掠", "展平"],
         "ui": ["dialog", "command", "toolbar", "menu", "workbench", "对话框",
@@ -450,6 +458,9 @@ class RequirementsClarifier:
 
         typed.behavior_aspects = collected_aspects if collected_aspects else ([pri_aspect] if pri_aspect != "unknown" else [])
         typed.candidate_interfaces = collected_interfaces if collected_interfaces else pri_ifaces
+        # Preserve None. Dropping it is what let a single resolved domain look CLEAR.
+        typed.domain_constructs = dict(domain_recommended_types)
+        typed.unresolved_domains = [d for d, rt in domain_recommended_types.items() if rt is None]
 
         # Target entity aggregation across domains (Priority: feature > document/product > component)
         all_targets = [tgt for _, tgt, _, _, _ in [_resolve_single_domain_attributes(d) for d in all_domains]]
@@ -472,42 +483,33 @@ class RequirementsClarifier:
         # R-06 fix: Handle multi-domain compatibility, unresolved domains, and conflict resolution
         if is_multi_domain:
             resolved_types = {d: rt for d, rt in domain_recommended_types.items() if rt is not None}
-            unresolved_domains = [d for d, rt in domain_recommended_types.items() if rt is None]
+            unresolved_domains = list(typed.unresolved_domains)
             unique_rec_types = set(resolved_types.values())
 
+            # A matched domain with no construct is unresolved. Do not drop None
+            # and then call the remaining domain CLEAR.
+            if unresolved_domains:
+                typed.ambiguity_state = "AMBIGUOUS"
+                typed.recommended_intent_type = None
+                typed.notes.append(
+                    f"Unresolved construct for {unresolved_domains}; not dropped in favor of {list(unique_rec_types) or 'none'}"
+                )
+                return typed
             if len(unique_rec_types) > 1:
-                # Conflicting construct requirements between domains without explicit user keyword
                 typed.ambiguity_state = "AMBIGUOUS"
                 typed.recommended_intent_type = None
                 typed.notes.append(f"Multi-domain construct conflict across {all_domains}: candidates {list(unique_rec_types)}")
                 return typed
-            elif len(unique_rec_types) == 1:
+            if len(unique_rec_types) == 1:
                 single_rec = list(unique_rec_types)[0]
-                # Check if unresolved domains represent ambiguous parallel intents
-                # An unresolved domain is only an ambiguous parallel action if it has an actionable predicate
-                # (e.g. 导出/统计/计算/分析/生成/处理), NOT just a passive entity/target context (装配体/产品/零件/视图).
-                action_verbs = ("export", "导出", "统计", "statistic", "calculate", "计算", "generate", "生成", "check", "检查", "analyze", "分析", "处理", "process")
-                has_ambiguous_action = any(
-                    d in ("product", "part", "drawing", "surface")
-                    and any(v in req_lower for v in action_verbs)
-                    and any(k in req_lower for k in ("and", "以及", "并", "同时", "还要", "且"))
-                    for d in unresolved_domains
-                )
-                if has_ambiguous_action:
-                    typed.ambiguity_state = "AMBIGUOUS"
-                    typed.recommended_intent_type = None
-                    typed.notes.append(f"Multi-domain unresolved action in domains {unresolved_domains} alongside {single_rec}")
-                    return typed
-                else:
-                    typed.recommended_intent_type = single_rec
-                    typed.ambiguity_state = "CLEAR"
-                    typed.notes.append(f"Multi-domain compatible ({all_domains}): aggregated {single_rec} with interfaces {typed.candidate_interfaces}")
-                    return typed
-            else:
-                typed.ambiguity_state = "AMBIGUOUS" if any(d in ("product", "part", "drawing", "surface") for d in all_domains) else "UNKNOWN"
-                typed.recommended_intent_type = None
-                typed.notes.append(f"Multi-domain without actionable construct across {all_domains}")
+                typed.recommended_intent_type = single_rec
+                typed.ambiguity_state = "CLEAR"
+                typed.notes.append(f"Multi-domain compatible ({all_domains}): aggregated {single_rec} with interfaces {typed.candidate_interfaces}")
                 return typed
+            typed.ambiguity_state = "AMBIGUOUS" if all_domains else "UNKNOWN"
+            typed.recommended_intent_type = None
+            typed.notes.append(f"Multi-domain without actionable construct across {all_domains}")
+            return typed
 
         # Single domain inference
         if pri_rec:

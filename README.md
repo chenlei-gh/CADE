@@ -152,7 +152,7 @@ Expected output includes your CATIA installation path, TCK environment, and work
 ### Step 6: Verify the Installation
 
 ```bash
-# Quick test suite (48 suites, ~100s, no CATIA needed)
+# Quick test suite (50 suites, ~100s, no CATIA needed)
 python .agents/skills/catia-caa-dev/tests/test_master.py --quick
 
 # Static audit (cross-reference + deep audit, no CATIA needed)
@@ -242,7 +242,7 @@ CADE maintains quality gates verified through automated test suites:
 - **Lifecycle verification**: End-to-end CAA build (`mkmk`) and CATIA runtime launch (`CNEXT`).
 
 ```bash
-# Fast suite (48 suites, skips live CATIA)
+# Fast suite (50 suites, skips live CATIA)
 python .agents/skills/catia-caa-dev/tests/test_master.py --quick
 
 # Full regression (includes CATIA lifecycle)
@@ -252,7 +252,7 @@ python .agents/skills/catia-caa-dev/tests/test_master.py
 python scripts/static_audit.py
 ```
 
-**Test baseline**: 49 suites (48 fast + 1 CATIA lifecycle). Fast regression: 48/48 passing.
+**Test baseline**: 51 suites (50 fast + 1 CATIA lifecycle).
 
 ---
 

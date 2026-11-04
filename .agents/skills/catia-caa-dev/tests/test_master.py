@@ -91,6 +91,9 @@ SUITES = {
     "CAA Batch": "test_caa_batch.py",
     # ── Intent gate (pre-commit/commit-msg declaration checkpoint) ──
     "Intent Gate": "test_intent_gate.py",
+    # ── P0 intent routing and runtime evidence (formal master entry) ──
+    "P0 Intent Routing": "test_kernel_domain_routing.py",
+    "P0 Runtime Evidence": "test_runtime_layered_verification.py",
     }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode

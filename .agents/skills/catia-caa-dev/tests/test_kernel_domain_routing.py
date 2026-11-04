@@ -147,6 +147,32 @@ if plan_visu:
         ck("Step params consumed target_object (feature)", step_params.get("target_object") == "feature", f"got {step_params.get('target_object')}")
         ck("Step params consumed behavior_aspects", "visualization" in step_params.get("behavior_aspects", []), f"got {step_params.get('behavior_aspects')}")
 
+    gen_args = kernel._construction_generation_args(plan_visu)
+    ck("Generation args carry CATIVisu", "CATIVisu" in gen_args.get("interfaces", []), f"got {gen_args}")
+    ck("Generation args carry feature target", gen_args.get("target_object") == "feature", f"got {gen_args.get('target_object')}")
+
+    from unittest.mock import MagicMock, patch
+    with patch("intents.create_extension", return_value={"status": "error", "message": "stopped-before-apply"}) as mocked:
+        exec_visu = kernel._execute_develop_plan(plan_visu, preview=True)
+        called = mocked.call_args.kwargs if mocked.called else {}
+        ck("Executor calls create_extension", mocked.called, f"status={exec_visu.get('status')}")
+        ck("Executor passes CATIVisu as implements", "CATIVisu" in (called.get("implements") or []), f"got {called.get('implements')}")
+        ck("Executor passes feature target_object", called.get("target_object") == "feature", f"got {called.get('target_object')}")
+        ck("Executor passes visualization behavior", "visualization" in (called.get("behavior_aspects") or []), f"got {called.get('behavior_aspects')}")
+
+    ctx = MagicMock()
+    with patch("intents.objects.validate_module", return_value={"status": "ok"}), \
+         patch("intents.objects.create_component", return_value={"status": "error", "message": "stop"}) as comp, \
+         patch("intents.objects.create_interface") as iface:
+        from intents.objects import create_extension
+        create_extension(
+            ctx, name="VisuExt", target_object="feature", module="VisualizationModule.m",
+            implements=["CATIVisu", "CATI3DGeoVisu"], behavior_aspects=["visualization"],
+        )
+        ck("create_component implements CATIVisu", comp.called and comp.call_args.kwargs.get("implements") == "CATIVisu",
+           f"got {comp.call_args.kwargs if comp.called else None}")
+        ck("CATIVisu is bound, not redeclared as a new interface", iface.called is False)
+
 
 # ── 5. Multi-Domain Detection & Disambiguation (R-06) ───────────
 print("\n[5] Multi-Domain Detection & Semantic Aggregation")
@@ -178,13 +204,15 @@ ck("Multi-domain construct conflict returns AMBIGUOUS",
    typed_conflict is not None and typed_conflict.ambiguity_state == "AMBIGUOUS",
    f"state={getattr(typed_conflict, 'ambiguity_state', None)}")
 
-# R-06: Multi-domain with unresolved action domain alongside action domain -> AMBIGUOUS (not silently dropped to CLEAR)
-unresolved_action_req = "对装配结构进行3D表现，并处理产品结构"
+# R-06: a matched domain with no construct stays AMBIGUOUS.
+# 装配/产品 are context nouns and must not invent a product domain.
+# 工程图 is a real drawing-domain hit with no construct type.
+unresolved_action_req = "在工程图里进行3D表现，并处理标注"
 res_unres = clarifier.analyze(unresolved_action_req)
 typed_unres = getattr(res_unres, "typed_requirement", None)
-ck("R-06: Unresolved parallel action domain triggers AMBIGUOUS",
-   typed_unres is not None and typed_unres.ambiguity_state == "AMBIGUOUS",
-   f"state={getattr(typed_unres, 'ambiguity_state', None)}")
+ck("R-06: Unresolved matched domain is not dropped to CLEAR",
+   typed_unres is not None and typed_unres.ambiguity_state == "AMBIGUOUS" and "drawing" in typed_unres.unresolved_domains,
+   f"state={getattr(typed_unres, 'ambiguity_state', None)} unresolved={getattr(typed_unres, 'unresolved_domains', None)}")
 
 # R-06: Cross-domain target_entity priority aggregation (feature > document > component)
 target_prio_req = "在装配体文档中为零件特征增加3D表现"
@@ -194,9 +222,41 @@ ck("R-06: Target entity priority selects 'feature' over generic document/compone
    typed_target is not None and typed_target.target_entity == "feature",
    f"target_entity={getattr(typed_target, 'target_entity', None)}")
 
+# R-06: a matched domain with no construct must stay unresolved, not be dropped
+unresolved_domain_req = "在工程图里给特征增加3D表现"
+res_none = clarifier.analyze(unresolved_domain_req)
+typed_none = getattr(res_none, "typed_requirement", None)
+ck("R-06: drawing+visualization is multi-domain",
+   typed_none is not None and "drawing" in typed_none.matched_domains and "visualization" in typed_none.matched_domains,
+   f"domains={getattr(typed_none, 'matched_domains', None)}")
+ck("R-06: None construct is recorded, not dropped",
+   typed_none is not None and typed_none.domain_constructs.get("drawing") is None,
+   f"constructs={getattr(typed_none, 'domain_constructs', None)}")
+ck("R-06: unresolved domain is not reported CLEAR",
+   typed_none is not None and typed_none.ambiguity_state == "AMBIGUOUS" and typed_none.recommended_intent_type is None,
+   f"state={getattr(typed_none, 'ambiguity_state', None)} rec={getattr(typed_none, 'recommended_intent_type', None)}")
+
+# Context nouns must not invent a second domain
+context_req = "给零件特征添加3D几何表现和高亮显示"
+res_ctx = clarifier.analyze(context_req)
+typed_ctx = getattr(res_ctx, "typed_requirement", None)
+ck("R-06: 零件/特征 context does not open an unresolved product/part domain",
+   typed_ctx is not None and typed_ctx.ambiguity_state == "CLEAR" and "product" not in typed_ctx.matched_domains and "part" not in typed_ctx.matched_domains,
+   f"domains={getattr(typed_ctx, 'matched_domains', None)} state={getattr(typed_ctx, 'ambiguity_state', None)}")
+
 print("\n" + "=" * 70)
 print(f"  Result: {passed}/{total} tests passed ({'ALL PASS' if passed == total else 'SOME FAILED'})")
 print("=" * 70)
 
-if passed != total:
+import unittest
+
+
+class TestKernelDomainRoutingDiscovery(unittest.TestCase):
+    """Formal discovery entry. The checks above already ran at import."""
+
+    def test_script_checks_passed(self):
+        self.assertEqual(passed, total)
+
+
+if __name__ == "__main__" and passed != total:
     sys.exit(1)

@@ -248,3 +248,17 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
 7. **`test_runtime_feedback.py`**: **3/3 PASS** (运行时反馈机制正常)
 
 **累计实测用例数**: **393/393 全部 PASS** (通过率 100%)。
+
+该矩阵是第四轮提交时的本地记录，不能当作第五轮验收结论。第五轮修正见 5.4。L4 仍是 UNKNOWN，L5 仍是 NOT_RUN。模拟测试通过不等于 CATIA B28 Add-in 已加载。
+
+### 5.4 第五轮修正（审查未关闭项）
+
+第四轮把字段写进 Plan，但执行器仍调用 create_extension 时把 target_object 传成空串，没有把 CATIVisu 交给生成器。多领域里 None 仍可被丢掉后标 CLEAR。本轮只修这五项，不新增架构层。
+
+- R-02：AMBIGUOUS 之后的 UNKNOWN 不再覆盖状态，也不再带回旧 PID。未在真实 CNEXT 进程树上复跑。
+- R-03：PE 要求 IMAGE_FILE_DLL、可选头声明长度、FileAlignment 对齐和节区边界。DICO 非法行使整文件失败，库名精确匹配。这不是 Windows 加载器级校验，也不证明 CATIA 能加载该 DLL。
+- R-05：_execute_develop_plan 从 construction step 取 interfaces、target_object、behavior_aspects，并以 implements=CATIVisu 写入扩展骨架。已有 CAA 接口不另生成假头文件。生成的是接口绑定骨架，不是已核实的 GiveRep 方法体，也未在 B28 编译。
+- R-06：domain_constructs 保留 None；任一已匹配领域没有构件类型则 AMBIGUOUS。装配、零件、特征、视图不再当作领域命中。关键词路由仍不是语义分类器。
+- R-08：扩容到上限仍装不下时返回空列表且 is_complete=False，L3 为 UNKNOWN，不再截断后当完整列表。未对真实 CNEXT 模块数做 PSAPI 实测。
+
+正式入口：两个专项测试已登记进 tests/test_master.py 的 SUITES，并各有一个 unittest.TestCase 供 python -m unittest discover 发现。发现只证明脚本检查已跑完，不把自定义 ck() 计数伪装成 CI 记录。

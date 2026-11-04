@@ -199,6 +199,21 @@ def get_process_creation_time_win32(pid: int) -> float | None:
         return None
 
 
+def _psapi_buffer_status(needed_bytes: int, capacity_bytes: int, attempt: int, max_attempts: int) -> str:
+    """Decide whether an EnumProcessModulesEx buffer is usable.
+
+    Returns:
+        complete: needed_bytes fits; the buffer may be read.
+        grow: needed_bytes does not fit and another attempt is allowed.
+        incomplete: still short on the last attempt. Do not treat the buffer as a list.
+    """
+    if needed_bytes <= capacity_bytes:
+        return "complete"
+    if attempt >= max_attempts - 1:
+        return "incomplete"
+    return "grow"
+
+
 def get_process_loaded_modules(pid: int, return_details: bool = False):
     """
     Get full list of module file paths loaded into a process via Win32 PSAPI EnumProcessModulesEx.
@@ -213,7 +228,18 @@ def get_process_loaded_modules(pid: int, return_details: bool = False):
     if sys.platform != "win32" or not pid:
         return ([], True) if return_details else []
 
+    def _finish(modules, is_complete):
+        if return_details:
+            return modules, is_complete
+        modules.is_complete = is_complete
+        return modules
+
     try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        psapi = ctypes.windll.psapi
         PROCESS_QUERY_INFORMATION = 0x0400
         PROCESS_VM_READ = 0x0010
         LIST_MODULES_ALL = 0x03
@@ -224,15 +250,16 @@ def get_process_loaded_modules(pid: int, return_details: bool = False):
             pid,
         )
         if not h_process:
-            return ([], True) if return_details else []
+            return _finish([], False)
 
         try:
-            # Dynamic buffer expansion with bounded retries (R-08 fix)
+            # Grow until cbNeeded fits. A truncated buffer is not a module list.
+            # https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-enumprocessmodulesex
             current_capacity = 1024
             max_attempts = 4
             cb_needed = wintypes.DWORD()
             h_mods = None
-            is_complete = True
+            is_complete = False
 
             for attempt in range(max_attempts):
                 h_mods = (wintypes.HMODULE * current_capacity)()
@@ -244,25 +271,28 @@ def get_process_loaded_modules(pid: int, return_details: bool = False):
                     LIST_MODULES_ALL,
                 )
                 if not res:
-                    return ([], True) if return_details else []
+                    return _finish([], False)
 
                 needed_bytes = cb_needed.value
                 current_bytes = ctypes.sizeof(h_mods)
-                if needed_bytes <= current_bytes:
+                status = _psapi_buffer_status(needed_bytes, current_bytes, attempt, max_attempts)
+                if status == "complete":
                     is_complete = True
                     break
+                if status == "incomplete":
+                    # Do not slice the short buffer and return it as the module list.
+                    return _finish([], False)
 
-                # If reached final attempt and still needed_bytes > current_bytes
-                if attempt == max_attempts - 1:
-                    is_complete = False
-                    break
-
-                # Double capacity or take required count if larger
-                needed_count = needed_bytes // ctypes.sizeof(wintypes.HMODULE)
+                needed_count = (needed_bytes + ctypes.sizeof(wintypes.HMODULE) - 1) // ctypes.sizeof(wintypes.HMODULE)
                 current_capacity = max(current_capacity * 2, needed_count)
 
+            if not is_complete or h_mods is None:
+                return _finish([], False)
+
             needed_count = cb_needed.value // ctypes.sizeof(wintypes.HMODULE)
-            actual_count = min(needed_count, len(h_mods))
+            if needed_count > len(h_mods):
+                return _finish([], False)
+            actual_count = needed_count
             modules = []
             filename_buf = ctypes.create_unicode_buffer(1024)
             for i in range(actual_count):
@@ -278,15 +308,11 @@ def get_process_loaded_modules(pid: int, return_details: bool = False):
                 if length > 0:
                     modules.append(filename_buf.value)
 
-            if return_details:
-                return modules, is_complete
-            # Backwards compatibility: set attribute on list
-            modules.is_complete = is_complete
-            return modules
+            return _finish(modules, True)
         finally:
             kernel32.CloseHandle(h_process)
     except Exception:
-        return ([], True) if return_details else []
+        return ([], False) if return_details else []
 
 
 def check_process_running(process_name: str) -> list:
@@ -450,8 +476,13 @@ def verify_module_loaded(pid: int, expected_dll_path: Path) -> tuple:
         loaded_modules = loaded_res
         is_complete = getattr(loaded_modules, "is_complete", True)
 
-    if not loaded_modules and not is_complete:
-        return "UNKNOWN", {"reason": "cannot_enumerate_process_modules_buffer_exceeded_or_failed"}
+    if not is_complete:
+        return "UNKNOWN", {
+            "reason": "module_enumeration_incomplete_capacity_exceeded",
+            "enumeration_complete": False,
+            "total_loaded_modules": len(loaded_modules or []),
+            "note": "PSAPI buffer did not hold every module, or enumeration failed. Not a FAIL and not a module list.",
+        }
     if not loaded_modules:
         return "UNKNOWN", {"reason": "cannot_enumerate_process_modules_insufficient_privileges_or_exited"}
 
@@ -467,67 +498,14 @@ def verify_module_loaded(pid: int, expected_dll_path: Path) -> tuple:
             "expected_path": exp_resolved,
             "matched_path": matched,
             "match_scope": "exact_absolute_physical_path",
-            "enumeration_complete": is_complete,
+            "enumeration_complete": True,
         }
-    else:
-        if not is_complete:
-            # Target DLL not in truncated buffer (R-08 fix); do not falsely claim FAIL
-            return "UNKNOWN", {
-                "expected_path": exp_resolved,
-                "total_loaded_modules": len(loaded_modules),
-                "match_found": False,
-                "enumeration_complete": False,
-                "reason": "module_enumeration_incomplete_capacity_exceeded",
-                "note": "Target DLL not found in enumerated buffer, but module list was truncated because PSAPI capacity limit was reached",
-            }
-        else:
-            return "FAIL", {
-                "expected_path": exp_resolved,
-                "total_loaded_modules": len(loaded_modules),
-                "match_found": False,
-                "enumeration_complete": True,
-            }
-    # Validate process_name: only allow alphanumeric + .exe (P2-009 fix)
-    # Allow empty/missing to return empty list (graceful degradation)
-    import re
-    if not process_name or not process_name.strip():
-        return []
-    if not re.match(r'^[a-zA-Z0-9_.\-]+\.exe$', process_name):
-        return []  # Invalid name → no matches found
-
-    # Fast path: sub-10ms native snapshot on Windows (avoids 250ms+ tasklist subprocess)
-    native_res = _check_process_running_win32(process_name)
-    if native_res is not None:
-        return native_res
-
-    running_processes = []
-
-    try:
-        # Fallback to tasklist with /FI filter
-        result = subprocess.run(
-            ["tasklist", "/FI", f"IMAGENAME eq {process_name}"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=10,
-        )
-
-        if result.stdout.strip():
-            for line in result.stdout.strip().split("\n"):
-                if process_name.lower() in line.lower():
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        try:
-                            running_processes.append(
-                                {"pid": int(parts[1]), "name": parts[0]}
-                            )
-                        except (ValueError, IndexError):
-                            pass
-    except Exception:
-        pass
-
-    return running_processes
+    return "FAIL", {
+        "expected_path": exp_resolved,
+        "total_loaded_modules": len(loaded_modules),
+        "match_found": False,
+        "enumeration_complete": True,
+    }
 
 
 def _pid_running(pid: int) -> bool:
@@ -994,14 +972,14 @@ def start_catia_runtime(
                     )
                     break
                 elif status == "UNKNOWN" and cnext_pid:
-                    unverified_cnext_pid = cnext_pid
-                    cnext_id_status = status
-                    cnext_id_evidence = evidence
-                    # Do not break immediately (R-02 fix): keep polling for an unambiguously correlated instance
-                    # until timeout budget expires
+                    # AMBIGUOUS sticks. A later unverified PID must not overwrite it
+                    # or the final report falls back to the old process.
+                    if cnext_id_status != "AMBIGUOUS":
+                        unverified_cnext_pid = cnext_pid
+                        cnext_id_status = status
+                        cnext_id_evidence = evidence
                     logger.write(f"CNEXT observed (PID: {cnext_pid}) without correlation — continuing to poll")
                 elif status == "AMBIGUOUS":
-                    # Clear unverified PID (R-02 fix): multiple ambiguous instances invalidate any single unverified observation!
                     unverified_cnext_pid = None
                     cnext_id_status = status
                     cnext_id_evidence = evidence

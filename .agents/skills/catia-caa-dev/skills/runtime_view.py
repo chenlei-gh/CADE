@@ -347,8 +347,13 @@ def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
             if len(coff_bytes) < 20:
                 return False
 
-            machine, num_sections, _, _, _, size_opt_hdr, _ = struct.unpack("<HHIIIHH", coff_bytes)
-            if num_sections < 0 or num_sections > 96 or size_opt_hdr < 2:
+            machine, num_sections, _, _, _, size_opt_hdr, characteristics = struct.unpack("<HHIIIHH", coff_bytes)
+            # A loadable DLL needs at least one section and IMAGE_FILE_DLL (0x2000).
+            # https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+            IMAGE_FILE_DLL = 0x2000
+            if num_sections < 1 or num_sections > 96 or size_opt_hdr < 2:
+                return False
+            if (characteristics & IMAGE_FILE_DLL) == 0:
                 return False
 
             # Check Optional Header boundary
@@ -356,10 +361,10 @@ def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
             if opt_hdr_offset + size_opt_hdr > file_size:
                 return False
 
-            opt_magic_bytes = f.read(2)
-            if len(opt_magic_bytes) < 2:
+            opt_hdr = f.read(size_opt_hdr)
+            if len(opt_hdr) < size_opt_hdr or len(opt_hdr) < 2:
                 return False
-            opt_magic = struct.unpack("<H", opt_magic_bytes)[0]
+            opt_magic = struct.unpack_from("<H", opt_hdr, 0)[0]
 
             # Validate architecture consistency
             norm_arch = (expected_arch or "").lower()
@@ -378,22 +383,33 @@ def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
                 elif machine not in (0x8664, 0x014C):
                     return False
 
+            # PE32 standard optional header is 96 bytes; PE32+ is 112.
+            # FileAlignment lives at offset 36 in both layouts.
+            min_opt = 112 if opt_magic == 0x020B else 96
+            if size_opt_hdr < min_opt or len(opt_hdr) < 40:
+                return False
+            file_alignment = struct.unpack_from("<I", opt_hdr, 36)[0]
+            if file_alignment < 512 or file_alignment > 65536 or (file_alignment & (file_alignment - 1)) != 0:
+                return False
+
             # Validate Section Table boundary
             sec_table_offset = opt_hdr_offset + size_opt_hdr
             sec_table_size = num_sections * 40
             if sec_table_offset + sec_table_size > file_size:
                 return False
 
-            if num_sections > 0:
-                f.seek(sec_table_offset)
-                for _ in range(num_sections):
-                    sec_bytes = f.read(40)
-                    if len(sec_bytes) < 40:
-                        return False
-                    _, virt_size, virt_addr, raw_size, raw_ptr = struct.unpack("<8sIIII", sec_bytes[:24])
-                    if raw_ptr > 0 and raw_size > 0:
-                        if raw_ptr + raw_size > file_size:
-                            return False
+            f.seek(sec_table_offset)
+            for _ in range(num_sections):
+                sec_bytes = f.read(40)
+                if len(sec_bytes) < 40:
+                    return False
+                _, virt_size, virt_addr, raw_size, raw_ptr = struct.unpack("<8sIIII", sec_bytes[:24])
+                if raw_ptr > file_size:
+                    return False
+                if (raw_ptr % file_alignment) != 0 or (raw_size % file_alignment) != 0:
+                    return False
+                if raw_size > 0 and raw_ptr + raw_size > file_size:
+                    return False
 
             return True
     except Exception:
@@ -427,7 +443,8 @@ def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
             norm_mod = norm_mod[:-3]
         unpref_mod = norm_mod[3:] if norm_mod.startswith("lib") else norm_mod
 
-    id_pattern = re.compile(r'^[a-zA-Z0-9_.]+$')
+    # Official .dico tokens are identifiers, not free text. Dots are .fact syntax, not .dico.
+    id_pattern = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
@@ -436,8 +453,9 @@ def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
                 if not line or line.startswith("#"):
                     continue
                 parts = line.split()
-                # A CAA dico entry must have 3 or 4 tokens and valid identifiers
-                if len(parts) in (3, 4) and all(id_pattern.match(p) for p in parts[:3]):
+                # A CAA dico entry must have 3 or 4 identifier tokens. Any other
+                # non-comment line fails the file; one good line cannot launder the rest.
+                if len(parts) in (3, 4) and all(id_pattern.match(p) for p in parts):
                     entries_count += 1
                     if norm_mod:
                         lib_tok = parts[2].lower()
