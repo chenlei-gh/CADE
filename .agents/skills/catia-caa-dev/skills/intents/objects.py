@@ -118,6 +118,31 @@ def _inject_link_with(imake_text: str, libs: tuple) -> Optional[str]:
     return nl.join(lines) + (nl if imake_text.endswith(("\r\n", "\n")) else "")
 
 
+def _link_with_state(imake_text: str, libs: tuple) -> str:
+    """Classify whether `libs` are guaranteed on the module's link line.
+
+    `_inject_link_with` returns None both when nothing has to change and when
+    nothing *can* be changed; that is enough for a caller writing a patch, but
+    not for a caller reporting on the build contract. This separates the cases:
+
+      ALREADY_SATISFIED   every library is already on the link line
+      INJECTED            the patch adds them
+      NO_LINK_WITH_BLOCK  there is no LINK_WITH definition to extend
+      UNPATCHABLE_LINK_WITH  LINK_WITH exists but its continuation chain ends
+                          on a blank line, so there is no line to append to
+
+    Only the first two mean the extension's link contract is met.
+    """
+    present = {tok for tok in re.findall(r"[A-Za-z0-9_]+", imake_text)}
+    if all(lib in present for lib in libs):
+        return "ALREADY_SATISFIED"
+    if not re.search(r"^[ \t]*LINK_WITH[ \t]*=", imake_text, re.MULTILINE):
+        return "NO_LINK_WITH_BLOCK"
+    if _inject_link_with(imake_text, libs) is None:
+        return "UNPATCHABLE_LINK_WITH"
+    return "INJECTED"
+
+
 def _extension_error(message: str, **extra) -> Dict:
     payload = {
         "status": "error",
@@ -344,6 +369,7 @@ def create_extension(
     # Without this the skeleton compiles but fails at link time (LNK2019).
     link_with_injected = False
     link_with_added: List[str] = []
+    link_contract_state = "NO_IMAKEFILE"
     imake_path = mod.imakefile_path()
     imake_old = None
     if imake_path.exists():
@@ -353,6 +379,7 @@ def create_extension(
         # the Imakefile.
         if isinstance(raw_imake, str):
             imake_old = raw_imake
+            link_contract_state = _link_with_state(imake_old, _VISU_LINK_WITH)
             imake_new = _inject_link_with(imake_old, _VISU_LINK_WITH)
             if imake_new is not None:
                 master_cs.add_modify(imake_path, imake_new)
@@ -393,6 +420,11 @@ def create_extension(
         },
         "required_frameworks": rendered["required_frameworks"],
         "required_libraries": list(_VISU_LINK_WITH),
+        "link_contract_state": link_contract_state,
+        "link_contract_satisfied": link_contract_state in (
+            "INJECTED",
+            "ALREADY_SATISFIED",
+        ),
         "link_with_injected": link_with_injected,
         "link_with_added": link_with_added,
         "imakefile_present": imake_old is not None,
@@ -430,11 +462,27 @@ def create_extension(
             + ", ".join(_VISU_LINK_WITH)
             + " to link."
         )
-    else:
+    elif link_contract_state == "ALREADY_SATISFIED":
         next_steps.append(
             "LINK_WITH already contained "
             + ", ".join(_VISU_LINK_WITH)
             + "; no Imakefile patch was needed."
+        )
+    elif link_contract_state == "UNPATCHABLE_LINK_WITH":
+        next_steps.append(
+            "The module's LINK_WITH definition has an empty continuation line, so "
+            + ", ".join(_VISU_LINK_WITH)
+            + " could not be appended. The link contract is NOT met: add them to "
+            "LINK_WITH by hand before building, or the skeleton will fail to link."
+        )
+    else:
+        next_steps.append(
+            "The module's Imakefile.mk defines no LINK_WITH, so the extension's link "
+            "contract is NOT met. "
+            + ", ".join(_VISU_LINK_WITH)
+            + " must be added to LINK_WITH by hand before building. The line was not "
+            "appended automatically because mkmk honours the last LINK_WITH, so a "
+            "second definition would silently drop the module's own libraries."
         )
     next_steps.append(
         "L4 add-in registration remains UNKNOWN. L5 command verification remains NOT_RUN."

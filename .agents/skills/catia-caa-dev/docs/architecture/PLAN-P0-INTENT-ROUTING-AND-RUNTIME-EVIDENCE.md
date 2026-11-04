@@ -327,6 +327,8 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
   - 已全部存在时返回 `None`（幂等，不产生空 patch）；
   - 无 `LINK_WITH` 或无 Imakefile 时**不假装成功**：`link_with_injected=False` 并在 `next_steps` 说明缺什么。
 - 返回体的 `required_libraries` / `link_with_injected` / `link_with_added` / `imakefile_present` 如实反映实际发生的事。
+- `link_contract_state` / `link_contract_satisfied`（第 7.1 轮补）：`_inject_link_with()` 在「已满足」与「无处可注入」两种情况都返回 `None`，调用方原先只能靠 `imakefile_present` 二选一，于是「有 Imakefile 但没有 `LINK_WITH`」会落入 else 分支并输出了「LINK_WITH already contained ...；no Imakefile patch was needed」——一句不成立的断言（实测复现：`imakefile_present=True`、`link_with_injected=False`，`next_steps` 却声称已满足）。现由 `_link_with_state()` 区分四态：`INJECTED` / `ALREADY_SATISFIED` / `NO_LINK_WITH_BLOCK` / `UNPATCHABLE_LINK_WITH` / `NO_IMAKEFILE`，只有前两者 `link_contract_satisfied=True`。后三者 `next_steps` 明说契约未满足并列出需要手工补的库名，且不产生任何 Imakefile patch。
+  - 仍不自动新建 `LINK_WITH` 定义：mkmk 取最后一个，新增会静默丢掉模块原有库。正确做法是明确报未满足，交给人决定。
 
 边界：这证明的是「生成器知道该链什么、并把它写进 Imakefile」，**不证明在 B28 链接通过**。真实链接验证仍未执行。
 
@@ -357,7 +359,7 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
 
 #### 本轮本地验证（已实际执行，不是 GitHub CI）
 
-- `python tests/test_kernel_domain_routing.py`：**103/103 PASS**
+- `python tests/test_kernel_domain_routing.py`：**116/116 PASS**（第 7.1 轮：103 → 116，新增 4 条 `LINK_WITH` 缺失分支、1 条 `NO_IMAKEFILE` 区分、6 条显式组件端到端）
 - `python tests/test_runtime_layered_verification.py`：**70/70 PASS**
 - `python tests/test_runtime_verification.py`：**13/13 PASS**（本轮新修：三个用例未隔离真实进程快照，已改为注入确定性快照）
 - `python tests/test_intent_planner.py`：**39/39 PASS**
@@ -370,3 +372,43 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
 - L4 Add-in / Dictionary 初始化：`UNKNOWN`。
 - L5 命令 / Workbench 功能可用性：`NOT_RUN`。
 - GitHub 没有为本轮提交返回 CI 状态记录；上述数字是本地实测，不是 CI 结论。
+
+### 5.7 第八轮修正（仅收口 9891eaa 只读核验发现的两个缺口）
+
+本轮范围被刻意收窄为两项：审查方指定的「`LINK_WITH` 缺失时的处理」与「Late Type 从需求到生成器的实际传递」。未新增架构层，未扩测试面，未触碰 `CAAAssemblyExplode.edu/`、`CAADateStamp.edu/`。
+
+#### 缺陷一：有 Imakefile 但无 `LINK_WITH` 时输出假话（已修）
+
+- 复现（修复前实测）：模块 `Imakefile.mk` 只有 `BUILT_OBJECT_TYPE` 与 `LOCAL_CCFLAGS`，`create_extension()` 返回 `status=pending`、`imakefile_present=True`、`link_with_injected=False`、`link_with_added=[]`，而 `next_steps` 写着「LINK_WITH already contained CATVisualization, CATViz, JS0GROUP; no Imakefile patch was needed.」
+- 根因：`_inject_link_with()` 对「真的已满足」和「无处可注入」都返回 `None`，调用方用 `imakefile_present` 二元分支代替了实际状态判定。
+- 修复：新增 `_link_with_state()` 五态判定，`create_extension()` 据此生成 `link_contract_state` / `link_contract_satisfied` 并分支 `next_steps`。实测：
+
+  | 输入 | `link_contract_state` | `satisfied` | `next_steps` 是否声明未满足 |
+  |---|---|---|---|
+  | 无 Imakefile | `NO_IMAKEFILE` | False | 是 |
+  | 有 Imakefile，无 `LINK_WITH` | `NO_LINK_WITH_BLOCK` | False | 是，并列出三个库 |
+  | `LINK_WITH` 续行链末行为空 | `UNPATCHABLE_LINK_WITH` | False | 是 |
+  | `LINK_WITH` 缺库 | `INJECTED` | True | 否（已注入） |
+  | `LINK_WITH` 已含全部 | `ALREADY_SATISFIED` | True | 否 |
+
+- 仍**不**自动补一个 `LINK_WITH` 定义（见上节理由）。因此这类工程的构建契约保持未满足状态，不会被误报为已具备构建条件。
+
+#### 缺口二：显式真实组件到生成器的端到端覆盖（已补）
+
+- 核验结论：传递链本身成立。实测 `create extension EqExt on CAAMmrMeasureSet in VisualizationModule.m implementing CATIVisu` → `params.target_late_type="CAAMmrMeasureSet"`、`state=CLEAR`、`generation.target_object="CAAMmrMeasureSet"`、`_extension_late_type_gate()` 返回 `None`（放行）。
+- 但此前测试中的 `CAAMmrMeasureSet` 都是测试直接传给 `create_extension()` 的，缺一条从用户原话跑到生成产物的用例，属于证据缺口而非代码缺陷。
+- 新增 6 条端到端断言：计划可生成、late type 解析为 `CLEAR`、生成目标为组件而非需求类别、gate 不拦截、executor 收到的 `target_object` 就是该组件、生成器实际产出 `CATImplementClass(EqExt, DataExtension, CATExtIVisu, CAAMmrMeasureSet);` 与 `CAAMmrMeasureSet CATI3DGeoVisu libVisualizationModule` 字典行。
+
+#### 本轮本地验证（已实际执行）
+
+- `python tests/test_kernel_domain_routing.py`：**116/116 PASS**
+- `python tests/test_full_regression.py`：17/17 子套件，`ALL TESTS PASSED`
+- `python tests/test_master.py --quick`：**50/50 suites PASS**（串行重跑三次一致；并行调用会造成子套件重复执行而偶发失败）
+- 未跑真实 B28 编译/链接；CATIA 仍在运行（用户会话），`build.py` 会在 `catia_lock` 阶段拒绝。
+
+#### 边界不变
+
+- L4 Add-in / Dictionary 初始化：`UNKNOWN`；L5 命令可用性：`NOT_RUN`。
+- 生成的 `CATExtIVisu` 骨架仍未在 B28 编译/链接。
+- GitHub CI 状态：无记录，本轮数字均为本地实测。
+- GitHub Actions workflow 查询只覆盖 PR 触发的 runs，返回空不能证明所有 Actions 都没跑。

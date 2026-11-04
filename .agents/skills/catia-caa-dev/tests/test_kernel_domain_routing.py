@@ -361,6 +361,40 @@ if plan_visu:
                _inj(patched, ("CATVisualization", "CATViz", "JS0GROUP")) is None,
                "second injection was not a no-op")
 
+    # An Imakefile that exists but has no LINK_WITH block cannot meet the link
+    # contract. It must say so instead of falling through to "already contained".
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        stub = _StubModule(root)
+        stub.imakefile_path().write_text(
+            "BUILT_OBJECT_TYPE = SHARED LIBRARY\nLOCAL_CCFLAGS= -DSPECDEBUG\n",
+            encoding="utf-8",
+        )
+        ctx_nb = MagicMock()
+        ctx_nb.workspace_root = root
+        ctx_nb.snapshot = _StubSnapshot(stub)
+        with patch("intents.objects.validate_module", return_value={"status": "ok"}):
+            no_block = create_extension(
+                ctx_nb, name="NoBlockExt", target_object="CAAMmrMeasureSet",
+                module="VisualizationModule.m", implements=["CATIVisu"],
+            )
+            info_nb = no_block.get("extension", {})
+            steps_nb = " ".join(no_block.get("next_steps") or [])
+            ck("R-05-B: no LINK_WITH block is reported as an unmet link contract",
+               info_nb.get("link_contract_state") == "NO_LINK_WITH_BLOCK"
+               and info_nb.get("link_contract_satisfied") is False,
+               f"got {info_nb.get('link_contract_state')}")
+            ck("R-05-B: no LINK_WITH block is not reported as 'already contained'",
+               "already contained" not in steps_nb,
+               f"next_steps={steps_nb[:160]}")
+            ck("R-05-B: unmet link contract names the libraries the user must add",
+               all(lib in steps_nb for lib in ("CATVisualization", "CATViz", "JS0GROUP")),
+               f"next_steps={steps_nb[:160]}")
+            ck("R-05-B: no LINK_WITH block adds no fabricated patch",
+               info_nb.get("link_with_injected") is False
+               and not (no_block.get("changeset") or {}).get("modified"),
+               f"modified={(no_block.get('changeset') or {}).get('modified')}")
+
     # A module with no Imakefile must not be reported as linked.
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
@@ -376,6 +410,69 @@ if plan_visu:
             ck("R-05-B: no Imakefile means link_with_injected is False, not a false claim",
                no_imake.get("extension", {}).get("link_with_injected") is False,
                f"got {no_imake.get('extension', {}).get('link_with_injected')}")
+            ck("R-05-B: no Imakefile is distinguishable from a missing LINK_WITH block",
+               no_imake.get("extension", {}).get("link_contract_state") == "NO_IMAKEFILE",
+               f"got {no_imake.get('extension', {}).get('link_contract_state')}")
+
+
+# ── 4b. End-to-end: an explicitly named real component reaches the generator ─
+print("\n[4b] End-to-End Late Type Delivery for an Explicitly Named Component")
+
+eq_req = (
+    "create extension EqExt on CAAMmrMeasureSet in VisualizationModule.m "
+    "implementing CATIVisu"
+)
+res_eq = clarifier.analyze(eq_req)
+plan_eq = kernel._build_develop_plan(eq_req, clarification=res_eq)
+ck("R-05-A: request naming a real component builds a plan", plan_eq is not None)
+if plan_eq:
+    eq_params = plan_eq.get("intent", {}).get("params", {})
+    ck("R-05-A: explicit component resolves the late type CLEAR",
+       eq_params.get("target_late_type") == "CAAMmrMeasureSet"
+       and eq_params.get("target_late_type_state") == "CLEAR",
+       f"got {eq_params.get('target_late_type')}/{eq_params.get('target_late_type_state')}")
+    eq_gen = kernel._construction_generation_args(plan_eq)
+    ck("R-05-A: generation target is the component, not a requirement category",
+       eq_gen.get("target_object") == "CAAMmrMeasureSet",
+       f"got {eq_gen.get('target_object')!r}")
+    ck("R-05-A: a resolved late type is not blocked by the clarification gate",
+       kernel._extension_late_type_gate(plan_eq, res_eq) is None,
+       "gate blocked a resolved late type")
+
+    eq_ctx = MagicMock()
+    with patch("intents.objects.validate_module", return_value={"status": "ok"}):
+        from intents.objects import create_extension as _ce
+        with patch("intents.create_extension", side_effect=_ce) as _spy:
+            eq_exec = kernel._execute_develop_plan(plan_eq, preview=True)
+        passed_target = (
+            _spy.call_args.kwargs.get("target_object") if _spy.called else None
+        )
+    ck("R-05-A: executor receives the resolved component as the target",
+       passed_target == "CAAMmrMeasureSet", f"got {passed_target!r}")
+    # The test kernel has no real workspace module, so the generator stops at the
+    # dictionary-path check. That error is raised AFTER the late type check in
+    # create_extension(), so reaching it proves the resolved component was
+    # accepted rather than rejected as a requirement category.
+    ck("R-05-A: executor gets past the late type check end to end",
+       "dictionary path" in str(eq_exec.get("message", ""))
+       and "late type" not in str(eq_exec.get("message", "")),
+       f"status={eq_exec.get('status')} message={eq_exec.get('message')}")
+
+    # The generator itself must emit that component into CATImplementClass and
+    # the dictionary line, not the requirement category.
+    with patch("intents.objects.validate_module", return_value={"status": "ok"}):
+        from intents.objects import create_extension as _gen
+        produced = _gen(
+            MagicMock(), name="EqExt", target_object=eq_gen.get("target_object") or "",
+            module="VisualizationModule.m", implements=eq_gen.get("interfaces") or None,
+        )
+    prod_blob = "\n".join((produced.get("changeset") or {}).get("created", {}).values())
+    ck("R-05-A: generator registers the real component, end to end",
+       "CATImplementClass(EqExt, DataExtension, CATExtIVisu, CAAMmrMeasureSet);" in prod_blob,
+       f"status={produced.get('status')} message={produced.get('message')}")
+    ck("R-05-A: dictionary line carries the real component, not the category",
+       "CAAMmrMeasureSet CATI3DGeoVisu libVisualizationModule" in prod_blob,
+       "dictionary line mismatch")
 
 
 # ── 5. Multi-Domain Detection & Disambiguation (R-06) ───────────
