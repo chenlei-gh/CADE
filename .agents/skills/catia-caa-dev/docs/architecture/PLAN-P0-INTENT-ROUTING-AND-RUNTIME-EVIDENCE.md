@@ -359,7 +359,7 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
 
 #### 本轮本地验证（已实际执行，不是 GitHub CI）
 
-- `python tests/test_kernel_domain_routing.py`：**120/120 PASS**（第 8 轮：103 → 120；新增 4 条 `LINK_WITH` 缺失分支、1 条 `NO_IMAKEFILE` 区分、6 条显式组件端到端、4 条链接行解析边界）
+- `python tests/test_kernel_domain_routing.py`：**124/124 PASS**（第 8 轮：103 → 124；新增 4 条 `LINK_WITH` 缺失分支、1 条 `NO_IMAKEFILE` 区分、6 条显式组件端到端、4 条链接行解析边界、4 条 IdentityCard prerequisite）
 - `python tests/test_runtime_layered_verification.py`：**70/70 PASS**
 - `python tests/test_runtime_verification.py`：**13/13 PASS**（本轮新修：三个用例未隔离真实进程快照，已改为注入确定性快照）
 - `python tests/test_intent_planner.py`：**39/39 PASS**
@@ -416,6 +416,45 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
 - 用本机真实 `CAAAutoColor.edu/CAAAutoColorCmd.m/Imakefile.mk` 验证：`LINK_WITH = $(WIZARD_LINK_MODULES) CATViz CATVisualization ...` 中的 `$(WIZARD_LINK_MODULES)` 正确展开到 `JS0GROUP JS0FM CATApplicationFrame CATDialogEngine DI0PANV2`，三个库均被判为已在链接行上（`ALREADY_SATISFIED`），而不是靠子串命中。
 - 七种形态均有断言：注释提及、无关变量、`$()` 间接、`+=` 累加、续行链缺库、空续行、无 `LINK_WITH` 块。
 
+#### 缺陷二：真实 B28 编译一次就揭穿的根因（已修，已实测通过）
+
+CATIA 会话退出后拿到编译窗口，在隔离临时工作区 `D:/_cade_visu_verify` 中做了一次真编译。流程：用 CADE 自身 API 生成框架 + 模块 + 可视扩展，落盘，再 `python skills/build.py D:/_cade_visu_verify --timeout 900`。
+
+**首次结果：链接失败，129 个未解析外部符号。**
+
+```
+# mkmk-ERROR: VisuVerify.edu\VisuVerifyMod.m: Module [Visualization\CATVisualization.m]
+  in 'LINK_WITH' is ignored because it is in framework [Visualization]
+  which is not a direct prerequisite
+# mkmk-ERROR: ... Module [VisualizationBase\CATViz.m] in 'LINK_WITH' is ignored ...
+VerifyVisuExt.obj : error LNK2001: 无法解析的外部符号 ...CATExtIVisu::UnreferenceRep...
+VerifyVisuExt.obj : error LNK2001: 无法解析的外部符号 ...__imp_?IID_CATI3DGeoVisu...
+fatal error LNK1120: 129 个无法解析的外部命令
+```
+
+- **根因**：`required_frameworks = ["Visualization", "VisualizationBase"]` 只进了**返回值**，从未写进框架的 `IdentityCard.xml`。mkmk 要求 LINK_WITH 里的库所属框架必须是**直接 prerequisite**，否则整行被忽略——注释掉也是同样后果。因此「前几轮把库名注入 LINK_WITH」只完成了契约的一半，另一半（声明框架依赖）一直是空的。
+- **对照实验**：手工在 `IdentityCard.xml` 里补上两行 `<prerequisite name="Visualization" access="Public" />` / `<prerequisite name="VisualizationBase" access="Public" />`，重跑同一构建 → `status=success`、`error_count=0`、`warning_count=0`、DLL 生成。根因因此被坐实，不是推测。
+- **参考依据**：B28 自带样例 `CAADoc/CAATessellation.edu/IdentityCard/IdentityCard.xml` 正是用 `<prerequisite name="Visualization" access="Public"/>` / `name="VisualizationBase" access="Public"/>` 声明这两个框架。
+- **修复**：新增 `_add_prerequisites()`，在 `create_extension()` 里把 `required_frameworks` 写成 `Public` prerequisite：
+  - 已有同名 prerequisite 时不重复添加（幂等）；
+  - 保留原有条目与 `access` 属性，只插入缺失项；
+  - 非 XML 形态的 `IdentityCard.h` **不改写**，返回 `NOT_XML_IDENTITYCARD` 并在 `next_steps` 说明需手工声明。
+- **返回体新增**：`framework_prerequisite_state`（`DECLARED` / `ALREADY_DECLARED` / `NOT_XML_IDENTITYCARD` / `NO_IDENTITYCARD`）、`framework_prerequisites_added`、`identitycard_path`。
+- **修复后真编译实测（同一隔离流程、全新临时目录）**：
+
+  ```json
+  { "status": "success", "error_count": 0, "warning_count": 0,
+    "dlls": [{ "name": "VisuVerifyMod.dll", "size": 28160 }], "ok": true }
+  ```
+
+  生成的 `VerifyVisuExt.h` 继承 `CATExtIVisu`、声明 `BuildRep()`；`.dico` 为 `CAAMmrMeasureSet CATI3DGeoVisu libVisuVerifyMod`。
+
+这说明 R-05-B 的构建契约从「库名已注入」推进到了**已在真实 B28 编译并链接成功**。但注意边界：编译/链接通过不等于 L4 add-in 已注册、也不等于 L5 命令可用，后两者仍为 `UNKNOWN` / `NOT_RUN`。
+
+#### 隔离验证的清理
+
+两个临时工作区 `D:/_cade_visu_verify`、`D:/_cade_visu_verify2` 已删除；未触碰 `D:/Vault/FSWorkspaces` 下任何真实框架与 DLL。
+
 #### 缺口二：显式真实组件到生成器的端到端覆盖（已补）
 
 - 核验结论：传递链本身成立。实测 `create extension EqExt on CAAMmrMeasureSet in VisualizationModule.m implementing CATIVisu` → `params.target_late_type="CAAMmrMeasureSet"`、`state=CLEAR`、`generation.target_object="CAAMmrMeasureSet"`、`_extension_late_type_gate()` 返回 `None`（放行）。
@@ -424,14 +463,15 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
 
 #### 本轮本地验证（已实际执行）
 
-- `python tests/test_kernel_domain_routing.py`：**116/116 PASS**
+- `python tests/test_kernel_domain_routing.py`：**124/124 PASS**
 - `python tests/test_full_regression.py`：17/17 子套件，`ALL TESTS PASSED`
-- `python tests/test_master.py --quick`：**50/50 suites PASS**（串行重跑三次一致；并行调用会造成子套件重复执行而偶发失败）
-- 未跑真实 B28 编译/链接；CATIA 仍在运行（用户会话），`build.py` 会在 `catia_lock` 阶段拒绝。
+- `python tests/test_master.py --quick`：**50/50 suites PASS**
+- **真实 B28 编译（首次获得）**：隔离工作区生成可视扩展 → `build.py --timeout 900` → `success` / 0 error / 0 warning / `VisuVerifyMod.dll` 28160 字节
+- 未触碰 `D:/Vault/FSWorkspaces` 下任何真实框架与 DLL；临时目录已删
 
 #### 边界不变
 
 - L4 Add-in / Dictionary 初始化：`UNKNOWN`；L5 命令可用性：`NOT_RUN`。
-- 生成的 `CATExtIVisu` 骨架仍未在 B28 编译/链接。
+- 生成的 `CATExtIVisu` 骨架已在 B28 编译并链接通过（见上节），但「编译链接通过」不等于「CATIA 已加载并注册该 add-in」。
 - GitHub CI 状态：无记录，本轮数字均为本地实测。
 - GitHub Actions workflow 查询只覆盖 PR 触发的 runs，返回空不能证明所有 Actions 都没跑。

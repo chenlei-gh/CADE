@@ -209,6 +209,49 @@ def _link_with_state(imake_text: str, libs: tuple) -> str:
     return "INJECTED"
 
 
+def _add_prerequisites(identity_xml: str, frameworks: tuple) -> Optional[str]:
+    """Return IdentityCard.xml text declaring `frameworks` as Public prerequisites.
+
+    mkmk ignores a LINK_WITH library whose framework is not a direct
+    prerequisite of the module's framework:
+
+        Module [Visualization\\CATVisualization.m] in 'LINK_WITH' is ignored
+        because it is in framework [Visualization] which is not a direct
+        prerequisite
+
+    The link then fails with unresolved externals (LNK2001). A link line alone
+    is therefore not a build contract; the prerequisite has to be declared.
+
+    Returns None when every framework is already declared (idempotent) or when
+    the file is not the XML form (a .h IdentityCard has its own syntax and is
+    left untouched rather than corrupted).
+    """
+    if "<eduFramework" not in identity_xml:
+        return None
+    missing = [
+        fw for fw in frameworks
+        if not re.search(
+            r"<prerequisite\b[^>]*\bname\s*=\s*[\"']" + re.escape(fw) + r"[\"']",
+            identity_xml,
+        )
+    ]
+    if not missing:
+        return None
+
+    nl = "\r\n" if "\r\n" in identity_xml else "\n"
+    indent = "  "
+    block = "".join(
+        f'{indent}<prerequisite name="{fw}" access="Public" />{nl}' for fw in missing
+    )
+    closing = identity_xml.rfind("</eduFramework>")
+    if closing < 0:
+        return None
+    line_start = identity_xml.rfind(nl, 0, closing)
+    head = identity_xml if line_start < 0 else identity_xml[: line_start + len(nl)]
+    tail = "" if line_start < 0 else identity_xml[line_start + len(nl):]
+    return head + block + tail
+
+
 def _extension_error(message: str, **extra) -> Dict:
     payload = {
         "status": "error",
@@ -463,6 +506,39 @@ def create_extension(
     else:
         master_cs.add_create(dico_path, entry)
 
+    # Framework prerequisites: mkmk drops any LINK_WITH library whose framework
+    # is not a direct prerequisite, so the link line injected above is only
+    # honoured once these are declared. Verified on B28: without this the build
+    # fails with LNK2001 (129 unresolved externals), with it 0 errors.
+    prerequisites_added: List[str] = []
+    prereq_state = "NO_IDENTITYCARD"
+    identity_path = None
+    if callable(getattr(fw, "identitycard_path", None)):
+        candidate = fw.identitycard_path()
+        if isinstance(candidate, Path) and candidate.exists():
+            identity_path = candidate
+            identity_old = candidate.read_text(encoding="utf-8", errors="replace")
+            identity_new = _add_prerequisites(
+                identity_old, tuple(rendered["required_frameworks"])
+            )
+            if identity_new is None:
+                prereq_state = (
+                    "ALREADY_DECLARED"
+                    if "<eduFramework" in identity_old
+                    else "NOT_XML_IDENTITYCARD"
+                )
+            else:
+                master_cs.add_modify(candidate, identity_new)
+                prerequisites_added = [
+                    fw_name for fw_name in rendered["required_frameworks"]
+                    if not re.search(
+                        r"<prerequisite\b[^>]*\bname\s*=\s*[\"']"
+                        + re.escape(fw_name) + r"[\"']",
+                        identity_old,
+                    )
+                ]
+                prereq_state = "DECLARED"
+
     extension_info = {
         "name": name,
         "target": target_object,
@@ -486,6 +562,9 @@ def create_extension(
         },
         "required_frameworks": rendered["required_frameworks"],
         "required_libraries": list(_VISU_LINK_WITH),
+        "framework_prerequisite_state": prereq_state,
+        "framework_prerequisites_added": prerequisites_added,
+        "identitycard_path": str(identity_path) if identity_path else None,
         "link_contract_state": link_contract_state,
         "link_contract_satisfied": link_contract_state in (
             "INJECTED",
@@ -553,6 +632,29 @@ def create_extension(
     next_steps.append(
         "L4 add-in registration remains UNKNOWN. L5 command verification remains NOT_RUN."
     )
+    if prereq_state == "DECLARED":
+        next_steps.append(
+            "IdentityCard.xml now declares "
+            + ", ".join(prerequisites_added)
+            + " as Public prerequisites. mkmk ignores a LINK_WITH library whose "
+            "framework is not a direct prerequisite, so without this the link line "
+            "would be dropped and the build would fail with LNK2001."
+        )
+    elif prereq_state == "NOT_XML_IDENTITYCARD":
+        next_steps.append(
+            "The framework IdentityCard is not XML, so "
+            + ", ".join(rendered["required_frameworks"])
+            + " was not declared automatically. mkmk ignores LINK_WITH libraries from "
+            "frameworks that are not direct prerequisites: declare them by hand or "
+            "the build fails with LNK2001."
+        )
+    elif prereq_state == "NO_IDENTITYCARD":
+        next_steps.append(
+            "The framework has no IdentityCard, so "
+            + ", ".join(rendered["required_frameworks"])
+            + " was not declared. mkmk ignores LINK_WITH libraries from frameworks "
+            "that are not direct prerequisites: the build fails with LNK2001."
+        )
     if data_members:
         next_steps.append(
             "Requested data members were recorded but not emitted; there is no verified member recipe."

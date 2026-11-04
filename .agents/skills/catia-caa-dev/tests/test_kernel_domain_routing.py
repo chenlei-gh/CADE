@@ -419,6 +419,31 @@ if plan_visu:
        ) == "ALREADY_SATISFIED",
        "+= definitions were not accumulated")
 
+    # A LINK_WITH library is dropped by mkmk unless its framework is a direct
+    # prerequisite. B28 rejects the build with LNK2001 otherwise.
+    from intents.objects import _add_prerequisites as _ap
+    _ic = (
+        '<?xml version="1.0" encoding="iso-8859-1"?>\n'
+        '<eduFramework xmlns="http://www.3ds.ic">\n'
+        '  <prerequisite name="System" access="Protected" />\n'
+        '</eduFramework>\n'
+    )
+    _ic2 = _ap(_ic, ("Visualization", "VisualizationBase"))
+    ck("R-05-B: framework prerequisites are declared in IdentityCard.xml",
+       _ic2 is not None
+       and '<prerequisite name="Visualization" access="Public" />' in _ic2
+       and '<prerequisite name="VisualizationBase" access="Public" />' in _ic2,
+       f"got {_ic2!r}")
+    ck("R-05-B: existing prerequisites are preserved, not replaced",
+       _ic2 is not None and '<prerequisite name="System" access="Protected" />' in _ic2,
+       "original prerequisite was dropped")
+    ck("R-05-B: declaring prerequisites is idempotent",
+       _ap(_ic2, ("Visualization", "VisualizationBase")) is None,
+       "second declaration was not a no-op")
+    ck("R-05-B: a non-XML IdentityCard is left untouched",
+       _ap('ADD_PREREQUISITE(Visualization)\n', ("Visualization",)) is None,
+       "a .h-style IdentityCard was rewritten")
+
     # A module with no Imakefile must not be reported as linked.
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
