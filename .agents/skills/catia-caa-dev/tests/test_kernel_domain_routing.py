@@ -524,6 +524,84 @@ if plan_eq:
        "dictionary line mismatch")
 
 
+# ── 4c. End-to-End Real Workspace Generation: Natural Language -> Disk ──
+print("\n[4c] End-to-End Real Workspace Generation (Chinese NL -> Physical Files)")
+
+with tempfile.TemporaryDirectory() as td_e2e:
+    e2e_ws = Path(td_e2e)
+    from actions import ActionContext, create_framework, create_module
+    from changeset import ChangeSet
+
+    # Initialize workspace with Framework and Module
+    e2e_ctx = ActionContext(str(e2e_ws))
+    fw_cs = create_framework(e2e_ctx, name="AcceptanceFw")
+    ChangeSet.from_dict(fw_cs["changeset"]).apply(workspace_root=e2e_ws)
+    e2e_ctx.refresh(force=True)
+
+    mod_cs = create_module(e2e_ctx, framework_name="AcceptanceFw.edu", module_name="AcceptanceMod")
+    ChangeSet.from_dict(mod_cs["changeset"]).apply(workspace_root=e2e_ws)
+    e2e_ctx.refresh(force=True)
+
+    # Case A: User natural language with explicit CAA component
+    req_a = "在 AcceptanceFw 框架的 AcceptanceMod 模块中为 CAAMmrMeasureSet 特征实现 CATIVisu 可视化扩展"
+    clar_a = clarifier.analyze(req_a)
+    typed_a = clar_a.typed_requirement
+
+    ck("R-05-A E2E: NL prompt A detects domain visualization", "visualization" in typed_a.matched_domains)
+    ck("R-05-A E2E: NL prompt A recommends CreateExtension", typed_a.recommended_intent_type == "CreateExtension")
+    ck("R-05-A E2E: NL prompt A resolves late type CAAMmrMeasureSet CLEAR",
+       typed_a.target_late_type == "CAAMmrMeasureSet" and typed_a.target_late_type_state == "CLEAR")
+
+    e2e_kernel = Kernel(workspace_root=str(e2e_ws))
+    plan_a = e2e_kernel._build_develop_plan(req_a, clarification=clar_a)
+    exec_a = e2e_kernel._execute_develop_plan(plan_a)
+
+    ck("R-05-A E2E: develop plan execution succeeds", exec_a.get("status") in ("ok", "pending"))
+    ck("R-05-A E2E: link contract is satisfied and injected", exec_a.get("extension", {}).get("link_contract_satisfied") is True)
+
+    ext_name = plan_a["intent"]["name"]
+    cpp_p = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod.m" / "src" / f"{ext_name}.cpp"
+    dico_p = e2e_ws / "AcceptanceFw.edu" / "CNext" / "code" / "dictionary" / "AcceptanceFw.dico"
+    idcard_p = e2e_ws / "AcceptanceFw.edu" / "IdentityCard" / "IdentityCard.xml"
+    imake_p = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod.m" / "Imakefile.mk"
+
+    cpp_content = cpp_p.read_text(encoding="utf-8") if cpp_p.exists() else ""
+    dico_content = dico_p.read_text(encoding="utf-8") if dico_p.exists() else ""
+    idcard_content = idcard_p.read_text(encoding="utf-8") if idcard_p.exists() else ""
+    imake_content = imake_p.read_text(encoding="utf-8") if imake_p.exists() else ""
+
+    ck("R-05-A E2E: generated C++ file exists on disk", cpp_p.exists())
+    ck("R-05-A E2E: C++ binds real late type CAAMmrMeasureSet",
+       f"CATImplementClass({ext_name}, DataExtension, CATExtIVisu, CAAMmrMeasureSet);" in cpp_content)
+    ck("R-05-A E2E: C++ does not bind requirement category 'feature'",
+       "CATImplementClass" in cpp_content and "feature" not in [l for l in cpp_content.splitlines() if "CATImplementClass" in l][0])
+    ck("R-05-A E2E: DICO file carries real component CAAMmrMeasureSet",
+       "CAAMmrMeasureSet CATI3DGeoVisu libAcceptanceMod" in dico_content)
+    ck("R-05-B E2E: IdentityCard declares Visualization prerequisites",
+       'prerequisite name="Visualization" access="Public"' in idcard_content and
+       'prerequisite name="VisualizationBase" access="Public"' in idcard_content)
+    ck("R-05-B E2E: Imakefile links CATVisualization and CATViz",
+       "CATVisualization" in imake_content and "CATViz" in imake_content)
+
+    # Case B: Negative gate — generic category prompt without real component
+    req_b = "在 AcceptanceFw 框架的 AcceptanceMod 模块中为 feature 特征实现 CATIVisu 可视化扩展"
+    clar_b = clarifier.analyze(req_b)
+    typed_b = clar_b.typed_requirement
+
+    ck("R-05-A E2E: category prompt leaves late type unresolved",
+       typed_b.target_late_type is None and typed_b.target_late_type_state == "AMBIGUOUS")
+    ck("R-05-A E2E: clarification records unresolved target_late_type",
+       "target_late_type" in [d.id for d in clar_b.unresolved])
+
+    plan_b = e2e_kernel._build_develop_plan(req_b, clarification=clar_b)
+    exec_b = e2e_kernel._execute_develop_plan(plan_b)
+
+    ck("R-05-A E2E: execution strictly rejected with status=error",
+       exec_b.get("status") == "error", f"status={exec_b.get('status')}")
+    ck("R-05-A E2E: error message explicitly explains late type requirement",
+       "target_object must be the late type" in str(exec_b.get("message", "")))
+
+
 # ── 5. Multi-Domain Detection & Disambiguation (R-06) ───────────
 print("\n[5] Multi-Domain Detection & Semantic Aggregation")
 

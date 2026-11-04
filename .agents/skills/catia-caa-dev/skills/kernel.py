@@ -3224,14 +3224,14 @@ class Kernel:
             m = re.search(r'(?:在|放到|放在|到)\s*(' + QID + r')\s*模块', request)
             if m:
                 module = m.group(1)
+        if not module:
+            m = re.search(r'(' + QID + r')\s*模块', request)
+            if m:
+                module = m.group(1)
         # CN: "到<Module>" (without 模块, e.g., "添加对话框X到Module")
         if not module:
             m = re.search(r'(?:在|放到|放在|到)\s*(' + QID + r')(?:\s|$)', request)
             if m and m.group(1) not in ('一个', '新的'):
-                module = m.group(1)
-        if not module:
-            m = re.search(r'(' + QID + r')\s*模块\s*(?:中|里|内)', request)
-            if m:
                 module = m.group(1)
 
         # ── Framework patterns ──
