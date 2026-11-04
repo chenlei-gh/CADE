@@ -62,6 +62,20 @@ ck("Line B: Base class verified as CATExtIVisu", uc["parsed_cpp_ast"]["base_clas
 ck("Line B: Official DICO registration verified", uc["parsed_dico"]["parsed"] is True)
 ck("Line B: Official blueprint fully verified end-to-end", uc["official_blueprint_verified"] is True)
 
+# Negative test for Line B: non-DataExtension blueprint rejection
+uc_fake = dict(uc)
+uc_fake_ast = dict(uc["parsed_cpp_ast"])
+uc_fake_ast["extension_type"] = "CodeExtension"
+blueprint_rejected = not (
+    uc_fake_ast["parsed"]
+    and uc_fake_ast["extension_type"] == "DataExtension"
+    and uc_fake["target_component_verified_from_ast"] == "CAAMmrMeasureSet"
+    and uc_fake["target_interface_verified_from_ast"] == "CATI3DGeoVisu"
+    and uc_fake_ast["base_class"] == "CATExtIVisu"
+    and uc["parsed_dico"]["parsed"]
+)
+ck("Line B: Non-DataExtension AST strictly rejected from blueprint verification", blueprint_rejected is True)
+
 # ── 2. Line C: Dictionary Conflict Analysis ─────────────────────────
 print("\n[2] System Dictionary Conflict & Precedence Analysis")
 dc = driver.check_system_dictionary_conflict()
@@ -87,6 +101,35 @@ with tempfile.TemporaryDirectory() as td_fake:
     ck("Line C: Driver detects simulated system dictionary conflict", dc_fake["has_system_conflict"] is True)
     ck("Line C: Conflict details record exact line and library",
        len(dc_fake["conflict_entries"]) == 1 and dc_fake["conflict_entries"][0]["library"] == "libSystemConflict")
+
+# Test unreadable directory walk error handling
+with tempfile.TemporaryDirectory() as td_unreadable:
+    fake_b28_unr = pathlib.Path(td_unreadable)
+    fake_dico_dir_unr = fake_b28_unr / "win_b64" / "code" / "dictionary"
+    fake_dico_dir_unr.mkdir(parents=True)
+    normal_dico = fake_dico_dir_unr / "Normal.dico"
+    normal_dico.write_text("SomeComp SomeIface libSome\n", encoding="latin-1")
+    
+    # Mocking unreadable directory error in check_system_dictionary_conflict
+    driver_unr = OMActivationDriver(b28_root=str(fake_b28_unr))
+    orig_walk = os.walk
+    def mock_walk_with_error(top, onerror=None):
+        if onerror:
+            err = PermissionError(13, "Permission denied", os.path.join(top, "LockedSubdir"))
+            onerror(err)
+        return orig_walk(top)
+    
+    try:
+        os.walk = mock_walk_with_error
+        dc_unr = driver_unr.check_system_dictionary_conflict()
+        ck("Line C: Incomplete directory walk captures unreadable directory",
+           dc_unr["unreadable_directories_count"] == 1)
+        ck("Line C: Incomplete directory walk resets completeness rate to 0.0",
+           dc_unr["scan_completeness_rate"] == 0.0)
+        ck("Line C: Incomplete directory walk strictly refuses exclusive mapping claim",
+           dc_unr["exclusive_mapping_in_scanned_dictionaries"] is False)
+    finally:
+        os.walk = orig_walk
 
 # ── 3. Line D: Layered Evidence Evaluation Matrix (L0 ~ L5) ─────────
 print("\n[3] Layered Evidence Evaluation Matrix (L0 ~ L5)")
@@ -162,7 +205,8 @@ with tempfile.TemporaryDirectory() as td_rt:
         expected_nonce="WRONG_NONCE", expected_cnext_pid=test_pid, session_start_time=now - 5
     )
     ck("L4: Nonce mismatch remains UNKNOWN", ev_l4_nonce_mismatch["L4"]["status"] == "UNKNOWN")
-    ck("L4: Nonce matched flag is False", ev_l4_nonce_mismatch["L4"]["evidence"]["probe_contract"]["nonce_matched"] is False)
+    ck("L4: Atomic event flag is False on nonce mismatch",
+       ev_l4_nonce_mismatch["L4"]["evidence"]["probe_contract"]["atomic_event_verified"] is False)
 
     # Case E: Fresh probe log, nonce match, but PID mismatch -> UNKNOWN
     ev_l4_pid_mismatch = driver.evaluate_layered_evidence(
@@ -170,15 +214,58 @@ with tempfile.TemporaryDirectory() as td_rt:
         expected_nonce=test_nonce, expected_cnext_pid=8888, session_start_time=now - 5
     )
     ck("L4: PID mismatch remains UNKNOWN", ev_l4_pid_mismatch["L4"]["status"] == "UNKNOWN")
-    ck("L4: PID matched flag is False", ev_l4_pid_mismatch["L4"]["evidence"]["probe_contract"]["pid_matched"] is False)
+    ck("L4: Atomic event flag is False on PID mismatch",
+       ev_l4_pid_mismatch["L4"]["evidence"]["probe_contract"]["atomic_event_verified"] is False)
 
-    # Case F: Four factors completely satisfied (S_OK, Fresh, Nonce match, PID match, Component match) -> PASS!
+    # Case G (Critical Negative): Missing mandatory credentials fail-closed to UNKNOWN
+    probe_log.write_text(f"ACTION=CONSTRUCTOR_ACTIVATED;NONCE={test_nonce};PID={test_pid};COMPONENT=CAAMmrMeasureSet\n", encoding="utf-8")
+    os.utime(probe_log, (now, now))
+    ev_l4_no_cred = driver.evaluate_layered_evidence(
+        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        expected_nonce=None, expected_cnext_pid=None, session_start_time=None
+    )
+    ck("L4: Missing credentials fail-closed to UNKNOWN", ev_l4_no_cred["L4"]["status"] == "UNKNOWN")
+    ck("L4: Reason explicitly states missing credentials",
+       ev_l4_no_cred["L4"]["evidence"]["reason"] == "missing_mandatory_credentials_nonce_pid_or_session_time")
+
+    # Case H (Critical Negative): Multi-line splicing attack must NOT pass
+    # Three lines each satisfy one condition, but NO single atomic record satisfies all!
+    spliced_log = rt_ws / "spliced.log"
+    spliced_log.write_text(
+        "ACTION=CONSTRUCTOR_ACTIVATED;NONCE=NONCE_ABC_123;PID=1111;COMPONENT=WrongComp\n"
+        "ACTION=CONSTRUCTOR_ACTIVATED;NONCE=WrongNonce;PID=9999;COMPONENT=CAAMmrMeasureSet\n"
+        "ACTION=CONSTRUCTOR_ACTIVATED;NONCE=NONCE_ABC_123;PID=9999;COMPONENT=WrongComp\n",
+        encoding="utf-8"
+    )
+    os.utime(spliced_log, (now, now))
+    ev_l4_splice = driver.evaluate_layered_evidence(
+        rt_ws, query_interface_hr=0, probe_log_file=spliced_log,
+        expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=now - 5
+    )
+    ck("L4: Multi-line splicing attack strictly rejected as UNKNOWN", ev_l4_splice["L4"]["status"] == "UNKNOWN")
+    ck("L4: Atomic event verified flag is False on spliced lines",
+       ev_l4_splice["L4"]["evidence"]["probe_contract"]["atomic_event_verified"] is False)
+
+    # Case I (Critical Negative): Invalid ACTION value must NOT pass
+    invalid_action_log = rt_ws / "invalid_action.log"
+    invalid_action_log.write_text(
+        f"ACTION=METHOD_INVOKED;NONCE={test_nonce};PID={test_pid};COMPONENT=CAAMmrMeasureSet\n",
+        encoding="utf-8"
+    )
+    os.utime(invalid_action_log, (now, now))
+    ev_l4_action = driver.evaluate_layered_evidence(
+        rt_ws, query_interface_hr=0, probe_log_file=invalid_action_log,
+        expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=now - 5
+    )
+    ck("L4: Non-CONSTRUCTOR_ACTIVATED action strictly rejected as UNKNOWN", ev_l4_action["L4"]["status"] == "UNKNOWN")
+
+    # Case J: Four-factor atomic certificate satisfied in single record -> PASS!
     ev_l4_pass = driver.evaluate_layered_evidence(
         rt_ws, query_interface_hr=0, probe_log_file=probe_log,
         expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=now - 5
     )
-    ck("L4: Four-factor probe certificate satisfied is PASS", ev_l4_pass["L4"]["status"] == "PASS")
-    ck("L4: Four-factor probe verified flag is True", ev_l4_pass["L4"]["evidence"]["four_factor_probe_verified"] is True)
+    ck("L4: Single atomic record satisfying all four factors is PASS", ev_l4_pass["L4"]["status"] == "PASS")
+    ck("L4: Atomic probe verified flag is True", ev_l4_pass["L4"]["evidence"]["atomic_probe_verified"] is True)
 
 print("\n" + "=" * 70)
 print(f"  Result: {passed}/{total} tests passed ({'ALL PASS' if passed == total else 'SOME FAILED'})")

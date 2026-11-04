@@ -74,16 +74,24 @@ class OMActivationDriver:
     def check_system_dictionary_conflict(self) -> Dict[str, Any]:
         """
         Recursively scan all B28 system dictionaries under win_b64/code/dictionary.
-        Tracks unreadable files and avoids unverified priority claims.
+        Tracks unreadable files and unreadable directories via onerror callback.
+        Avoids unverified priority claims.
         """
         dico_dir = self.b28_root / "win_b64" / "code" / "dictionary"
         matches = []
         unreadable_files = []
+        unreadable_directories = []
         total_discovered = 0
         scanned_success = 0
 
+        def on_walk_error(err: OSError):
+            unreadable_directories.append({
+                "path": str(getattr(err, "filename", err)),
+                "error": str(err),
+            })
+
         if dico_dir.is_dir():
-            for root, _, files in os.walk(dico_dir):
+            for root, _, files in os.walk(dico_dir, onerror=on_walk_error):
                 for f in files:
                     if f.endswith(".dico") or f.endswith(".dic"):
                         total_discovered += 1
@@ -113,7 +121,11 @@ class OMActivationDriver:
 
         interface_matches = [m for m in matches if m.get("interface") == self.target_interface]
         has_conflict = len(interface_matches) > 0
-        read_complete = (total_discovered > 0 and len(unreadable_files) == 0)
+        read_complete = (
+            total_discovered > 0
+            and len(unreadable_files) == 0
+            and len(unreadable_directories) == 0
+        )
 
         analysis = {
             "recursive_scan_enabled": True,
@@ -121,14 +133,16 @@ class OMActivationDriver:
             "scanned_dictionaries_success": scanned_success,
             "unreadable_files_count": len(unreadable_files),
             "unreadable_files": unreadable_files,
-            "scan_completeness_rate": round(scanned_success / total_discovered, 4) if total_discovered else 0.0,
+            "unreadable_directories_count": len(unreadable_directories),
+            "unreadable_directories": unreadable_directories,
+            "scan_completeness_rate": round(scanned_success / total_discovered, 4) if (total_discovered and len(unreadable_directories) == 0) else 0.0,
             "target_component": self.target_component,
             "target_interface": self.target_interface,
             "total_component_registrations": len(matches),
             "exact_interface_conflicts": len(interface_matches),
             "conflict_entries": interface_matches,
             "has_system_conflict": has_conflict,
-            # Only declare exclusive when scan completed without read failures
+            # Only declare exclusive when both directory walk and file reads completed with zero errors
             "exclusive_mapping_in_scanned_dictionaries": (not has_conflict) if read_complete else False,
             "precedence_status": "UNTESTED_HYPOTHESIS",
             "precedence_note": (
@@ -206,13 +220,16 @@ class OMActivationDriver:
         # Cross-validate parsed AST against target specifications
         cpp_late_type = parsed_cpp.get("target_late_type")
         cpp_iface = parsed_cpp.get("tie_interface")
+        cpp_ext_type = parsed_cpp.get("extension_type")
+        cpp_base_class = parsed_cpp.get("base_class")
         dico_entry_match = len(parsed_dico.get("matching_entries", [])) > 0
 
         blueprint_verified = bool(
             parsed_cpp["parsed"]
+            and cpp_ext_type == "DataExtension"
             and cpp_late_type == self.target_component
             and cpp_iface == self.target_interface
-            and parsed_cpp.get("base_class") == "CATExtIVisu"
+            and cpp_base_class == "CATExtIVisu"
             and dico_entry_match
         )
 
@@ -332,49 +349,69 @@ class OMActivationDriver:
             }
         }
 
-        # L4: Object Modeler Resolution & Extension Activation (4-Factor Contract)
-        # Factors: 1. QI S_OK (0x0); 2. Freshness; 3. Nonce match; 4. PID match; 5. Component match
+        # L4: Object Modeler Resolution & Extension Activation (Strict Atomic 4-Factor Contract)
+        # Factors:
+        # 1. Mandatory credentials provided (valid non-empty nonce, positive pid, non-zero session_start_time)
+        # 2. QI S_OK (0x0)
+        # 3. File Freshness (mtime >= session_start_time - 1.0)
+        # 4. Atomic Event Record: ACTION=CONSTRUCTOR_ACTIVATED, NONCE, PID, COMPONENT all match on the SAME line!
         l4_status = "UNKNOWN"
+        credentials_valid = bool(
+            expected_nonce and isinstance(expected_nonce, str) and expected_nonce.strip()
+            and expected_cnext_pid and isinstance(expected_cnext_pid, int) and expected_cnext_pid > 0
+            and session_start_time and isinstance(session_start_time, (int, float)) and session_start_time > 0
+        )
+
         probe_contract = {
             "file_exists": False,
+            "credentials_provided": credentials_valid,
             "freshness_valid": False,
-            "nonce_matched": False,
-            "pid_matched": False,
-            "component_matched": False,
+            "atomic_event_verified": False,
+            "matched_record": None,
             "all_factors_satisfied": False,
         }
 
-        if probe_log_file and probe_log_file.is_file():
+        if credentials_valid and probe_log_file and probe_log_file.is_file():
             probe_contract["file_exists"] = True
             try:
-                # Freshness check: file mtime must be >= session_start_time
+                # Freshness check: file mtime must be >= session_start_time - 1.0
                 mtime = os.path.getmtime(probe_log_file)
-                if session_start_time is None or mtime >= (session_start_time - 1.0):
+                if mtime >= (session_start_time - 1.0):
                     probe_contract["freshness_valid"] = True
 
-                log_lines = probe_log_file.read_text(encoding="utf-8", errors="ignore").splitlines()
-                for line in log_lines:
-                    # Parse probe key-value tokens: KEY=VAL
-                    pairs = {}
-                    for token in line.split(";"):
-                        if "=" in token:
-                            k, v = token.strip().split("=", 1)
-                            pairs[k.strip().upper()] = v.strip()
+                if probe_contract["freshness_valid"]:
+                    log_lines = probe_log_file.read_text(encoding="utf-8", errors="ignore").splitlines()
+                    for line_no, line in enumerate(log_lines, start=1):
+                        pairs = {}
+                        for token in line.split(";"):
+                            if "=" in token:
+                                k, v = token.strip().split("=", 1)
+                                pairs[k.strip().upper()] = v.strip()
 
-                    # Factor check
-                    if expected_nonce is None or pairs.get("NONCE") == expected_nonce:
-                        probe_contract["nonce_matched"] = True
-                    if expected_cnext_pid is None or str(pairs.get("PID")) == str(expected_cnext_pid):
-                        probe_contract["pid_matched"] = True
-                    if pairs.get("COMPONENT") == self.target_component:
-                        probe_contract["component_matched"] = True
+                        # Enforce single atomic event record invariant:
+                        # ACTION, NONCE, PID, and COMPONENT must ALL be satisfied simultaneously on the SAME line.
+                        is_constructor_action = (pairs.get("ACTION") == "CONSTRUCTOR_ACTIVATED")
+                        nonce_matches = (pairs.get("NONCE") == expected_nonce)
+                        pid_matches = (pairs.get("PID") == str(expected_cnext_pid))
+                        component_matches = (pairs.get("COMPONENT") == self.target_component)
 
-                probe_contract["all_factors_satisfied"] = (
-                    probe_contract["file_exists"]
+                        if is_constructor_action and nonce_matches and pid_matches and component_matches:
+                            probe_contract["atomic_event_verified"] = True
+                            probe_contract["matched_record"] = {
+                                "line_number": line_no,
+                                "raw_line": line.strip(),
+                                "action": pairs.get("ACTION"),
+                                "nonce": pairs.get("NONCE"),
+                                "pid": pairs.get("PID"),
+                                "component": pairs.get("COMPONENT"),
+                            }
+                            break  # Found verified atomic activation record
+
+                probe_contract["all_factors_satisfied"] = bool(
+                    credentials_valid
+                    and probe_contract["file_exists"]
                     and probe_contract["freshness_valid"]
-                    and probe_contract["nonce_matched"]
-                    and probe_contract["pid_matched"]
-                    and probe_contract["component_matched"]
+                    and probe_contract["atomic_event_verified"]
                 )
             except Exception as e:
                 probe_contract["parse_error"] = str(e)
@@ -383,7 +420,7 @@ class OMActivationDriver:
             l4_status = "PASS"
             l4_evidence = {
                 "query_interface_hr": "S_OK (0x0)",
-                "four_factor_probe_verified": True,
+                "atomic_probe_verified": True,
                 "probe_details": probe_contract,
                 "activated_extension": "MyVisuExtension",
             }
@@ -395,8 +432,18 @@ class OMActivationDriver:
                 "probe_details": probe_contract,
             }
         else:
+            reason = "awaiting_valid_om_trigger_and_atomic_probe_certificate"
+            if not credentials_valid:
+                reason = "missing_mandatory_credentials_nonce_pid_or_session_time"
+            elif probe_log_file and not probe_contract["file_exists"]:
+                reason = "probe_log_file_not_found"
+            elif not probe_contract["freshness_valid"]:
+                reason = "probe_log_stale_or_expired"
+            elif not probe_contract["atomic_event_verified"]:
+                reason = "no_atomic_constructor_activation_event_found"
+
             l4_evidence = {
-                "reason": "awaiting_valid_om_trigger_and_probe_certificate",
+                "reason": reason,
                 "query_interface_hr": hex(query_interface_hr) if query_interface_hr is not None else "NOT_PROBED",
                 "probe_contract": probe_contract,
                 "trigger_recipe": f"pMeasureSet->QueryInterface(IID_{self.target_interface}, (void**)&piVisu)",

@@ -10,6 +10,7 @@ Verify that:
 4. Kernel._build_develop_plan respects TypedRequirement throughout the pipeline.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -647,6 +648,15 @@ with tempfile.TemporaryDirectory() as td_e2e:
         affected_files = len(mf_obj.get("created", [])) + len(mf_obj.get("modified", []))
         ck("R-05-A Public Entry: manifest links applied files (>=3 affected files)",
            affected_files >= 3, f"affected_count={affected_files}")
+        
+        # Rigorous check: Manifest created list MUST contain the exact generated files
+        created_paths = [os.path.normpath(p) for p in mf_obj.get("created", [])]
+        expected_cpp = os.path.normpath(str(e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "src" / "MyVisuExtension.cpp"))
+        expected_h = os.path.normpath(str(e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "LocalInterfaces" / "MyVisuExtension.h"))
+        ck("R-05-A Public Entry: manifest accurately records generated C++ source in created list",
+           expected_cpp in created_paths)
+        ck("R-05-A Public Entry: manifest accurately records generated header in created list",
+           expected_h in created_paths)
 
     cpp_c1 = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "src" / "MyVisuExtension.cpp"
     h_c1 = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "LocalInterfaces" / "MyVisuExtension.h"
@@ -692,6 +702,13 @@ with tempfile.TemporaryDirectory() as td_e2e:
        "CAAMmrMeasureSet" in c2_options)
     ck("R-05-A Public Entry: candidate options contain only valid late type strings, never 'feature'",
        all(isinstance(o, str) and len(o) > 0 and o != "feature" for o in c2_options))
+    
+    # Rigorous cross-verification: EVERY candidate option must resolve as genuine late type in local index
+    from late_type_resolver import LateTypeResolver
+    lt_resolver = LateTypeResolver()
+    ck("R-05-A Public Entry: every candidate option exists in genuine local late type index",
+       all(lt_resolver.is_known_late_type(o) for o in c2_options),
+       f"non_components={[o for o in c2_options if not lt_resolver.is_known_late_type(o)]}")
     
     # Assert that NO invalid code or DICO entries were emitted for generic category
     c2_stray_cpp = list(e2e_ws.glob("**/feature*.cpp")) + list(e2e_ws.glob("**/feature*.h"))
