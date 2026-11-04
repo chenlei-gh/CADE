@@ -16,6 +16,7 @@ Validates:
 
 import os
 import sys
+import time
 import tempfile
 import pathlib
 
@@ -52,16 +53,26 @@ uc = driver.inspect_official_usecase()
 ck("Line B: CAAMechanicalModeler.edu exists in B28", uc["edu_directory_exists"])
 ck("Line B: CAAMmrMultiMeasureAndMeasureSet.CATPart exists", uc["catpart_model_exists"])
 ck("Line B: Official CAAEMmrMeasureSetVisu.cpp exists", uc["official_cpp_source_exists"])
-ck("Line B: Late type verified as CAAMmrMeasureSet", uc["late_type_confirmed"] == "CAAMmrMeasureSet")
-ck("Line B: Interface verified as CATI3DGeoVisu", uc["interface_confirmed"] == "CATI3DGeoVisu")
+ck("Line B: Official CAAMechanicalModeler.edu.dico exists", uc["official_dico_exists"])
+ck("Line B: AST parsed CATImplementClass correctly", uc["parsed_cpp_ast"]["parsed"] is True)
+ck("Line B: Late type verified from AST as CAAMmrMeasureSet", uc["target_component_verified_from_ast"] == "CAAMmrMeasureSet")
+ck("Line B: Interface verified from AST as CATI3DGeoVisu", uc["target_interface_verified_from_ast"] == "CATI3DGeoVisu")
+ck("Line B: Extension type verified as DataExtension", uc["parsed_cpp_ast"]["extension_type"] == "DataExtension")
+ck("Line B: Base class verified as CATExtIVisu", uc["parsed_cpp_ast"]["base_class"] == "CATExtIVisu")
+ck("Line B: Official DICO registration verified", uc["parsed_dico"]["parsed"] is True)
+ck("Line B: Official blueprint fully verified end-to-end", uc["official_blueprint_verified"] is True)
 
 # ── 2. Line C: Dictionary Conflict Analysis ─────────────────────────
 print("\n[2] System Dictionary Conflict & Precedence Analysis")
 dc = driver.check_system_dictionary_conflict()
-ck("Line C: Scanned at least 500 B28 system dictionaries", dc["scanned_system_dictionaries"] >= 500, f"scanned={dc['scanned_system_dictionaries']}")
+ck("Line C: Recursive scan enabled", dc["recursive_scan_enabled"] is True)
+ck("Line C: Scanned at least 500 B28 system dictionaries", dc["scanned_dictionaries_success"] >= 500, f"scanned={dc['scanned_dictionaries_success']}")
+ck("Line C: Scan completeness is 100% without unreadable files", dc["scan_completeness_rate"] == 1.0, f"rate={dc['scan_completeness_rate']}")
 ck("Line C: Stock B28 has 0 conflict registrations for CAAMmrMeasureSet CATI3DGeoVisu",
    dc["exact_interface_conflicts"] == 0, f"conflicts={dc['exact_interface_conflicts']}")
-ck("Line C: Isolated mapping is exclusive in clean B28", dc["exclusive_mapping"] is True)
+ck("Line C: Isolated mapping is exclusive in clean B28", dc["exclusive_mapping_in_scanned_dictionaries"] is True)
+ck("Line C: Dictionary precedence is marked as UNTESTED_HYPOTHESIS, not asserted as fact",
+   dc["precedence_status"] == "UNTESTED_HYPOTHESIS")
 
 # Test artificial conflict detection logic
 with tempfile.TemporaryDirectory() as td_fake:
@@ -102,32 +113,72 @@ with tempfile.TemporaryDirectory() as td_rt:
     ev_l2 = driver.evaluate_layered_evidence(rt_ws, cnext_pid=12345)
     ck("L2: valid cnext_pid is PASS", ev_l2["L2"]["status"] == "PASS" and ev_l2["L2"]["evidence"]["cnext_pid"] == 12345)
 
-    # 3.3 L3: Exact Module Path Matching
+    # 3.3 L3: Exact Module Path Matching (Strict Invariant)
     fake_dll_path = str(bin_dir / "AcceptanceMod.dll")
     ev_l3_miss = driver.evaluate_layered_evidence(rt_ws, loaded_modules=["C:\\Windows\\System32\\kernel32.dll"])
     ck("L3: missing target DLL in loaded modules is FAIL", ev_l3_miss["L3"]["status"] == "FAIL")
 
+    # Critical Reviewer Point: Same DLL name from wrong path MUST FAIL
+    stray_wrong_path = "C:\\StrayWorkspace\\win_b64\\code\\bin\\AcceptanceMod.dll"
+    ev_l3_stray = driver.evaluate_layered_evidence(rt_ws, loaded_modules=[stray_wrong_path])
+    ck("L3: same filename from wrong path MUST FAIL (stray path violation)", ev_l3_stray["L3"]["status"] == "FAIL")
+    ck("L3: stray path captured in evidence", ev_l3_stray["L3"]["evidence"]["stray_mismatch_path"] == stray_wrong_path)
+    ck("L3: exact match is False on stray path", ev_l3_stray["L3"]["evidence"]["exact_match_pass"] is False)
+
+    # Exact path match PASS
     ev_l3_hit = driver.evaluate_layered_evidence(rt_ws, loaded_modules=[fake_dll_path, "C:\\Windows\\System32\\kernel32.dll"])
-    ck("L3: exact target DLL in loaded modules is PASS", ev_l3_hit["L3"]["status"] == "PASS")
+    ck("L3: exact target DLL path in loaded modules is PASS", ev_l3_hit["L3"]["status"] == "PASS")
     ck("L3: exact path confirmed", ev_l3_hit["L3"]["evidence"]["exact_match_pass"] is True)
 
-    # 3.4 L4: Object Modeler Resolution & Extension Activation Probe
+    # 3.4 L4: Object Modeler Resolution & Extension Activation (4-Factor Probe Contract)
     probe_log = rt_ws / "probe.log"
-    # Case A: QueryInterface succeeded (0x0) but probe was NOT hit
+    now = time.time()
+    test_nonce = "NONCE_ABC_123"
+    test_pid = 9999
+
+    # Case A: QueryInterface succeeded (0x0) but probe log does NOT exist -> UNKNOWN
     ev_l4_no_probe = driver.evaluate_layered_evidence(rt_ws, query_interface_hr=0, probe_log_file=probe_log)
-    ck("L4: QueryInterface S_OK without probe hit remains UNKNOWN (cannot prove our extension was activated)",
+    ck("L4: QueryInterface S_OK without probe log remains UNKNOWN",
        ev_l4_no_probe["L4"]["status"] == "UNKNOWN")
 
-    # Case B: QueryInterface failed (E_NOINTERFACE = 0x80004002)
+    # Case B: QueryInterface failed (E_NOINTERFACE = 0x80004002) -> FAIL
     ev_l4_fail = driver.evaluate_layered_evidence(rt_ws, query_interface_hr=0x80004002, probe_log_file=probe_log)
     ck("L4: QueryInterface failure is FAIL", ev_l4_fail["L4"]["status"] == "FAIL")
 
-    # Case C: QueryInterface succeeded AND constructor probe confirmed hit
-    probe_log.write_text("INSTANTIATED: MyVisuExtension for CAAMmrMeasureSet\n", encoding="utf-8")
-    ev_l4_pass = driver.evaluate_layered_evidence(rt_ws, query_interface_hr=0, probe_log_file=probe_log)
-    ck("L4: QueryInterface S_OK WITH constructor probe hit is PASS", ev_l4_pass["L4"]["status"] == "PASS")
-    ck("L4: evidence confirms active extension",
-       ev_l4_pass["L4"]["evidence"]["active_extension"] == "MyVisuExtension")
+    # Case C: Probe log exists but is STALE (mtime < session_start_time) -> UNKNOWN
+    probe_log.write_text(f"ACTION=CONSTRUCTOR_ACTIVATED;NONCE={test_nonce};PID={test_pid};COMPONENT=CAAMmrMeasureSet\n", encoding="utf-8")
+    os.utime(probe_log, (now - 100, now - 100)) # Make file 100s old
+    ev_l4_stale = driver.evaluate_layered_evidence(
+        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=now
+    )
+    ck("L4: Stale probe log (mtime check failed) remains UNKNOWN", ev_l4_stale["L4"]["status"] == "UNKNOWN")
+    ck("L4: Stale probe freshness flag is False", ev_l4_stale["L4"]["evidence"]["probe_contract"]["freshness_valid"] is False)
+
+    # Case D: Fresh probe log but NONCE mismatch -> UNKNOWN
+    os.utime(probe_log, (now, now))
+    ev_l4_nonce_mismatch = driver.evaluate_layered_evidence(
+        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        expected_nonce="WRONG_NONCE", expected_cnext_pid=test_pid, session_start_time=now - 5
+    )
+    ck("L4: Nonce mismatch remains UNKNOWN", ev_l4_nonce_mismatch["L4"]["status"] == "UNKNOWN")
+    ck("L4: Nonce matched flag is False", ev_l4_nonce_mismatch["L4"]["evidence"]["probe_contract"]["nonce_matched"] is False)
+
+    # Case E: Fresh probe log, nonce match, but PID mismatch -> UNKNOWN
+    ev_l4_pid_mismatch = driver.evaluate_layered_evidence(
+        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        expected_nonce=test_nonce, expected_cnext_pid=8888, session_start_time=now - 5
+    )
+    ck("L4: PID mismatch remains UNKNOWN", ev_l4_pid_mismatch["L4"]["status"] == "UNKNOWN")
+    ck("L4: PID matched flag is False", ev_l4_pid_mismatch["L4"]["evidence"]["probe_contract"]["pid_matched"] is False)
+
+    # Case F: Four factors completely satisfied (S_OK, Fresh, Nonce match, PID match, Component match) -> PASS!
+    ev_l4_pass = driver.evaluate_layered_evidence(
+        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=now - 5
+    )
+    ck("L4: Four-factor probe certificate satisfied is PASS", ev_l4_pass["L4"]["status"] == "PASS")
+    ck("L4: Four-factor probe verified flag is True", ev_l4_pass["L4"]["evidence"]["four_factor_probe_verified"] is True)
 
 print("\n" + "=" * 70)
 print(f"  Result: {passed}/{total} tests passed ({'ALL PASS' if passed == total else 'SOME FAILED'})")

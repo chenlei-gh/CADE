@@ -629,8 +629,24 @@ with tempfile.TemporaryDirectory() as td_e2e:
     pub_res_c1 = e2e_kernel.execute(KernelMode.DEVELOP, req_c1)
     ck("R-05-A Public Entry: execute(KernelMode.DEVELOP) returns status=ok",
        pub_res_c1.get("status") == "ok", f"status={pub_res_c1.get('status')} msg={pub_res_c1.get('message')}")
-    ck("R-05-A Public Entry: rollback_id generated and recorded",
-       bool(pub_res_c1.get("data", {}).get("rollback_id") or "rollback_id" in str(pub_res_c1.get("message", ""))))
+    
+    # Strengthened rollback record assertion: verify genuine on-disk backup directory & manifest
+    rb_id = pub_res_c1.get("data", {}).get("rollback_id")
+    ck("R-05-A Public Entry: rollback_id is valid non-empty identifier",
+       isinstance(rb_id, str) and len(rb_id) >= 15, f"rb_id={rb_id}")
+    backup_path = e2e_ws / ".caa_backups" / (rb_id or "invalid")
+    manifest_path = backup_path / "manifest.json"
+    ck("R-05-A Public Entry: backup directory exists on disk", backup_path.is_dir())
+    ck("R-05-A Public Entry: backup manifest exists and records applied changeset",
+       manifest_path.is_file())
+    if manifest_path.is_file():
+        import json as _json
+        mf_obj = _json.loads(manifest_path.read_text(encoding="utf-8"))
+        ck("R-05-A Public Entry: manifest backup_id matches rollback_id",
+           mf_obj.get("backup_id") == rb_id)
+        affected_files = len(mf_obj.get("created", [])) + len(mf_obj.get("modified", []))
+        ck("R-05-A Public Entry: manifest links applied files (>=3 affected files)",
+           affected_files >= 3, f"affected_count={affected_files}")
 
     cpp_c1 = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "src" / "MyVisuExtension.cpp"
     h_c1 = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "LocalInterfaces" / "MyVisuExtension.h"
@@ -664,9 +680,18 @@ with tempfile.TemporaryDirectory() as td_e2e:
        c2_late_type_state == "AMBIGUOUS", f"state={c2_late_type_state}")
     
     questions = gate_data.get("questions", [])
-    has_late_type_question = any(q.get("id") == "target_late_type" for q in questions if isinstance(q, dict))
+    q_late_type = next((q for q in questions if isinstance(q, dict) and q.get("id") == "target_late_type"), None)
     ck("R-05-A Public Entry: clarification asks user for real target_late_type with options",
-       has_late_type_question)
+       q_late_type is not None)
+    
+    # Strengthened options assertion: verify options exist, are >=3, and contain genuine B28 components
+    c2_options = q_late_type.get("options", []) if q_late_type else []
+    ck("R-05-A Public Entry: candidate options are non-empty and >= 3 components",
+       isinstance(c2_options, list) and len(c2_options) >= 3, f"count={len(c2_options)}")
+    ck("R-05-A Public Entry: candidate options contain real component CAAMmrMeasureSet",
+       "CAAMmrMeasureSet" in c2_options)
+    ck("R-05-A Public Entry: candidate options contain only valid late type strings, never 'feature'",
+       all(isinstance(o, str) and len(o) > 0 and o != "feature" for o in c2_options))
     
     # Assert that NO invalid code or DICO entries were emitted for generic category
     c2_stray_cpp = list(e2e_ws.glob("**/feature*.cpp")) + list(e2e_ws.glob("**/feature*.h"))
