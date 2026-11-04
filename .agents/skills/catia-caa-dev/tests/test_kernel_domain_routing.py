@@ -679,8 +679,12 @@ with tempfile.TemporaryDirectory() as td_e2e:
         ck("R-05-A Public Entry: manifest created list exactly equals applied changeset created list",
            set(created_paths) == set(applied_created),
            f"manifest_created={created_paths} vs applied_created={applied_created}")
-        ck("R-05-A Public Entry: manifest modified list covers all applied changeset modified files",
-           set(applied_modified).issubset(set(modified_paths)))
+        ck("R-05-A Public Entry: manifest modified list exactly equals applied changeset modified files",
+           set(modified_paths) == set(applied_modified),
+           f"manifest_modified={modified_paths} vs applied_modified={applied_modified}")
+        cs_action = apply_res.get("action", mf_obj.get("action"))
+        ck("R-05-A Public Entry: manifest action matches applied changeset action",
+           mf_obj.get("action") == cs_action and mf_obj.get("action") == "create_extension")
 
     cpp_c1 = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "src" / "MyVisuExtension.cpp"
     h_c1 = e2e_ws / "AcceptanceFw.edu" / "AcceptanceMod2.m" / "LocalInterfaces" / "MyVisuExtension.h"
@@ -734,15 +738,15 @@ with tempfile.TemporaryDirectory() as td_e2e:
        all(lt_resolver.is_known_late_type(o) for o in c2_options),
        f"non_components={[o for o in c2_options if not lt_resolver.is_known_late_type(o)]}")
 
-    # Rigorous cross-verification Level 2: Candidate options MUST have verifiable implementation evidence for requested interface
-    interface_candidates = set(lt_resolver.candidates_for_interface("CATI3DGeoVisu")) | set(lt_resolver.candidates_for_interface("CATIVisu"))
-    ck("R-05-A Public Entry: candidate options are verified implementers of CATI3DGeoVisu or CATIVisu",
+    # Rigorous cross-verification Level 2: Candidate options MUST have verifiable implementation evidence for requested 3D visu interface
+    interface_candidates = set(lt_resolver.candidates_for_interface("CATI3DGeoVisu"))
+    ck("R-05-A Public Entry: candidate options are verified implementers of CATI3DGeoVisu",
        all(o in interface_candidates for o in c2_options),
        f"options={c2_options} vs interface_candidates_subset={list(interface_candidates)[:5]}")
     for opt in c2_options:
         desc = lt_resolver.describe(opt)
-        ck(f"R-05-A Public Entry: candidate {opt} has verifiable interface mapping evidence",
-           desc.get("is_late_type") is True and len(desc.get("interfaces", [])) > 0)
+        ck(f"R-05-A Public Entry: candidate {opt} has verifiable CATI3DGeoVisu interface mapping evidence",
+           desc.get("is_late_type") is True and "CATI3DGeoVisu" in desc.get("interfaces", []))
     
     # Assert that NO invalid code or DICO entries were emitted for generic category
     c2_stray_cpp = list(e2e_ws.glob("**/feature*.cpp")) + list(e2e_ws.glob("**/feature*.h"))

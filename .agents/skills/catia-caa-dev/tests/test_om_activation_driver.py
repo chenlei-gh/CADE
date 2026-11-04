@@ -79,6 +79,15 @@ ck("Line B: verify_blueprint_contract rejects mismatched interface",
 ck("Line B: verify_blueprint_contract rejects mismatched base class",
    OMActivationDriver.verify_blueprint_contract(fake_ast_base, uc["parsed_dico"]) is False)
 
+fake_dico_mismatch = {
+    "parsed": True,
+    "matching_entries": [
+        {"component": "WrongComponent", "interface": "WrongInterface", "library": "libWrong"}
+    ]
+}
+ck("Line B: verify_blueprint_contract rejects mismatched DICO entry",
+   OMActivationDriver.verify_blueprint_contract(uc["parsed_cpp_ast"], fake_dico_mismatch) is False)
+
 # Test Level 2: End-to-end negative test invoking production inspect_official_usecase with overridden source
 with tempfile.TemporaryDirectory() as td:
     fake_cpp_path = Path(td) / "CAAEMmrFakeVisu.cpp"
@@ -290,6 +299,16 @@ with tempfile.TemporaryDirectory() as td_rt:
         expected_nonce="   ", expected_cnext_pid=test_pid, session_start_time=now - 5
     )
     ck("L4: whitespace nonce strictly rejected", ev_l4_blank_nonce["L4"]["status"] == "UNKNOWN")
+
+    # Case G6 (Strict Arithmetic Overflow Defense): Reject ultra-large int timestamp causing OverflowError in math.isfinite
+    ev_l4_overflow_time = driver.evaluate_layered_evidence(
+        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=10**3000
+    )
+    ck("L4: 10**3000 overflow session_start_time safely fail-closed to UNKNOWN",
+       ev_l4_overflow_time["L4"]["status"] == "UNKNOWN")
+    ck("L4: overflow time fails credentials_provided",
+       ev_l4_overflow_time["L4"]["evidence"]["probe_contract"]["credentials_provided"] is False)
 
     # Case H (Critical Negative): Multi-line splicing attack must NOT pass
     # Three lines each satisfy one condition, but NO single atomic record satisfies all!

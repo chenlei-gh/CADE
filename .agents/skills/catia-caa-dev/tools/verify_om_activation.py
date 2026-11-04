@@ -183,7 +183,14 @@ class OMActivationDriver:
             return False
         if parsed_cpp.get("base_class") != expected_base_class:
             return False
-        dico_entry_match = len(parsed_dico.get("matching_entries", [])) > 0
+        dico_entry_match = False
+        for entry in parsed_dico.get("matching_entries", []):
+            if isinstance(entry, dict):
+                comp = entry.get("component")
+                iface = entry.get("interface")
+                if comp == target_component and iface == target_interface:
+                    dico_entry_match = True
+                    break
         return bool(dico_entry_match)
 
     def inspect_official_usecase(
@@ -391,18 +398,26 @@ class OMActivationDriver:
         # 2. QI S_OK (0x0)
         # 3. File Freshness (mtime >= session_start_time - 1.0)
         # 4. Atomic Event Record: ACTION=CONSTRUCTOR_ACTIVATED, NONCE, PID, COMPONENT all match on the SAME line!
+        # Strict credential type and bounds validation
+        # Rejects bool PID (isinstance(True, int) is True!), non-positive int,
+        # bool timestamp, non-finite timestamp (inf, nan), non-positive timestamp,
+        # and catches any numerical/overflow errors to safely fail-closed.
         l4_status = "UNKNOWN"
-        credentials_valid = bool(
-            isinstance(expected_nonce, str)
-            and bool(expected_nonce.strip())
-            and type(expected_cnext_pid) is int
-            and not isinstance(expected_cnext_pid, bool)
-            and expected_cnext_pid > 0
-            and (type(session_start_time) in (int, float))
-            and not isinstance(session_start_time, bool)
-            and math.isfinite(session_start_time)
-            and session_start_time > 0
-        )
+        credentials_valid = False
+        try:
+            credentials_valid = bool(
+                isinstance(expected_nonce, str)
+                and bool(expected_nonce.strip())
+                and type(expected_cnext_pid) is int
+                and not isinstance(expected_cnext_pid, bool)
+                and expected_cnext_pid > 0
+                and (type(session_start_time) in (int, float))
+                and not isinstance(session_start_time, bool)
+                and math.isfinite(session_start_time)
+                and session_start_time > 0
+            )
+        except Exception:
+            credentials_valid = False
 
         probe_contract = {
             "file_exists": False,
