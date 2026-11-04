@@ -359,7 +359,7 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
 
 #### 本轮本地验证（已实际执行，不是 GitHub CI）
 
-- `python tests/test_kernel_domain_routing.py`：**116/116 PASS**（第 7.1 轮：103 → 116，新增 4 条 `LINK_WITH` 缺失分支、1 条 `NO_IMAKEFILE` 区分、6 条显式组件端到端）
+- `python tests/test_kernel_domain_routing.py`：**120/120 PASS**（第 8 轮：103 → 120；新增 4 条 `LINK_WITH` 缺失分支、1 条 `NO_IMAKEFILE` 区分、6 条显式组件端到端、4 条链接行解析边界）
 - `python tests/test_runtime_layered_verification.py`：**70/70 PASS**
 - `python tests/test_runtime_verification.py`：**13/13 PASS**（本轮新修：三个用例未隔离真实进程快照，已改为注入确定性快照）
 - `python tests/test_intent_planner.py`：**39/39 PASS**
@@ -392,6 +392,29 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
   | `LINK_WITH` 已含全部 | `ALREADY_SATISFIED` | True | 否 |
 
 - 仍**不**自动补一个 `LINK_WITH` 定义（见上节理由）。因此这类工程的构建契约保持未满足状态，不会被误报为已具备构建条件。
+
+#### 缺陷一之二：链接行库名取自整个文件（已修）
+
+修完上一条后，以真实 Imakefile 交叉复核时发现同一类「假声明」还有第二个入口。
+
+- 复现（修复前实测）：下面这个文件里的库名只出现在**注释**里，`_inject_link_with()` 与状态判定却都认为已链接：
+
+  ```
+  # do not add CATVisualization or CATViz here; JS0GROUP is enough
+  BUILT_OBJECT_TYPE=SHARED LIBRARY
+  LINK_WITH = CATProductStructure1
+  ```
+
+  判定结果为 `ALREADY_SATISFIED`，`next_steps` 声称无需补丁。但 mkmk 不读注释，这三个库根本没链上，构建会在链接阶段失败。
+- 根因：原实现用 `re.findall(r"[A-Za-z0-9_]+", imake_text)` 对**整个文件**做 token 扫描。它会反向出错：`$(WIZARD_LINK_MODULES)` 这种间接引用反而被漏算。
+- 修复：新增 `_strip_comment()` / `_assignments()` / `_link_line_tokens()`，只对 `LINK_WITH` 的**实际链接行**取 token：
+  - 去掉注释；
+  - 拼接续行链；
+  - 支持 `+=` 累加，`=` 取最后一次定义（与 mkmk 语义一致）；
+  - 递归展开 `$(VAR)`，能跟到 `WIZARD_LINK_MODULES` 这类中间变量。
+  `_inject_link_with()` 与 `_link_with_state()` 现在共用这一口径，不再一处宽一处严。
+- 用本机真实 `CAAAutoColor.edu/CAAAutoColorCmd.m/Imakefile.mk` 验证：`LINK_WITH = $(WIZARD_LINK_MODULES) CATViz CATVisualization ...` 中的 `$(WIZARD_LINK_MODULES)` 正确展开到 `JS0GROUP JS0FM CATApplicationFrame CATDialogEngine DI0PANV2`，三个库均被判为已在链接行上（`ALREADY_SATISFIED`），而不是靠子串命中。
+- 七种形态均有断言：注释提及、无关变量、`$()` 间接、`+=` 累加、续行链缺库、空续行、无 `LINK_WITH` 块。
 
 #### 缺口二：显式真实组件到生成器的端到端覆盖（已补）
 

@@ -395,6 +395,30 @@ if plan_visu:
                and not (no_block.get("changeset") or {}).get("modified"),
                f"modified={(no_block.get('changeset') or {}).get('modified')}")
 
+    # A library named only in a comment, or only in an unrelated variable, is not
+    # linked. Counting tokens from the whole file would call that satisfied.
+    from intents.objects import _link_with_state as _lws
+    _libs = ("CATVisualization", "CATViz", "JS0GROUP")
+    ck("R-05-B: a library named only in a comment is not counted as linked",
+       _lws("# add CATVisualization CATViz JS0GROUP here\nLINK_WITH = CATProduct\n", _libs)
+       == "INJECTED",
+       "comment mention was treated as linked")
+    ck("R-05-B: a library in an unrelated variable is not counted as linked",
+       _lws("OTHER = CATVisualization CATViz JS0GROUP\nLINK_WITH = CATProduct\n", _libs)
+       == "INJECTED",
+       "unrelated variable was treated as the link line")
+    ck("R-05-B: a library reached through $(VAR) counts as linked",
+       _lws(
+           "LINK_WITH = $(MINE) CATProduct\nMINE = \\\n    CATVisualization CATViz JS0GROUP\n",
+           _libs,
+       ) == "ALREADY_SATISFIED",
+       "$() indirection was not expanded")
+    ck("R-05-B: += accumulation is read as a real link line",
+       _lws(
+           "LINK_WITH += CATVisualization CATViz\nLINK_WITH += JS0GROUP\n", _libs
+       ) == "ALREADY_SATISFIED",
+       "+= definitions were not accumulated")
+
     # A module with no Imakefile must not be reported as linked.
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)

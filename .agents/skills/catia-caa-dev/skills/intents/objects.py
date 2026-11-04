@@ -84,7 +84,7 @@ def _inject_link_with(imake_text: str, libs: tuple) -> Optional[str]:
     definition appended (mkmk honours the last one, which would silently drop
     the module's own libraries).
     """
-    present = {tok for tok in re.findall(r"[A-Za-z0-9_]+", imake_text)}
+    present = _link_line_tokens(imake_text)
     missing = [lib for lib in libs if lib not in present]
     if not missing:
         return None
@@ -118,6 +118,72 @@ def _inject_link_with(imake_text: str, libs: tuple) -> Optional[str]:
     return nl.join(lines) + (nl if imake_text.endswith(("\r\n", "\n")) else "")
 
 
+def _strip_comment(line: str) -> str:
+    """Drop an mkmk comment, leaving the code part of an Imakefile line."""
+    hash_at = line.find("#")
+    return line if hash_at < 0 else line[:hash_at]
+
+
+def _assignments(imake_text: str) -> Dict[str, str]:
+    """Map variable name -> value, joining continuation lines and dropping comments.
+
+    `+=` appends, so it is accumulated rather than replacing. mkmk honours the
+    last plain `=` definition, which is why only that one is kept.
+    """
+    values: Dict[str, str] = {}
+    lines = imake_text.splitlines()
+    idx = 0
+    while idx < len(lines):
+        code = _strip_comment(lines[idx])
+        matched = re.match(
+            r"^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*(\+?=)[ \t]*(.*)$", code
+        )
+        if not matched:
+            idx += 1
+            continue
+        var, op, rest = matched.group(1), matched.group(2), matched.group(3).strip()
+        # Consume the continuation chain belonging to this assignment.
+        while lines[idx].rstrip().endswith("\\") and idx + 1 < len(lines):
+            idx += 1
+            rest = (rest.rstrip("\\").strip() + " " + _strip_comment(lines[idx]).strip()).strip()
+        rest = rest.rstrip("\\").strip()
+        if op == "+=":
+            values[var] = (values.get(var, "") + " " + rest).strip()
+        else:
+            values[var] = rest
+        idx += 1
+    return values
+
+
+def _link_line_tokens(imake_text: str) -> set:
+    """Tokens that are actually on LINK_WITH, after expanding `$(VAR)`.
+
+    A library named only in a comment is not linked, and a module can reach
+    libraries through an intermediate variable such as
+    `WIZARD_LINK_MODULES`. Counting tokens from the whole file gets both
+    wrong, in opposite directions.
+    """
+    values = _assignments(imake_text)
+    tokens: set = set()
+    seen_vars: set = set()
+
+    def expand(name: str) -> None:
+        if name in seen_vars:
+            return
+        seen_vars.add(name)
+        raw = values.get(name)
+        if raw is None:
+            return
+        for ref in re.findall(r"\$\(([A-Za-z_][A-Za-z0-9_]*)\)", raw):
+            expand(ref)
+        for word in re.split(r"\s+", re.sub(r"\$\([A-Za-z_][A-Za-z0-9_]*\)", " ", raw)):
+            if re.fullmatch(r"[A-Za-z0-9_]+", word):
+                tokens.add(word)
+
+    expand("LINK_WITH")
+    return tokens
+
+
 def _link_with_state(imake_text: str, libs: tuple) -> str:
     """Classify whether `libs` are guaranteed on the module's link line.
 
@@ -133,7 +199,7 @@ def _link_with_state(imake_text: str, libs: tuple) -> str:
 
     Only the first two mean the extension's link contract is met.
     """
-    present = {tok for tok in re.findall(r"[A-Za-z0-9_]+", imake_text)}
+    present = _link_line_tokens(imake_text)
     if all(lib in present for lib in libs):
         return "ALREADY_SATISFIED"
     if not re.search(r"^[ \t]*LINK_WITH[ \t]*=", imake_text, re.MULTILINE):
@@ -384,7 +450,7 @@ def create_extension(
             if imake_new is not None:
                 master_cs.add_modify(imake_path, imake_new)
                 link_with_injected = True
-                present = {tok for tok in re.findall(r"[A-Za-z0-9_]+", imake_old)}
+                present = _link_line_tokens(imake_old)
                 link_with_added = [lib for lib in _VISU_LINK_WITH if lib not in present]
 
     dico_path = fw.dictionary_path()
