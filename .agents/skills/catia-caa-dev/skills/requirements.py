@@ -90,6 +90,7 @@ class TypedRequirement:
     # Per-domain construct recommendation. None is preserved; it must not be dropped.
     domain_constructs: Dict[str, Optional[str]] = field(default_factory=dict)
     unresolved_domains: List[str] = field(default_factory=list)
+    domain_targets: Dict[str, str] = field(default_factory=dict)
     notes: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -107,6 +108,7 @@ class TypedRequirement:
             "is_multi_domain": self.is_multi_domain,
             "domain_constructs": self.domain_constructs,
             "unresolved_domains": self.unresolved_domains,
+            "domain_targets": self.domain_targets,
             "notes": self.notes,
         }
 
@@ -461,6 +463,15 @@ class RequirementsClarifier:
         # Preserve None. Dropping it is what let a single resolved domain look CLEAR.
         typed.domain_constructs = dict(domain_recommended_types)
         typed.unresolved_domains = [d for d, rt in domain_recommended_types.items() if rt is None]
+        typed.domain_targets = {
+            d: _resolve_single_domain_attributes(d)[1] for d in all_domains
+        }
+        distinct_targets = {target for target in typed.domain_targets.values() if target}
+        if len(distinct_targets) > 1:
+            typed.notes.append(
+                "Per-domain targets differ and are retained in domain_targets: "
+                f"{typed.domain_targets}. target_entity remains the priority aggregate."
+            )
 
         # Target entity aggregation across domains (Priority: feature > document/product > component)
         all_targets = [tgt for _, tgt, _, _, _ in [_resolve_single_domain_attributes(d) for d in all_domains]]

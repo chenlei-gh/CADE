@@ -161,17 +161,57 @@ if plan_visu:
         ck("Executor passes visualization behavior", "visualization" in (called.get("behavior_aspects") or []), f"got {called.get('behavior_aspects')}")
 
     ctx = MagicMock()
-    with patch("intents.objects.validate_module", return_value={"status": "ok"}), \
-         patch("intents.objects.create_component", return_value={"status": "error", "message": "stop"}) as comp, \
-         patch("intents.objects.create_interface") as iface:
+    with patch("intents.objects.validate_module", return_value={"status": "ok"}):
         from intents.objects import create_extension
-        create_extension(
-            ctx, name="VisuExt", target_object="feature", module="VisualizationModule.m",
+        visu = create_extension(
+            ctx, name="VisuExt", target_object="CAAMmrMeasureSet", module="VisualizationModule.m",
             implements=["CATIVisu", "CATI3DGeoVisu"], behavior_aspects=["visualization"],
         )
-        ck("create_component implements CATIVisu", comp.called and comp.call_args.kwargs.get("implements") == "CATIVisu",
-           f"got {comp.call_args.kwargs if comp.called else None}")
-        ck("CATIVisu is bound, not redeclared as a new interface", iface.called is False)
+        created_blob = "\n".join((visu.get("changeset") or {}).get("created", {}).values())
+        ck("R-05: verified visu extension is pending, not an error placeholder",
+           visu.get("status") == "pending", f"status={visu.get('status')} message={visu.get('message')}")
+        ck("R-05: header derives CATExtIVisu, not CATBaseUnknown Execute",
+           "class VisuExt : public CATExtIVisu" in created_blob and "Execute(" not in created_blob,
+           "missing CATExtIVisu or still using Execute")
+        ck("R-05: cpp binds TIE_CATI3DGeoVisu and the late type",
+           "TIE_CATI3DGeoVisu(VisuExt);" in created_blob
+           and "CATImplementClass(VisuExt, DataExtension, CATExtIVisu, CAAMmrMeasureSet);" in created_blob,
+           "missing TIE or CATImplementClass")
+        ck("R-05: BuildRep returns an empty CAT3DBagRep",
+           "CAT3DBagRep *bag = new CAT3DBagRep();" in created_blob and "CATIDescendants" not in created_blob)
+        ck("R-05: dictionary is the verified three-token line",
+           "CAAMmrMeasureSet CATI3DGeoVisu libVisualizationModule" in created_blob)
+        ck("R-05: CATIVisu is mapped, not redeclared",
+           visu.get("extension", {}).get("interface_binding", {}).get("dictionary_interface") == "CATI3DGeoVisu"
+           and '#include "CATIVisu.h"' not in created_blob
+           and visu.get("extension", {}).get("b28_compiled") is False)
+        ck("R-05: L4/L5 are not claimed by the generator",
+           visu.get("extension", {}).get("runtime_registration") == "UNKNOWN"
+           and visu.get("extension", {}).get("functional_verification") == "NOT_RUN")
+
+        missing_target = create_extension(
+            ctx, name="VisuExt", target_object="", module="VisualizationModule.m",
+            implements=["CATIVisu"],
+        )
+        ck("R-05: empty target_object is error, not pending",
+           missing_target.get("status") == "error" and missing_target.get("changeset") is None,
+           f"status={missing_target.get('status')}")
+
+        unverified = create_extension(
+            ctx, name="EventExt", target_object="CAAMmrMeasureSet", module="VisualizationModule.m",
+            implements=["CATIVisu", "CATIModelEvents"],
+        )
+        ck("R-05: unverified interface is error and does not implement only the first",
+           unverified.get("status") == "error" and "CATIModelEvents" in unverified.get("message", ""),
+           f"status={unverified.get('status')} message={unverified.get('message')}")
+
+        data_only = create_extension(
+            ctx, name="DataExt", target_object="CAAMmrMeasureSet", module="VisualizationModule.m",
+            data_members=[{"name": "_length", "type": "double"}],
+        )
+        ck("R-05: data-only extension does not use the fake Execute component template",
+           data_only.get("status") == "error" and "Execute" in data_only.get("message", ""),
+           f"status={data_only.get('status')}")
 
 
 # ── 5. Multi-Domain Detection & Disambiguation (R-06) ───────────
@@ -243,6 +283,46 @@ typed_ctx = getattr(res_ctx, "typed_requirement", None)
 ck("R-06: 零件/特征 context does not open an unresolved product/part domain",
    typed_ctx is not None and typed_ctx.ambiguity_state == "CLEAR" and "product" not in typed_ctx.matched_domains and "part" not in typed_ctx.matched_domains,
    f"domains={getattr(typed_ctx, 'matched_domains', None)} state={getattr(typed_ctx, 'ambiguity_state', None)}")
+
+# Combination coverage. These use existing keywords; they do not add context nouns.
+single_action = clarifier.analyze("给特征增加高亮显示").typed_requirement
+ck("R-06: single-domain single-action stays visualization CreateExtension",
+   single_action is not None and single_action.is_multi_domain is False
+   and single_action.recommended_intent_type == "CreateExtension"
+   and single_action.matched_domains == ["visualization"],
+   f"domains={getattr(single_action, 'matched_domains', None)} rec={getattr(single_action, 'recommended_intent_type', None)}")
+
+multi_action = clarifier.analyze("对特征着色并高亮显示").typed_requirement
+ck("R-06: two visualization actions do not invent a second domain",
+   multi_action is not None and multi_action.is_multi_domain is False
+   and multi_action.behavior_aspects == ["visualization"],
+   f"domains={getattr(multi_action, 'matched_domains', None)} aspects={getattr(multi_action, 'behavior_aspects', None)}")
+
+shared_target = clarifier.analyze("给特征增加3D表现并监听特征变更").typed_requirement
+ck("R-06: shared-target multi-domain keeps both behaviors",
+   shared_target is not None and shared_target.is_multi_domain is True
+   and "visualization" in shared_target.behavior_aspects and "event_listening" in shared_target.behavior_aspects,
+   f"aspects={getattr(shared_target, 'behavior_aspects', None)}")
+
+different_targets = clarifier.analyze("给特征增加3D表现，并监听装配结构变化").typed_requirement
+ck("R-06: different per-domain targets are retained, not collapsed",
+   different_targets is not None
+   and different_targets.domain_targets.get("visualization") == "feature"
+   and different_targets.domain_targets.get("notification") == "document",
+   f"targets={getattr(different_targets, 'domain_targets', None)}")
+
+explicit_command = clarifier.analyze("创建一个命令，用来高亮显示特征").typed_requirement
+ck("R-06: explicit construct wins over visualization inference",
+   explicit_command is not None and explicit_command.user_explicit_type == "CreateCommand"
+   and explicit_command.recommended_intent_type == "CreateCommand"
+   and "visualization" in explicit_command.matched_domains,
+   f"explicit={getattr(explicit_command, 'user_explicit_type', None)} domains={getattr(explicit_command, 'matched_domains', None)}")
+
+no_construct = clarifier.analyze("打开一张工程图").typed_requirement
+ck("R-06: a clear domain without an action does not invent a construct",
+   no_construct is not None and "drawing" in no_construct.matched_domains
+   and no_construct.ambiguity_state == "AMBIGUOUS" and no_construct.recommended_intent_type is None,
+   f"state={getattr(no_construct, 'ambiguity_state', None)} rec={getattr(no_construct, 'recommended_intent_type', None)}")
 
 print("\n" + "=" * 70)
 print(f"  Result: {passed}/{total} tests passed ({'ALL PASS' if passed == total else 'SOME FAILED'})")

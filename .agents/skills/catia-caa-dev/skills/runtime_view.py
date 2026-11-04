@@ -391,6 +391,32 @@ def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
             file_alignment = struct.unpack_from("<I", opt_hdr, 36)[0]
             if file_alignment < 512 or file_alignment > 65536 or (file_alignment & (file_alignment - 1)) != 0:
                 return False
+            # Same offsets in PE32 and PE32+.
+            # https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+            # SectionAlignment >= FileAlignment and a power of two.
+            # If it is below the architecture page size, it must equal FileAlignment.
+            # SizeOfImage is a multiple of SectionAlignment.
+            # SizeOfHeaders is rounded up to a multiple of FileAlignment.
+            if len(opt_hdr) < 64:
+                return False
+            section_alignment = struct.unpack_from("<I", opt_hdr, 32)[0]
+            size_of_image = struct.unpack_from("<I", opt_hdr, 56)[0]
+            size_of_headers = struct.unpack_from("<I", opt_hdr, 60)[0]
+            if (
+                section_alignment < file_alignment
+                or section_alignment > 0x10000000
+                or section_alignment == 0
+                or (section_alignment & (section_alignment - 1)) != 0
+            ):
+                return False
+            if section_alignment < 4096 and section_alignment != file_alignment:
+                return False
+            if size_of_image == 0 or (size_of_image % section_alignment) != 0:
+                return False
+            if size_of_headers == 0 or (size_of_headers % file_alignment) != 0:
+                return False
+            if size_of_headers > size_of_image:
+                return False
 
             # Validate Section Table boundary
             sec_table_offset = opt_hdr_offset + size_opt_hdr
@@ -404,6 +430,8 @@ def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
                 if len(sec_bytes) < 40:
                     return False
                 _, virt_size, virt_addr, raw_size, raw_ptr = struct.unpack("<8sIIII", sec_bytes[:24])
+                if virt_addr % section_alignment != 0:
+                    return False
                 if raw_ptr > file_size:
                     return False
                 if (raw_ptr % file_alignment) != 0 or (raw_size % file_alignment) != 0:
@@ -419,29 +447,26 @@ def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
 def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
     """Validate CAA .dico file syntax and verify explicit target module linkage.
 
-    Rules:
-    - Every non-empty, non-comment line must contain 3 or 4 whitespace-separated tokens:
-      <ClassName> <InterfaceName> <LibraryName> [optional_entry_type]
-    - ClassName, InterfaceName, LibraryName must be valid identifiers.
-    - If target_module is provided, at least one entry must explicitly and exactly
-      bind to that module's runtime library (e.g. libTargetModule or TargetModule).
-      No substring matching.
+    Rules, from the verified extension dictionary comment and existing add-in lines:
+    - Every non-empty, non-comment line must contain exactly 3 identifier tokens:
+      <LateType> <InterfaceName> lib<Module>
+    - A fourth token is not accepted. .fact pairs are not .dico syntax.
+    - If target_module is provided, the library token must equal lib{Module}
+      exactly. Substring and unprefixed matches do not bind the target.
     """
     import re
     entries_count = 0
     syntax_errors = 0
     mentions_target = False
 
-    # Normalize target_module for exact matching (R-03 fix)
-    norm_mod = None
-    unpref_mod = None
+    expected_lib = None
     if target_module:
-        norm_mod = (target_module[:-2] if target_module.endswith(".m") else target_module).lower()
-        if norm_mod.endswith(".dll"):
-            norm_mod = norm_mod[:-4]
-        elif norm_mod.endswith(".so"):
-            norm_mod = norm_mod[:-3]
-        unpref_mod = norm_mod[3:] if norm_mod.startswith("lib") else norm_mod
+        bare = target_module[:-2] if target_module.endswith(".m") else target_module
+        if bare.lower().endswith(".dll"):
+            bare = bare[:-4]
+        elif bare.lower().endswith(".so"):
+            bare = bare[:-3]
+        expected_lib = "lib" + bare
 
     # Official .dico tokens are identifiers, not free text. Dots are .fact syntax, not .dico.
     id_pattern = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
@@ -453,21 +478,11 @@ def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
                 if not line or line.startswith("#"):
                     continue
                 parts = line.split()
-                # A CAA dico entry must have 3 or 4 identifier tokens. Any other
-                # non-comment line fails the file; one good line cannot launder the rest.
-                if len(parts) in (3, 4) and all(id_pattern.match(p) for p in parts):
+                # Exactly three identifier tokens. One good line cannot launder the rest.
+                if len(parts) == 3 and all(id_pattern.match(p) for p in parts):
                     entries_count += 1
-                    if norm_mod:
-                        lib_tok = parts[2].lower()
-                        if lib_tok.endswith(".dll"):
-                            lib_tok = lib_tok[:-4]
-                        elif lib_tok.endswith(".so"):
-                            lib_tok = lib_tok[:-3]
-                        unpref_tok = lib_tok[3:] if lib_tok.startswith("lib") else lib_tok
-
-                        # Strict exact token matching (no substring matches)
-                        if lib_tok == norm_mod or unpref_tok == unpref_mod:
-                            mentions_target = True
+                    if expected_lib and parts[2] == expected_lib:
+                        mentions_target = True
                 else:
                     syntax_errors += 1
     except Exception:
@@ -489,7 +504,12 @@ def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
 def check_runtime_view_l1(
     workspace_path: Path, architecture: str = None, target_module: str = None
 ) -> dict:
-    """Check L1: Runtime View asset integrity (DLLs, DICO, CATNls)."""
+    """Check L1 structural precheck of Runtime View assets.
+
+    PASS means the target DLL has the required PE image fields and a matching
+    three-token DICO line. It does not mean the Windows loader or CATIA accepted
+    the file.
+    """
     l0 = check_runtime_view_l0(workspace_path, architecture)
     if l0["status"] != "PASS":
         return {
@@ -587,7 +607,12 @@ def check_runtime_view_l1(
                     "present": len(nls_files) > 0,
                 },
             },
-            "scope": "asset_filesystem_integrity_check",
+            "scope": "structural_precheck_not_loadability",
+            "note": (
+                "L1 PASS is a structural precheck of PE image fields and an exact "
+                "3-token DICO binding. It is not Windows loader acceptance and not "
+                "evidence that CATIA loaded the DLL."
+            ),
         },
     }
 

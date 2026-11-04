@@ -107,8 +107,17 @@ def _check_process_running_win32(process_name: str):
 
 
 def get_processes_snapshot_win32() -> list:
-    """Return snapshot of all running processes with pid, parent_pid, and name (Win32)."""
+    """Return snapshot of all running processes with pid, parent_pid, and name (Win32).
+
+    last_status / last_reason distinguish an empty process list from a failed
+    snapshot. Callers that replace this function in tests are treated as ok
+    unless they set the same attributes.
+    """
+    get_processes_snapshot_win32.last_status = "ok"
+    get_processes_snapshot_win32.last_reason = None
     if sys.platform != "win32":
+        get_processes_snapshot_win32.last_status = "unsupported"
+        get_processes_snapshot_win32.last_reason = "process_snapshot_unsupported"
         return []
     try:
         import ctypes
@@ -117,7 +126,9 @@ def get_processes_snapshot_win32() -> list:
         kernel32 = ctypes.windll.kernel32
         TH32CS_SNAPPROCESS = 0x00000002
         h_snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
-        if h_snap == -1:
+        if h_snap == -1 or h_snap == 0xFFFFFFFF:
+            get_processes_snapshot_win32.last_status = "failed"
+            get_processes_snapshot_win32.last_reason = "process_snapshot_failed"
             return []
 
         class PROCESSENTRY32(ctypes.Structure):
@@ -149,11 +160,18 @@ def get_processes_snapshot_win32() -> list:
         kernel32.CloseHandle(h_snap)
         return processes
     except Exception:
+        get_processes_snapshot_win32.last_status = "failed"
+        get_processes_snapshot_win32.last_reason = "process_snapshot_failed"
         return []
 
 
 def get_process_creation_time_win32(pid: int) -> float | None:
-    """Return Unix timestamp of process creation time via GetProcessTimes (Win32)."""
+    """Return Unix timestamp of process creation time via GetProcessTimes (Win32).
+
+    last_reason is set when the query itself fails, so a missing timestamp is
+    not reported as "no process".
+    """
+    get_process_creation_time_win32.last_reason = None
     if sys.platform != "win32":
         return None
     try:
@@ -168,6 +186,13 @@ def get_process_creation_time_win32(pid: int) -> float | None:
         if not h_proc:
             h_proc = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION, False, pid)
         if not h_proc:
+            err = int(kernel32.GetLastError() or 0)
+            if err == 5:
+                get_process_creation_time_win32.last_reason = "insufficient_privileges"
+            elif err in (6, 87):
+                get_process_creation_time_win32.last_reason = "process_disappeared"
+            else:
+                get_process_creation_time_win32.last_reason = "process_query_failed"
             return None
 
         class FILETIME(ctypes.Structure):
@@ -197,6 +222,18 @@ def get_process_creation_time_win32(pid: int) -> float | None:
         return unix_time
     except Exception:
         return None
+
+
+def _loaded_modules_result(modules, is_complete, return_details: bool):
+    """Stable PSAPI return contract.
+
+    Default callers receive the module list. Completeness is only available
+    when return_details is True. Never hang state off the list object.
+    """
+    copied = list(modules or [])
+    if return_details:
+        return copied, bool(is_complete)
+    return copied
 
 
 def _psapi_buffer_status(needed_bytes: int, capacity_bytes: int, attempt: int, max_attempts: int) -> str:
@@ -229,10 +266,9 @@ def get_process_loaded_modules(pid: int, return_details: bool = False):
         return ([], True) if return_details else []
 
     def _finish(modules, is_complete):
-        if return_details:
-            return modules, is_complete
-        modules.is_complete = is_complete
-        return modules
+        # A list has no is_complete attribute. Attaching one raises
+        # AttributeError, which the outer except used to turn into [].
+        return _loaded_modules_result(modules, is_complete, return_details)
 
     try:
         import ctypes
@@ -243,6 +279,21 @@ def get_process_loaded_modules(pid: int, return_details: bool = False):
         PROCESS_QUERY_INFORMATION = 0x0400
         PROCESS_VM_READ = 0x0010
         LIST_MODULES_ALL = 0x03
+        # Default ctypes prototypes truncate 64-bit HMODULE values to c_long.
+        # GetModuleFileNameExW then raises OverflowError, and the outer except
+        # used to report that as an empty module list.
+        # Keep EnumProcessModulesEx on the default prototype: byref(HMODULE array)
+        # is not an LP_c_void_p, and a strict POINTER(HMODULE) argtype rejects it.
+        # GetModuleFileNameExW must accept a pointer-sized HMODULE or 64-bit
+        # module addresses raise OverflowError and look like an empty list.
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        psapi.GetModuleFileNameExW.argtypes = [
+            wintypes.HANDLE,
+            wintypes.HMODULE,
+            wintypes.LPWSTR,
+            wintypes.DWORD,
+        ]
+        psapi.GetModuleFileNameExW.restype = wintypes.DWORD
 
         h_process = kernel32.OpenProcess(
             PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
@@ -312,7 +363,7 @@ def get_process_loaded_modules(pid: int, return_details: bool = False):
         finally:
             kernel32.CloseHandle(h_process)
     except Exception:
-        return ([], False) if return_details else []
+        return _loaded_modules_result([], False, return_details)
 
 
 def check_process_running(process_name: str) -> list:
@@ -382,6 +433,13 @@ def identify_target_cnext(
         status in ("PASS", "FAIL", "UNKNOWN", "AMBIGUOUS")
     """
     snapshot = get_processes_snapshot_win32()
+    snap_status = getattr(get_processes_snapshot_win32, "last_status", "ok")
+    if snap_status == "failed":
+        return "FAIL", None, {
+            "reason": getattr(get_processes_snapshot_win32, "last_reason", None) or "process_snapshot_failed",
+        }
+    if snap_status == "unsupported":
+        return "FAIL", None, {"reason": "process_snapshot_unsupported"}
     cnext_procs = [p for p in snapshot if p["name"].lower() == "cnext.exe"]
 
     if not cnext_procs:
@@ -414,12 +472,16 @@ def identify_target_cnext(
                 curr = parent
 
     # Method 2: Check creation time window with strict lower AND upper bounds (R-02 fix)
+    query_failures = []
     if t_start:
         t_lower = t_start - 2.0
         t_upper = t_start + max_window_seconds
         candidates = []
         for cp in fresh_cnext_procs:
             ctime = get_process_creation_time_win32(cp["pid"])
+            query_reason = getattr(get_process_creation_time_win32, "last_reason", None)
+            if ctime is None and query_reason:
+                query_failures.append(query_reason)
             if ctime is not None:
                 # Started strictly within the launch window
                 if t_lower <= ctime <= t_upper:
@@ -442,17 +504,39 @@ def identify_target_cnext(
     # Method 3: Unverified instances (R-02 fix: cannot prove correlation without tree or time evidence)
     # Fall back to observing existing unverified instance for P5.3 snapshot evidence (L2 UNKNOWN)
     target_unverified = fresh_cnext_procs if fresh_cnext_procs else cnext_procs
+    privilege_blocked = bool(query_failures) and all(
+        reason == "insufficient_privileges" for reason in query_failures
+    )
+    disappeared = bool(query_failures) and all(
+        reason == "process_disappeared" for reason in query_failures
+    )
     if len(target_unverified) == 1:
+        if disappeared:
+            return "FAIL", None, {
+                "reason": "process_disappeared",
+                "observed_pid": target_unverified[0]["pid"],
+                "note": "Snapshot listed a CNEXT PID that could not be queried because it was gone.",
+            }
+        reason = (
+            "insufficient_privileges"
+            if privilege_blocked
+            else "sole_cnext_without_tree_or_time_correlation"
+        )
         return "UNKNOWN", target_unverified[0]["pid"], {
             "cnext_pid": target_unverified[0]["pid"],
             "launcher_pid": launcher_pid,
             "identification_method": "single_global_instance_unverified",
-            "reason": "sole_cnext_without_tree_or_time_correlation",
+            "reason": reason,
             "note": "Single CNEXT detected but lacked parentage or creation-window correlation to this launch",
         }
     elif len(target_unverified) > 1:
+        reason = (
+            "insufficient_privileges"
+            if privilege_blocked
+            else "multiple_instances_cannot_disambiguate"
+        )
         return "AMBIGUOUS", None, {
-            "reason": "multiple_instances_cannot_disambiguate",
+            "reason": reason,
             "observed_pids": [p["pid"] for p in target_unverified],
         }
 
@@ -984,6 +1068,30 @@ def start_catia_runtime(
                     cnext_id_status = status
                     cnext_id_evidence = evidence
                     logger.write(f"CNEXT instances ambiguous after {(i + 1) * POLL_INTERVAL:.1f}s")
+                elif status == "FAIL":
+                    # FAIL clears an unverified PID. A later FAIL also replaces
+                    # AMBIGUOUS: a stale conflict is not a current observation.
+                    # Polling continues so a later correlated PASS can still win.
+                    previous_unverified = unverified_cnext_pid
+                    unverified_cnext_pid = None
+                    fail_evidence = dict(evidence or {})
+                    if previous_unverified and fail_evidence.get("reason") == "no_cnext_process_found":
+                        fail_evidence["reason"] = "process_disappeared"
+                        fail_evidence["previous_pid"] = previous_unverified
+                        fail_evidence["note"] = (
+                            "The earlier unverified PID is no longer a candidate and is not this launch."
+                        )
+                    elif (
+                        cnext_id_evidence.get("reason") == "process_disappeared"
+                        and fail_evidence.get("reason") == "no_cnext_process_found"
+                    ):
+                        # Continued empty polls must not erase the disappearance classification.
+                        fail_evidence = dict(cnext_id_evidence)
+                    cnext_id_status = "FAIL"
+                    cnext_id_evidence = fail_evidence
+                    logger.write(
+                        f"CNEXT identification failed ({fail_evidence.get('reason')}) after {(i + 1) * POLL_INTERVAL:.1f}s"
+                    )
 
             # Determine final process identity status and effective PID
             if detected_cnext_pid:

@@ -262,3 +262,27 @@ L5 (Functional Check):    COM CATIA.Application 对该 Add-in 专属命令/工�
 - R-08：扩容到上限仍装不下时返回空列表且 is_complete=False，L3 为 UNKNOWN，不再截断后当完整列表。未对真实 CNEXT 模块数做 PSAPI 实测。
 
 正式入口：两个专项测试已登记进 tests/test_master.py 的 SUITES，并各有一个 unittest.TestCase 供 python -m unittest discover 发现。发现只证明脚本检查已跑完，不把自定义 ck() 计数伪装成 CI 记录。
+
+### 5.5 第六轮修正（审查未关闭项，不是最终验收）
+
+本轮不把文档状态改成 FINAL_IMPLEMENTATION_AND_VERIFIED。L4 仍是 UNKNOWN，L5 仍是 NOT_RUN。`runtime_view_mounted` 仍只表示目录存在。模拟测试和本进程 PSAPI 枚举都不等于 CATIA B28 Add-in 已加载。
+
+已实现：
+
+- R-05：`create_extension()` 不再调用通用 Component 模板。`CATIVisu` / `CATI3DGeoVisu` 生成独立骨架：继承已核实的 `CATExtIVisu`，`TIE_CATI3DGeoVisu`，`CATImplementClass(..., DataExtension, CATExtIVisu, TargetLateType)`，`BuildRep()` 返回空 `CAT3DBagRep`，字典行是 `{target} CATI3DGeoVisu lib{module}`。请求的 `CATIVisu` 映射到这条已核实路径，不生成 `CATIVisu.h`。没有核实配方的接口、空 late type、仅数据成员的请求返回 `error`，不再 pending。该骨架未在 B28 编译。官方样例 Imakefile 未检索到，因此没有猜测 LINK_WITH 库名。
+- R-02：轮询补上 `FAIL`。`UNKNOWN → FAIL` 清掉未验证 PID，并把随后的空轮询保持为 `process_disappeared`。`AMBIGUOUS → FAIL` 不保留过期歧义。`PASS` 立即锁定，不被后续 UNKNOWN 降级。快照失败使用 `process_snapshot_failed`，不与 `no_cnext_process_found` 混用。未在真实 CNEXT 进程树上复跑。
+- R-03：PE 结构预检增加 `SectionAlignment`、`SizeOfImage`、`SizeOfHeaders` 及其与 `FileAlignment` 的关系。这不是 Windows 加载器验收。DICO 只接受恰好三个标识符，库名必须精确等于 `lib{Module}`。
+- R-06：增加中文组合测试，没有新增装配/零件/特征/视图关键词。不同领域的目标保存在 `domain_targets`。关键词路由仍然不是语义分类器。
+- R-08：默认返回契约是模块列表，不再给 list 挂 `is_complete`。64 位 `GetModuleFileNameExW` 使用指针宽度的 `HMODULE`，避免 OverflowError 被吞成空列表。本进程枚举只证明这个 API 契约，不证明 CNEXT 加载了目标 DLL。
+
+未验证：
+
+- 生成的可视化扩展没有在 B28 上编译。
+- 没有真实 CNEXT 实例关联、目标 DLL 加载、Add-in 注册或命令可用性证据。
+- GitHub CI 没有为本轮提交提供独立状态。
+
+本轮本地验证（已执行，不是 GitHub CI）：
+
+- `python tests/test_kernel_domain_routing.py`：83/83 PASS。
+- `python tests/test_runtime_layered_verification.py`：63/63 PASS。其中本进程 PSAPI 枚举返回了模块列表；这不是 CNEXT 加载证据。
+- `python tests/test_master.py --quick`：50/50 suites PASS，跳过 Int-1 Build & Run。未执行真实 mkmk，也未启动 CATIA 做 Add-in 验收。

@@ -96,17 +96,30 @@ with tempfile.TemporaryDirectory(prefix="cade_l1_") as tmp_dir:
     # Populate valid assets -> PASS
     # Minimal valid 64-bit Windows PE (AMD64 + PE32+) for win_b64
     import struct
-    def make_valid_pe(machine=0x8664, opt_magic=0x020B, num_sections=1, characteristics=0x2002, file_alignment=512):
+    def make_valid_pe(
+        machine=0x8664,
+        opt_magic=0x020B,
+        num_sections=1,
+        characteristics=0x2002,
+        file_alignment=512,
+        section_alignment=0x1000,
+        size_of_image=0x1000,
+        size_of_headers=512,
+    ):
         dos_hdr = b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x40)
         pe_sig = b"PE\x00\x00"
         coff_hdr = struct.pack("<HHIIIHH", machine, num_sections, 0, 0, 0, 240, characteristics)
         opt = bytearray(240)
         struct.pack_into("<H", opt, 0, opt_magic)
+        struct.pack_into("<I", opt, 32, section_alignment)
         struct.pack_into("<I", opt, 36, file_alignment)
+        struct.pack_into("<I", opt, 56, size_of_image)
+        struct.pack_into("<I", opt, 60, size_of_headers)
         opt_hdr = bytes(opt)
         sec_hdr = b""
         if num_sections > 0:
-            # 40 bytes section header. Raw size/pointer 0 are multiples of FileAlignment.
+            # VirtualAddress is a multiple of SectionAlignment. Raw size/pointer 0
+            # are multiples of FileAlignment.
             sec_hdr = b".text\x00\x00\x00" + struct.pack("<IIII", 0x1000, 0x1000, 0, 0) + b"\x00" * 16
         return dos_hdr + pe_sig + coff_hdr + opt_hdr + sec_hdr
 
@@ -160,9 +173,30 @@ with tempfile.TemporaryDirectory(prefix="cade_l1_") as tmp_dir:
     res_bad_line = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
     ck("R-03: L1 FAIL when one DICO line is illegal", res_bad_line["status"] == "FAIL", f"got {res_bad_line['status']}")
 
+    valid_dll.write_bytes(make_valid_pe(section_alignment=0, size_of_image=0, size_of_headers=0))
+    valid_dico.write_bytes(b"MyClass CATIInterface libMyModule\n")
+    res_zero_image = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("R-03: L1 FAIL when SectionAlignment, SizeOfImage and SizeOfHeaders are zero",
+       res_zero_image["status"] == "FAIL", f"got {res_zero_image['status']}")
+
+    valid_dll.write_bytes(pe_header)
+    valid_dico.write_bytes(b"MyClass CATIInterface libMyModule extra\n")
+    res_four = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("R-03: L1 FAIL when DICO has an unverified fourth token",
+       res_four["status"] == "FAIL", f"got {res_four['status']}")
+
+    valid_dico.write_bytes(b"MyClass CATIInterface MyModule\n")
+    res_unprefixed = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("R-03: L1 FAIL when DICO library token omits the lib prefix",
+       res_unprefixed["status"] == "FAIL", f"got {res_unprefixed['status']}")
+
     # Restore valid assets
     valid_dll.write_bytes(pe_header)
     valid_dico.write_bytes(b"MyClass CATIInterface libMyModule\n")
+    res_precheck = check_runtime_view_l1(ws, architecture="win_b64", target_module="MyModule.m")
+    ck("R-03: L1 PASS remains a structural precheck, not loader acceptance",
+       res_precheck["status"] == "PASS" and res_precheck["evidence"].get("scope") == "structural_precheck_not_loadability",
+       f"status={res_precheck['status']} scope={res_precheck['evidence'].get('scope')}")
 
     # Invalidate PE header (non-PE DLL) -> FAIL
     valid_dll.write_bytes(b"NON_PE_CORRUPT_BYTES_DATA")
@@ -408,7 +442,117 @@ with tempfile.TemporaryDirectory(prefix="cade_full_rt_") as tmp_dir:
            l2_sticky.get("status") == "AMBIGUOUS" and res_sticky.get("pid") is None,
            f"l2_status={l2_sticky.get('status')}, pid={res_sticky.get('pid')}")
 
-from run import _psapi_buffer_status
+    def _poll_sequence(steps):
+        state = {"n": 0}
+
+        def _next(**kwargs):
+            state["n"] += 1
+            if state["n"] <= len(steps):
+                return steps[state["n"] - 1]
+            return steps[-1]
+
+        return _next
+
+    with patch("subprocess.Popen") as mock_popen, \
+         patch("run.identify_target_cnext", side_effect=_poll_sequence([
+             ("UNKNOWN", 5001, {"reason": "sole_cnext_without_tree_or_time_correlation"}),
+             ("FAIL", None, {"reason": "no_cnext_process_found"}),
+         ])), \
+         patch("run.stop_catia"), \
+         patch("run.time.sleep", return_value=None), \
+         patch("run.check_process_running", return_value=[]):
+        mock_popen.return_value.pid = 1111
+        res_fail = start_catia_runtime(wait_for_exit=False)
+        l2_fail = res_fail.get("runtime_verification", {}).get("levels", {}).get("L2", {})
+        ck("R-02: UNKNOWN then FAIL clears the unverified PID",
+           l2_fail.get("status") == "FAIL" and res_fail.get("pid") is None,
+           f"l2_status={l2_fail.get('status')} pid={res_fail.get('pid')}")
+        ck("R-02: disappeared process is not reported as a generic missing process",
+           l2_fail.get("evidence", {}).get("reason") == "process_disappeared",
+           f"reason={l2_fail.get('evidence', {}).get('reason')}")
+
+    with patch("subprocess.Popen") as mock_popen, \
+         patch("run.identify_target_cnext", side_effect=_poll_sequence([
+             ("AMBIGUOUS", None, {"reason": "multiple_instances_cannot_disambiguate"}),
+             ("FAIL", None, {"reason": "process_snapshot_failed"}),
+         ])), \
+         patch("run.stop_catia"), \
+         patch("run.time.sleep", return_value=None), \
+         patch("run.check_process_running", return_value=[]):
+        mock_popen.return_value.pid = 1111
+        res_amb_fail = start_catia_runtime(wait_for_exit=False)
+        l2_amb_fail = res_amb_fail.get("runtime_verification", {}).get("levels", {}).get("L2", {})
+        ck("R-02: AMBIGUOUS then FAIL does not keep the stale conflict",
+           l2_amb_fail.get("status") == "FAIL" and res_amb_fail.get("pid") is None,
+           f"l2_status={l2_amb_fail.get('status')} pid={res_amb_fail.get('pid')}")
+        ck("R-02: snapshot failure stays distinct from no-process",
+           l2_amb_fail.get("evidence", {}).get("reason") == "process_snapshot_failed",
+           f"reason={l2_amb_fail.get('evidence', {}).get('reason')}")
+
+    with patch("subprocess.Popen") as mock_popen, \
+         patch("run.identify_target_cnext", side_effect=_poll_sequence([
+             ("UNKNOWN", 5001, {"reason": "sole_cnext_without_tree_or_time_correlation"}),
+             ("PASS", 6002, {"identification_method": "process_tree_ancestor_match"}),
+         ])), \
+         patch("run.stop_catia"), \
+         patch("run.time.sleep", return_value=None), \
+         patch("run.check_process_running", return_value=[]):
+        mock_popen.return_value.pid = 1111
+        res_up = start_catia_runtime(wait_for_exit=False)
+        l2_up = res_up.get("runtime_verification", {}).get("levels", {}).get("L2", {})
+        ck("R-02: UNKNOWN then PASS adopts only the correlated PID",
+           l2_up.get("status") == "PASS" and res_up.get("pid") == 6002,
+           f"l2_status={l2_up.get('status')} pid={res_up.get('pid')}")
+
+    pass_calls = {"n": 0}
+
+    def _pass_then_unknown(**kwargs):
+        pass_calls["n"] += 1
+        if pass_calls["n"] == 1:
+            return ("PASS", 6002, {"identification_method": "process_tree_ancestor_match"})
+        return ("UNKNOWN", 5001, {"reason": "sole_cnext_without_tree_or_time_correlation"})
+
+    with patch("subprocess.Popen") as mock_popen, \
+         patch("run.identify_target_cnext", side_effect=_pass_then_unknown), \
+         patch("run.stop_catia"), \
+         patch("run.time.sleep", return_value=None), \
+         patch("run.check_process_running", return_value=[]):
+        mock_popen.return_value.pid = 1111
+        res_hold = start_catia_runtime(wait_for_exit=False)
+        l2_hold = res_hold.get("runtime_verification", {}).get("levels", {}).get("L2", {})
+        ck("R-02: PASS is not downgraded by a later UNKNOWN",
+           l2_hold.get("status") == "PASS" and res_hold.get("pid") == 6002 and pass_calls["n"] == 1,
+           f"l2_status={l2_hold.get('status')} pid={res_hold.get('pid')} calls={pass_calls['n']}")
+
+    def _failed_snapshot():
+        _failed_snapshot.last_status = "failed"
+        _failed_snapshot.last_reason = "process_snapshot_failed"
+        return []
+
+    with patch("run.get_processes_snapshot_win32", _failed_snapshot):
+        st_snap, pid_snap, ev_snap = identify_target_cnext(launcher_pid=1, t_start=1.0)
+        ck("R-02: snapshot failure is not no_cnext_process_found",
+           st_snap == "FAIL" and pid_snap is None and ev_snap.get("reason") == "process_snapshot_failed",
+           f"status={st_snap} reason={ev_snap.get('reason')}")
+
+from run import _psapi_buffer_status, _loaded_modules_result, get_process_loaded_modules
+import os
+ck("R-08: default contract returns the list and does not attach is_complete",
+   _loaded_modules_result(["a.dll"], True, False) == ["a.dll"]
+   and not hasattr(_loaded_modules_result(["a.dll"], True, False), "is_complete"))
+ck("R-08: details contract returns completeness separately",
+   _loaded_modules_result(["a.dll"], False, True) == (["a.dll"], False))
+if os.name == "nt":
+    own_modules = get_process_loaded_modules(os.getpid())
+    own_details = get_process_loaded_modules(os.getpid(), return_details=True)
+    ck("R-08: default enumeration of this process returns modules, not an empty swallowed list",
+       isinstance(own_modules, list) and len(own_modules) > 0 and not hasattr(own_modules, "is_complete"),
+       f"count={len(own_modules) if isinstance(own_modules, list) else type(own_modules)}")
+    ck("R-08: details enumeration is complete for this process",
+       isinstance(own_details, tuple) and own_details[1] is True and len(own_details[0]) > 0,
+       f"got {type(own_details).__name__}")
+else:
+    ck("R-08: non-Windows default path returns a list", isinstance(get_process_loaded_modules(1), list))
 ck("R-08: last short buffer is incomplete, not a grow",
    _psapi_buffer_status(9000, 4096, 3, 4) == "incomplete")
 ck("R-08: fitting buffer is complete",
