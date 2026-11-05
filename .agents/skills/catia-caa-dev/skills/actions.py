@@ -966,7 +966,10 @@ def create_command(
 
         if tpl_rsc.exists():
             rsc_category = category if category else "Commands"
-            rsc_content = f'{name}Hdr.{module_base}.{name}.Icon.Normal = "{icon_ref}";\n'
+            rsc_content = (
+                f'{name}Hdr.{module_base}.{name}.Icon.Normal = "{icon_ref}";\n'
+                f'{name}Hdr.{module_base}.{name}.Icon.Large  = "{icon_ref}_32";\n'
+            )
             if rsc_file.exists():
                 old = rsc_file.read_text(encoding="utf-8", errors="replace")
                 if name not in old:
@@ -984,25 +987,29 @@ def create_command(
                 # semantics the name alone may not (e.g. a 'FooCmd' with
                 # category='hole' still gets the hole icon). Name parsing
                 # remains the primary source; hint is the entity fallback.
-                ico_path = get_icon(icon_lookup_key, hint=category)
+                icons_dir = fw.path / "CNext" / "resources" / "graphic" / "icons" / "normal"
+
+                # 1. Normal Mode (22x22)
+                ico_path = get_icon(icon_lookup_key, size=22, hint=category)
                 if ico_path and ico_path.exists():
-                    icons_dir = fw.path / "CNext" / "resources" / "graphic" / "icons" / "normal"
                     ico_name = f"{icon_ref.replace(' ', '_')}.bmp"
                     target = icons_dir / ico_name
-                    # Custom-icon override: a project-drawn bmp placed under
-                    # icons/custom/ (e.g. a 24x24 panel icon) shadows the
-                    # CADE-rendered default — never overwritten. See
-                    # knowledge/failure_patterns/fp_runtime_resource_not_synced.md.
                     custom = icons_dir.parent / "custom" / ico_name
-                    if custom.exists():
-                        pass
-                    else:
-                        # Freshness guarantee: overwrite any stale/foreign icon
-                        # with the current CADE render (old CADE versions or
-                        # other tools may have left an icon with the same name).
+                    if not custom.exists():
                         new_bytes = ico_path.read_bytes()
                         if not target.exists() or target.read_bytes() != new_bytes:
                             cs.add_create_binary(target, new_bytes)
+
+                # 2. Large Mode (32x32)
+                ico_32_path = get_icon(icon_lookup_key, size=32, hint=category)
+                if ico_32_path and ico_32_path.exists():
+                    ico_32_name = f"{icon_ref.replace(' ', '_')}_32.bmp"
+                    target_32 = icons_dir / ico_32_name
+                    custom_32 = icons_dir.parent / "custom" / ico_32_name
+                    if not custom_32.exists():
+                        new_bytes_32 = ico_32_path.read_bytes()
+                        if not target_32.exists() or target_32.read_bytes() != new_bytes_32:
+                            cs.add_create_binary(target_32, new_bytes_32)
             except Exception:
                 pass  # icon failure never blocks generation
 
@@ -1495,11 +1502,11 @@ def resolve_resource_host(workbench: Any) -> Optional[Path]:
     return Path(fw_path)
 
 
-def _resolve_icon_bytes(icon_name: str, hint: Optional[str] = None) -> Optional[bytes]:
+def _resolve_icon_bytes(icon_name: str, hint: Optional[str] = None, size: int = 22) -> Optional[bytes]:
     """Try to resolve icon bytes using icon_provider."""
     try:
         from icon_provider import get_icon
-        ico_path = get_icon(icon_name, hint=hint)
+        ico_path = get_icon(icon_name, size=size, hint=hint)
         if ico_path and ico_path.exists():
             return ico_path.read_bytes()
     except Exception:
@@ -1515,31 +1522,45 @@ def _queue_icon_binary(
     icon_bytes: Optional[bytes] = None,
     source: str = "workbench",
 ) -> None:
-    """Queue icon binary into ChangeSet if available and not already identical."""
+    """Queue icon binary into ChangeSet if available and not already identical.
+    Also queues the 32x32 Large icon if available."""
+    icons_dir = fw_path / "CNext" / "resources" / "graphic" / "icons" / "normal"
     if target_path is None:
-        target_path = fw_path / "CNext" / "resources" / "graphic" / "icons" / "normal" / f"{icon_ref}.bmp"
+        target_path = icons_dir / f"{icon_ref}.bmp"
     if icon_bytes is None:
         icon_base = icon_ref[2:] if icon_ref.startswith("I_") else icon_ref
-        icon_bytes = _resolve_icon_bytes(icon_ref) or _resolve_icon_bytes(icon_base)
-    if icon_bytes is None:
-        return
+        icon_bytes = _resolve_icon_bytes(icon_ref, size=22) or _resolve_icon_bytes(icon_base, size=22)
+    if icon_bytes is not None:
+        key = str(target_path)
+        existing_bytes = None
+        if key in cs._binary:
+            existing_bytes = cs._binary[key]
+        elif target_path.exists():
+            existing_bytes = target_path.read_bytes()
 
-    key = str(target_path)
-    existing_bytes = None
-    if key in cs._binary:
-        existing_bytes = cs._binary[key]
-    elif target_path.exists():
-        existing_bytes = target_path.read_bytes()
+        if existing_bytes is not None:
+            if existing_bytes != icon_bytes:
+                raise ValueError(
+                    f"Icon binary conflict for {target_path.name}: "
+                    f"target file already exists with different content from '{source}'"
+                )
+        else:
+            cs.add_create_binary(target_path, icon_bytes)
 
-    if existing_bytes is not None:
-        if existing_bytes != icon_bytes:
-            raise ValueError(
-                f"Icon binary conflict for {target_path.name}: "
-                f"target file already exists with different content from '{source}'"
-            )
-        return  # identical bytes -> idempotent no-op
+    # Also automatically queue 32x32 Large Icon variant if found
+    target_path_32 = icons_dir / f"{icon_ref}_32.bmp"
+    icon_base = icon_ref[2:] if icon_ref.startswith("I_") else icon_ref
+    icon_bytes_32 = _resolve_icon_bytes(icon_ref, size=32) or _resolve_icon_bytes(icon_base, size=32)
+    if icon_bytes_32 is not None:
+        key_32 = str(target_path_32)
+        existing_bytes_32 = None
+        if key_32 in cs._binary:
+            existing_bytes_32 = cs._binary[key_32]
+        elif target_path_32.exists():
+            existing_bytes_32 = target_path_32.read_bytes()
 
-    cs.add_create_binary(target_path, icon_bytes)
+        if existing_bytes_32 is None:
+            cs.add_create_binary(target_path_32, icon_bytes_32)
 
 
 def inspect_header_resources(
@@ -1620,6 +1641,7 @@ def inspect_header_resources(
     }
     rsc_entries = {
         f"{header_class}.{header_id}.Icon.Normal": f'"{icon_ref}"',
+        f"{header_class}.{header_id}.Icon.Large": f'"{icon_ref}_32"',
     }
 
     def _inspect_file_keys(file_path: Path, entries: Dict[str, str], is_gbk: bool, is_rsc: bool) -> Optional[str]:
@@ -1743,6 +1765,7 @@ def queue_header_resources(
     rsc_content = (
         f"\n// Command Header Icon: {hdr_cls}.{hdr_id}\n"
         f'{hdr_cls}.{hdr_id}.Icon.Normal = "{icon_ref}";\n'
+        f'{hdr_cls}.{hdr_id}.Icon.Large  = "{icon_ref}_32";\n'
     )
     _queue_rsc(cs, inspection["rsc_file"], rsc_content, source)
 

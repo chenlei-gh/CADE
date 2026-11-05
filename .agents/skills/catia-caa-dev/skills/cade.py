@@ -43,6 +43,7 @@ Usage:
 
   cade docs [workspace]            # Generate documentation
   cade rv [workspace]              # Create Runtime View
+  cade icon <name> [options]       # Generate or deploy HD CATIA icons (22x22 Normal + 32x32 Large)
 
   cade refactor rename <old> <new> --module <m>
   cade refactor move <cmd> --from <m1> --to <m2>
@@ -287,6 +288,8 @@ def main():
         cmd_docs(args)
     elif cmd == "rv":
         cmd_runtime_view(args)
+    elif cmd == "icon":
+        rc = cmd_icon(args)
     elif cmd == "refactor":
         cmd_refactor(args)
     elif cmd == "rollback":
@@ -877,6 +880,63 @@ def cmd_runtime_view(args):
     ws = _get_ws(args)
     result = create_runtime_view(Path(ws))
     return _print_result(result)
+
+
+# ─── Icon Studio ──────────────────────────────────────────────────
+
+
+def cmd_icon(args):
+    """Generate or deploy CATIA CAA high-definition icons.
+    Usage:
+      cade icon <name> [--deploy <framework_path>] [--stem <stem>]
+                       [--metaphor <m>] [--badge <b>] [--image <img>] [--out-dir <dir>]
+    """
+    if not args:
+        print("Usage: cade icon <name> [--deploy <framework_path>] [--stem <stem>]")
+        print("                 [--metaphor <stamp_clock|part_to_asm|bom_table|color_swatch|name_card|cube_solid>]")
+        print("                 [--badge <plus|pencil|refresh|check|search>] [--image <path>] [--out-dir <dir>]")
+        return 1
+
+    from icon_studio import UniversalIconStudio, generate_icon, deploy_icon
+    import json
+
+    name = args[0]
+    stem = _parse_flag(args, "--stem", "-s")
+    metaphor = _parse_flag(args, "--metaphor", "-m")
+    badge = _parse_flag(args, "--badge", "-b")
+    image_path = _parse_flag(args, "--image", "-i")
+    out_dir = _parse_flag(args, "--out-dir", "-o")
+    deploy_fw = _parse_flag(args, "--deploy", "-d")
+
+    img_p = Path(image_path) if image_path else None
+
+    if deploy_fw:
+        res = deploy_icon(
+            tool_name=name,
+            framework_dir=Path(deploy_fw),
+            stem=stem if stem else None,
+            metaphor=metaphor if metaphor else None,
+            badge=badge if badge else None,
+            input_image=img_p,
+            asset_dir=Path(out_dir) if out_dir else None,
+        )
+        print(f"Icon Deploy Result: {res.get('status', 'FAIL')}")
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        return 0 if res.get("status") in ("SUCCESS", "PASS") else 1
+    else:
+        actual_stem = stem or (name if name.startswith("I_") else f"I_CADE{name.replace(' ', '')}")
+        res = generate_icon(
+            stem_or_name=actual_stem,
+            metaphor=metaphor if metaphor else None,
+            badge=badge if badge else None,
+            input_image=img_p,
+            out_dir=Path(out_dir) if out_dir else None,
+        )
+        print(f"Icon Generation Result: {res.get('status', 'FAIL')}")
+        manifest = res.get("manifest", {})
+        lint = manifest.get("lint_22", {})
+        print(json.dumps(lint, indent=2, ensure_ascii=False))
+        return 0 if res.get("status") in ("PASS", "WARN") else 1
 
 
 # ─── Refactor ─────────────────────────────────────────────────────

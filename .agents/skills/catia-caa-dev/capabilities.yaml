@@ -103,6 +103,27 @@ capabilities:
       cli: cade rv
       python: build.create_runtime_view
 
+  - name: generate_icon
+    description: 通用高清图标生成与一键部署引擎（512 Master超采样/22x22 Normal+32x32 Large双位图量化，自动部署并注入.CATRsc）
+    triggers:
+      - 生成图标
+      - 创建图标
+      - 制作图标
+      - 换图标
+      - 更换图标
+      - 替换图标
+      - 高清图标
+      - 工具图标
+      - Logo图标
+      - deploy icon
+      - generate icon
+      - icon studio
+      - 图标生成
+    bindings:
+      cli: cade icon <name> [workspace] [--deploy <fw>] [--stem <stem>] [--metaphor <m>] [--image <img>]
+      python: icon_studio.generate_icon
+    note: 支持 stamp_clock/part_to_asm/bom_table/color_swatch/name_card/cube_solid 隐喻与任意外部图片高清重制，严格遵循 CATIA V5 8-bit 调色板 Palette[0]=#C0C0C0 透明契约
+
   # ── retrieval（查询能力，facade 与索引本体是内部管道不登记）──
   - name: header_lookup
     description: 查 CAA 类型的头文件位置（框架/模块/绝对路径）；要看声明用 --show，禁止凭前缀猜路径、禁止读安装目录
@@ -262,6 +283,14 @@ capabilities:
     description: 启停 CATIA Runtime（CNEXT）、跑宏、查状态
     triggers:
       - 启动CATIA
+      - 打开CATIA
+      - 开CATIA
+      - 启动软件
+      - 打开软件
+      - 查看CATIA
+      - 查看一下
+      - 查CATIA状态
+      - 检查CATIA
       - 停止CATIA
       - 运行宏
       - CNEXT

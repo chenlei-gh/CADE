@@ -195,6 +195,7 @@ class RequirementsClarifier:
                          "监听", "回调", "事件", "通知", "变更", "结构变化"],
         "knowledge": ["parameter", "attribute", "relation", "formula", "cke", "userparameter",
                       "参数", "属性", "公式", "知识", "自定义属性"],
+        "icon": ["icon", "图标", "logo", "高清图标", "更换图标", "制作图标", "生成图标", "换图标", "部署图标"],
     }
 
     def analyze(self, request: str) -> ClarificationResult:
@@ -427,6 +428,7 @@ class RequirementsClarifier:
             "fix": "fix" in request or "repair" in request or "修复" in request,
             "statistics": "statistic" in request or "统计" in request,
             "visualize": "visualiz" in request or "color" in request or "着色" in request or "高亮" in request or "表现" in request,
+            "icon": any(k in request for k in ("icon", "图标", "logo")),
             "notify": "listen" in request or "callback" in request or "监听" in request or "回调" in request or "通知" in request,
             "attribute": "attribute" in request or "param" in request or "属性" in request or "参数" in request,
         }
@@ -528,6 +530,12 @@ class RequirementsClarifier:
                     ext_pt = "command_action"
                     ifaces = ["CATCommand"]
                     rec_type = "CreateCommand"
+            elif d_name == "icon":
+                aspect = "visualization"
+                target = "icon"
+                ext_pt = "command_action"
+                ifaces = []
+                rec_type = "GenerateIcon"
             elif d_name in ("product", "part", "drawing", "surface"):
                 if any(k in req_lower for k in ("export", "导出", "统计", "statistic", "check", "检查", "analyze", "分析", "生成", "计算")):
                     aspect = "interaction"

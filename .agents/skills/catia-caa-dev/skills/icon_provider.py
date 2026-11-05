@@ -265,14 +265,18 @@ def analyze_command(command_name: str, hint: str = None) -> IconSemantic:
 _GENERATED_ICONS_DIR = Path(__file__).resolve().parent.parent / "assets" / "icons" / "generated"
 
 _GENERATED_BASE_MAP: Dict[str, str] = {
-    "parttoasm":    "I_CADEPartToAsm",
-    "caaparttoasm": "I_CADEPartToAsm",
-    "bomtool":      "I_CADEBOMTool",
-    "caabomtool":   "I_CADEBOMTool",
-    "autocolor":    "I_CADEAutoColor",
-    "caaautocolor": "I_CADEAutoColor",
-    "autorename":   "I_CADEAutoRename",
-    "caaautorename":"I_CADEAutoRename",
+    "parttoasm":     "I_CADEPartToAsm",
+    "caaparttoasm":  "I_CADEPartToAsm",
+    "bomtool":       "I_CADEBOMTool",
+    "caabomtool":    "I_CADEBOMTool",
+    "autocolor":     "I_CADEAutoColor",
+    "caaautocolor":  "I_CADEAutoColor",
+    "autorename":    "I_CADEAutoRename",
+    "caaautorename": "I_CADEAutoRename",
+    "datestamp":     "I_CADEDateStamp",
+    "caadatestamp":  "I_CADEDateStamp",
+    "logotool":      "I_CADEDateStamp",
+    "cadelogo":      "I_CADEDateStamp",
 }
 _GENERATED_STEMS = frozenset(_GENERATED_BASE_MAP.values())
 
@@ -309,13 +313,22 @@ def resolve_generated_stem(command_name: str, hint: Optional[str] = None) -> Opt
     return None
 
 
-def resolve_generated_icon(command_name: str, hint: Optional[str] = None) -> Optional[Path]:
+def resolve_generated_icon(command_name: str, hint: Optional[str] = None, size: int = 22) -> Optional[Path]:
     """Read-only path to an in-repo generated base BMP (assets/icons/generated/I_CADE*.bmp).
+    If size == 32, returns the Large icon variant (I_CADE*_32.bmp).
     Returns None if not a generated base or file missing on disk."""
     stem = resolve_generated_stem(command_name, hint)
     if not stem:
         return None
-    bmp = _GENERATED_ICONS_DIR / f"{stem}.bmp"
+    suffix = "_32.bmp" if size == 32 else ".bmp"
+    bmp = _GENERATED_ICONS_DIR / f"{stem}{suffix}"
+    if not bmp.is_file():
+        # Auto-produce via UniversalIconStudio if not yet rendered
+        try:
+            from icon_studio import UniversalIconStudio
+            UniversalIconStudio.generate_icon_bundle(stem=stem, out_dir=_GENERATED_ICONS_DIR)
+        except Exception:
+            pass
     return bmp if bmp.is_file() else None
 
 
@@ -491,7 +504,7 @@ def get_icon(icon_name: str, style: str = "geo", size: int = 22,
       3. Placeholder fallback (CATIA not installed)
     Cache key includes ICON_HASH and the stem (if any)."""
     base, badge = resolve_icon_ex(icon_name, hint)
-    gen = resolve_generated_icon(icon_name, hint)
+    gen = resolve_generated_icon(icon_name, hint, size=size)
     if gen is not None:
         source_bmp = gen
         badge = None
@@ -624,6 +637,14 @@ def _compose_official(official: Path, badge: str = None, size: int = 22,
     tmp = Path(os.environ.get("TEMP", "/tmp")) / \
         f"cade_icon_off_{official.stem}_{badge or 'base'}_{size}_{os.getpid()}.{ext}"
     hd = size > 22 or format == "png"
+    if not badge and format == "bmp":
+        try:
+            with Image.open(official) as probe:
+                if probe.size == (size, size):
+                    tmp.write_bytes(official.read_bytes())
+                    return tmp
+        except Exception:
+            pass
     if not hd and not badge:
         with Image.open(official) as probe:
             native_22 = probe.size == (22, 22)

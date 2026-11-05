@@ -1,20 +1,47 @@
 {
   "stem": "I_CADEAutoRename",
-  "semantic": "autorename",
-  "model": "LLM pixel design (kimi-k3, direct 22x22 pixel rendering)",
-  "prompt": "semantic-only: AutoRename; metaphor = official rename vocabulary (I_RenameFamily = white name card with letter) + automation gear",
-  "seed": null,
-  "metaphor": "official name-card vocabulary: LEFT white card with 2px navy border carrying a hand-drawn 7x9 hard-edge pixel 'A' (I_RenameFamily encoding), RIGHT yellow gear r3 = automation. The 'A' is pixel-drawn via letter_a() because PIL's default font is a vector face in Pillow >= 10 and anti-aliases, violating the spec hard-edge clause. No badge - body carries the semantic (spec section 6 exemption)",
-  "generated_at": "2026-08-18",
-  "pipeline": "icon_gen_pipeline.py v1",
-  "gate": {
-    "colors": 4,
-    "fg": 0.541
+  "metaphor": "auto",
+  "badge": "none",
+  "files": {
+    "png_512": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEAutoRename_512.png",
+    "png_256": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEAutoRename_256.png",
+    "png_64": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEAutoRename_64.png",
+    "png_32": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEAutoRename_32.png",
+    "png_22": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEAutoRename.png",
+    "bmp_normal_22": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEAutoRename.bmp",
+    "bmp_large_32": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEAutoRename_32.bmp"
   },
-  "candidates": {
-    "a_card_gear": "SELECTED by rule verdict - name card + pixel A + gear; AA font defect fixed by hand-drawn letter_a(), gate PASS",
-    "b_alt": "rejected by rule verdict (weaker official vocabulary correspondence)"
+  "lint_22": {
+    "status": "PASS",
+    "size": [
+      22,
+      22
+    ],
+    "mode": "P",
+    "checks": {
+      "size_exact": true,
+      "is_palettized": true,
+      "palette_0_is_catia_bg": true,
+      "four_corners_pure_index_0": true,
+      "fg_ratio": 0.523,
+      "fg_ratio_in_bounds": true
+    }
   },
-  "approved_by": "rule-verdict (no manual selection, per user directive 2026-08-18)",
-  "approved_at": "2026-08-18"
+  "lint_32": {
+    "status": "PASS",
+    "size": [
+      32,
+      32
+    ],
+    "mode": "P",
+    "checks": {
+      "size_exact": true,
+      "is_palettized": true,
+      "palette_0_is_catia_bg": true,
+      "four_corners_pure_index_0": true,
+      "fg_ratio": 0.54,
+      "fg_ratio_in_bounds": true
+    }
+  },
+  "ready_for_cnext": true
 }

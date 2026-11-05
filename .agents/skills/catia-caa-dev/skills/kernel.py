@@ -419,7 +419,7 @@ class Kernel:
             pass
 
         # Phase 0.5: Build / Run / Setup operations (external processes / probes)
-        build_run_result = self._handle_build_run(request_lower, preview=preview)
+        build_run_result = self._handle_build_run(request, preview=preview)
         if build_run_result:
             return build_run_result
 
@@ -582,6 +582,43 @@ class Kernel:
         if investigation_result:
             self._state = KernelState.COMPLETED
             return investigation_result
+
+        # ── Path 0.1: CATIA Runtime Status Probe (Read-only) ──
+        status_kws = (
+            "catia running", "check catia", "check if catia", "is catia running",
+            "catia是否运行", "catia是否在运行", "catia在运行吗", "catia运行状态",
+            "查catia状态", "查看catia状态", "检查catia状态", "catia进程",
+        )
+        if any(kw in request_lower for kw in status_kws):
+            try:
+                from run import check_catia_running
+                r = check_catia_running()
+                self._state = KernelState.COMPLETED
+                return KernelResult(status="ok", mode="analyze", state=self._state.value,
+                    message=r.get("status", "checked") if isinstance(r, dict) else str(r),
+                    data=r if isinstance(r, dict) else {}).to_dict()
+            except ImportError:
+                pass
+
+        # ── Path 0.2: CATIA Launch for Viewing (Read-only observation) ──
+        start_kws = (
+            "start catia", "launch catia", "run catia", "open catia",
+            "start cnext", "launch cnext", "open cnext",
+            "启动catia", "打开catia", "开catia", "启动软件", "打开软件",
+            "查看catia", "开启catia", "运行catia",
+        )
+        if any(kw in request_lower for kw in start_kws) or (
+            "catia" in request_lower and any(act in request_lower for act in ("启动", "打开", "运行", "开启", "查看", "start", "launch", "open"))
+        ):
+            if not any(k in request_lower for k in ("stop", "kill", "停止", "关闭", "dev", "build", "编译", "macro", "batch", "宏")):
+                try:
+                    from run import start_catia_runtime
+                    r = start_catia_runtime(workspace_path=str(self.workspace_root), entrypoint="kernel", orchestrated_by_kernel=True)
+                    self._state = KernelState.COMPLETED
+                    return KernelResult(status="ok", mode="analyze", state=self._state.value,
+                        message="CATIA started for viewing.", data=r if isinstance(r, dict) else {}).to_dict()
+                except ImportError:
+                    pass
 
         # ── Path 0.5: Module-scoped Deep Analysis (Brownfield Targeted View) ──
         try:
@@ -3788,6 +3825,7 @@ class Kernel:
         from typing import Optional
         import re
         self._state = KernelState.GENERATING
+        request_lower = request.lower()
 
         # Build
         try:
@@ -3795,7 +3833,7 @@ class Kernel:
             ws = self.workspace_root
 
             # Setup prerequisite path (auto-link to CATIA installation)
-            if any(kw in request for kw in ("setup prereq", "setup workspace", "init workspace")):
+            if any(kw in request_lower for kw in ("setup prereq", "setup workspace", "init workspace")):
                 if preview:
                     plan = {
                         "type": "execution_plan",
@@ -3820,7 +3858,7 @@ class Kernel:
                 return KernelResult(status=r.get("status", "ok"), mode="develop", state=self._state.value,
                     message="Workspace prerequisites configured.", data=r if isinstance(r, dict) else {}).to_dict()
 
-            if any(kw in request for kw in ("build", "compile", "mkmk")):
+            if any(kw in request_lower for kw in ("build", "compile", "mkmk")):
                 n = int(re.search(r'(\d+)\s*thread', request).group(1)) if re.search(r'(\d+)\s*thread', request) else 8
                 options = "-a -g" if "debug" in request else ("-a" if "full" in request else ("-a -u" if "clean" in request else "-u -a"))
                 if preview:
@@ -3861,7 +3899,7 @@ class Kernel:
                 return KernelResult(status="ok", mode="develop", state=self._state.value,
                     message=r.get("message", "Build complete."), data=r if isinstance(r, dict) else {}).to_dict()
 
-            if "runtime view" in request or "runtimeview" in request:
+            if "runtime view" in request_lower or "runtimeview" in request_lower:
                 if preview:
                     plan = {
                         "type": "execution_plan",
@@ -3888,39 +3926,109 @@ class Kernel:
         except ImportError:
             pass
 
-        # Run
+        # Icon Generation / Deployment
         try:
-            from run import start_catia_runtime, stop_catia, check_catia_running, run_catia_macro, run_catia_batch
-            if "start catia" in request or "launch catia" in request:
+            if any(kw in request_lower for kw in ("icon", "图标", "logo")) and any(
+                kw in request_lower for kw in ("generate", "create", "make", "deploy", "build", "生成", "制作", "创建", "部署", "换", "替换", "更新", "高清", "高清化")
+            ):
+                from icon_studio import UniversalIconStudio, generate_icon, deploy_icon
+                name_match = re.search(r'(?:给|为|把|对)?\s*([A-Za-z][A-Za-z0-9_]*)\s*(?:命令|工具|模块|特征)?\s*(?:生成|制作|创建|部署|换|替换|更新|的高清)?\s*(?:图标|icon|logo)', request)
+                if not name_match:
+                    name_match = re.search(r'(?:生成|制作|创建|部署|换|替换|更新)\s*(?:一个)?\s*(?:叫|名为)?\s*([A-Za-z][A-Za-z0-9_]*)\s*(?:的)?\s*(?:图标|icon|logo)', request)
+                tool_name = name_match.group(1) if name_match else "CustomTool"
+
+                fw_match = None
+                ws = self.workspace_root
+                if ws and ws.exists():
+                    for child in ws.iterdir():
+                        if child.is_dir() and child.name.endswith(".edu"):
+                            fw_match = child
+                            break
+
                 if preview:
                     plan = {
                         "type": "execution_plan",
                         "version": 1,
-                        "action": "start_catia",
+                        "action": "generate_icon",
                         "workspace_root": str(self.workspace_root),
-                        "parameters": {"env_name": None, "wait_for_exit": False},
-                        "command_preview": "start_catia_runtime",
-                        "preflight": {"catia_not_running": True},
-                        "planned_steps": ["verify_env", "check_catia_running", "launch_cnext"],
+                        "parameters": {
+                            "tool_name": tool_name,
+                            "framework": str(fw_match) if fw_match else None,
+                        },
+                        "command_preview": f"cade icon {tool_name}" + (f" --deploy {fw_match}" if fw_match else ""),
+                        "preflight": {"workspace_valid": bool(self.workspace_root.exists())},
+                        "planned_steps": ["render_master_512", "quantize_normal_22", "quantize_large_32", "deploy_resources"],
                         "file_preconditions": {},
                     }
                     plan["plan_digest"] = compute_plan_digest(plan)
                     self._state = KernelState.COMPLETED
                     return KernelResult(
                         status="pending_execution", mode="develop", state=self._state.value,
-                        message="Execution plan generated for action 'start_catia'. Explicit authorization required via develop(execute_plan=...).",
+                        message=f"Execution plan generated for action 'generate_icon' ({tool_name}).",
                         data={"execute_plan": plan, "preview": True},
                     ).to_dict()
-                r = start_catia_runtime(workspace_path=str(self.workspace_root), entrypoint="kernel", orchestrated_by_kernel=True)
+
+                if fw_match:
+                    r = deploy_icon(tool_name=tool_name, framework_dir=fw_match)
+                else:
+                    r = generate_icon(stem_or_name=tool_name)
+                self._state = KernelState.COMPLETED
+                st_val = "ok" if r.get("status") in ("SUCCESS", "PASS", "ok") else "error"
+                return KernelResult(status=st_val,
+                    mode="develop", state=self._state.value,
+                    message=f"Icon pipeline completed for {tool_name}.", data=r).to_dict()
+        except ImportError:
+            pass
+
+        # Run
+        try:
+            from run import start_catia_runtime, stop_catia, check_catia_running, run_catia_macro, run_catia_batch
+
+            # Status check (read-only probe: executes directly even in preview mode)
+            status_kws = (
+                "catia running", "check catia", "check if catia", "is catia running",
+                "catia是否运行", "catia是否在运行", "catia在运行吗", "catia运行状态",
+                "查catia状态", "查看catia状态", "检查catia状态", "catia进程",
+            )
+            if any(kw in request_lower for kw in status_kws):
+                r = check_catia_running()
                 self._state = KernelState.COMPLETED
                 return KernelResult(status="ok", mode="develop", state=self._state.value,
-                    message="CATIA started.", data=r if isinstance(r, dict) else {}).to_dict()
+                    message=r.get("status", "checked") if isinstance(r, dict) else str(r),
+                    data=r if isinstance(r, dict) else {}).to_dict()
+
+            stop_kws = ("stop catia", "kill catia", "停止catia", "关闭catia", "杀掉catia", "结束catia")
+            if any(kw in request_lower for kw in stop_kws):
+                force_val = True if ("force" in request_lower or "kill" in request_lower or "强制" in request_lower) else False
+                if preview:
+                    plan = {
+                        "type": "execution_plan",
+                        "version": 1,
+                        "action": "stop_catia",
+                        "workspace_root": str(self.workspace_root),
+                        "parameters": {"force": force_val},
+                        "command_preview": f"stop_catia(force={force_val})",
+                        "preflight": {},
+                        "planned_steps": ["check_catia_running", "terminate_cnext"],
+                        "file_preconditions": {},
+                    }
+                    plan["plan_digest"] = compute_plan_digest(plan)
+                    self._state = KernelState.COMPLETED
+                    return KernelResult(
+                        status="pending_execution", mode="develop", state=self._state.value,
+                        message="Execution plan generated for action 'stop_catia'. Explicit authorization required via develop(execute_plan=...).",
+                        data={"execute_plan": plan, "preview": True},
+                    ).to_dict()
+                r = stop_catia(force=force_val, entrypoint="kernel", orchestrated_by_kernel=True)
+                self._state = KernelState.COMPLETED
+                return KernelResult(status="ok", mode="develop", state=self._state.value,
+                    message="CATIA stopped.", data=r if isinstance(r, dict) else {}).to_dict()
 
             # Dev: build + run in one step. Word-boundary match: a bare
             # substring test ("dev" in request) hijacked any request merely
             # containing "dev" ("develop a dialog", "DeviceCmd") into a
             # mkmk build + CATIA launch before intent detection could run.
-            if re.search(r"\bdev\b", request) or ("build" in request and "run" in request):
+            if re.search(r"\bdev\b", request_lower) or ("build" in request_lower and "run" in request_lower) or ("编译" in request_lower and "运行" in request_lower):
                 if preview:
                     plan = {
                         "type": "execution_plan",
@@ -3951,38 +4059,43 @@ class Kernel:
                     message=f"Build: {r_build.get('message','')}; Run: {r_run.get('message','')}" if r_run else r_build.get('message',''),
                     data={"build": r_build, "run": r_run}).to_dict()
 
-            if "stop catia" in request or "kill catia" in request:
-                force_val = True if ("force" in request or "kill" in request) else False
-                if preview:
+            start_kws = (
+                "start catia", "launch catia", "run catia", "open catia",
+                "start cnext", "launch cnext", "open cnext",
+                "启动catia", "打开catia", "开catia", "启动软件", "打开软件",
+                "查看catia", "开启catia", "运行catia",
+            )
+            is_start_request = any(kw in request_lower for kw in start_kws) or (
+                "catia" in request_lower and any(act in request_lower for act in ("启动", "打开", "运行", "开启", "查看", "start", "launch", "open"))
+            )
+            if is_start_request:
+                # 纯启动查看意图（如“打开CATIA”、“启动CATIA查看”、“查看一下”）：非破坏性且幂等，直接启动，无需 preview 计划阻断
+                is_view_intent = any(kw in request_lower for kw in (
+                    "查看", "看", "观察", "浏览", "view", "inspect", "observe", "打开", "open", "我要查看", "看一下"
+                ))
+                if preview and not is_view_intent:
                     plan = {
                         "type": "execution_plan",
                         "version": 1,
-                        "action": "stop_catia",
+                        "action": "start_catia",
                         "workspace_root": str(self.workspace_root),
-                        "parameters": {"force": force_val},
-                        "command_preview": f"stop_catia(force={force_val})",
-                        "preflight": {},
-                        "planned_steps": ["check_catia_running", "terminate_cnext"],
+                        "parameters": {"env_name": None, "wait_for_exit": False},
+                        "command_preview": "start_catia_runtime",
+                        "preflight": {"catia_not_running": True},
+                        "planned_steps": ["verify_env", "check_catia_running", "launch_cnext"],
                         "file_preconditions": {},
                     }
                     plan["plan_digest"] = compute_plan_digest(plan)
                     self._state = KernelState.COMPLETED
                     return KernelResult(
                         status="pending_execution", mode="develop", state=self._state.value,
-                        message="Execution plan generated for action 'stop_catia'. Explicit authorization required via develop(execute_plan=...).",
+                        message="Execution plan generated for action 'start_catia'. Explicit authorization required via develop(execute_plan=...).",
                         data={"execute_plan": plan, "preview": True},
                     ).to_dict()
-                r = stop_catia(force=force_val, entrypoint="kernel", orchestrated_by_kernel=True)
+                r = start_catia_runtime(workspace_path=str(self.workspace_root), entrypoint="kernel", orchestrated_by_kernel=True)
                 self._state = KernelState.COMPLETED
                 return KernelResult(status="ok", mode="develop", state=self._state.value,
-                    message="CATIA stopped.", data=r if isinstance(r, dict) else {}).to_dict()
-
-            if "catia running" in request or "check catia" in request:
-                # Read-only probe: executes directly even in preview mode
-                r = check_catia_running()
-                self._state = KernelState.COMPLETED
-                return KernelResult(status="ok", mode="develop", state=self._state.value,
-                    message=r.get("status", "checked") if isinstance(r, dict) else str(r)).to_dict()
+                    message="CATIA started.", data=r if isinstance(r, dict) else {}).to_dict()
 
             if "macro" in request:
                 m = re.search(r'([\w.-]+\.CATScript)', request)

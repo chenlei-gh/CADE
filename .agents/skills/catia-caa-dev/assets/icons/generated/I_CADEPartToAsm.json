@@ -1,80 +1,47 @@
 {
   "stem": "I_CADEPartToAsm",
-  "semantic": "parttoasm",
-  "model": "Ultra-3D procedural mechanical rendering (Pillow 512 Master)",
-  "prompt": "semantic-only: PartToAsm; modern mechanical engineering assembly metaphor with coaxial alignment and 3D mating direction",
-  "seed": null,
-  "metaphor": "Precision machined engineering assembly: TOP flanged stepped bushing with lead-in chamfer, inner bore and assembly keyway (part) axially mating into BOTTOM CNC milled aluminum housing base with center bore, stiffening ribs and counterbore socket-head cap screws (assembly). Red directional 3D kinematic vector indicates downward insertion along dashed coaxial guide line. Alpha=0 transparent background with contact AO shadow.",
-  "generated_at": "2026-09-17",
-  "pipeline": "Ultra-3D multi-scale export pipeline (ICON_GENERATION_SPEC v3)",
-  "gate": {
-    "master_size": "512x512",
-    "scales": [
-      512,
-      256,
-      64,
-      32,
+  "metaphor": "auto",
+  "badge": "none",
+  "files": {
+    "png_512": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEPartToAsm_512.png",
+    "png_256": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEPartToAsm_256.png",
+    "png_64": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEPartToAsm_64.png",
+    "png_32": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEPartToAsm_32.png",
+    "png_22": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEPartToAsm.png",
+    "bmp_normal_22": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEPartToAsm.bmp",
+    "bmp_large_32": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEPartToAsm_32.bmp"
+  },
+  "lint_22": {
+    "status": "PASS",
+    "size": [
+      22,
       22
     ],
-    "bmp_mode": "8-bit indexed (palette 0 = CATIA_BG)",
-    "bmp_colors": 157,
-    "bmp_used_colors": 157,
-    "hard_checks": {
-      "colors_ceiling_ok": true,
-      "corners_pure": true,
-      "corners_palette_index_zero": true,
-      "no_edge_collision": true,
-      "bmp_format_ok": true
-    },
-    "fg_ratio": 0.283,
-    "fg_in_guidance": true,
-    "isolated_noise_px": 1,
-    "alpha_clean": true,
-    "alpha_clean_scope": "all_scales_evaluated",
-    "alpha_clean_definition": "All four corners 100% transparent (A=0) and zero RGB contamination on A=0 pixels across all exported PNG scales",
-    "alpha_measured_by_scale": {
-      "512": {
-        "size": "512x512",
-        "corners_alpha_zero": true,
-        "dirty_zero_alpha_pixels": 0,
-        "semi_transparent_ratio": 0.319,
-        "alpha_clean": true
-      },
-      "256": {
-        "size": "256x256",
-        "corners_alpha_zero": true,
-        "dirty_zero_alpha_pixels": 0,
-        "semi_transparent_ratio": 0.447,
-        "alpha_clean": true
-      },
-      "64": {
-        "size": "64x64",
-        "corners_alpha_zero": true,
-        "dirty_zero_alpha_pixels": 0,
-        "semi_transparent_ratio": 0.615,
-        "alpha_clean": true
-      },
-      "32": {
-        "size": "32x32",
-        "corners_alpha_zero": true,
-        "dirty_zero_alpha_pixels": 0,
-        "semi_transparent_ratio": 0.793,
-        "alpha_clean": true
-      },
-      "22": {
-        "size": "22x22",
-        "corners_alpha_zero": true,
-        "dirty_zero_alpha_pixels": 0,
-        "semi_transparent_ratio": 0.84,
-        "alpha_clean": true
-      }
+    "mode": "P",
+    "checks": {
+      "size_exact": true,
+      "is_palettized": true,
+      "palette_0_is_catia_bg": true,
+      "four_corners_pure_index_0": true,
+      "fg_ratio": 0.32,
+      "fg_ratio_in_bounds": true
     }
   },
-  "candidates": {
-    "v1_pixel_mesh": "Meshing gear pair (I_Part/I_Product vocabulary, 22x22 pixel art) - superseded as overly abstract and low-res",
-    "v2_solid_3d": "UltraSolid 3D block - verified solid proportion but lacked mechanical realism",
-    "v3_ultra_3d": "SELECTED - Ultra-3D precision flanged bushing + CNC milled socket base + coaxial insertion guide (user accepted 2026-09-17)"
+  "lint_32": {
+    "status": "PASS",
+    "size": [
+      32,
+      32
+    ],
+    "mode": "P",
+    "checks": {
+      "size_exact": true,
+      "is_palettized": true,
+      "palette_0_is_catia_bg": true,
+      "four_corners_pure_index_0": true,
+      "fg_ratio": 0.32,
+      "fg_ratio_in_bounds": true
+    }
   },
-  "approved_by": "user",
-  "approved_at": "2026-09-17"
+  "ready_for_cnext": true
 }

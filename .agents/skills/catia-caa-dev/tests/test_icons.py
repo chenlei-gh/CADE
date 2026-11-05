@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).parent.parent
@@ -701,13 +702,20 @@ try:
         _rsc_content = _cs.created.get(_rsc_key, "")
         check("CAAPartToAsm CATRsc Icon.Normal references I_CADEPartToAsm",
               'Icon.Normal = "I_CADEPartToAsm"' in _rsc_content, _rsc_content)
+        check("CAAPartToAsm CATRsc Icon.Large references I_CADEPartToAsm_32",
+              'Icon.Large  = "I_CADEPartToAsm_32"' in _rsc_content, _rsc_content)
 
-        # 2. Binary icon must be written as I_CADEPartToAsm.bmp
+        # 2. Binary icon must be written as I_CADEPartToAsm.bmp and I_CADEPartToAsm_32.bmp
         _ico_key = str(_fw / "CNext" / "resources" / "graphic" / "icons" / "normal" / "I_CADEPartToAsm.bmp")
+        _ico_key_32 = str(_fw / "CNext" / "resources" / "graphic" / "icons" / "normal" / "I_CADEPartToAsm_32.bmp")
         check("CAAPartToAsm writes I_CADEPartToAsm.bmp in ChangeSet", _ico_key in _cs._binary)
+        check("CAAPartToAsm writes I_CADEPartToAsm_32.bmp in ChangeSet", _ico_key_32 in _cs._binary)
         if _ico_key in _cs._binary:
             _expected_bytes = (_GENERATED_ICONS_DIR / "I_CADEPartToAsm.bmp").read_bytes()
             check("CAAPartToAsm icon bytes match I_CADEPartToAsm.bmp", _cs._binary[_ico_key] == _expected_bytes)
+        if _ico_key_32 in _cs._binary:
+            _expected_bytes_32 = (_GENERATED_ICONS_DIR / "I_CADEPartToAsm_32.bmp").read_bytes()
+            check("CAAPartToAsm 32x32 icon bytes match I_CADEPartToAsm_32.bmp", _cs._binary[_ico_key_32] == _expected_bytes_32)
 
         # 3. inspect_header_resources resolves I_CADEPartToAsm
         from meta_model import Workbench
@@ -729,6 +737,135 @@ try:
         shutil.rmtree(_tmp_adr, ignore_errors=True)
 except Exception as e:
     check("create_command ADR contract test", False, str(e))
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PART M: Universal Icon Studio (Multi-Resolution & Quality Gate)
+# ═══════════════════════════════════════════════════════════════
+print("\n" + "=" * 60)
+print("  M. Universal Icon Studio Engine & Deployment")
+print("=" * 60)
+
+from icon_studio import UniversalIconStudio, lint_icon_asset, CATIA_BG
+from PIL import Image
+
+# 1. Metaphor Inference
+for _tool_name, _expected_metaphor in (
+    ("CAADateStamp", "stamp_clock"),
+    ("ClockTriggerCmd", "stamp_clock"),
+    ("CAAPartToAsm", "part_to_asm"),
+    ("MyAssemblyTool", "part_to_asm"),
+    ("ExportBOMTable", "bom_table"),
+    ("AutoColorProperty", "color_swatch"),
+    ("RenameFeatureCmd", "name_card"),
+    ("GenericMilling", "cube_solid"),
+):
+    _m, _ = UniversalIconStudio.resolve_metaphor_from_name(_tool_name)
+    check(f"resolve_metaphor_from_name({_tool_name}) -> {_expected_metaphor}",
+          _m == _expected_metaphor, _m)
+
+# 2. Dynamic Bundle Generation & Verification
+_tmp_studio_dir = Path(tempfile.mkdtemp())
+try:
+    _gen_res = UniversalIconStudio.generate_icon_bundle(
+        stem="I_CADETestTool",
+        metaphor="stamp_clock",
+        badge="plus",
+        out_dir=_tmp_studio_dir,
+    )
+    check("UniversalIconStudio bundle status PASS", _gen_res["status"] == "PASS")
+
+    _files = _gen_res["files"]
+    for _k in ("png_512", "png_256", "png_64", "png_32", "png_22", "bmp_normal_22", "bmp_large_32", "manifest"):
+        check(f"Bundle emitted {_k}", _k in _files and Path(_files[_k]).exists())
+
+    # Check 32x32 BMP compliance
+    _bmp_32_img = Image.open(_files["bmp_large_32"])
+    _lint_32 = lint_icon_asset(_bmp_32_img, 32)
+    _bmp_32_img.close()
+    check("32x32 BMP passes size_exact", _lint_32["checks"]["size_exact"])
+    check("32x32 BMP is palettized (8-bit)", _lint_32["checks"]["is_palettized"])
+    check("32x32 BMP Palette[0] is CATIA_BG (192, 192, 192)", _lint_32["checks"]["palette_0_is_catia_bg"])
+    check("32x32 BMP four corners index 0 pure", _lint_32["checks"]["four_corners_pure_index_0"])
+    check("32x32 BMP fg ratio in [15%, 75%]", _lint_32["checks"]["fg_ratio_in_bounds"], f"{_lint_32['checks']['fg_ratio']:.1%}")
+
+    # 3. deploy_tool_icon contract
+    _fw_test = _tmp_studio_dir / "DeployFw.edu"
+    _rsc_dir = _fw_test / "CNext" / "resources" / "msgcatalog"
+    _rsc_dir.mkdir(parents=True)
+    _test_rsc = _rsc_dir / "DeployTestHdr.CATRsc"
+    _test_rsc.write_text('DeployTestHdr.DeployTest.Icon.Normal = "I_old";\n', encoding="utf-8")
+
+    _dep_res = UniversalIconStudio.deploy_tool_icon("DeployTest", _fw_test, stem="I_CADEDeployTest", asset_dir=_tmp_studio_dir)
+    check("deploy_tool_icon status SUCCESS", _dep_res["status"] == "SUCCESS")
+    check("deployed normal 22x22 exists", Path(_dep_res["deployed_normal"]).exists())
+    check("deployed large 32x32 exists", Path(_dep_res["deployed_large"]).exists())
+
+    _new_rsc_text = _test_rsc.read_text(encoding="utf-8")
+    check(".CATRsc updated with Icon.Normal", 'DeployTestHdr.DeployTest.Icon.Normal = "I_CADEDeployTest";' in _new_rsc_text)
+    check(".CATRsc updated with Icon.Large", 'DeployTestHdr.DeployTest.Icon.Large = "I_CADEDeployTest_32";' in _new_rsc_text)
+finally:
+    shutil.rmtree(_tmp_studio_dir, ignore_errors=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PART N: Mainline Workflow Activation & CLI Integration
+# ═══════════════════════════════════════════════════════════════
+print("\n" + "=" * 60)
+print("  N. Mainline Workflow Activation & CLI Integration")
+print("=" * 60)
+
+from icon_studio import generate_icon, deploy_icon
+from cade import cmd_icon
+from requirements import RequirementsClarifier
+from kernel import Kernel, KernelMode
+
+_tmp_n_dir = Path(tempfile.mkdtemp())
+try:
+    # 1. Functional generate_icon
+    _n_gen = generate_icon("MyCustomCmd", metaphor="part_to_asm", out_dir=_tmp_n_dir)
+    check("generate_icon() returns PASS", _n_gen["status"] == "PASS")
+    check("generate_icon() outputs 22 BMP", Path(_n_gen["files"]["bmp_normal_22"]).exists())
+    check("generate_icon() outputs 32 BMP", Path(_n_gen["files"]["bmp_large_32"]).exists())
+
+    # 2. Functional deploy_icon
+    _n_fw = _tmp_n_dir / "MyFramework.edu"
+    _n_rsc_dir = _n_fw / "CNext" / "resources" / "msgcatalog"
+    _n_rsc_dir.mkdir(parents=True)
+    _n_rsc_file = _n_rsc_dir / "MyCmdHdr.CATRsc"
+    _n_rsc_file.write_text('MyCmdHdr.MyCmd.Icon.Normal = "I_Old";\n', encoding="utf-8")
+
+    _n_dep = deploy_icon("MyCmd", framework_dir=_n_fw, asset_dir=_tmp_n_dir)
+    check("deploy_icon() returns SUCCESS", _n_dep["status"] == "SUCCESS")
+    check("deploy_icon() normal deployed", Path(_n_dep["deployed_normal"]).exists())
+    check("deploy_icon() large deployed", Path(_n_dep["deployed_large"]).exists())
+
+    # 3. CLI cmd_icon invocation
+    _cli_rc = cmd_icon(["DateStamp", "--out-dir", str(_tmp_n_dir)])
+    check("cmd_icon generate exit code 0", _cli_rc == 0)
+    _cli_dep_rc = cmd_icon(["DateStamp", "--deploy", str(_n_fw), "--out-dir", str(_tmp_n_dir)])
+    check("cmd_icon deploy exit code 0", _cli_dep_rc == 0)
+
+    # 4. RequirementsClarifier intent routing
+    _clar = RequirementsClarifier().analyze("给 CAADateStamp 生成一个高清图标")
+    check("RequirementsClarifier domain == icon", _clar.domain == "icon")
+    _tr = getattr(_clar, "typed_requirement", None)
+    check("RequirementsClarifier recommended_intent_type == GenerateIcon",
+          _tr is not None and _tr.recommended_intent_type == "GenerateIcon")
+
+    # 5. Kernel execution with preview
+    _kernel = Kernel(workspace_root=str(_tmp_n_dir))
+    _k_preview = _kernel.execute(KernelMode.DEVELOP, "为 CAADateStamp 制作图标", preview=True)
+    check("Kernel preview status == pending_execution", _k_preview.get("status") == "pending_execution")
+    _plan = _k_preview.get("data", {}).get("execute_plan", {})
+    check("Kernel preview action == generate_icon", _plan.get("action") == "generate_icon")
+
+    # 6. Kernel execution live
+    _k_live = _kernel.execute(KernelMode.DEVELOP, "为 CAADateStamp 制作图标")
+    check("Kernel live execution status is successful", str(_k_live.get("status", "")).lower() in ("ok", "pass", "success"), str(_k_live.get("status")))
+
+finally:
+    shutil.rmtree(_tmp_n_dir, ignore_errors=True)
 
 
 # ═══════════════════════════════════════════════════════════════

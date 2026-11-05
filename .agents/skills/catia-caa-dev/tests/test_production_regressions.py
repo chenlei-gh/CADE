@@ -16,6 +16,9 @@ from unittest.mock import patch
 SKILL_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL_ROOT / "skills"))
 
+from utils import ensure_utf8_stdio
+ensure_utf8_stdio()
+
 from actions import ActionContext, create_framework, add_command_to_workbench
 from analyzer import WorkspaceAnalyzer
 import backup as backup_module

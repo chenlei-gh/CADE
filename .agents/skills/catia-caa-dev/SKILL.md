@@ -102,6 +102,14 @@ triggers:
   - 依赖分析
   - 创建IdentityCard
   - 启动CATIA
+  - 打开CATIA
+  - 开CATIA
+  - 启动软件
+  - 打开软件
+  - 查看CATIA
+  - 查看一下
+  - 查CATIA状态
+  - 检查CATIA
   - 停止CATIA
   - 运行宏
   - generate code
@@ -299,6 +307,7 @@ AI 只知道 3 个 Mode:
 
 | 规则 | 说明 |
 |------|------|
+| 🚀 **启停与检查 CATIA：零探索、严禁裸跑 tasklist** | **查状态**：调 `analyze(request="查看CATIA运行状态")` 或 `from run import check_catia_running` 或 CLI `cade run --status`。**严禁**在 shell/Git Bash 裸跑 `tasklist /FI ...`（Git Bash 会把 `/` 开头的参数强转为路径如 `C:/Program Files/Git/FI` 引发无效参数崩溃）。**启动查看**：用户说"打开CATIA"、"启动CATIA"、"查看CATIA"时，直接调 `develop()` 或 `analyze()`，Kernel 保证零 preview 阻断秒级启动并挂载工作区；**严禁**在源码中翻找启动函数，**严禁**裸跑 `CNEXT.exe`（不挂 Runtime View 无法加载自定义 CAA DLL）。 |
 | 🎯 **MCP 只有 3 个工具** | **MCP 面**只暴露三个 kernel 模式：`develop`（创建/生成）、`analyze`（查询/诊断）、`repair`（修复/重构）。CLI 面另有 `build.py`/`cade.py` 等入口，见 [`capabilities.yaml`](capabilities.yaml) 的 bindings。 |
 | 🔌 **有 MCP 用 MCP，没有就走 CLI** | 配置了 CADE MCP 时所有功能通过 MCP 工具调用（响应已自动 Token 优化）。**当前环境没有 MCP 时**，按 [`capabilities.yaml`](capabilities.yaml) 的 `cli`/`python` binding 用**绝对路径**直跑——例如编译 = `python <SKILL_ROOT>/skills/build.py <workspace>`，修复 = `python <SKILL_ROOT>/skills/cade.py fix <workspace>`。**例外：用户显式指定入口时以用户为准**（见下方「🔀 入口仲裁」）。详见下方「Agent Shell 调用契约」。 |
 | 📊 **信 status 不信 output** | API 返回 `{"status": "ok", "error_count": 0}` 就够了。CLI 默认已剔除原始 mkmk 日志（只留 `output_tail` 尾部片段），完整日志在 `output_log` 指向的 build.log；需要全文用 `build.py --full-output`。 |
@@ -309,7 +318,7 @@ AI 只知道 3 个 Mode:
 | 🔧 **修复用 repair()** | 修复诊断问题、重构（重命名/移动）、回滚用 `repair()`。Kernel 内部运行 diagnose → fix → verify 最多重试 3 次。 |
 | ⚡ **两层路由，都不靠猜** | **Tier 1 意图**（3 Mode）："创建/生成/做一个" → `develop`；"检查/分析/诊断" → `analyze`；"修复/改名/回滚" → `repair`——动词分类。**Tier 2 能力**（以 `capabilities.yaml` 登记数为准）：查 [`capabilities.yaml`](capabilities.yaml) 的触发词**定能力**；**入口按「🔀 入口仲裁」选择**（MCP 优先，除非用户显式指定）——不自由发挥。 |
 | 🚫 **新工具禁止复制旧工具骨架** | 创建新命令/对话框/工作台时，必须调 `develop()` 走模板生成器，**不要**把工作区里现有工具的 .cpp/.h/.CATNls/.CATRsc 复制一份再改名。旧工具可能还带着已修复的历史 bug（如硬编码 `SetTitle`、错误的 `_Chinese.CATNls` 约定），复制 = 把 bug 克隆进新工具，还会错过模板/图标/双语 NLS 的持续更新。已有工具**只可参考业务逻辑**（API 组合、算法、项目命名习惯）；文件骨架、资源文件、注册代码永远以生成器输出为准。 |
-| 🎨 **图标是 develop() 的自动产物，不要手动补** | `develop()` 创建命令时图标已连同骨架一起生成（verb-object 解析自动匹配 CATIA 官方图标 + 角标，如 `CreateHoleCmd` → I_Hole+plus），无需再调 `icon_provider.py`。只有**换图标风格**时才单独调：`from icon_provider import get_icon; get_icon("CmdName")`（自动解析，不要先列图案库人工挑）。首次编译时图标会随 Runtime View 同步自动生效。 |
+| 🎨 **图标自动生成与 Universal Icon Studio** | `develop()` 创建命令时自动生成 22x22 Normal + 32x32 Large 双位图并注入 `.CATRsc`。对已有工具更换/高清化图标或任意图片重制，调 `from icon_studio import generate_icon, deploy_icon` 或 CLI `cade icon <name> --deploy <fw>`（512 Master 超采样，8-bit 调色板 Palette[0]=#C0C0C0 透明契约）。 |
 | 📖 **Framework → CAADoc（不是直接搜）** | knowledge/ 没有时，先查 `knowledge/frameworks/` 定位属哪个框架，再走 `python tools/build_caadoc_index.py --query <Name>`（签名已打到 stdout）。不要跳过 Framework 直接全文搜 CAADoc，也不要 `read_file` 打开 `<CATIA_INSTALL>/CAADoc/` 页面。 |
 | 📝 **CAADoc 洞察沉淀** | 用 CAADoc 学到**踩坑经验/跨 API 组合/非文档化的行为**时，创建 knowledge/ 文件沉淀。纯 API 签名查询不需要沉淀——下次用 Framework 索引秒查。 |
 | 📍 **查头文件位置用 header_map，禁止猜路径** | 要位置：`python skills/header_map.py <Name> [Name2 ...]`（毫秒级返回 框架/模块/绝对路径）。要看声明：`python skills/header_map.py --show <Name> [--method <Method>]`，只读打印有界窗口。编辑器 `read_file` 读不了 CATIA 安装目录，**禁止**再 `read_file` 返回的 `path=`，也**禁止**自写 Python 去打印该路径。**禁止**凭类名前缀猜 `<CATIA_INSTALL>/<Framework>/PublicInterfaces/`——类名前缀和框架名不对应（`CATDlgEditor.h` 在 Dialog 不在 DialogEngine，`CATPathElement.h` 在 VisualizationBase）。未命中时 did-you-mean 就是正确头文件名（如 `CATListValCATBaseUnknown` → `CATLISTV_CATBaseUnknown`）。 |
@@ -1209,7 +1218,7 @@ result = start_catia_runtime(workspace_path="D:/workspace")
 # 运行宏（必须带 workspace，否则是裸机）
 result = run_catia_macro("D:/scripts/my_macro.CATScript", workspace_path="D:/workspace")
 
-# 检查是否运行
+# 检查是否运行（严禁在终端用 tasklist /FI，Git Bash 会破坏 / 开头的参数；统一用 Python API 或 cade run --status）
 result = check_catia_running()
 
 # 停止 CATIA
@@ -1397,6 +1406,7 @@ python tests/test_master.py --quick
 │   ├── requirements.py               # Requirements Clarifier + UI 4-axis clarifier (v3.0)
 │   ├── verifier.py                   # Code Verifier — static + mkmk (v3.0)
 │   ├── icon_provider.py              # Official-Only icons (CATIA BMP runtime ref), semantic resolver, 22px CATIA + HD PNG (v4.0)
+│   ├── icon_studio.py                # Universal Icon Studio: 512 Master RGBA, 22 Normal + 32 Large 8-bit BMP (#C0C0C0 Palette[0]), one-click deploy
 │   ├── maintenance_context.py        # 维护任务轻量上下文与构建证据持久化（P3-A）
 │   ├── provenance_guard.py           # 变更来源审计（Provenance Guard；未登记变更入账阻断）
 │   ├── repair.py                     # Repair Loop (v3.0)
