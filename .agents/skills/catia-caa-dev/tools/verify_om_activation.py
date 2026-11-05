@@ -51,20 +51,6 @@ def _to_short_path(path_str: str) -> str:
     return str(path_str)
 
 
-class _AuthoritativeEvidenceSnapshot:
-    """Internal container for evidence produced exclusively by authoritative functions."""
-
-    def __init__(
-        self,
-        token: object,
-        l2_identity: Optional[Tuple[str, Optional[int], Dict[str, Any]]],
-        l3_result: Optional[Tuple[str, Dict[str, Any]]],
-    ):
-        self._token = token
-        self.l2_identity = l2_identity
-        self.l3_result = l3_result
-
-
 class OMActivationDriver:
     """
     Unified Verification Driver for Object Modeler DataExtension activation.
@@ -95,8 +81,6 @@ class OMActivationDriver:
         self.target_interface = target_interface
         self.target_module = target_module
         self.target_framework = target_framework
-        self._auth_token = object()
-        self._active_session_snapshot: Optional[_AuthoritativeEvidenceSnapshot] = None
 
     def _detect_b28_root(self) -> str:
         caa_env = CAAEnvironment()
@@ -337,16 +321,46 @@ class OMActivationDriver:
         session_start_time: Optional[float] = None,
         launcher_pid: Optional[int] = None,
         t_start: Optional[float] = None,
-        baseline_pids: Optional[set] = None,
+        baseline_pids: Optional[Set[int]] = None,
     ) -> Dict[str, Any]:
         """
-        Evaluate L0 through L5 evidence status according to formal CADE contracts.
-        L2 & L3 reuse unified run.py infrastructure (identify_target_cnext, verify_module_loaded).
-        No bypass arguments (cnext_identity, l3_result) are accepted in this public contract.
-        L4 strictly refuses unverified external inputs and remains UNKNOWN until
-        authentic in-session QueryInterface caller proof is established.
+        Public evidence evaluation entrypoint.
+        Strictly rejects external bypass parameters or instance-level forged snapshots.
         """
-        # L0: Physical Runtime View (sole authority: runtime_view.check_runtime_view_l0)
+        return self._evaluate_layered_evidence_internal(
+            runtime_ws=runtime_ws,
+            cnext_pid=cnext_pid,
+            probe_log_file=probe_log_file,
+            expected_nonce=expected_nonce,
+            expected_cnext_pid=expected_cnext_pid,
+            session_start_time=session_start_time,
+            launcher_pid=launcher_pid,
+            t_start=t_start,
+            baseline_pids=baseline_pids,
+            _internal_session_evidence=None,
+        )
+
+    def _evaluate_layered_evidence_internal(
+        self,
+        runtime_ws: pathlib.Path,
+        cnext_pid: Optional[int] = None,
+        probe_log_file: Optional[pathlib.Path] = None,
+        expected_nonce: Optional[str] = None,
+        expected_cnext_pid: Optional[int] = None,
+        session_start_time: Optional[float] = None,
+        launcher_pid: Optional[int] = None,
+        t_start: Optional[float] = None,
+        baseline_pids: Optional[Set[int]] = None,
+        _internal_session_evidence: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Internal Layered Evidence Matrix Evaluator (L0 ~ L5).
+        L0/L1 are evaluated by runtime_view.check_runtime_view_l0/l1.
+        L2/L3 are produced exclusively by run.identify_target_cnext and run.verify_module_loaded.
+        L4 evaluates 4-factor probe contract (ACTION, NONCE, PID, COMPONENT) + freshness.
+        L5 remains NOT_RUN pending geometric visual tests.
+        """
+        # L0: Runtime View Directory Structure
         rt_l0 = check_runtime_view_l0(runtime_ws, architecture=self.architecture)
         l0_status = rt_l0.get("status", "FAIL")
         rt_bin = runtime_ws / self.architecture / "code" / "bin"
@@ -365,7 +379,7 @@ class OMActivationDriver:
             }
         }
 
-        # L1: Static Assets (sole authority: runtime_view.check_runtime_view_l1)
+        # L1: Static Assets (sole authority: runtime_view.check_runtime_view_l1 with target DICO & registration binding)
         dll_name = f"{self.target_module}.dll"
         target_dll = rt_bin / dll_name
         dico_file = rt_dico_dir / f"{self.target_framework}.dico"
@@ -373,6 +387,9 @@ class OMActivationDriver:
             runtime_ws,
             architecture=self.architecture,
             target_module=self.target_module,
+            target_framework=self.target_framework,
+            target_component=self.target_component,
+            target_interface=self.target_interface,
         )
         l1_status = rt_l1.get("status", "FAIL")
         rt_l1_ev = rt_l1.get("evidence", {})
@@ -384,8 +401,9 @@ class OMActivationDriver:
                 "runtime_view_l1_status": l1_status,
                 "dll_path": str(target_dll),
                 "dll_pe_valid": rt_l1_ev.get("target_dll_valid_pe", False),
-                "dico_path": str(dico_file),
+                "dico_path": rt_l1_ev.get("target_dico_path", str(dico_file)),
                 "dico_syntax_valid": rt_l1_ev.get("target_dico_bound", False),
+                "target_registration_found": rt_l1_ev.get("target_registration_found", False),
                 "dico_entries_count": rt_l1_ev.get("dico_count", 0),
                 "source": "runtime_view.check_runtime_view_l1",
                 "details": rt_l1_ev,
@@ -397,14 +415,8 @@ class OMActivationDriver:
         l2_evidence = {}
         effective_pid = None
 
-        valid_snapshot = (
-            self._active_session_snapshot is not None
-            and isinstance(self._active_session_snapshot, _AuthoritativeEvidenceSnapshot)
-            and getattr(self._active_session_snapshot, "_token", None) is self._auth_token
-        )
-
-        if valid_snapshot and self._active_session_snapshot.l2_identity is not None:
-            l2_status, l2_pid, l2_ev = self._active_session_snapshot.l2_identity
+        if _internal_session_evidence and _internal_session_evidence.get("identity") is not None:
+            l2_status, l2_pid, l2_ev = _internal_session_evidence["identity"]
             effective_pid = l2_pid
             l2_evidence = dict(l2_ev)
             l2_evidence["cnext_pid"] = l2_pid
@@ -449,8 +461,8 @@ class OMActivationDriver:
         l3_status = "NOT_RUN"
         l3_evidence = {}
 
-        if valid_snapshot and self._active_session_snapshot.l3_result is not None:
-            l3_status, l3_ev = self._active_session_snapshot.l3_result
+        if _internal_session_evidence and _internal_session_evidence.get("l3_result") is not None:
+            l3_status, l3_ev = _internal_session_evidence["l3_result"]
             l3_evidence = dict(l3_ev)
         elif effective_pid is not None and effective_pid > 0 and l2_status == "PASS":
             l3_status, l3_ev = verify_module_loaded(effective_pid, target_dll)
@@ -857,27 +869,22 @@ CATRep * {extension_name}::BuildRep()
             except Exception:
                 pass
 
-        # Phase D: Evaluate Layered Evidence Matrix (L0 ~ L5)
-        if captured_identity is not None:
-            self._active_session_snapshot = _AuthoritativeEvidenceSnapshot(
-                token=self._auth_token,
-                l2_identity=captured_identity,
-                l3_result=captured_l3,
-            )
-        try:
-            evidence = self.evaluate_layered_evidence(
-                runtime_ws=runtime_ws,
-                cnext_pid=captured_pid,
-                probe_log_file=probe_log,
-                expected_nonce=expected_nonce,
-                expected_cnext_pid=captured_pid,
-                session_start_time=session_start_time,
-                launcher_pid=None,
-                t_start=session_start_time,
-                baseline_pids=initial_pids,
-            )
-        finally:
-            self._active_session_snapshot = None
+        # Phase D: Evaluate Layered Evidence Matrix (L0 ~ L5) via internal protected channel
+        evidence = self._evaluate_layered_evidence_internal(
+            runtime_ws=runtime_ws,
+            cnext_pid=captured_pid,
+            probe_log_file=probe_log,
+            expected_nonce=expected_nonce,
+            expected_cnext_pid=captured_pid,
+            session_start_time=session_start_time,
+            launcher_pid=None,
+            t_start=session_start_time,
+            baseline_pids=initial_pids,
+            _internal_session_evidence={
+                "identity": captured_identity,
+                "l3_result": captured_l3,
+            } if captured_identity is not None else None,
+        )
 
         macro_ok = isinstance(macro_exec_result, dict) and macro_exec_result.get("status") in ("success", "ok")
         l4_status = evidence["L4"]["status"]

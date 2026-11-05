@@ -162,6 +162,31 @@ with tempfile.TemporaryDirectory() as td_unreadable:
 # ── 3. Line D: Layered Evidence Evaluation Matrix (L0 ~ L5) ─────────
 print("\n[3] Layered Evidence Evaluation Matrix (L0 ~ L5)")
 
+import struct
+
+def make_test_pe_image():
+    file_align = 512
+    sec_align = 0x1000
+    size_opt_hdr = 240
+    dos_hdr = b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x40)
+    pe_sig = b"PE\x00\x00"
+    coff_hdr = struct.pack(
+        "<HHIIIHH", 0x8664, 1, 0, 0, 0, size_opt_hdr, 0x2002
+    )
+    opt = bytearray(size_opt_hdr)
+    struct.pack_into("<H", opt, 0, 0x020B)
+    struct.pack_into("<I", opt, 32, sec_align)
+    struct.pack_into("<I", opt, 36, file_align)
+    struct.pack_into("<I", opt, 56, 0x2000)
+    struct.pack_into("<I", opt, 60, file_align)
+    sec_hdr = b".text\x00\x00\x00" + struct.pack(
+        "<IIII", 0x100, sec_align, file_align, file_align
+    ) + b"\x00" * 16
+    blob = dos_hdr + pe_sig + coff_hdr + bytes(opt) + sec_hdr
+    if len(blob) < file_align * 2:
+        blob += b"\x00" * (file_align * 2 - len(blob))
+    return blob
+
 with tempfile.TemporaryDirectory() as td_rt:
     rt_ws = pathlib.Path(td_rt)
     bin_dir = rt_ws / "win_b64" / "code" / "bin"
@@ -179,6 +204,64 @@ with tempfile.TemporaryDirectory() as td_rt:
     ck("L5: geometric visual verification is NOT_RUN", ev_init["L5"]["status"] == "NOT_RUN")
     ck("L5: evidence notes pending geometric implementation",
        ev_init["L5"]["evidence"]["status"] == "PENDING_GEOMETRIC_IMPL")
+
+    # 3.1b L1: Target Framework DICO Contract & Registration Binding (8 Scenarios)
+    target_dll_file = bin_dir / "AcceptanceMod.dll"
+    target_dll_file.write_bytes(make_test_pe_image())
+    target_dico_file = dico_dir / "AcceptanceFw.dico"
+    other_dico_file = dico_dir / "OtherFw.dico"
+
+    # Scenario 1: Target DICO correct and registration correct -> PASS
+    target_dico_file.write_text("CAAMmrMeasureSet CATI3DGeoVisu libAcceptanceMod\n", encoding="latin-1")
+    if other_dico_file.exists():
+        other_dico_file.unlink()
+    ev_l1_sc1 = driver.evaluate_layered_evidence(rt_ws)
+    ck("L1 Sc1: Target DICO and exact registration valid is PASS", ev_l1_sc1["L1"]["status"] == "PASS")
+    ck("L1 Sc1: Target registration found flag is True", ev_l1_sc1["L1"]["evidence"]["target_registration_found"] is True)
+
+    # Scenario 2: Target DICO missing, other DICO correct -> FAIL (Other DICO cannot stand in)
+    target_dico_file.unlink()
+    other_dico_file.write_text("CAAMmrMeasureSet CATI3DGeoVisu libAcceptanceMod\n", encoding="latin-1")
+    ev_l1_sc2 = driver.evaluate_layered_evidence(rt_ws)
+    ck("L1 Sc2: Target DICO missing while other DICO correct MUST FAIL", ev_l1_sc2["L1"]["status"] == "FAIL")
+    ck("L1 Sc2: Target DICO bound is False", ev_l1_sc2["L1"]["evidence"]["dico_syntax_valid"] is False)
+
+    # Scenario 3: Target DICO syntax error, other DICO correct -> FAIL
+    target_dico_file.write_text("ILLEGAL SYNTAX WITH FOUR TOKENS HERE\n", encoding="latin-1")
+    ev_l1_sc3 = driver.evaluate_layered_evidence(rt_ws)
+    ck("L1 Sc3: Target DICO syntax error MUST FAIL", ev_l1_sc3["L1"]["status"] == "FAIL")
+
+    # Scenario 4: Target DICO valid syntax, but Component wrong -> FAIL
+    target_dico_file.write_text("WrongComponent CATI3DGeoVisu libAcceptanceMod\n", encoding="latin-1")
+    ev_l1_sc4 = driver.evaluate_layered_evidence(rt_ws)
+    ck("L1 Sc4: Target DICO with wrong component MUST FAIL", ev_l1_sc4["L1"]["status"] == "FAIL")
+    ck("L1 Sc4: Target registration found is False", ev_l1_sc4["L1"]["evidence"]["target_registration_found"] is False)
+
+    # Scenario 5: Target DICO valid syntax, but Interface wrong -> FAIL
+    target_dico_file.write_text("CAAMmrMeasureSet WrongInterface libAcceptanceMod\n", encoding="latin-1")
+    ev_l1_sc5 = driver.evaluate_layered_evidence(rt_ws)
+    ck("L1 Sc5: Target DICO with wrong interface MUST FAIL", ev_l1_sc5["L1"]["status"] == "FAIL")
+    ck("L1 Sc5: Target registration found is False", ev_l1_sc5["L1"]["evidence"]["target_registration_found"] is False)
+
+    # Scenario 6: Target DICO valid syntax, but Library wrong -> FAIL
+    target_dico_file.write_text("CAAMmrMeasureSet CATI3DGeoVisu libWrongModule\n", encoding="latin-1")
+    ev_l1_sc6 = driver.evaluate_layered_evidence(rt_ws)
+    ck("L1 Sc6: Target DICO with wrong library MUST FAIL", ev_l1_sc6["L1"]["status"] == "FAIL")
+    ck("L1 Sc6: Target registration found is False", ev_l1_sc6["L1"]["evidence"]["target_registration_found"] is False)
+
+    # Scenario 7: Target DICO correct, other DICO has syntax errors -> PASS (judged by target DICO itself)
+    target_dico_file.write_text("CAAMmrMeasureSet CATI3DGeoVisu libAcceptanceMod\n", encoding="latin-1")
+    other_dico_file.write_text("BROKEN SYNTAX LINE IN UNRELATED DICO\n", encoding="latin-1")
+    ev_l1_sc7 = driver.evaluate_layered_evidence(rt_ws)
+    ck("L1 Sc7: Target DICO valid while other DICO broken is PASS", ev_l1_sc7["L1"]["status"] == "PASS")
+
+    # Scenario 8: Returned DICO evidence path must match actual target file
+    ck("L1 Sc8: Returned DICO evidence path matches target framework DICO",
+       pathlib.Path(ev_l1_sc7["L1"]["evidence"]["dico_path"]).resolve() == target_dico_file.resolve())
+
+    # Clean up other DICO
+    if other_dico_file.exists():
+        other_dico_file.unlink()
 
     # 3.2 L2: Target Process Identity (Strict Unified Reuse)
     ev_l2_raw = driver.evaluate_layered_evidence(rt_ws, cnext_pid=12345)
@@ -229,17 +312,37 @@ with tempfile.TemporaryDirectory() as td_rt:
         l3_res_rejected = True
     ck("L3 Defensive: evaluate_layered_evidence rejects l3_result kwarg", l3_res_rejected)
 
-    # Defensive Anti-Bypass Testing: Forged internal session snapshot is strictly rejected
+    # Defensive Anti-Bypass Testing: No instance-level snapshot attribute mechanism
+    ck("Defensive: driver does not expose _auth_token instance attribute",
+       not hasattr(driver, "_auth_token"))
+    ck("Defensive: driver does not expose _active_session_snapshot instance attribute",
+       not hasattr(driver, "_active_session_snapshot"))
+
+    # Defensive Anti-Bypass Testing: Setting forged instance attributes does not affect evaluation
     class ForgedSessionSnapshot:
-        _token = object()  # Token does not match driver._auth_token
         l2_identity = ("PASS", 77777, {"method": "forged"})
         l3_result = ("PASS", {"matched_path": "forged", "exact_match_pass": True})
 
     driver._active_session_snapshot = ForgedSessionSnapshot()
+    driver._auth_token = object()
     ev_forged = driver.evaluate_layered_evidence(rt_ws)
-    driver._active_session_snapshot = None
-    ck("Defensive: Forged internal snapshot rejected, L2 is NOT_RUN", ev_forged["L2"]["status"] == "NOT_RUN")
-    ck("Defensive: Forged internal snapshot rejected, L3 is NOT_RUN", ev_forged["L3"]["status"] == "NOT_RUN")
+    del driver._active_session_snapshot
+    del driver._auth_token
+    ck("Defensive: Setting external instance snapshot does NOT bypass L2 (still NOT_RUN)",
+       ev_forged["L2"]["status"] == "NOT_RUN")
+    ck("Defensive: Setting external instance snapshot does NOT bypass L3 (still NOT_RUN)",
+       ev_forged["L3"]["status"] == "NOT_RUN")
+
+    # Defensive Anti-Bypass Testing: evaluate_layered_evidence rejects _internal_session_evidence kwarg
+    internal_kwarg_rejected = False
+    try:
+        driver.evaluate_layered_evidence(
+            rt_ws,
+            _internal_session_evidence={"identity": ("PASS", 99999, {}), "l3_result": ("PASS", {})}
+        )
+    except TypeError:
+        internal_kwarg_rejected = True
+    ck("Defensive: evaluate_layered_evidence rejects _internal_session_evidence kwarg", internal_kwarg_rejected)
 
     # 3.4 L4: Object Modeler Resolution & Extension Activation (4-Factor Probe Contract)
     probe_log = rt_ws / "probe.log"
@@ -406,31 +509,6 @@ with tempfile.TemporaryDirectory() as td_rt:
 
 # ── 4. Live Activation Protocol & Execution Driver (Phase A ~ D) ────
 print("\n[4] Live Activation Protocol & Execution Driver (Phase A ~ D)")
-
-import struct
-
-def make_test_pe_image():
-    file_align = 512
-    sec_align = 0x1000
-    size_opt_hdr = 240
-    dos_hdr = b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x40)
-    pe_sig = b"PE\x00\x00"
-    coff_hdr = struct.pack(
-        "<HHIIIHH", 0x8664, 1, 0, 0, 0, size_opt_hdr, 0x2002
-    )
-    opt = bytearray(size_opt_hdr)
-    struct.pack_into("<H", opt, 0, 0x020B)
-    struct.pack_into("<I", opt, 32, sec_align)
-    struct.pack_into("<I", opt, 36, file_align)
-    struct.pack_into("<I", opt, 56, 0x2000)
-    struct.pack_into("<I", opt, 60, file_align)
-    sec_hdr = b".text\x00\x00\x00" + struct.pack(
-        "<IIII", 0x100, sec_align, file_align, file_align
-    ) + b"\x00" * 16
-    blob = dos_hdr + pe_sig + coff_hdr + bytes(opt) + sec_hdr
-    if len(blob) < file_align * 2:
-        blob += b"\x00" * (file_align * 2 - len(blob))
-    return blob
 
 # 4.1 Trigger Macro Generator Test
 with tempfile.TemporaryDirectory() as td_macro:

@@ -251,6 +251,36 @@ with tempfile.TemporaryDirectory(prefix="cade_l1_") as tmp_dir:
     res_mismatch = check_runtime_view_l1(ws, architecture="win_b64", target_module="NonExistentModule.m")
     ck("L1 FAIL when target module DLL missing", res_mismatch["status"] == "FAIL", f"got {res_mismatch['status']}")
 
+    # Target Framework DICO contract & Component/Interface registration binding
+    fw_dico = dico_dir / "MyFramework.dico"
+    fw_dico.write_bytes(b"TargetComp TargetIface libMyModule\n")
+    res_fw_ok = check_runtime_view_l1(
+        ws,
+        architecture="win_b64",
+        target_module="MyModule.m",
+        target_framework="MyFramework",
+        target_component="TargetComp",
+        target_interface="TargetIface",
+    )
+    ck("L1 PASS when target_framework DICO and exact registration match", res_fw_ok["status"] == "PASS")
+    ck("L1 reports target_dico_path matching MyFramework.dico",
+       Path(res_fw_ok["evidence"]["target_dico_path"]).name == "MyFramework.dico")
+
+    # Target Framework DICO missing while other DICO exists -> FAIL
+    res_fw_missing = check_runtime_view_l1(
+        ws,
+        architecture="win_b64",
+        target_module="MyModule.m",
+        target_framework="NonExistentFw",
+        target_component="TargetComp",
+        target_interface="TargetIface",
+    )
+    ck("L1 FAIL when specified target_framework DICO does not exist", res_fw_missing["status"] == "FAIL")
+
+    # Clean up fw_dico
+    if fw_dico.exists():
+        fw_dico.unlink()
+
 
 # ── 3. L2 Target Process Identity Verification ─────────────────
 print("\n[3] L2: Target Process Identity")

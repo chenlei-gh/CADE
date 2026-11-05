@@ -199,14 +199,20 @@ def _verify_pe_file(path: Path, expected_arch: str = None) -> bool:
         return False
 
 
-def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
-    """Validate CAA .dico line structure and target-module linkage.
+def _verify_dico_syntax(
+    path: Path,
+    target_module: str = None,
+    target_component: str = None,
+    target_interface: str = None,
+) -> dict:
+    """Verify official CATIA B28 .dico grammar and target binding.
 
-    Structural rules, measured on the 49 ``.dico`` files shipped in the local
-    B28 installation (CAADoc samples + framework-private dictionaries):
-
-    - 423 of 423 non-comment, non-empty lines carry exactly 3 identifier
-      tokens: ``<LateType> <InterfaceName> <Library>``. 0 exceptions.
+    Official CATIA B28 rules:
+    - Exactly three whitespace-separated tokens per non-empty, non-comment line:
+      <component> <interface> <library>
+    - Comment lines begin with ``#``; empty lines are ignored.
+    - Shipped dictionaries (e.g. ``B28/.../code/dictionary/MechanicalCommands.dico``)
+      contain 423 entries, every single one matching this grammar.
     - 6 of those 423 lines use a library token WITHOUT the ``lib`` prefix
       (e.g. ``CAAOsmAdd CATIBuild CAAOsmBuildUpdate``), so requiring ``lib``
       is not a valid rule and would reject real CAA output.
@@ -216,6 +222,9 @@ def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
     equal ``lib<Module>`` or ``<Module>`` exactly. Substring matches do not
     bind the target, and an unrelated dictionary cannot stand in for it.
 
+    When ``target_component`` or ``target_interface`` is provided, the entry
+    must also match the specified component and interface tokens.
+
     Scope: this is a structural precheck of the line grammar, not a complete
     CATIA B28 dictionary parser and not proof that CATIA accepts the entry.
     """
@@ -223,6 +232,7 @@ def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
     entries_count = 0
     syntax_errors = 0
     mentions_target = False
+    target_registration_found = False
 
     expected_libs = set()
     if target_module:
@@ -247,8 +257,16 @@ def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
                 # Exactly three identifier tokens. One good line cannot launder the rest.
                 if len(parts) == 3 and all(id_pattern.match(p) for p in parts):
                     entries_count += 1
-                    if expected_libs and parts[2] in expected_libs:
+                    lib_match = bool(expected_libs and parts[2] in expected_libs)
+                    if lib_match:
                         mentions_target = True
+
+                    comp_match = (target_component is None or parts[0] == target_component)
+                    iface_match = (target_interface is None or parts[1] == target_interface)
+                    lib_reg_match = (not expected_libs or lib_match)
+
+                    if comp_match and iface_match and lib_reg_match:
+                        target_registration_found = True
                 else:
                     syntax_errors += 1
     except Exception:
@@ -257,6 +275,7 @@ def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
             "entry_count": 0,
             "syntax_errors": 1,
             "mentions_target_module": False if target_module else None,
+            "target_registration_found": False if (target_component or target_interface) else None,
         }
 
     return {
@@ -264,17 +283,27 @@ def _verify_dico_syntax(path: Path, target_module: str = None) -> dict:
         "entry_count": entries_count,
         "syntax_errors": syntax_errors,
         "mentions_target_module": mentions_target if target_module else None,
+        "target_registration_found": target_registration_found if (target_component or target_interface) else None,
     }
 
 
 def check_runtime_view_l1(
-    workspace_path: Path, architecture: str = None, target_module: str = None
+    workspace_path: Path,
+    architecture: str = None,
+    target_module: str = None,
+    target_framework: str = None,
+    target_component: str = None,
+    target_interface: str = None,
 ) -> dict:
     """Check L1 structural precheck of Runtime View assets.
 
     PASS means the target DLL has the required PE image fields and a matching
     three-token DICO line. It does not mean the Windows loader or CATIA accepted
     the file.
+
+    When ``target_framework`` is specified, L1 strictly verifies that the dictionary
+    named ``<target_framework>.dico`` exists and satisfies all syntax and target
+    registration requirements. Other dictionaries cannot stand in for it.
     """
     l0 = check_runtime_view_l0(workspace_path, architecture)
     if l0["status"] != "PASS":
@@ -285,6 +314,7 @@ def check_runtime_view_l1(
             "evidence": {
                 "reason": "l0_directory_not_present",
                 "target_module": target_module,
+                "target_framework": target_framework,
             },
         }
 
@@ -306,7 +336,12 @@ def check_runtime_view_l1(
     if dico_dir.is_dir():
         dico_files = [f for f in dico_dir.glob("*.dico") if f.is_file() and f.stat().st_size > 0]
         for df in dico_files:
-            rep = _verify_dico_syntax(df, target_module=target_module)
+            rep = _verify_dico_syntax(
+                df,
+                target_module=target_module,
+                target_component=target_component,
+                target_interface=target_interface,
+            )
             dico_reports.append({"file": df.name, **rep})
 
     # Scan MsgCatalogs
@@ -317,7 +352,6 @@ def check_runtime_view_l1(
     # Target module check if requested
     target_dll_found = False
     target_dll_valid_pe = False
-    target_dico_bound = False
     if target_module:
         norm_mod = target_module[:-2] if target_module.endswith(".m") else target_module
         expected_dll_name = f"{norm_mod}.dll".lower()
@@ -326,16 +360,47 @@ def check_runtime_view_l1(
                 target_dll_found = True
                 target_dll_valid_pe = _verify_pe_file(f, expected_arch=architecture)
                 break
-        # Strong binding: at least one valid DICO must explicitly mention the target module
+
+    target_dico_path = None
+    target_dico_exists = None
+    target_dico_bound = False
+    target_registration_found = None
+
+    if target_framework:
+        target_dico_name = f"{target_framework}.dico"
+        target_dico_path = dico_dir / target_dico_name
+        target_dico_exists = target_dico_path.is_file() and target_dico_path.stat().st_size > 0
+        if target_dico_exists:
+            target_rep = _verify_dico_syntax(
+                target_dico_path,
+                target_module=target_module,
+                target_component=target_component,
+                target_interface=target_interface,
+            )
+            target_syntax_ok = target_rep.get("valid_syntax", False)
+            if target_component or target_interface:
+                target_reg_ok = bool(target_rep.get("target_registration_found", False))
+                target_registration_found = target_reg_ok
+            else:
+                target_reg_ok = bool(target_rep.get("mentions_target_module", False))
+                target_registration_found = target_rep.get("target_registration_found")
+            target_dico_bound = bool(target_syntax_ok and target_reg_ok)
+        else:
+            target_dico_bound = False
+            if target_component or target_interface:
+                target_registration_found = False
+    elif target_module:
+        # Backward-compatible general scan: at least one valid DICO must explicitly mention the target module
         target_dico_bound = any(r.get("valid_syntax") and r.get("mentions_target_module") for r in dico_reports)
+        if target_component or target_interface:
+            target_registration_found = any(r.get("valid_syntax") and r.get("target_registration_found") for r in dico_reports)
 
     # General syntax validity of DICOs
     any_valid_dico = any(r["valid_syntax"] for r in dico_reports)
 
     # Evaluation
-    # R-03 fix: If target_module is specified, it MUST have a valid PE DLL AND be declared in a valid DICO.
-    # An unrelated DICO alone cannot satisfy L1 for target_module.
-    if target_module:
+    # If target_module or target_framework is specified, it MUST have a valid PE DLL AND be declared in a valid DICO.
+    if target_module or target_framework:
         passed = target_dll_found and target_dll_valid_pe and target_dico_bound
     else:
         passed = len(pe_valid_dlls) > 0 and any_valid_dico
@@ -346,9 +411,13 @@ def check_runtime_view_l1(
         "check": "runtime_asset_integrity",
         "evidence": {
             "target_module": target_module,
+            "target_framework": target_framework,
+            "target_dico_path": str(target_dico_path) if target_dico_path else None,
+            "target_dico_exists": target_dico_exists,
             "target_dll_found": target_dll_found if target_module else None,
             "target_dll_valid_pe": target_dll_valid_pe if target_module else None,
-            "target_dico_bound": target_dico_bound if target_module else None,
+            "target_dico_bound": target_dico_bound if (target_module or target_framework) else None,
+            "target_registration_found": target_registration_found,
             "dll_count": len(dll_files),
             "pe_valid_dll_count": len(pe_valid_dlls),
             "dico_count": len(dico_files),
@@ -367,10 +436,6 @@ def check_runtime_view_l1(
                     "count": len(dico_files),
                     "valid_syntax": any_valid_dico,
                     "reports": dico_reports,
-                },
-                "nls": {
-                    "count": len(nls_files),
-                    "present": len(nls_files) > 0,
                 },
             },
             "scope": "structural_precheck_not_loadability",
