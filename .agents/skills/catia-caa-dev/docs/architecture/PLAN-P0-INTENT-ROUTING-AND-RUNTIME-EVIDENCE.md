@@ -509,9 +509,11 @@ fatal error LNK1120: 129 个无法解析的外部命令
    - `create_runtime_view()` 严格执行最低有效目录结构契约 `rt_dir.is_dir() and (rt_dir / "code").is_dir()`，修复历史测试 mock 缺陷；
    - 回滚恢复逻辑严格透明化，发生任何异常时在返回字典中明确报告 `rollback_failed=True` 及 `rollback_error`，杜绝静默吞噬。
 2. **切除 L2/L3 旁路注入入口，实现单一事实来源 (P0-2 & P0-3)**：
+   - 彻底从 `evaluate_layered_evidence()` 公开接口中移除 `cnext_identity` 与 `l3_result` 旁路传参；传入未知关键字直接引发 `TypeError`；
    - 彻底删除 `execute_live_activation()` 中从 `macro_exec_result` 获取 `cnext_identity`、`cnext_pid`、`l3_result` 的后门字典解析；
    - L2 判定唯一来源于 `run.identify_target_cnext()`；L3 判定唯一来源于 `run.verify_module_loaded()`；
-   - 移除 `evaluate_layered_evidence()` 手动注入 `"source": "run.verify_module_loaded"` 的伪造逻辑；单元测试全部通过 `unittest.mock.patch` 作用于权威函数边界。
+   - 内部仅允许由驱动实例私有 token 绑定的 `_AuthoritativeEvidenceSnapshot` 传递实测会话期间监控线程采集的结果，外部伪造快照自动失效并拒绝；
+   - 单元测试全部通过 `unittest.mock.patch` 作用于权威函数边界。
 3. **彻底清理废弃接口与死变量 (P0-4)**：
    - `evaluate_layered_evidence()` 彻底移除 `loaded_modules`、`query_interface_hr`、`qi_probe_certificate` 等过时参数，移除 `captured_modules` 死变量；
    - L4 严格基于 4 要素原子探针判定构造函数激活，QI 未能证实前严格保持 `UNKNOWN`。

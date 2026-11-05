@@ -51,6 +51,20 @@ def _to_short_path(path_str: str) -> str:
     return str(path_str)
 
 
+class _AuthoritativeEvidenceSnapshot:
+    """Internal container for evidence produced exclusively by authoritative functions."""
+
+    def __init__(
+        self,
+        token: object,
+        l2_identity: Optional[Tuple[str, Optional[int], Dict[str, Any]]],
+        l3_result: Optional[Tuple[str, Dict[str, Any]]],
+    ):
+        self._token = token
+        self.l2_identity = l2_identity
+        self.l3_result = l3_result
+
+
 class OMActivationDriver:
     """
     Unified Verification Driver for Object Modeler DataExtension activation.
@@ -81,6 +95,8 @@ class OMActivationDriver:
         self.target_interface = target_interface
         self.target_module = target_module
         self.target_framework = target_framework
+        self._auth_token = object()
+        self._active_session_snapshot: Optional[_AuthoritativeEvidenceSnapshot] = None
 
     def _detect_b28_root(self) -> str:
         caa_env = CAAEnvironment()
@@ -315,12 +331,10 @@ class OMActivationDriver:
         self,
         runtime_ws: pathlib.Path,
         cnext_pid: Optional[int] = None,
-        l3_result: Optional[Tuple[str, Dict[str, Any]]] = None,
         probe_log_file: Optional[pathlib.Path] = None,
         expected_nonce: Optional[str] = None,
         expected_cnext_pid: Optional[int] = None,
         session_start_time: Optional[float] = None,
-        cnext_identity: Optional[Tuple[str, Optional[int], Dict[str, Any]]] = None,
         launcher_pid: Optional[int] = None,
         t_start: Optional[float] = None,
         baseline_pids: Optional[set] = None,
@@ -328,6 +342,7 @@ class OMActivationDriver:
         """
         Evaluate L0 through L5 evidence status according to formal CADE contracts.
         L2 & L3 reuse unified run.py infrastructure (identify_target_cnext, verify_module_loaded).
+        No bypass arguments (cnext_identity, l3_result) are accepted in this public contract.
         L4 strictly refuses unverified external inputs and remains UNKNOWN until
         authentic in-session QueryInterface caller proof is established.
         """
@@ -388,10 +403,16 @@ class OMActivationDriver:
         # L2: Target Process Identity (Unified with run.py identify_target_cnext)
         l2_status = "NOT_RUN"
         l2_evidence = {}
-        effective_pid = cnext_pid
+        effective_pid = None
 
-        if cnext_identity is not None:
-            l2_status, l2_pid, l2_ev = cnext_identity
+        valid_snapshot = (
+            self._active_session_snapshot is not None
+            and isinstance(self._active_session_snapshot, _AuthoritativeEvidenceSnapshot)
+            and getattr(self._active_session_snapshot, "_token", None) is self._auth_token
+        )
+
+        if valid_snapshot and self._active_session_snapshot.l2_identity is not None:
+            l2_status, l2_pid, l2_ev = self._active_session_snapshot.l2_identity
             effective_pid = l2_pid
             l2_evidence = dict(l2_ev)
             l2_evidence["cnext_pid"] = l2_pid
@@ -436,14 +457,19 @@ class OMActivationDriver:
         l3_status = "NOT_RUN"
         l3_evidence = {}
 
-        if l3_result is not None:
-            l3_status, l3_ev = l3_result
+        if valid_snapshot and self._active_session_snapshot.l3_result is not None:
+            l3_status, l3_ev = self._active_session_snapshot.l3_result
             l3_evidence = dict(l3_ev)
-        elif effective_pid is not None and effective_pid > 0:
+        elif effective_pid is not None and effective_pid > 0 and l2_status == "PASS":
             l3_status, l3_ev = verify_module_loaded(effective_pid, target_dll)
             l3_evidence = dict(l3_ev)
         else:
-            l3_evidence = {"reason": "no_pid_or_l3_result_provided"}
+            l3_status = "NOT_RUN" if not effective_pid else "UNKNOWN"
+            l3_evidence = {
+                "reason": "no_verified_pid_for_module_verification",
+                "l2_status": l2_status,
+                "effective_pid": effective_pid,
+            }
 
         l3_res = {
             "level": "L3",
@@ -840,19 +866,26 @@ CATRep * {extension_name}::BuildRep()
                 pass
 
         # Phase D: Evaluate Layered Evidence Matrix (L0 ~ L5)
-        evidence = self.evaluate_layered_evidence(
-            runtime_ws=runtime_ws,
-            cnext_pid=captured_pid,
-            l3_result=captured_l3,
-            probe_log_file=probe_log,
-            expected_nonce=expected_nonce,
-            expected_cnext_pid=captured_pid,
-            session_start_time=session_start_time,
-            cnext_identity=captured_identity,
-            launcher_pid=None,
-            t_start=session_start_time,
-            baseline_pids=initial_pids,
-        )
+        if captured_identity is not None:
+            self._active_session_snapshot = _AuthoritativeEvidenceSnapshot(
+                token=self._auth_token,
+                l2_identity=captured_identity,
+                l3_result=captured_l3,
+            )
+        try:
+            evidence = self.evaluate_layered_evidence(
+                runtime_ws=runtime_ws,
+                cnext_pid=captured_pid,
+                probe_log_file=probe_log,
+                expected_nonce=expected_nonce,
+                expected_cnext_pid=captured_pid,
+                session_start_time=session_start_time,
+                launcher_pid=None,
+                t_start=session_start_time,
+                baseline_pids=initial_pids,
+            )
+        finally:
+            self._active_session_snapshot = None
 
         macro_ok = isinstance(macro_exec_result, dict) and macro_exec_result.get("status") in ("success", "ok")
         l4_status = evidence["L4"]["status"]

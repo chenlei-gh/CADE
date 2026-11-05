@@ -185,35 +185,61 @@ with tempfile.TemporaryDirectory() as td_rt:
     ck("L2: raw cnext_pid without session identity proof is strictly UNKNOWN",
        ev_l2_raw["L2"]["status"] == "UNKNOWN" and ev_l2_raw["L2"]["evidence"]["cnext_pid"] == 12345)
 
-    ev_l2_ident = driver.evaluate_layered_evidence(
-        rt_ws, cnext_identity=("PASS", 12345, {"method": "mock_process_tree"})
-    )
+    with patch("verify_om_activation.identify_target_cnext", return_value=("PASS", 12345, {"method": "mock_process_tree"})):
+        ev_l2_ident = driver.evaluate_layered_evidence(rt_ws, t_start=time.time())
     ck("L2: verified cnext_identity from run.identify_target_cnext is PASS",
        ev_l2_ident["L2"]["status"] == "PASS" and ev_l2_ident["L2"]["evidence"]["cnext_pid"] == 12345)
 
     # 3.3 L3: Exact Module Path Matching (Strict Invariant Unified with run.verify_module_loaded)
     fake_dll_path = str(bin_dir / "AcceptanceMod.dll")
     other_sys_dll = str(Path(tempfile.gettempdir()) / "System32" / "other.dll")
-    ev_l3_miss = driver.evaluate_layered_evidence(
-        rt_ws, l3_result=("FAIL", {"reason": "dll_not_loaded", "enumeration_complete": True, "exact_match_pass": False})
-    )
+    with patch("verify_om_activation.identify_target_cnext", return_value=("PASS", 12345, {"method": "mock_process_tree"})):
+        with patch("verify_om_activation.verify_module_loaded", return_value=("FAIL", {"reason": "dll_not_loaded", "enumeration_complete": True, "exact_match_pass": False})):
+            ev_l3_miss = driver.evaluate_layered_evidence(rt_ws, t_start=time.time())
     ck("L3: missing target DLL in loaded modules is FAIL", ev_l3_miss["L3"]["status"] == "FAIL")
 
     # Critical Reviewer Point: Same DLL name from wrong path MUST FAIL
     stray_wrong_path = str(Path(tempfile.gettempdir()) / "StrayWorkspace" / "win_b64" / "code" / "bin" / "AcceptanceMod.dll")
-    ev_l3_stray = driver.evaluate_layered_evidence(
-        rt_ws, l3_result=("FAIL", {"stray_mismatch_path": stray_wrong_path, "exact_match_pass": False, "reason": "stray_dll_loaded_from_wrong_path"})
-    )
+    with patch("verify_om_activation.identify_target_cnext", return_value=("PASS", 12345, {"method": "mock_process_tree"})):
+        with patch("verify_om_activation.verify_module_loaded", return_value=("FAIL", {"stray_mismatch_path": stray_wrong_path, "exact_match_pass": False, "reason": "stray_dll_loaded_from_wrong_path"})):
+            ev_l3_stray = driver.evaluate_layered_evidence(rt_ws, t_start=time.time())
     ck("L3: same filename from wrong path MUST FAIL (stray path violation)", ev_l3_stray["L3"]["status"] == "FAIL")
     ck("L3: stray path captured in evidence", ev_l3_stray["L3"]["evidence"]["stray_mismatch_path"] == stray_wrong_path)
     ck("L3: exact match is False on stray path", ev_l3_stray["L3"]["evidence"]["exact_match_pass"] is False)
 
     # Exact path match PASS
-    ev_l3_hit = driver.evaluate_layered_evidence(
-        rt_ws, l3_result=("PASS", {"matched_path": fake_dll_path, "exact_matched_path": fake_dll_path, "exact_match_pass": True, "enumeration_complete": True})
-    )
+    with patch("verify_om_activation.identify_target_cnext", return_value=("PASS", 12345, {"method": "mock_process_tree"})):
+        with patch("verify_om_activation.verify_module_loaded", return_value=("PASS", {"matched_path": fake_dll_path, "exact_matched_path": fake_dll_path, "exact_match_pass": True, "enumeration_complete": True})):
+            ev_l3_hit = driver.evaluate_layered_evidence(rt_ws, t_start=time.time())
     ck("L3: exact target DLL path in loaded modules is PASS", ev_l3_hit["L3"]["status"] == "PASS")
     ck("L3: exact path confirmed", ev_l3_hit["L3"]["evidence"]["exact_match_pass"] is True)
+
+    # Defensive Anti-Bypass Testing: evaluate_layered_evidence strictly rejects bypass parameters
+    cnext_id_rejected = False
+    try:
+        driver.evaluate_layered_evidence(rt_ws, cnext_identity=("PASS", 12345, {}))
+    except TypeError:
+        cnext_id_rejected = True
+    ck("L2 Defensive: evaluate_layered_evidence rejects cnext_identity kwarg", cnext_id_rejected)
+
+    l3_res_rejected = False
+    try:
+        driver.evaluate_layered_evidence(rt_ws, l3_result=("PASS", {}))
+    except TypeError:
+        l3_res_rejected = True
+    ck("L3 Defensive: evaluate_layered_evidence rejects l3_result kwarg", l3_res_rejected)
+
+    # Defensive Anti-Bypass Testing: Forged internal session snapshot is strictly rejected
+    class ForgedSessionSnapshot:
+        _token = object()  # Token does not match driver._auth_token
+        l2_identity = ("PASS", 77777, {"method": "forged"})
+        l3_result = ("PASS", {"matched_path": "forged", "exact_match_pass": True})
+
+    driver._active_session_snapshot = ForgedSessionSnapshot()
+    ev_forged = driver.evaluate_layered_evidence(rt_ws)
+    driver._active_session_snapshot = None
+    ck("Defensive: Forged internal snapshot rejected, L2 is NOT_RUN", ev_forged["L2"]["status"] == "NOT_RUN")
+    ck("Defensive: Forged internal snapshot rejected, L3 is NOT_RUN", ev_forged["L3"]["status"] == "NOT_RUN")
 
     # 3.4 L4: Object Modeler Resolution & Extension Activation (4-Factor Probe Contract)
     probe_log = rt_ws / "probe.log"
@@ -371,7 +397,8 @@ with tempfile.TemporaryDirectory() as td_rt:
 
     # Case K: L2 & L3 reuse unified run.py infrastructure
     mock_cnext_id = ("PASS", 54321, {"method": "process_tree_ancestor_match"})
-    ev_l2_unified = driver.evaluate_layered_evidence(rt_ws, cnext_identity=mock_cnext_id)
+    with patch("verify_om_activation.identify_target_cnext", return_value=mock_cnext_id):
+        ev_l2_unified = driver.evaluate_layered_evidence(rt_ws, t_start=now)
     ck("L2: Reuses identify_target_cnext result with source tracking",
        ev_l2_unified["L2"]["status"] == "PASS" and ev_l2_unified["L2"]["evidence"]["source"] == "run.identify_target_cnext")
     ck("L2: Correctly captures PID from unified identity",
