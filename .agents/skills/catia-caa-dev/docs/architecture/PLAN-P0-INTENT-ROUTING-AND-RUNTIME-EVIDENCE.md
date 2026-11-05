@@ -476,31 +476,31 @@ fatal error LNK1120: 129 个无法解析的外部命令
 - GitHub CI 状态：无记录，本轮数字均为本地实测。
 - GitHub Actions workflow 查询只覆盖 PR 触发的 runs，返回空不能证明所有 Actions 都没跑。
 
-### 5.8 第九轮收口与阶段性冻结（彻底解决三项实质性审查问题与架构冻结）
+### 5.8 第九轮收口与重复实现收敛审查
 
-本轮彻底收敛并消除所有重复实现，解决三项实质性审查问题，正式冻结 CADE 架构：
+本轮收敛删除了历史遗留的重复创建入口与进程枚举遍历，统一了基线。
 
-1. **P0-1: Runtime View 创建契约完整迁移与安全保证 (`skills/build.py`)**：
-   - 以历史正式 `build.py:create_runtime_view()` 为唯一权威实现，彻底清理 `runtime_view.py` 的重复实现（委托给 `build.py`）；
-   - **架构显式控制**：通过 `os.environ["MKMK_ARCH"] = architecture` 显式驱动底层 `_exec_build_cmd` 命令，并动态传递给 `_copy_dictionaries_to_runtime(workspace_path, arch=arch)`，消除目标路径与字典复制路径不一致隐患；
-   - **安全覆盖 (Safe Staging/Rollback)**：覆盖已有 Runtime View 时，先将其安全重命名暂存为 `.{arch}_backup_{timestamp}`，构建成功且目标目录验证有效后才清理备份；若构建失败或未生成目标目录，自动原子回滚；
-   - **目标目录真实性验证**：严格核查创建后 `rt_dir.is_dir()` 的真实存在性，并正确透传命令执行的原始状态（`error` / `timeout` 等），杜绝命令失败却误报成功的漏洞。
+### 5.9 终局架构闭环与全链路去重冻结（彻底消除旁路与重复判定）
 
-2. **P0-2: OM L2/L3 实际运行路径严格复用通用 Runtime (`tools/verify_om_activation.py`)**：
-   - **L2 进程身份严格验证**：`execute_live_activation()` 监控线程全面调用 `run.identify_target_cnext()`（统一遵循启动前 baseline PIDs 记录、父子进程树回溯、双向启动时间窗口与多实例消歧）；
-   - **杜绝裸 PID 假阳性**：`evaluate_layered_evidence()` 彻底禁止外部直接传入无凭据整型 `cnext_pid` 判定为 PASS，无 `cnext_identity` 证明的裸 PID 严格判定为 `UNKNOWN`（`direct_pid_input` 无法作为身份证明）；
-   - **L3 模块验证严格一致**：实际 Live 路径在识别目标 PID 后直接调用 `run.verify_module_loaded()`，严格遵循 PSAPI 模块枚举完整性判定，避免枚举不完整时的误判；离线模拟列表严格要求规范化物理路径完全匹配。
+针对审查中指出的四项实质性隐患，本轮完成了最终的闭环修复，实现零旁路、零重复判定与诚实语义：
 
-3. **P0-3: 校准 L4 判定语义（关闭无凭据 QI 假 PASS 与假 FAIL 漏洞）**：
-   - 彻底关闭调用方直接传入普通整数 `query_interface_hr=0` 即可断言 L4 `PASS` 的假阳性漏洞；
-   - 同时关闭外部直接传入非零整数（如 `0x80004002`）或宏失败直接硬编码 `0x80004005` 导致错误 `FAIL` 的假阴性漏洞；
-   - **双向诚实边界**：未认证的外部整数无论成功还是失败，均不能单独改变 L4 状态；宏执行失败不等于 QueryInterface 失败。缺少本次会话真实 `qi_probe_certificate` 凭据时，L4 状态**严格保持 `UNKNOWN`**（若 4 要素探针命中则标记 `constructor_probe_verified = True`, 但 QI 仍为 `UNKNOWN`）；
-   - 仅当持有真实会话绑定（PID、Nonce、目标接口一致且 `in_session=True`）的认证证书时，才依据其真实 HRESULT 裁定 PASS 或 FAIL。
+1. **P0-1 架构参数全环境贯穿与安全回滚闭环 (`skills/env.py` & `skills/build.py`)**：
+   - **MKMK_ARCH 深度透传**：`CAAEnvironment.get_architecture()`, `initialize()`, `run_command()`, `build_time_command()` 全面支持 `os.environ["MKMK_ARCH"]` 优先响应，使显式指定架构真正控制底层命令构建环境；
+   - **严格回滚与完整性防护**：`create_runtime_view()` 在 `overwrite=True` 时执行安全暂存。只有当底层命令执行成功 (`cmd_ok`) **且** 目标目录完整生成（包含 `code/` 子目录）时才清理备份；若命令失败、结构不完整或抛出异常，自动恢复原始 Runtime View；
+   - **字典拷贝逻辑唯一定义**：`_copy_dictionaries_to_runtime` 成为全仓唯一权威字典复制实现，`sync_runtime_view` 彻底删除手写的重复 `.dico` 拷贝循环并直接委托给它。
 
-4. **测试去重与零硬编码路径合规**：
-   - `test_master.py` 注入 `CADE_MASTER_RUNNER=1`，`test_full_regression.py` Section 20 自动降级为文件与语法完整性检查，彻底避免 17 个子进程重复派生；
-   - 修复 `test_om_activation_driver.py` 中的所有硬编码驱动器盘符路径（通过 `tempfile` 动态生成），全仓 184 个文件静态检测 0 硬编码路径；
-   - 全套 52 个套件（Quick 模式 51 个）全部通过，Cross-Reference 286/286 (100%)，Deep Audit 11/11 (100%)。
+2. **P0-2 OM L2/L3 消除旁路与重复执行 (`tools/verify_om_activation.py`)**：
+   - **消除 L2 伪造旁路**：`execute_live_activation()` 严格移除 `session_tree_verified` 等伪造身份标记的后门；
+   - **消除 L3 重复执行与进程退出失效**：在监控线程中于进程存活期直接调用 `verify_module_loaded`，捕获结构化证据并存为 `captured_l3`。后续证据评估通过 `l3_result=captured_l3` 直接消费该运行期证据，彻底解决宏退出后第二次重复检查失败的问题；
+   - **删除手写 L3 路径比较**：`evaluate_layered_evidence()` 彻底删除原先在 `loaded_modules` 分支手写的二次遍历路径匹配逻辑，统一消费 `run.verify_module_loaded` 的完整性验证结果。
+
+3. **P0-3 L4 诚实语义闭环（彻底废除假证书）**：
+   - 审查确认：普通 Python 字典不具备防伪凭据，不能视作认证证书。在没有真实的进程内 C++ QI 探针之前，L4 **严格保持 UNKNOWN**；
+   - 彻底废除 `qi_probe_certificate` 旁路与假 FAIL 逻辑；当 4 要素探针满足时，诚实记录 `constructor_probe_verified = True`，`query_interface_status = "UNKNOWN"`，L4 状态严格为 `UNKNOWN`，绝不伪造 PASS 或 FAIL。
+
+4. **架构参数贯穿 OM Driver 与测试套件扩充**：
+   - `OMActivationDriver` 支持 `architecture` 参数，内部路径全面动态解析，消除 `"win_b64"` 盘符和目录硬编码；
+   - 新增针对性测试 `test_runtime_view_architecture_and_rollback.py`（13/13 PASS），全仓 Master 测试套件正式更新为 53 套（Quick 52 套，全量 100% 通过）。
 
 ---
 

@@ -267,20 +267,20 @@ def sync_runtime_view(workspace_path: Path, arch: str = "win_b64") -> dict:
     rv = workspace_path / arch
     synced = []
     errors = []
+
+    # Dictionary - delegate to single authoritative dictionary copy implementation
+    try:
+        dict_synced = _copy_dictionaries_to_runtime(workspace_path, arch=arch)
+        synced.extend(dict_synced)
+    except Exception as e:
+        errors.append(f"Dictionary sync failed: {e}")
+
     for fw_dir in workspace_path.iterdir():
         if not fw_dir.is_dir() or not fw_dir.name.endswith(".edu"):
             continue
         cnext = fw_dir / "CNext"
         if not cnext.exists():
             continue
-        # Dictionary
-        dict_src = cnext / "code" / "dictionary"
-        if dict_src.exists():
-            dict_dst = rv / "code" / "dictionary"
-            dict_dst.mkdir(parents=True, exist_ok=True)
-            for f in dict_src.glob("*.dico"):
-                shutil.copy2(f, dict_dst / f.name)
-                synced.append(f"dictionary/{f.name}")
         # NLS + CATRsc (recursively, to sync localized subdirectories like
         # Simplified_Chinese/ that CATIA's NLS loader searches per language).
         msg_src = cnext / "resources" / "msgcatalog"
@@ -1157,10 +1157,66 @@ def create_runtime_view(
 
     # Set architecture steering in environment if explicitly requested
     old_arch_env = os.environ.get("MKMK_ARCH")
+    result = None
     try:
         if architecture:
             os.environ["MKMK_ARCH"] = architecture
         result = _exec_build_cmd("mkCreateRuntimeView", workspace_path)
+
+        runtime_created = rt_dir.is_dir()
+        cmd_ok = isinstance(result, dict) and result.get("status") in ("success", "ok")
+
+        if runtime_created and cmd_ok:
+            # mkCreateRuntimeView may skip dictionary copy — ensure it manually for target arch
+            _copy_dictionaries_to_runtime(workspace_path, arch=arch)
+            if backup_dir and backup_dir.exists():
+                try:
+                    shutil.rmtree(backup_dir, ignore_errors=True)
+                except Exception:
+                    pass
+
+            return {
+                "status": "success",
+                "message": f"Runtime View created successfully at {arch}",
+                "created": True,
+                "runtime": arch,
+                "runtime_path": str(rt_dir),
+                "command_result": result,
+            }
+        else:
+            # Rollback previous runtime view if command failed or runtime structure incomplete
+            if backup_dir and backup_dir.exists():
+                try:
+                    if rt_dir.exists():
+                        shutil.rmtree(rt_dir, ignore_errors=True)
+                    backup_dir.rename(rt_dir)
+                except Exception:
+                    pass
+            cmd_status = result.get("status") if isinstance(result, dict) else None
+            final_status = cmd_status if cmd_status in ("error", "timeout") else "failed"
+            err_msg = (
+                result.get("message")
+                if isinstance(result, dict) and result.get("message")
+                else f"Failed to create Runtime View at {arch}: command failed or incomplete structure"
+            )
+            return {
+                "status": final_status,
+                "message": err_msg,
+                "created": False,
+                "runtime": arch,
+                "runtime_path": str(rt_dir),
+                "command_result": result,
+            }
+    except Exception as e:
+        # Full exception safety: rollback staged backup if unhandled exception occurs
+        if backup_dir and backup_dir.exists():
+            try:
+                if rt_dir.exists():
+                    shutil.rmtree(rt_dir, ignore_errors=True)
+                backup_dir.rename(rt_dir)
+            except Exception:
+                pass
+        return error_result(f"Exception during Runtime View creation at {arch}: {e}")
     finally:
         if architecture:
             if old_arch_env is not None:
@@ -1168,66 +1224,19 @@ def create_runtime_view(
             else:
                 os.environ.pop("MKMK_ARCH", None)
 
-    runtime_created = rt_dir.is_dir()
 
-    if runtime_created:
-        # mkCreateRuntimeView may skip dictionary copy — ensure it manually for target arch
-        _copy_dictionaries_to_runtime(workspace_path, arch=arch)
-        if backup_dir and backup_dir.exists():
-            try:
-                shutil.rmtree(backup_dir, ignore_errors=True)
-            except Exception:
-                pass
-
-        cmd_ok = isinstance(result, dict) and result.get("status") in ("success", "ok")
-        final_status = "success" if cmd_ok else "warning"
-        message = (
-            f"Runtime View created successfully at {arch}"
-            if cmd_ok
-            else f"Runtime View created at {arch} with command warnings"
-        )
-
-        return {
-            "status": final_status,
-            "message": message,
-            "created": True,
-            "runtime": arch,
-            "runtime_path": str(rt_dir),
-            "command_result": result,
-        }
-    else:
-        # Rollback previous runtime view if overwrite failed
-        if backup_dir and backup_dir.exists():
-            try:
-                backup_dir.rename(rt_dir)
-            except Exception:
-                pass
-        cmd_status = result.get("status") if isinstance(result, dict) else None
-        final_status = cmd_status if cmd_status in ("error", "timeout") else "failed"
-        err_msg = (
-            result.get("message")
-            if isinstance(result, dict) and result.get("message")
-            else f"Failed to create Runtime View at {arch}: target directory not generated"
-        )
-        return {
-            "status": final_status,
-            "message": err_msg,
-            "created": False,
-            "runtime": arch,
-            "runtime_path": str(rt_dir),
-            "command_result": result,
-        }
-
-
-def _copy_dictionaries_to_runtime(workspace_path: Path, arch: str = "win_b64"):
+def _copy_dictionaries_to_runtime(workspace_path: Path, arch: str = "win_b64") -> List[str]:
     """Copy all framework dictionaries to Runtime View's code/dictionary/"""
     import shutil
     workspace_path = _resolve_workspace_root(workspace_path)
     rv_dict = workspace_path / arch / "code" / "dictionary"
+    copied = []
     for dico in workspace_path.rglob("CNext/code/dictionary/*.dico"):
         if dico.is_file() and not any(part.startswith(".") for part in dico.parts):
             rv_dict.mkdir(parents=True, exist_ok=True)
             shutil.copy2(dico, rv_dict / dico.name)
+            copied.append(f"dictionary/{dico.name}")
+    return copied
 
 
 def multi_create_runtime_view(workspace_path: Path) -> dict:

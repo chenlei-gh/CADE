@@ -180,7 +180,7 @@ class CAAEnvironment:
             print(f"ERROR: CATIA path does not exist: {catia_path}", file=sys.stderr)
             return {}
 
-        arch = self._detect_architecture(catia_path)
+        arch = os.environ.get("MKMK_ARCH") or self._detect_architecture(catia_path)
         if not arch:
             print("ERROR: Could not detect CATIA architecture", file=sys.stderr)
             return {}
@@ -481,7 +481,13 @@ class CAAEnvironment:
         return None
 
     def get_architecture(self) -> str:
-        """Get detected architecture (public accessor)"""
+        """Get detected architecture (public accessor).
+
+        Prioritizes explicit MKMK_ARCH environment override if present.
+        """
+        mkmk_arch = os.environ.get("MKMK_ARCH")
+        if mkmk_arch:
+            return mkmk_arch
         if not self.config:
             self.load_config()
         catia_path = Path(self.config.get("CATIA_INSTALL", ""))
@@ -726,7 +732,7 @@ class CAAEnvironment:
             becomes an orphan whose only remaining handle is cmd[2].
         """
         catia_path = Path(self.config.get("CATIA_INSTALL", ""))
-        arch = self._detect_architecture(catia_path) or "win_b64"
+        arch = os.environ.get("MKMK_ARCH") or self._detect_architecture(catia_path) or "win_b64"
         code_bin = catia_path / arch / "code" / "bin"
         code_command = catia_path / arch / "code" / "command"
 
@@ -840,7 +846,7 @@ class CAAEnvironment:
             Tuple of (command_list, display_string)
         """
         catia_path = Path(self.config.get("CATIA_INSTALL", ""))
-        arch = self._detect_architecture(catia_path) or "win_b64"
+        arch = os.environ.get("MKMK_ARCH") or self._detect_architecture(catia_path) or "win_b64"
         code_bin = catia_path / arch / "code" / "bin"
         code_command = catia_path / arch / "code" / "command"
 

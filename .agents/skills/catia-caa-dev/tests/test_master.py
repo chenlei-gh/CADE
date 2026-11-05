@@ -95,6 +95,7 @@ SUITES = {
     "P0 Intent Routing": "test_kernel_domain_routing.py",
     "P0 Runtime Evidence": "test_runtime_layered_verification.py",
     "P0-2 OM Activation": "test_om_activation_driver.py",
+    "Runtime View Architecture & Rollback": "test_runtime_view_architecture_and_rollback.py",
     }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
@@ -151,6 +152,7 @@ VERIFY_STRINGS = {
     "test_kernel_domain_routing.py": "ALL PASS",
     "test_runtime_layered_verification.py": "ALL PASS",
     "test_om_activation_driver.py": "ALL PASS",
+    "test_runtime_view_architecture_and_rollback.py": "ALL PASS",
     }
 
 

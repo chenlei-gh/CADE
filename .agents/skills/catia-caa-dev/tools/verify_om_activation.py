@@ -71,7 +71,10 @@ class OMActivationDriver:
         target_interface: str = DEFAULT_INTERFACE,
         target_module: str = DEFAULT_MODULE,
         target_framework: str = DEFAULT_FRAMEWORK,
+        architecture: Optional[str] = None,
     ):
+        caa_env = CAAEnvironment()
+        self.architecture = architecture or caa_env.get_architecture() or "win_b64"
         self.b28_root = pathlib.Path(b28_root or self._detect_b28_root())
         self.workspace_path = pathlib.Path(workspace_path) if workspace_path else None
         self.target_component = target_component
@@ -93,11 +96,11 @@ class OMActivationDriver:
     # ── Line C: System Dictionary Recursive Conflict & Priority Analysis ─
     def check_system_dictionary_conflict(self) -> Dict[str, Any]:
         """
-        Recursively scan all B28 system dictionaries under win_b64/code/dictionary.
+        Recursively scan all B28 system dictionaries under <arch>/code/dictionary.
         Tracks unreadable files and unreadable directories via onerror callback.
         Avoids unverified priority claims.
         """
-        dico_dir = self.b28_root / "win_b64" / "code" / "dictionary"
+        dico_dir = self.b28_root / self.architecture / "code" / "dictionary"
         matches = []
         unreadable_files = []
         unreadable_directories = []
@@ -312,6 +315,7 @@ class OMActivationDriver:
         self,
         runtime_ws: pathlib.Path,
         cnext_pid: Optional[int] = None,
+        l3_result: Optional[Tuple[str, Dict[str, Any]]] = None,
         loaded_modules: Optional[List[str]] = None,
         probe_log_file: Optional[pathlib.Path] = None,
         query_interface_hr: Optional[int] = None,
@@ -327,13 +331,13 @@ class OMActivationDriver:
         """
         Evaluate L0 through L5 evidence status according to formal CADE contracts.
         L2 & L3 reuse unified run.py infrastructure (identify_target_cnext, verify_module_loaded).
-        L4 strictly refuses unverified integer query_interface_hr and remains UNKNOWN until
+        L4 strictly refuses unverified external inputs and remains UNKNOWN until
         authentic in-session QueryInterface caller proof is established.
         """
         # L0: Physical Runtime View (delegated to runtime_view.check_runtime_view_l0)
         rt_l0 = check_runtime_view_l0(runtime_ws)
-        rt_bin = runtime_ws / "win_b64" / "code" / "bin"
-        rt_dico_dir = runtime_ws / "win_b64" / "code" / "dictionary"
+        rt_bin = runtime_ws / self.architecture / "code" / "bin"
+        rt_dico_dir = runtime_ws / self.architecture / "code" / "dictionary"
         l0_ok = (rt_l0.get("status") == "PASS") and rt_bin.is_dir() and rt_dico_dir.is_dir()
         l0_res = {
             "level": "L0",
@@ -435,39 +439,17 @@ class OMActivationDriver:
         l3_status = "NOT_RUN"
         l3_evidence = {}
 
-        if loaded_modules is None and effective_pid is not None and effective_pid > 0:
+        if l3_result is not None:
+            l3_status, l3_ev = l3_result
+            l3_evidence = dict(l3_ev)
+            if "source" not in l3_evidence:
+                l3_evidence["source"] = "run.verify_module_loaded"
+        elif effective_pid is not None and effective_pid > 0:
             l3_status, l3_ev = verify_module_loaded(effective_pid, target_dll)
             l3_evidence = dict(l3_ev)
             l3_evidence["source"] = "run.verify_module_loaded"
-        elif loaded_modules is not None:
-            norm_expected = os.path.normcase(os.path.abspath(str(target_dll)))
-            exact_matched_path = None
-            stray_mismatch_path = None
-            for mod in loaded_modules:
-                norm_mod = os.path.normcase(os.path.abspath(mod))
-                if norm_mod == norm_expected:
-                    exact_matched_path = mod
-                    break
-                elif os.path.basename(norm_mod) == os.path.basename(norm_expected):
-                    stray_mismatch_path = mod
-
-            if exact_matched_path is not None:
-                l3_status = "PASS"
-            else:
-                l3_status = "FAIL"
-
-            l3_evidence = {
-                "expected_target_dll": str(target_dll),
-                "exact_matched_path": exact_matched_path,
-                "stray_mismatch_path": stray_mismatch_path,
-                "exact_match_pass": bool(exact_matched_path),
-                "reason": "exact_path_loaded" if exact_matched_path else (
-                    "stray_dll_loaded_from_wrong_path" if stray_mismatch_path else "dll_not_loaded"
-                ),
-                "source": "simulated_loaded_modules",
-            }
         else:
-            l3_evidence = {"reason": "no_pid_or_modules_provided_for_l3"}
+            l3_evidence = {"reason": "no_pid_or_l3_result_provided"}
 
         l3_res = {
             "level": "L3",
@@ -551,64 +533,15 @@ class OMActivationDriver:
             except Exception as e:
                 probe_contract["parse_error"] = str(e)
 
-        # Determine L4 status based on verified probe contract and authentic QI certificate
+        # Determine L4 status based on verified probe contract
+        # Plain external integer query_interface_hr or mock dictionaries cannot prove authentic in-session QI.
+        # L4 strictly remains UNKNOWN until genuine in-session QI probe mechanism is established.
         l4_status = "UNKNOWN"
         l4_evidence = {}
 
-        # Authentic in-session QI certificate check
-        qi_cert_valid = False
-        if qi_probe_certificate and isinstance(qi_probe_certificate, dict):
-            cert_iface = qi_probe_certificate.get("interface")
-            cert_pid = qi_probe_certificate.get("cnext_pid")
-            cert_nonce = qi_probe_certificate.get("nonce")
-            if (
-                cert_iface == self.target_interface
-                and (effective_pid is None or cert_pid == effective_pid)
-                and (expected_nonce is None or cert_nonce == expected_nonce)
-                and qi_probe_certificate.get("in_session") is True
-            ):
-                qi_cert_valid = True
-
-        if qi_cert_valid:
-            cert_hr = qi_probe_certificate.get("hresult", 0)
-            if cert_hr == 0 and probe_contract["all_factors_satisfied"]:
-                l4_status = "PASS"
-                l4_evidence = {
-                    "status": "PASS",
-                    "constructor_probe_verified": True,
-                    "query_interface_verified": True,
-                    "query_interface_hr": hex(cert_hr),
-                    "probe_contract": probe_contract,
-                    "probe_details": probe_contract,
-                    "qi_certificate": qi_probe_certificate,
-                    "activated_extension": "MyVisuExtension",
-                }
-            elif cert_hr != 0:
-                l4_status = "FAIL"
-                l4_evidence = {
-                    "status": "FAIL",
-                    "constructor_probe_verified": probe_contract["all_factors_satisfied"],
-                    "query_interface_verified": True,
-                    "query_interface_hr": hex(cert_hr),
-                    "error_reason": f"In-session QueryInterface failed with HRESULT {hex(cert_hr)}",
-                    "probe_contract": probe_contract,
-                    "probe_details": probe_contract,
-                    "qi_certificate": qi_probe_certificate,
-                }
-            else:
-                l4_status = "UNKNOWN"
-                l4_evidence = {
-                    "status": "UNKNOWN",
-                    "reason": "qi_certificate_valid_but_constructor_probe_unsatisfied",
-                    "probe_contract": probe_contract,
-                    "probe_details": probe_contract,
-                    "qi_certificate": qi_probe_certificate,
-                }
-        elif probe_contract["all_factors_satisfied"]:
-            # Constructor was proven activated by Object Modeler.
-            # But plain external integer query_interface_hr is unverified and cannot alter L4.
-            # L4 strictly remains UNKNOWN until genuine in-session QI probe certificate is established.
-            l4_status = "UNKNOWN"
+        if probe_contract["all_factors_satisfied"]:
+            # Constructor was proven activated by Object Modeler via 4-factor probe.
+            # QueryInterface remains UNKNOWN without genuine in-session C++ probe.
             l4_evidence = {
                 "status": "CONSTRUCTOR_ACTIVATED_QI_UNPROVEN",
                 "constructor_probe_verified": True,
@@ -619,12 +552,12 @@ class OMActivationDriver:
                 "reason": "query_interface_unverified_requires_in_session_qi_probe_certificate",
                 "note": (
                     "Constructor activation probe confirmed instantiation by Object Modeler. "
-                    "However, external integer query_interface_hr does not prove authentic in-session QI. "
+                    "However, external integer query_interface_hr or arbitrary payload cannot prove authentic in-session QI. "
                     "L4 strictly remains UNKNOWN until a verifiable in-session QI probe is implemented."
                 ),
             }
         else:
-            reason = "awaiting_valid_om_trigger_and_atomic_probe_certificate"
+            reason = "awaiting_valid_om_trigger_and_atomic_probe"
             if not credentials_valid:
                 reason = "missing_mandatory_credentials_nonce_pid_or_session_time"
             elif probe_log_file and not probe_contract["file_exists"]:
@@ -637,18 +570,12 @@ class OMActivationDriver:
             l4_evidence = {
                 "status": "UNKNOWN",
                 "reason": reason,
-                "query_interface_hr": hex(query_interface_hr) if query_interface_hr is not None else "NOT_PROBED",
+                "constructor_probe_verified": False,
+                "query_interface_status": "UNKNOWN",
                 "probe_contract": probe_contract,
                 "probe_details": probe_contract,
                 "note": "Unverified external inputs cannot alter L4 status. L4 strictly remains UNKNOWN.",
             }
-
-        l4_res = {
-            "level": "L4",
-            "status": l4_status,
-            "check": "object_modeler_dictionary_resolution_and_extension_activation",
-            "evidence": l4_evidence,
-        }
 
         l4_res = {
             "level": "L4",
@@ -775,8 +702,8 @@ CATRep * {extension_name}::BuildRep()
         runtime_ws = ws_path.resolve()
 
         # Phase A: Verify workspace runtime view layout
-        rt_bin = runtime_ws / "win_b64" / "code" / "bin"
-        rt_dico_dir = runtime_ws / "win_b64" / "code" / "dictionary"
+        rt_bin = runtime_ws / self.architecture / "code" / "bin"
+        rt_dico_dir = runtime_ws / self.architecture / "code" / "dictionary"
         target_dll = rt_bin / f"{self.target_module}.dll"
         target_dico = rt_dico_dir / f"{self.target_framework}.dico"
 
@@ -901,26 +828,21 @@ CATRep * {extension_name}::BuildRep()
                 except OSError:
                     pass
 
-        # Runner result integration
-        if captured_identity is None and "cnext_identity" in macro_exec_result:
+        # Runner result integration (controlled test mock only)
+        if captured_identity is None and runner_fn is not None and "cnext_identity" in macro_exec_result:
             captured_identity = macro_exec_result["cnext_identity"]
             captured_pid = captured_identity[1]
-        elif captured_identity is None and "cnext_pid" in macro_exec_result:
+        elif captured_identity is None and runner_fn is not None and "cnext_pid" in macro_exec_result:
             captured_pid = macro_exec_result["cnext_pid"]
-            if macro_exec_result.get("session_tree_verified"):
-                captured_identity = ("PASS", captured_pid, {"method": "mock_session_tree"})
 
-        if captured_modules is None and "loaded_modules" in macro_exec_result:
-            captured_modules = macro_exec_result["loaded_modules"]
+        if captured_l3 is None and runner_fn is not None and "l3_result" in macro_exec_result:
+            captured_l3 = macro_exec_result["l3_result"]
 
         # Phase D: Evaluate Layered Evidence Matrix (L0 ~ L5)
-        # Note: Unverified macro execution status is NOT forged into query_interface_hr!
-        qi_probe_cert = macro_exec_result.get("qi_probe_certificate")
-
         evidence = self.evaluate_layered_evidence(
             runtime_ws=runtime_ws,
             cnext_pid=captured_pid,
-            loaded_modules=captured_modules,
+            l3_result=captured_l3,
             probe_log_file=probe_log,
             expected_nonce=expected_nonce,
             expected_cnext_pid=captured_pid,
@@ -929,7 +851,6 @@ CATRep * {extension_name}::BuildRep()
             launcher_pid=None,
             t_start=session_start_time,
             baseline_pids=initial_pids,
-            qi_probe_certificate=qi_probe_cert,
         )
 
         macro_ok = isinstance(macro_exec_result, dict) and macro_exec_result.get("status") in ("success", "ok")

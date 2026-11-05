@@ -1,6 +1,6 @@
 # Test Index
 
-套件数以 `test_master.py` 的 `SUITES` 为准（当前 **51** 个注册套件；`--quick` 跳过 `SKIP_SLOW = {Int-1 Build & Run}`，执行 50 套）。
+套件数以 `test_master.py` 的 `SUITES` 为准（当前 **53** 个注册套件；`--quick` 跳过 `SKIP_SLOW = {Int-1 Build & Run}`，执行 52 套）。
 
 磁盘上另有 `test_*.py` 文件（当前 59 个，含本 runner）。**不要用文件个数覆盖套件数。** 未注册进 `SUITES` 的文件不算 master 套件。
 
@@ -92,6 +92,8 @@
 | `test_mcp_stdio_encoding.py` | MCP Stdio Encoding |
 | `test_kernel_domain_routing.py` | P0 Intent Routing |
 | `test_runtime_layered_verification.py` | P0 Runtime Evidence |
+| `test_om_activation_driver.py` | P0-2 OM Activation |
+| `test_runtime_view_architecture_and_rollback.py` | Runtime View Architecture & Rollback |
 
 ---
 

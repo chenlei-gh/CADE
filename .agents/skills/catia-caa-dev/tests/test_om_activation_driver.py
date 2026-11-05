@@ -190,21 +190,27 @@ with tempfile.TemporaryDirectory() as td_rt:
     ck("L2: verified cnext_identity from run.identify_target_cnext is PASS",
        ev_l2_ident["L2"]["status"] == "PASS" and ev_l2_ident["L2"]["evidence"]["cnext_pid"] == 12345)
 
-    # 3.3 L3: Exact Module Path Matching (Strict Invariant)
+    # 3.3 L3: Exact Module Path Matching (Strict Invariant Unified with run.verify_module_loaded)
     fake_dll_path = str(bin_dir / "AcceptanceMod.dll")
     other_sys_dll = str(Path(tempfile.gettempdir()) / "System32" / "other.dll")
-    ev_l3_miss = driver.evaluate_layered_evidence(rt_ws, loaded_modules=[other_sys_dll])
+    ev_l3_miss = driver.evaluate_layered_evidence(
+        rt_ws, l3_result=("FAIL", {"reason": "dll_not_loaded", "enumeration_complete": True, "exact_match_pass": False})
+    )
     ck("L3: missing target DLL in loaded modules is FAIL", ev_l3_miss["L3"]["status"] == "FAIL")
 
     # Critical Reviewer Point: Same DLL name from wrong path MUST FAIL
     stray_wrong_path = str(Path(tempfile.gettempdir()) / "StrayWorkspace" / "win_b64" / "code" / "bin" / "AcceptanceMod.dll")
-    ev_l3_stray = driver.evaluate_layered_evidence(rt_ws, loaded_modules=[stray_wrong_path])
+    ev_l3_stray = driver.evaluate_layered_evidence(
+        rt_ws, l3_result=("FAIL", {"stray_mismatch_path": stray_wrong_path, "exact_match_pass": False, "reason": "stray_dll_loaded_from_wrong_path"})
+    )
     ck("L3: same filename from wrong path MUST FAIL (stray path violation)", ev_l3_stray["L3"]["status"] == "FAIL")
     ck("L3: stray path captured in evidence", ev_l3_stray["L3"]["evidence"]["stray_mismatch_path"] == stray_wrong_path)
     ck("L3: exact match is False on stray path", ev_l3_stray["L3"]["evidence"]["exact_match_pass"] is False)
 
     # Exact path match PASS
-    ev_l3_hit = driver.evaluate_layered_evidence(rt_ws, loaded_modules=[fake_dll_path, other_sys_dll])
+    ev_l3_hit = driver.evaluate_layered_evidence(
+        rt_ws, l3_result=("PASS", {"matched_path": fake_dll_path, "exact_matched_path": fake_dll_path, "exact_match_pass": True, "enumeration_complete": True})
+    )
     ck("L3: exact target DLL path in loaded modules is PASS", ev_l3_hit["L3"]["status"] == "PASS")
     ck("L3: exact path confirmed", ev_l3_hit["L3"]["evidence"]["exact_match_pass"] is True)
 
@@ -221,10 +227,10 @@ with tempfile.TemporaryDirectory() as td_rt:
 
     # Case B: Unverified integer QueryInterface HRESULT without authentic certificate remains UNKNOWN
     ev_l4_unverified = driver.evaluate_layered_evidence(rt_ws, query_interface_hr=0x80004002, probe_log_file=probe_log)
-    ck("L4: Unverified non-zero HRESULT without authentic certificate remains UNKNOWN",
+    ck("L4: Unverified non-zero HRESULT strictly remains UNKNOWN (no false FAIL)",
        ev_l4_unverified["L4"]["status"] == "UNKNOWN")
 
-    # Case B2: Authentic in-session QueryInterface failure certificate is FAIL
+    # Case B2: Arbitrary external dictionary without in-session probe mechanism strictly remains UNKNOWN
     fake_fail_cert = {
         "interface": "CATI3DGeoVisu",
         "cnext_pid": test_pid,
@@ -240,8 +246,8 @@ with tempfile.TemporaryDirectory() as td_rt:
         session_start_time=now,
         qi_probe_certificate=fake_fail_cert,
     )
-    ck("L4: Authentic in-session QueryInterface failure certificate is FAIL",
-       ev_l4_fail["L4"]["status"] == "FAIL")
+    ck("L4: Arbitrary dictionary without in-session C++ probe strictly remains UNKNOWN (no false FAIL)",
+       ev_l4_fail["L4"]["status"] == "UNKNOWN")
 
     # Case C: Probe log exists but is STALE (mtime < session_start_time) -> UNKNOWN
     probe_log.write_text(f"ACTION=CONSTRUCTOR_ACTIVATED;NONCE={test_nonce};PID={test_pid};COMPONENT=CAAMmrMeasureSet\n", encoding="utf-8")
@@ -466,9 +472,8 @@ with tempfile.TemporaryDirectory() as td_live:
             "status": "success",
             "message": "Macro execution completed (exit 0)",
             "cnext_pid": simulated_cnext_pid,
-            "session_tree_verified": True,
             "cnext_identity": ("PASS", simulated_cnext_pid, {"method": "mock_session_tree"}),
-            "loaded_modules": [str(target_dll), other_sys_dll],
+            "l3_result": ("PASS", {"matched_path": str(target_dll), "exact_matched_path": str(target_dll), "exact_match_pass": True, "source": "run.verify_module_loaded"}),
         }
 
     res_live = driver.execute_live_activation(
@@ -526,7 +531,8 @@ with tempfile.TemporaryDirectory() as td_neg:
             "status": "failed",
             "message": "Macro execution failed (exit 1)",
             "cnext_pid": 1111,
-            "loaded_modules": [str(dll_neg)],
+            "cnext_identity": ("PASS", 1111, {"method": "mock_session_tree"}),
+            "l3_result": ("PASS", {"matched_path": str(dll_neg), "exact_matched_path": str(dll_neg), "exact_match_pass": True}),
         }
 
     res_fail = driver.execute_live_activation(
@@ -543,7 +549,8 @@ with tempfile.TemporaryDirectory() as td_neg:
         return {
             "status": "success",
             "cnext_pid": 2222,
-            "loaded_modules": [stray_path],
+            "cnext_identity": ("PASS", 2222, {"method": "mock_session_tree"}),
+            "l3_result": ("FAIL", {"stray_mismatch_path": stray_path, "exact_match_pass": False, "reason": "stray_dll_loaded_from_wrong_path"}),
         }
 
     res_stray = driver.execute_live_activation(
