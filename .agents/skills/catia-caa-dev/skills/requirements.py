@@ -178,9 +178,9 @@ class RequirementsClarifier:
         # unresolved action. Matching them created false multi-domain hits that
         # were then dropped. Keep task words only.
         "product": ["assembly", "product", "bom", "catproduct", "物料清单", "物料",
-                     "统计", "导出", "export"],
+                     "统计", "导出", "export", "statistics"],
         "part": ["fillet", "hole", "chamfer", "pad", "pocket",
-                 "圆角", "孔", "倒角"],
+                 "圆角", "孔", "倒角", "check", "检查"],
         "drawing": ["drawing", "sheet", "annotation", "dimension", "工程图",
                      "图纸", "标注"],
         "surface": ["surface", "gsd", "extrude", "sweep", "flatten", "offset",
@@ -1202,15 +1202,6 @@ class MultiIntentDecomposer:
     CN_CONNECTORS = ["并", "同时", "以及", "还有", "另外", "并且", "外加", "包含", "和"]
     EN_CONNECTORS = ["and also", "as well as", "plus", "additionally", " and "]
 
-    GOAL_DOMAIN_MAP = {
-        "export": "product", "bom": "product", "导出": "product",
-        "color": "product", "着色": "product", "统计": "product",
-        "statistics": "product", "检查": "part", "check": "part",
-        "标注": "drawing", "annotation": "drawing", "工程图": "drawing",
-        "drawing": "drawing", "曲面": "surface", "surface": "surface",
-        "对话框": "ui", "dialog": "ui", "菜单": "ui", "menu": "ui",
-    }
-
     def decompose(self, request: str, clarification=None) -> List[SubIntent]:
         if not request or not request.strip():
             return []
@@ -1249,8 +1240,6 @@ class MultiIntentDecomposer:
         return [request]
 
     def _infer_domain(self, text: str) -> str:
-        scores = {}
-        for keyword, domain in self.GOAL_DOMAIN_MAP.items():
-            if keyword in text.lower():
-                scores[domain] = scores.get(domain, 0) + 1
-        return max(scores, key=scores.get) if scores else ""
+        """Infer CAA domain using authoritative RequirementsClarifier domain detection."""
+        detected = RequirementsClarifier()._detect_domain(text.lower())
+        return detected if detected != "general" else ""

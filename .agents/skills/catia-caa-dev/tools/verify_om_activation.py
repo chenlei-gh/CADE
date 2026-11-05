@@ -26,7 +26,7 @@ SKILL_ROOT = pathlib.Path(__file__).parent.parent
 sys.path.insert(0, str(SKILL_ROOT / "skills"))
 
 from env import CAAEnvironment
-from runtime_view import check_runtime_view_l0, check_runtime_view_l1, _verify_pe_file, _verify_dico_syntax
+from runtime_view import check_runtime_view_l0, check_runtime_view_l1
 from run import (
     identify_target_cnext,
     verify_module_loaded,
@@ -346,57 +346,49 @@ class OMActivationDriver:
         L4 strictly refuses unverified external inputs and remains UNKNOWN until
         authentic in-session QueryInterface caller proof is established.
         """
-        # L0: Physical Runtime View (delegated to runtime_view.check_runtime_view_l0)
-        rt_l0 = check_runtime_view_l0(runtime_ws)
+        # L0: Physical Runtime View (sole authority: runtime_view.check_runtime_view_l0)
+        rt_l0 = check_runtime_view_l0(runtime_ws, architecture=self.architecture)
+        l0_status = rt_l0.get("status", "FAIL")
         rt_bin = runtime_ws / self.architecture / "code" / "bin"
         rt_dico_dir = runtime_ws / self.architecture / "code" / "dictionary"
-        l0_ok = (rt_l0.get("status") == "PASS") and rt_bin.is_dir() and rt_dico_dir.is_dir()
         l0_res = {
             "level": "L0",
-            "status": "PASS" if l0_ok else "FAIL",
+            "status": l0_status,
             "check": "runtime_view_structure",
             "evidence": {
                 "workspace": str(runtime_ws),
-                "runtime_view_l0_status": rt_l0.get("status"),
+                "runtime_view_l0_status": l0_status,
                 "bin_dir_exists": rt_bin.is_dir(),
                 "dictionary_dir_exists": rt_dico_dir.is_dir(),
                 "source": "runtime_view.check_runtime_view_l0",
+                "details": rt_l0.get("evidence", {}),
             }
         }
 
-        # L1: Static Assets (delegated to runtime_view.check_runtime_view_l1)
+        # L1: Static Assets (sole authority: runtime_view.check_runtime_view_l1)
         dll_name = f"{self.target_module}.dll"
         target_dll = rt_bin / dll_name
         dico_file = rt_dico_dir / f"{self.target_framework}.dico"
-        rt_l1 = check_runtime_view_l1(runtime_ws, target_module=self.target_module)
-
-        pe_ok = _verify_pe_file(target_dll) if target_dll.is_file() else False
-        dico_ok = False
-        dico_count = 0
-        if dico_file.is_file():
-            dico_res = _verify_dico_syntax(dico_file, self.target_module)
-            if isinstance(dico_res, dict):
-                dico_ok = bool(dico_res.get("valid_syntax") and (
-                    dico_res.get("mentions_target_module") is not False
-                ))
-                dico_count = dico_res.get("entry_count", 0)
-            elif isinstance(dico_res, (tuple, list)):
-                dico_ok = bool(dico_res[0])
-                dico_count = dico_res[1] if len(dico_res) > 1 else 0
-
-        l1_ok = (rt_l1.get("status") == "PASS") and pe_ok and dico_ok
+        rt_l1 = check_runtime_view_l1(
+            runtime_ws,
+            architecture=self.architecture,
+            target_module=self.target_module,
+        )
+        l1_status = rt_l1.get("status", "FAIL")
+        rt_l1_ev = rt_l1.get("evidence", {})
         l1_res = {
             "level": "L1",
-            "status": "PASS" if l1_ok else "FAIL",
+            "status": l1_status,
             "check": "static_binary_assets",
             "evidence": {
-                "runtime_view_l1_status": rt_l1.get("status"),
+                "runtime_view_l1_status": l1_status,
                 "dll_path": str(target_dll),
-                "dll_pe_valid": pe_ok,
+                "dll_pe_valid": rt_l1_ev.get("target_dll_valid_pe", False),
                 "dico_path": str(dico_file),
-                "dico_syntax_valid": dico_ok,
-                "dico_entries_count": dico_count,
+                "dico_syntax_valid": rt_l1_ev.get("target_dico_bound", False),
+                "dico_entries_count": rt_l1_ev.get("dico_count", 0),
                 "source": "runtime_view.check_runtime_view_l1",
+                "details": rt_l1_ev,
             }
         }
 

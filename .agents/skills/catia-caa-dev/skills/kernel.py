@@ -1999,6 +1999,12 @@ class Kernel:
 
         return None
 
+    def _rel_or_str(self, p: Path) -> str:
+        try:
+            return str(p.relative_to(self.workspace_root))
+        except Exception:
+            return str(p)
+
     def _locate_relevant_code(self, mod, problem_desc: str, request: str) -> list:
         """
         Locate relevant files, symbols, callbacks and line numbers for the
@@ -2042,17 +2048,11 @@ class Kernel:
 
             all_search_terms = set(ascii_words + concept_patterns)
 
-            def _rel_or_str(p: Path) -> str:
-                try:
-                    return str(p.relative_to(self.workspace_root))
-                except Exception:
-                    return str(p)
-
             scored_hits = []
 
             for f in search_files:
                 f_name = f.name
-                f_rel = _rel_or_str(f)
+                f_rel = self._rel_or_str(f)
                 try:
                     lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
                 except OSError:
@@ -2204,17 +2204,11 @@ class Kernel:
 
         imakefile_p = mod.imakefile_path()
 
-        def _rel_or_str(p: Path) -> str:
-            try:
-                return str(p.relative_to(self.workspace_root))
-            except Exception:
-                return str(p)
-
         files_info = {
-            "src": [_rel_or_str(f) for f in src_files],
-            "local_interfaces": [_rel_or_str(f) for f in local_headers],
-            "public_interfaces": [_rel_or_str(f) for f in pub_headers],
-            "imakefile": _rel_or_str(imakefile_p) if imakefile_p.exists() else None,
+            "src": [self._rel_or_str(f) for f in src_files],
+            "local_interfaces": [self._rel_or_str(f) for f in local_headers],
+            "public_interfaces": [self._rel_or_str(f) for f in pub_headers],
+            "imakefile": self._rel_or_str(imakefile_p) if imakefile_p.exists() else None,
         }
 
         # 2. Build configuration from Imakefile.mk
@@ -3059,108 +3053,40 @@ class Kernel:
     def _detect_intent_type(self, request: str, typed_req: Optional[Any] = None) -> Optional[str]:
         """Detect IntentType from natural language request and optional TypedRequirement.
 
-        Resolution Priority:
-        1. Explicit user construct keywords (highest priority, never overridden)
-        2. TypedRequirement recommendation (from domain + behavioral analysis)
-        3. Fallback domain-specific heuristic detection (if called without typed_req)
-        4. None (never blind fallback to CreateCommand)
+        Delegates intent classification to RequirementsClarifier as the single authority,
+        serving as a thin adapter/resolver for Kernel execution.
         """
-        import re
-
-        # Modifiers that sit AFTER the module separator (e.g.
-        # "create command X in M with dialog") are lost when splitting into
-        # intent_part — check the full request for them first.
-        if ("with dialog" in request or "with a dialog" in request or "带对话框" in request) and (
+        # Modifiers that specify dialog variant on a command
+        is_cmd_with_dialog = ("with dialog" in request or "with a dialog" in request or "带对话框" in request) and (
             "command" in request or "命令" in request
-        ):
+        )
+        if is_cmd_with_dialog:
             return "CreateCommandWithDialog"
 
-        # Extract intent-relevant portion (before module/framework specification)
-        # "创建X命令在Y模块" → intent part is "创建X命令"
-        intent_part = request
-        for sep in (' 在', ' 到', ' in ', ' into ', ' 放在', ' 放到', ' 于'):
-            idx = request.find(sep)
-            if idx > 0:
-                intent_part = request[:idx]
-                break
+        # If typed_req was not provided, delegate to authoritative RequirementsClarifier
+        if typed_req is None:
+            try:
+                from requirements import RequirementsClarifier
+                clarification = RequirementsClarifier().analyze(request)
+                typed_req = getattr(clarification, "typed_requirement", None)
+            except Exception:
+                typed_req = None
 
-        # Order matters: more specific matches first
-        # Chinese keywords first (more specific in CN context)
-        # English keywords with word-boundary check (avoid substring matches like testmodule→module)
-        mapping = [
-            ("对话框", "CreateDialog"),
-            ("命令", "CreateCommand"),
-            ("特征", "CreateFeature"),
-            ("扩展", "CreateExtension"),
-            ("接口", "CreateInterface"),
-            ("工作台", "CreateWorkbench"),
-            ("组件", "CreateComponent"),
-            ("模块", "CreateModule"),
-            ("框架", "CreateFramework"),
-        ]
-        en_mapping = [
-            ("dialog", "CreateDialog"),
-            ("command", "CreateCommand"),
-            ("feature", "CreateFeature"),
-            ("extension", "CreateExtension"),
-            ("interface", "CreateInterface"),
-            ("workbench", "CreateWorkbench"),
-            ("component", "CreateComponent"),
-            ("module", "CreateModule"),
-            ("framework", "CreateFramework"),
-        ]
-        # If TypedRequirement is provided by upstream clarifier, it already evaluated
-        # explicit constructs, target entities (e.g. "给特征做高亮" vs "创建特征"), and domain mapping.
         if typed_req:
             user_explicit = getattr(typed_req, 'user_explicit_type', None)
             if user_explicit:
+                if user_explicit == "CreateCommand" and is_cmd_with_dialog:
+                    return "CreateCommandWithDialog"
                 return user_explicit
             rec = getattr(typed_req, 'recommended_intent_type', None)
             ambiguity = getattr(typed_req, 'ambiguity_state', "CLEAR")
             if rec and ambiguity != "AMBIGUOUS":
+                if rec == "CreateCommand" and is_cmd_with_dialog:
+                    return "CreateCommandWithDialog"
                 return rec
             if ambiguity in ("AMBIGUOUS", "UNKNOWN"):
                 return None
 
-        # Fallback path when called standalone without typed_req:
-        # Avoid treating "给特征/for feature" as CreateFeature construct
-        is_target_feature = any(p in request for p in (
-            "给零件特征", "给特征", "为特征", "对特征", "针对特征",
-            "for feature", "to feature", "on feature", "in feature"
-        )) or any(k in request for k in ("visu", "着色", "高亮", "渲染", "giverep", "catvisu"))
-
-        # 1. Try intent part first (CN keywords)
-        for keyword, intent_type in mapping:
-            if intent_type == "CreateFeature" and is_target_feature:
-                continue
-            if keyword in intent_part:
-                return intent_type
-        # Try intent part with EN keywords (word-boundary aware)
-        for keyword, intent_type in en_mapping:
-            if intent_type == "CreateFeature" and is_target_feature:
-                continue
-            if re.search(r'\b' + keyword + r'\b', intent_part):
-                return intent_type
-        # Check full request (CN)
-        for keyword, intent_type in mapping:
-            if intent_type == "CreateFeature" and is_target_feature:
-                continue
-            if keyword in request:
-                return intent_type
-        # Check full request (EN)
-        for keyword, intent_type in en_mapping:
-            if intent_type == "CreateFeature" and is_target_feature:
-                continue
-            if re.search(r'\b' + keyword + r'\b', request):
-                return intent_type
-
-        # 3. Domain heuristics if called without typed_req or typed_req was empty
-        if any(k in request for k in ("visu", "着色", "高亮", "渲染", "giverep", "catvisu", "cati3dgeovisu")):
-            return "CreateExtension"
-        if any(k in request for k in ("listener", "callback", "监听", "回调", "通知")):
-            return "CreateExtension"
-
-        # 4. No blind fallback — return None if undetermined
         return None
 
     def _extract_entities(self, request: str) -> tuple:

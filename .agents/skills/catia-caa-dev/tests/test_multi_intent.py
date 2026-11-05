@@ -96,7 +96,7 @@ print("=" * 70)
 
 domain_cases = [
     ("导出BOM到Excel", "product"),
-    ("自动着色所有零件", "product"),
+    ("自动着色所有零件", "visualization"),
     ("检查圆角半径", "part"),
     ("生成工程图", "drawing"),
     ("曲面展平分析", "surface"),

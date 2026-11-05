@@ -17,6 +17,22 @@ from intent.models import (
 _HERE = Path(__file__).parent
 _TEMPLATES_FILE = _HERE / "templates" / "task_templates.json"
 
+SEVERITY_ORDER = {Severity.NONE: 0, Severity.LOW: 1, Severity.MEDIUM: 2, Severity.HIGH: 3, Severity.CRITICAL: 4}
+PRIORITY_MAP = {
+    "ensure_framework": 0, "create_framework": 0,
+    "ensure_module": 1, "create_module": 1,
+    "create_interface": 2,
+    "create_feature": 3, "create_factory": 3, "create_extension": 3,
+    "create_command": 4, "create_command_header": 5, "create_dialog": 5,
+    "create_workbench": 5, "create_addin": 5,
+    "register_catalog": 6, "register_nls": 6,
+    "update_imakefile": 7,
+    "create_readme": 8, "create_architecture_doc": 8,
+    "create_changelog": 8, "create_docs_structure": 8, "create_examples_dir": 8,
+    "create_identity_card": 8, "create_dictionary": 8, "create_nls_catalog": 8,
+    "batch_create_commands": 4, "batch_register_catalog": 6,
+}
+
 
 class Planner:
     """Converts structured Intents into DevelopmentPlans."""
@@ -109,34 +125,11 @@ class Planner:
             plan.steps = deduped
 
         # Sort: frameworks first, then modules, then features, then commands
-        priorities = {
-            "ensure_framework": 0,
-            "create_framework": 0,
-            "ensure_module": 1,
-            "create_module": 1,
-            "create_interface": 2,
-            "create_feature": 3,
-            "create_factory": 3,
-            "create_extension": 3,
-            "create_command": 4,
-            "create_command_header": 5,
-            "create_dialog": 5,
-            "create_workbench": 5,
-            "create_addin": 5,
-            "register_catalog": 6,
-            "register_nls": 6,
-            "update_imakefile": 7,
-            "create_readme": 8,
-            "create_architecture_doc": 8,
-            "create_changelog": 8,
-            "create_docs_structure": 8,
-            "create_examples_dir": 8,
-        }
-
+        # Reuses single authoritative PRIORITY_MAP
         all_steps = []
         for plan in plans:
             for step in plan.steps:
-                all_steps.append((priorities.get(step.action, 99), step, plan))
+                all_steps.append((PRIORITY_MAP.get(step.action, 99), step, plan))
 
         all_steps.sort(key=lambda x: (x[0], x[1].params.get("module", "")))
 
@@ -207,23 +200,6 @@ def plan(intent: Intent, context: dict = None) -> DevelopmentPlan:
 def plan_batch(intents: List[Intent], context: dict = None) -> List[DevelopmentPlan]:
     """Quick API: multiple intents → ordered plans with dedup."""
     return _planner.plan_batch(intents, context)
-
-
-SEVERITY_ORDER = {Severity.NONE: 0, Severity.LOW: 1, Severity.MEDIUM: 2, Severity.HIGH: 3, Severity.CRITICAL: 4}
-PRIORITY_MAP = {
-    "ensure_framework": 0, "create_framework": 0,
-    "ensure_module": 1, "create_module": 1,
-    "create_interface": 2,
-    "create_feature": 3, "create_factory": 3, "create_extension": 3,
-    "create_command": 4, "create_command_header": 5, "create_dialog": 5,
-    "create_workbench": 5, "create_addin": 5,
-    "register_catalog": 6, "register_nls": 6,
-    "update_imakefile": 7,
-    "create_readme": 8, "create_architecture_doc": 8,
-    "create_changelog": 8, "create_docs_structure": 8, "create_examples_dir": 8,
-    "create_identity_card": 8, "create_dictionary": 8, "create_nls_catalog": 8,
-    "batch_create_commands": 4, "batch_register_catalog": 6,
-}
 
 
 def merge_plans(plans: List[DevelopmentPlan]) -> DevelopmentPlan:
