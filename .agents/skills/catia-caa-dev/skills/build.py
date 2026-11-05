@@ -1117,12 +1117,32 @@ def dry_run_build(
     )
 
 
-def create_runtime_view(workspace_path: Path) -> dict:
-    """Create/update Runtime View (mkCreateRuntimeView) + copy dictionaries"""
+def create_runtime_view(
+    workspace_path: Path,
+    overwrite: bool = False,
+    architecture: Optional[str] = None,
+) -> dict:
+    """Create/update Runtime View (mkCreateRuntimeView) + copy dictionaries.
+
+    Historic authority implementation for Runtime View generation.
+    Supports optional overwrite and architecture detection.
+    """
     workspace_path = _resolve_workspace_root(workspace_path)
+    caa_env = CAAEnvironment()
+    arch = architecture or caa_env.get_architecture() or "win_b64"
+    rt_dir = workspace_path / arch
+    if rt_dir.exists() and overwrite:
+        import shutil
+        try:
+            shutil.rmtree(rt_dir)
+        except Exception as e:
+            return error_result(f"Failed to remove existing Runtime View for overwrite: {e}")
     result = _exec_build_cmd("mkCreateRuntimeView", workspace_path)
     # mkCreateRuntimeView may skip dictionary copy — ensure it manually
     _copy_dictionaries_to_runtime(workspace_path)
+    if isinstance(result, dict):
+        result["runtime"] = arch
+        result["runtime_path"] = str(rt_dir)
     return result
 
 
@@ -1385,7 +1405,7 @@ def _exec_build_cmd(command: str, workspace_path: Path, timeout: int = 300) -> d
             "output_tail": output[-500:] if len(output) > 500 else output,
         }
     except subprocess.TimeoutExpired:
-        return error_result(f"Command timed out after {timeout}s")
+        return {"status": "timeout", "message": f"Command timed out after {timeout}s", "command": command}
     except Exception as e:
         return error_result(f"Command exception: {e}")
     finally:

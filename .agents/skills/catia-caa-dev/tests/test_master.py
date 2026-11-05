@@ -94,6 +94,7 @@ SUITES = {
     # ── P0 intent routing and runtime evidence (formal master entry) ──
     "P0 Intent Routing": "test_kernel_domain_routing.py",
     "P0 Runtime Evidence": "test_runtime_layered_verification.py",
+    "P0-2 OM Activation": "test_om_activation_driver.py",
     }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode
@@ -147,6 +148,9 @@ VERIFY_STRINGS = {
     "test_mcp_stdio_encoding.py": "passed",
     "test_chain_explorer.py": "checks passed",
     "test_intent_gate.py": "INTENT GATE OK",
+    "test_kernel_domain_routing.py": "ALL PASS",
+    "test_runtime_layered_verification.py": "ALL PASS",
+    "test_om_activation_driver.py": "ALL PASS",
     }
 
 
@@ -163,6 +167,7 @@ def run(quick: bool = False):
     child_env = dict(os.environ)
     child_env["PYTHONUTF8"] = "1"
     child_env["PYTHONIOENCODING"] = "utf-8"
+    child_env["CADE_MASTER_RUNNER"] = "1"
 
     print("=" * 70)
     print("  CADE Test Suite — Master Runner")

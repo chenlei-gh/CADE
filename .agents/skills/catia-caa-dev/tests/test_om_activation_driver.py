@@ -341,13 +341,200 @@ with tempfile.TemporaryDirectory() as td_rt:
     )
     ck("L4: Non-CONSTRUCTOR_ACTIVATED action strictly rejected as UNKNOWN", ev_l4_action["L4"]["status"] == "UNKNOWN")
 
-    # Case J: Four-factor atomic certificate satisfied in single record -> PASS!
+    # Case J: Four-factor atomic certificate satisfies constructor probe -> Constructor verified, but QI unproven!
     ev_l4_pass = driver.evaluate_layered_evidence(
         rt_ws, query_interface_hr=0, probe_log_file=probe_log,
         expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=now - 5
     )
-    ck("L4: Single atomic record satisfying all four factors is PASS", ev_l4_pass["L4"]["status"] == "PASS")
-    ck("L4: Atomic probe verified flag is True", ev_l4_pass["L4"]["evidence"]["atomic_probe_verified"] is True)
+    ck("L4: Single atomic record satisfies constructor probe verification",
+       ev_l4_pass["L4"]["evidence"]["constructor_probe_verified"] is True)
+    ck("L4: Plain integer query_interface_hr=0 strictly does NOT yield false PASS",
+       ev_l4_pass["L4"]["status"] == "UNKNOWN")
+    ck("L4: Status explicitly states CONSTRUCTOR_ACTIVATED_QI_UNPROVEN",
+       ev_l4_pass["L4"]["evidence"]["status"] == "CONSTRUCTOR_ACTIVATED_QI_UNPROVEN")
+    ck("L4: Reason indicates missing authentic in-session QI probe certificate",
+       ev_l4_pass["L4"]["evidence"]["reason"] == "query_interface_unverified_requires_in_session_qi_probe_certificate")
+
+    # Case K: L2 & L3 reuse unified run.py infrastructure
+    mock_cnext_id = ("PASS", 54321, {"method": "process_tree_ancestor_match"})
+    ev_l2_unified = driver.evaluate_layered_evidence(rt_ws, cnext_identity=mock_cnext_id)
+    ck("L2: Reuses identify_target_cnext result with source tracking",
+       ev_l2_unified["L2"]["status"] == "PASS" and ev_l2_unified["L2"]["evidence"]["source"] == "run.identify_target_cnext")
+    ck("L2: Correctly captures PID from unified identity",
+       ev_l2_unified["L2"]["evidence"]["cnext_pid"] == 54321)
+
+# ── 4. Live Activation Protocol & Execution Driver (Phase A ~ D) ────
+print("\n[4] Live Activation Protocol & Execution Driver (Phase A ~ D)")
+
+import struct
+
+def make_test_pe_image():
+    file_align = 512
+    sec_align = 0x1000
+    size_opt_hdr = 240
+    dos_hdr = b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x40)
+    pe_sig = b"PE\x00\x00"
+    coff_hdr = struct.pack(
+        "<HHIIIHH", 0x8664, 1, 0, 0, 0, size_opt_hdr, 0x2002
+    )
+    opt = bytearray(size_opt_hdr)
+    struct.pack_into("<H", opt, 0, 0x020B)
+    struct.pack_into("<I", opt, 32, sec_align)
+    struct.pack_into("<I", opt, 36, file_align)
+    struct.pack_into("<I", opt, 56, 0x2000)
+    struct.pack_into("<I", opt, 60, file_align)
+    sec_hdr = b".text\x00\x00\x00" + struct.pack(
+        "<IIII", 0x100, sec_align, file_align, file_align
+    ) + b"\x00" * 16
+    blob = dos_hdr + pe_sig + coff_hdr + bytes(opt) + sec_hdr
+    if len(blob) < file_align * 2:
+        blob += b"\x00" * (file_align * 2 - len(blob))
+    return blob
+
+# 4.1 Trigger Macro Generator Test
+with tempfile.TemporaryDirectory() as td_macro:
+    m_dir = Path(td_macro)
+    model_p = m_dir / "TestModel.CATPart"
+    model_p.write_bytes(b"DUMMY_CATPART")
+    script_p = m_dir / "trigger.CATScript"
+
+    macro_text = driver.generate_trigger_macro(model_p, script_p)
+    ck("Phase C: generate_trigger_macro writes CATScript file", script_p.is_file())
+    ck("Phase C: trigger macro contains Documents.Open", 'CATIA.Documents.Open' in macro_text or 'docs.Open' in macro_text)
+    ck("Phase C: trigger macro invokes ActiveViewer.Reframe", 'viewer.Reframe' in macro_text)
+    ck("Phase C: trigger macro closes document", 'doc.Close' in macro_text)
+    ck("Phase C: trigger macro exits CATIA via Quit", 'CATIA.Quit' in macro_text)
+
+# 4.2 End-to-End Live Activation Positive Test (All L0~L4 PASS, L5 NOT_RUN)
+with tempfile.TemporaryDirectory() as td_live:
+    live_ws = Path(td_live)
+    bin_dir = live_ws / "win_b64" / "code" / "bin"
+    dico_dir = live_ws / "win_b64" / "code" / "dictionary"
+    bin_dir.mkdir(parents=True)
+    dico_dir.mkdir(parents=True)
+
+    target_dll = bin_dir / "AcceptanceMod.dll"
+    target_dll.write_bytes(make_test_pe_image())
+
+    target_dico = dico_dir / "AcceptanceFw.dico"
+    target_dico.write_text("CAAMmrMeasureSet CATI3DGeoVisu libAcceptanceMod\n", encoding="latin-1")
+
+    # Mock runner simulating successful CNEXT -macro execution and constructor probe emission
+    simulated_cnext_pid = 24680
+    probe_captured_in_runner = {}
+
+    def mock_successful_runner(macro_path: str, workspace_path: str, timeout: int):
+        p_file = os.environ.get("CADE_PROBE_FILE")
+        p_nonce = os.environ.get("CADE_PROBE_NONCE")
+        probe_captured_in_runner["file"] = p_file
+        probe_captured_in_runner["nonce"] = p_nonce
+        if p_file:
+            with open(p_file, "a", encoding="utf-8") as fp:
+                fp.write(
+                    f"ACTION=CONSTRUCTOR_ACTIVATED;NONCE={p_nonce};"
+                    f"PID={simulated_cnext_pid};COMPONENT=CAAMmrMeasureSet\n"
+                )
+        return {
+            "status": "success",
+            "message": "Macro execution completed (exit 0)",
+            "cnext_pid": simulated_cnext_pid,
+            "loaded_modules": [str(target_dll), "C:\\Windows\\System32\\kernel32.dll"],
+        }
+
+    res_live = driver.execute_live_activation(
+        workspace_path=str(live_ws),
+        runner_fn=mock_successful_runner,
+    )
+
+    ck("Live Activation: Protocol identified as Live_Activation_Protocol_CNEXT_Macro",
+       res_live["protocol"] == "Live_Activation_Protocol_CNEXT_Macro")
+    ck("Live Activation: Overall status remains UNKNOWN without in-session QI probe (no false PASS)",
+       res_live["overall_status"] == "UNKNOWN")
+    ck("Phase A: Runtime view bin directory validated", res_live["phase_a_runtime_view"]["bin_exists"] is True)
+    ck("Phase A: Runtime view dictionary directory validated", res_live["phase_a_runtime_view"]["dictionary_dir_exists"] is True)
+    ck("Phase A: Target DLL confirmed present", res_live["phase_a_runtime_view"]["target_dll_exists"] is True)
+    ck("Phase A: Target DICO confirmed present", res_live["phase_a_runtime_view"]["target_dico_exists"] is True)
+    ck("Phase B: Official model resolved and exists", res_live["phase_b_model"]["model_exists"] is True)
+    ck("Phase B: Target component confirmed as CAAMmrMeasureSet", res_live["phase_b_model"]["component"] == "CAAMmrMeasureSet")
+    ck("Phase C: Macro execution status is success", res_live["phase_c_macro_execution"]["status"] == "success")
+    ck("Phase C & D: Probe environment variables were injected to runner",
+       bool(probe_captured_in_runner.get("file")) and bool(probe_captured_in_runner.get("nonce")))
+    ck("Phase C & D: Probe environment variables safely cleaned up afterwards",
+       "CADE_PROBE_FILE" not in os.environ and "CADE_PROBE_NONCE" not in os.environ)
+
+    # Layered evidence status verification
+    ev_live = res_live["phase_d_evidence"]
+    ck("Phase D: L0 status is PASS", ev_live["L0"]["status"] == "PASS")
+    ck("Phase D: L1 status is PASS", ev_live["L1"]["status"] == "PASS")
+    ck("Phase D: L2 status is PASS", ev_live["L2"]["status"] == "PASS")
+    ck("Phase D: L3 status is PASS", ev_live["L3"]["status"] == "PASS")
+    ck("Phase D: L3 exact matched path matches target DLL",
+       os.path.normcase(ev_live["L3"]["evidence"]["exact_matched_path"]) == os.path.normcase(str(target_dll)))
+    ck("Phase D: L4 constructor probe is verified",
+       ev_live["L4"]["evidence"]["constructor_probe_verified"] is True)
+    ck("Phase D: L4 status strictly remains UNKNOWN (prevents QI false pass)",
+       ev_live["L4"]["status"] == "UNKNOWN")
+    ck("Phase D: L4 activated extension confirmed as MyVisuExtension",
+       ev_live["L4"]["evidence"]["activated_extension"] == "MyVisuExtension")
+    ck("Phase D: L5 status strictly retained as NOT_RUN", ev_live["L5"]["status"] == "NOT_RUN")
+
+# 4.3 Negative & Defensive Scenarios
+with tempfile.TemporaryDirectory() as td_neg:
+    neg_ws = Path(td_neg)
+    bin_neg = neg_ws / "win_b64" / "code" / "bin"
+    dico_neg = neg_ws / "win_b64" / "code" / "dictionary"
+    bin_neg.mkdir(parents=True)
+    dico_neg.mkdir(parents=True)
+    dll_neg = bin_neg / "AcceptanceMod.dll"
+    dll_neg.write_bytes(make_test_pe_image())
+    dico_neg_file = dico_neg / "AcceptanceFw.dico"
+    dico_neg_file.write_text("CAAMmrMeasureSet CATI3DGeoVisu libAcceptanceMod\n", encoding="latin-1")
+
+    # Scenario A: Runner fails with non-zero exit code
+    def mock_failing_runner(macro_path: str, workspace_path: str, timeout: int):
+        return {
+            "status": "failed",
+            "message": "Macro execution failed (exit 1)",
+            "cnext_pid": 1111,
+            "loaded_modules": [str(dll_neg)],
+        }
+
+    res_fail = driver.execute_live_activation(
+        workspace_path=str(neg_ws),
+        runner_fn=mock_failing_runner,
+    )
+    ck("Negative Scenario A: Failing macro run fails overall status", res_fail["overall_status"] == "FAIL")
+    ck("Negative Scenario A: QueryInterface HRESULT reflects failure", res_fail["phase_d_evidence"]["L4"]["status"] == "FAIL")
+
+    # Scenario B: Target DLL loaded from wrong stray path (L3 stray violation)
+    stray_path = "C:\\StrayPath\\AcceptanceMod.dll"
+    def mock_stray_runner(macro_path: str, workspace_path: str, timeout: int):
+        return {
+            "status": "success",
+            "cnext_pid": 2222,
+            "loaded_modules": [stray_path],
+        }
+
+    res_stray = driver.execute_live_activation(
+        workspace_path=str(neg_ws),
+        runner_fn=mock_stray_runner,
+    )
+    ck("Negative Scenario B: Stray path violation results in L3 FAIL", res_stray["phase_d_evidence"]["L3"]["status"] == "FAIL")
+    ck("Negative Scenario B: Overall status is FAIL on L3 violation", res_stray["overall_status"] == "FAIL")
+
+    # Scenario C: Runner throws unexpected exception (safe exception handling)
+    def mock_exploding_runner(macro_path: str, workspace_path: str, timeout: int):
+        raise RuntimeError("Simulated process explosion")
+
+    res_crash = driver.execute_live_activation(
+        workspace_path=str(neg_ws),
+        runner_fn=mock_exploding_runner,
+    )
+    ck("Negative Scenario C: Exception safely handled in macro_execution",
+       res_crash["phase_c_macro_execution"]["status"] == "error")
+    ck("Negative Scenario C: Overall status fails gracefully", res_crash["overall_status"] == "FAIL")
+    ck("Negative Scenario C: Environment variables cleaned up after crash",
+       "CADE_PROBE_FILE" not in os.environ and "CADE_PROBE_NONCE" not in os.environ)
 
 print("\n" + "=" * 70)
 print(f"  Result: {passed}/{total} tests passed ({'ALL PASS' if passed == total else 'SOME FAILED'})")

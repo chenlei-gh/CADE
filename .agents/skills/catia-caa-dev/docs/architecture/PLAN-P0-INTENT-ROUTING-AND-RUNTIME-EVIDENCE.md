@@ -1,8 +1,8 @@
 # PLAN-P0-INTENT-ROUTING-AND-RUNTIME-EVIDENCE: CADE 业务意图链路修复与 Runtime 分层证据实施计划与审查闭环
 
-> **状态**: `IMPLEMENTED_PENDING_REAL_RUNTIME_EVIDENCE`（P0-1 语义链路已闭环；P0-2 静态预检已加强，L4/L5 仍无真实运行证据）
-> **更新日期**: 2026-11-04
-> **目标基准**: Commit `fdafbea`（初始实施）+ `51f1660`（二次整改）+ `5644b231`（第三轮）+ `7918198`（第四轮）+ `e49dd5f`（第五轮）+ `9891eaa`（第七轮）+ `835903a`（第八轮，仅收口只读核验发现的两个缺口）
+> **状态**: `STAGE_FROZEN`（P0-1 意图路由冻结；通用 Runtime 保留基线；P0-2 OM 驱动有条件冻结，L2/L3 复用收敛，L4 拒绝无凭据 QI 假阳性保持 UNKNOWN，L5 延期保持 NOT_RUN）
+> **更新日期**: 2026-11-05
+> **目标基准**: Commit `e98083f`（远端基线）+ P0-2 OM 驱动收敛（L2/L3 统一、L4 诚实边界校准）
 > **涉及核心缺陷**: 
 > 1. P0-1 业务意图到 CAA 构件上下文映射断链与暴力 fallback（以及多领域语义融合）
 > 2. P0-2 CATIA Runtime 虚假启动判定与 Add-in 挂载证据缺失（以及严格资源与进程匹配）  
@@ -475,3 +475,44 @@ fatal error LNK1120: 129 个无法解析的外部命令
 - 生成的 `CATExtIVisu` 骨架已在 B28 编译并链接通过（见上节），但「编译链接通过」不等于「CATIA 已加载并注册该 add-in」。
 - GitHub CI 状态：无记录，本轮数字均为本地实测。
 - GitHub Actions workflow 查询只覆盖 PR 触发的 runs，返回空不能证明所有 Actions 都没跑。
+
+### 5.8 第九轮收口与阶段性冻结（关闭 L2/L3 重复与 L4 QI 假阳性漏洞）
+
+本轮彻底收敛 P0-2 OM Driver (`tools/verify_om_activation.py`)，不再扩充测试矩阵，完成以下收口：
+
+1. **统一 L2/L3 证据入口（消除两套标准）**：
+   - OM Driver 的 `evaluate_layered_evidence()` 全面复用 `skills/run.py` 的 `identify_target_cnext()` 与 `verify_module_loaded()`；
+   - 支持传入 `cnext_identity`、`launcher_pid`、`t_start`，L2 严格遵循进程树/双向时间窗口/多实例消歧逻辑；
+   - L3 严格校验模块枚举完整性与工作区绝对物理路径，区分文件名相同但路径偏离的 stray path 违规。
+
+2. **校准 L4 判定语义（消除无凭据 QueryInterface 假阳性 PASS）**：
+   - 彻底关闭调用方直接传入普通整数 `query_interface_hr=0` 即可断言 L4 `PASS` 的证据漏洞；
+   - 明确证据链分工：4 要素单行原子匹配仅证明 `constructor_probe_verified = True`；
+   - 缺少在本次会话内真实捕获、与 PID/Nonce 绑定的 `QueryInterface` 凭据时，L4 状态**严格保持 `UNKNOWN`**（`status="CONSTRUCTOR_ACTIVATED_QI_UNPROVEN"`, `reason="query_interface_unverified_requires_in_session_qi_probe_certificate"`）；
+   - 整体状态 `overall_status` 在此情况下输出 `UNKNOWN`，坚决不向调用方呈现虚假 `PASS`。
+
+3. **保留安全宏驱动与短路径保护**：
+   - 实现 `generate_trigger_macro()` 与 `execute_live_activation()`，集成 Windows 8.3 短路径转换（`GetShortPathNameW`）防御 `mkrun` 空格截断问题；
+   - 整体执行在 L4 未获会话内 QI 凭据时返回 `UNKNOWN`。
+
+---
+
+## 7. 阶段性冻结结论与重新开启准则
+
+### 7.1 各子系统阶段性冻结状态
+
+| 子系统 / 模块 | 当前状态 | 冻结边界与说明 |
+|:---|:---|:---|
+| **P0-1 业务意图链路** | **冻结 (FROZEN)** | 意图识别、澄清机制、`LateTypeResolver` 组件解析、`LINK_WITH` 及 `IdentityCard.xml` prerequisite 自动注入链路已闭环，不再扩展。 |
+| **通用 CAA Runtime (`skills/run.py`)** | **保留基线 (BASELINE)** | 进程识别、PSAPI 动态扩容枚举、路径校验完整保留，禁止为了专项需求重写通用基础设施。 |
+| **P0-2 OM Driver (`verify_om_activation.py`)** | **有条件冻结 (FROZEN)** | 官方样例解析、字典全量扫描、静态契约校验、4 要素原子探针解析均已就绪。L2/L3 统一复用 Runtime 层。 |
+| **L4 真实 Extension 激活** | **保持 UNKNOWN** | 严禁伪造凭据。在获得进程内真实 QI 探针证书前，严格报告 `UNKNOWN`。 |
+| **L5 几何渲染与视觉呈现** | **延期 (NOT_RUN)** | 属于后续几何实现任务，本阶段不作为冻结门槛，严格维持 `NOT_RUN`。 |
+
+### 7.2 重新开启准则
+
+满足以下**任一条件**前，严禁为追求测试数量或理论完备性而重启修改：
+1. 真实的 B28 编译/链接构建发生 Regression；
+2. 发现导致实际运行时崩溃或误判为 PASS 的假阳性 Bug；
+3. 产生实际数据损坏或状态不一致；
+4. 用户明确提出新的业务场景或构件能力需求。

@@ -358,20 +358,6 @@ class DiagnosticsEngine:
                 if not includes:
                     continue
 
-                # Read LINK_WITH from Imakefile
-                link_with = set()
-                imake_path = mod.imakefile_path()
-                if imake_path.exists():
-                    try:
-                        imake = imake_path.read_text(encoding="utf-8", errors="replace")
-                        for m in re.finditer(r'LINK_WITH\s*[=+]?\s*(.+)', imake):
-                            for e in m.group(1).replace('\\', ' ').split():
-                                e = e.strip().strip('$()')
-                                if e and not e.startswith('#') and not e.startswith('$'):
-                                    link_with.add(e)
-                    except OSError:
-                        pass
-
                 # Check each included header's framework
                 missing_prereqs = {}  # fw_name → [header stems]
                 for stem in sorted(includes):

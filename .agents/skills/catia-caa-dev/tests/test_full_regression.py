@@ -65,6 +65,11 @@ _parser.add_argument(
     action="store_true",
     help="Explicitly allow suites that may start or stop CATIA",
 )
+_parser.add_argument(
+    "--run-nested-suites",
+    action="store_true",
+    help="Force running nested standalone suites as subprocesses in Section 20",
+)
 ARGS = _parser.parse_args()
 
 # ─── Test infrastructure ───────────────────────────────────────────
@@ -1160,10 +1165,28 @@ SUITE_MARKERS = {
 _suite_passed = 0
 _suite_failed = 0
 
+import py_compile
+
+run_subprocesses = ARGS.run_nested_suites and (os.environ.get("CADE_MASTER_RUNNER") != "1")
+
+if not run_subprocesses:
+    _reason = "under CADE master runner (suites run individually)" if os.environ.get("CADE_MASTER_RUNNER") == "1" else "--run-nested-suites not specified"
+    print(f"\n  [INFO] Section 20 running fast file integrity check ({_reason}) to eliminate duplicate runs.")
+
 for script in EXISTING_SUITES:
     script_path = SKILL_ROOT / "tests" / script
     if not script_path.exists():
         check(f"20.x {script} (exists)", False, f"file not found: {script_path}")
+        continue
+
+    if not run_subprocesses:
+        try:
+            py_compile.compile(str(script_path), doraise=True)
+            _suite_passed += 1
+            check(f"20.x {script} (integrity)", True)
+        except Exception as e:
+            _suite_failed += 1
+            check(f"20.x {script} (integrity)", False, str(e))
         continue
 
     print(f"\n  [SUITE] {script} ...", end="", flush=True)

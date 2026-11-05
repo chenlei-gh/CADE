@@ -890,6 +890,9 @@ try:
         class _Env:
             config = {"CATIA_INSTALL": install}
 
+            def load_config(self):
+                return True
+
             def get_architecture(self):
                 return "win_b64"
 
@@ -899,10 +902,14 @@ try:
             def resolve_tck_id(self):
                 return None
 
-        with patch.object(runtime_view_module, "CAAEnvironment", _Env), patch.object(
-            runtime_view_module, "Logger", _SilentLogger
-        ), patch.object(runtime_view_module, "Cache", _SilentCache), patch.object(
-            runtime_view_module.subprocess, "run", **run_patch
+            def run_command(self, cmd, ws):
+                mkinit = Path(install) / "win_b64" / "code" / "command" / "mkinit.bat"
+                if not mkinit.exists():
+                    raise FileNotFoundError(f"mkinit.bat not found: {mkinit}")
+                return [cmd], cmd
+
+        with patch.object(build_module, "CAAEnvironment", _Env), patch.object(
+            build_module.subprocess, "run", **run_patch
         ):
             return runtime_view_module.create_runtime_view(mk_ws)
 
