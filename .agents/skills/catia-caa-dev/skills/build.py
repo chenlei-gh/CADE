@@ -1163,7 +1163,7 @@ def create_runtime_view(
             os.environ["MKMK_ARCH"] = architecture
         result = _exec_build_cmd("mkCreateRuntimeView", workspace_path)
 
-        runtime_created = rt_dir.is_dir()
+        runtime_created = rt_dir.is_dir() and (rt_dir / "code").is_dir()
         cmd_ok = isinstance(result, dict) and result.get("status") in ("success", "ok")
 
         if runtime_created and cmd_ok:
@@ -1185,21 +1185,30 @@ def create_runtime_view(
             }
         else:
             # Rollback previous runtime view if command failed or runtime structure incomplete
+            rollback_failed = False
+            rollback_error = None
             if backup_dir and backup_dir.exists():
                 try:
                     if rt_dir.exists():
                         shutil.rmtree(rt_dir, ignore_errors=True)
                     backup_dir.rename(rt_dir)
-                except Exception:
-                    pass
+                except Exception as rollback_err:
+                    rollback_failed = True
+                    rollback_error = str(rollback_err)
+
             cmd_status = result.get("status") if isinstance(result, dict) else None
             final_status = cmd_status if cmd_status in ("error", "timeout") else "failed"
-            err_msg = (
+            base_err = (
                 result.get("message")
                 if isinstance(result, dict) and result.get("message")
                 else f"Failed to create Runtime View at {arch}: command failed or incomplete structure"
             )
-            return {
+            if rollback_failed:
+                err_msg = f"{base_err}. CRITICAL: previous Runtime View could not be restored automatically from backup '{backup_dir}': {rollback_error}"
+            else:
+                err_msg = base_err
+
+            res_dict = {
                 "status": final_status,
                 "message": err_msg,
                 "created": False,
@@ -1207,16 +1216,30 @@ def create_runtime_view(
                 "runtime_path": str(rt_dir),
                 "command_result": result,
             }
+            if rollback_failed:
+                res_dict["rollback_failed"] = True
+                res_dict["rollback_error"] = rollback_error
+            return res_dict
     except Exception as e:
         # Full exception safety: rollback staged backup if unhandled exception occurs
+        rollback_failed = False
+        rollback_error = None
         if backup_dir and backup_dir.exists():
             try:
                 if rt_dir.exists():
                     shutil.rmtree(rt_dir, ignore_errors=True)
                 backup_dir.rename(rt_dir)
-            except Exception:
-                pass
-        return error_result(f"Exception during Runtime View creation at {arch}: {e}")
+            except Exception as rollback_err:
+                rollback_failed = True
+                rollback_error = str(rollback_err)
+        err_msg = f"Exception during Runtime View creation at {arch}: {e}"
+        if rollback_failed:
+            err_msg += f". CRITICAL: previous Runtime View could not be restored automatically from backup '{backup_dir}': {rollback_error}"
+        res_dict = error_result(err_msg)
+        if rollback_failed:
+            res_dict["rollback_failed"] = True
+            res_dict["rollback_error"] = rollback_error
+        return res_dict
     finally:
         if architecture:
             if old_arch_env is not None:

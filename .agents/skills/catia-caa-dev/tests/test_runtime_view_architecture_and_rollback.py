@@ -137,6 +137,23 @@ with tempfile.TemporaryDirectory() as td:
         ck("4.2 Previous runtime view rolled back after exception",
            canary.is_file() and canary.read_text(encoding="utf-8") == "SAVED_CANARY")
 
+    # 4.3 Explicit reporting when rollback restoration itself fails (no silent swallowing)
+    orig_rename = Path.rename
+    rename_calls = []
+    def mock_conditional_rename(self, target, *args, **kwargs):
+        rename_calls.append((self, target))
+        if len(rename_calls) == 1:
+            return orig_rename(self, target, *args, **kwargs)
+        raise OSError("Simulated permission denied on backup rename")
+
+    with patch("build._exec_build_cmd", side_effect=mock_exploding_creation):
+        with patch.object(Path, "rename", side_effect=mock_conditional_rename, autospec=True):
+            res_rb_fail = create_runtime_view(ws, overwrite=True)
+            ck("4.3 Rollback failure explicitly reported in result",
+               res_rb_fail.get("rollback_failed") is True)
+            ck("4.4 Rollback error details preserved in result",
+               "Simulated permission denied" in str(res_rb_fail.get("rollback_error", "")))
+
 # ── 5. Dictionary Copy Dedup & sync_runtime_view Delegation ──────────
 print("\n[5] Dictionary Copy Dedup & sync_runtime_view Delegation")
 with tempfile.TemporaryDirectory() as td:

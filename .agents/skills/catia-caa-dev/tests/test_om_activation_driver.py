@@ -20,6 +20,7 @@ import time
 import tempfile
 import pathlib
 from pathlib import Path
+from unittest.mock import patch
 
 TESTS_DIR = pathlib.Path(__file__).parent
 SKILL_ROOT = TESTS_DIR.parent
@@ -220,40 +221,21 @@ with tempfile.TemporaryDirectory() as td_rt:
     test_nonce = "NONCE_ABC_123"
     test_pid = 9999
 
-    # Case A: QueryInterface succeeded (0x0) but probe log does NOT exist -> UNKNOWN
-    ev_l4_no_probe = driver.evaluate_layered_evidence(rt_ws, query_interface_hr=0, probe_log_file=probe_log)
-    ck("L4: QueryInterface S_OK without probe log remains UNKNOWN",
+    # Case A: Probe log does NOT exist -> UNKNOWN
+    ev_l4_no_probe = driver.evaluate_layered_evidence(rt_ws, probe_log_file=probe_log)
+    ck("L4: Probe log missing strictly remains UNKNOWN",
        ev_l4_no_probe["L4"]["status"] == "UNKNOWN")
 
-    # Case B: Unverified integer QueryInterface HRESULT without authentic certificate remains UNKNOWN
-    ev_l4_unverified = driver.evaluate_layered_evidence(rt_ws, query_interface_hr=0x80004002, probe_log_file=probe_log)
-    ck("L4: Unverified non-zero HRESULT strictly remains UNKNOWN (no false FAIL)",
+    # Case B: Without authentic 4-factor probe, L4 strictly remains UNKNOWN (no false FAIL/PASS)
+    ev_l4_unverified = driver.evaluate_layered_evidence(rt_ws, probe_log_file=probe_log)
+    ck("L4: Unverified call strictly remains UNKNOWN (no false FAIL/PASS)",
        ev_l4_unverified["L4"]["status"] == "UNKNOWN")
-
-    # Case B2: Arbitrary external dictionary without in-session probe mechanism strictly remains UNKNOWN
-    fake_fail_cert = {
-        "interface": "CATI3DGeoVisu",
-        "cnext_pid": test_pid,
-        "nonce": test_nonce,
-        "in_session": True,
-        "hresult": 0x80004002,
-    }
-    ev_l4_fail = driver.evaluate_layered_evidence(
-        rt_ws,
-        probe_log_file=probe_log,
-        expected_nonce=test_nonce,
-        expected_cnext_pid=test_pid,
-        session_start_time=now,
-        qi_probe_certificate=fake_fail_cert,
-    )
-    ck("L4: Arbitrary dictionary without in-session C++ probe strictly remains UNKNOWN (no false FAIL)",
-       ev_l4_fail["L4"]["status"] == "UNKNOWN")
 
     # Case C: Probe log exists but is STALE (mtime < session_start_time) -> UNKNOWN
     probe_log.write_text(f"ACTION=CONSTRUCTOR_ACTIVATED;NONCE={test_nonce};PID={test_pid};COMPONENT=CAAMmrMeasureSet\n", encoding="utf-8")
     os.utime(probe_log, (now - 100, now - 100)) # Make file 100s old
     ev_l4_stale = driver.evaluate_layered_evidence(
-        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        rt_ws, probe_log_file=probe_log,
         expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=now
     )
     ck("L4: Stale probe log (mtime check failed) remains UNKNOWN", ev_l4_stale["L4"]["status"] == "UNKNOWN")
@@ -262,7 +244,7 @@ with tempfile.TemporaryDirectory() as td_rt:
     # Case D: Fresh probe log but NONCE mismatch -> UNKNOWN
     os.utime(probe_log, (now, now))
     ev_l4_nonce_mismatch = driver.evaluate_layered_evidence(
-        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        rt_ws, probe_log_file=probe_log,
         expected_nonce="WRONG_NONCE", expected_cnext_pid=test_pid, session_start_time=now - 5
     )
     ck("L4: Nonce mismatch remains UNKNOWN", ev_l4_nonce_mismatch["L4"]["status"] == "UNKNOWN")
@@ -271,7 +253,7 @@ with tempfile.TemporaryDirectory() as td_rt:
 
     # Case E: Fresh probe log, nonce match, but PID mismatch -> UNKNOWN
     ev_l4_pid_mismatch = driver.evaluate_layered_evidence(
-        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        rt_ws, probe_log_file=probe_log,
         expected_nonce=test_nonce, expected_cnext_pid=8888, session_start_time=now - 5
     )
     ck("L4: PID mismatch remains UNKNOWN", ev_l4_pid_mismatch["L4"]["status"] == "UNKNOWN")
@@ -282,7 +264,7 @@ with tempfile.TemporaryDirectory() as td_rt:
     probe_log.write_text(f"ACTION=CONSTRUCTOR_ACTIVATED;NONCE={test_nonce};PID={test_pid};COMPONENT=CAAMmrMeasureSet\n", encoding="utf-8")
     os.utime(probe_log, (now, now))
     ev_l4_no_cred = driver.evaluate_layered_evidence(
-        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        rt_ws, probe_log_file=probe_log,
         expected_nonce=None, expected_cnext_pid=None, session_start_time=None
     )
     ck("L4: Missing credentials fail-closed to UNKNOWN", ev_l4_no_cred["L4"]["status"] == "UNKNOWN")
@@ -291,7 +273,7 @@ with tempfile.TemporaryDirectory() as td_rt:
 
     # Case G2 (Strict Type Boundary Defense): Reject bool PID (isinstance(True, int) is True)
     ev_l4_bool_pid = driver.evaluate_layered_evidence(
-        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        rt_ws, probe_log_file=probe_log,
         expected_nonce=test_nonce, expected_cnext_pid=True, session_start_time=now - 5
     )
     ck("L4: bool PID (True) strictly rejected by type guard", ev_l4_bool_pid["L4"]["status"] == "UNKNOWN")
@@ -300,7 +282,7 @@ with tempfile.TemporaryDirectory() as td_rt:
 
     # Case G3 (Strict Type Boundary Defense): Reject bool session_start_time
     ev_l4_bool_time = driver.evaluate_layered_evidence(
-        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        rt_ws, probe_log_file=probe_log,
         expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=True
     )
     ck("L4: bool session_start_time (True) strictly rejected by type guard", ev_l4_bool_time["L4"]["status"] == "UNKNOWN")
@@ -310,33 +292,33 @@ with tempfile.TemporaryDirectory() as td_rt:
     # Case G4 (Strict Type Boundary Defense): Reject non-finite session_start_time (inf, nan)
     import math
     ev_l4_inf_time = driver.evaluate_layered_evidence(
-        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        rt_ws, probe_log_file=probe_log,
         expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=float("inf")
     )
     ck("L4: inf session_start_time strictly rejected", ev_l4_inf_time["L4"]["status"] == "UNKNOWN")
 
     ev_l4_nan_time = driver.evaluate_layered_evidence(
-        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        rt_ws, probe_log_file=probe_log,
         expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=float("nan")
     )
     ck("L4: nan session_start_time strictly rejected", ev_l4_nan_time["L4"]["status"] == "UNKNOWN")
 
     # Case G5 (Strict Value Boundary Defense): Reject non-positive PID and whitespace nonce
     ev_l4_zero_pid = driver.evaluate_layered_evidence(
-        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        rt_ws, probe_log_file=probe_log,
         expected_nonce=test_nonce, expected_cnext_pid=0, session_start_time=now - 5
     )
     ck("L4: PID=0 strictly rejected", ev_l4_zero_pid["L4"]["status"] == "UNKNOWN")
 
     ev_l4_blank_nonce = driver.evaluate_layered_evidence(
-        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        rt_ws, probe_log_file=probe_log,
         expected_nonce="   ", expected_cnext_pid=test_pid, session_start_time=now - 5
     )
     ck("L4: whitespace nonce strictly rejected", ev_l4_blank_nonce["L4"]["status"] == "UNKNOWN")
 
     # Case G6 (Strict Arithmetic Overflow Defense): Reject ultra-large int timestamp causing OverflowError in math.isfinite
     ev_l4_overflow_time = driver.evaluate_layered_evidence(
-        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        rt_ws, probe_log_file=probe_log,
         expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=10**3000
     )
     ck("L4: 10**3000 overflow session_start_time safely fail-closed to UNKNOWN",
@@ -355,7 +337,7 @@ with tempfile.TemporaryDirectory() as td_rt:
     )
     os.utime(spliced_log, (now, now))
     ev_l4_splice = driver.evaluate_layered_evidence(
-        rt_ws, query_interface_hr=0, probe_log_file=spliced_log,
+        rt_ws, probe_log_file=spliced_log,
         expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=now - 5
     )
     ck("L4: Multi-line splicing attack strictly rejected as UNKNOWN", ev_l4_splice["L4"]["status"] == "UNKNOWN")
@@ -370,20 +352,18 @@ with tempfile.TemporaryDirectory() as td_rt:
     )
     os.utime(invalid_action_log, (now, now))
     ev_l4_action = driver.evaluate_layered_evidence(
-        rt_ws, query_interface_hr=0, probe_log_file=invalid_action_log,
+        rt_ws, probe_log_file=invalid_action_log,
         expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=now - 5
     )
     ck("L4: Non-CONSTRUCTOR_ACTIVATED action strictly rejected as UNKNOWN", ev_l4_action["L4"]["status"] == "UNKNOWN")
 
     # Case J: Four-factor atomic certificate satisfies constructor probe -> Constructor verified, but QI unproven!
     ev_l4_pass = driver.evaluate_layered_evidence(
-        rt_ws, query_interface_hr=0, probe_log_file=probe_log,
+        rt_ws, probe_log_file=probe_log,
         expected_nonce=test_nonce, expected_cnext_pid=test_pid, session_start_time=now - 5
     )
     ck("L4: Single atomic record satisfies constructor probe verification",
        ev_l4_pass["L4"]["evidence"]["constructor_probe_verified"] is True)
-    ck("L4: Plain integer query_interface_hr=0 strictly does NOT yield false PASS",
-       ev_l4_pass["L4"]["status"] == "UNKNOWN")
     ck("L4: Status explicitly states CONSTRUCTOR_ACTIVATED_QI_UNPROVEN",
        ev_l4_pass["L4"]["evidence"]["status"] == "CONSTRUCTOR_ACTIVATED_QI_UNPROVEN")
     ck("L4: Reason indicates missing authentic in-session QI probe certificate",
@@ -471,15 +451,25 @@ with tempfile.TemporaryDirectory() as td_live:
         return {
             "status": "success",
             "message": "Macro execution completed (exit 0)",
-            "cnext_pid": simulated_cnext_pid,
-            "cnext_identity": ("PASS", simulated_cnext_pid, {"method": "mock_session_tree"}),
-            "l3_result": ("PASS", {"matched_path": str(target_dll), "exact_matched_path": str(target_dll), "exact_match_pass": True, "source": "run.verify_module_loaded"}),
         }
 
-    res_live = driver.execute_live_activation(
-        workspace_path=str(live_ws),
-        runner_fn=mock_successful_runner,
-    )
+    mock_id_return = ("PASS", simulated_cnext_pid, {"method": "mock_session_tree"})
+    mock_l3_return = ("PASS", {
+        "matched_path": str(target_dll),
+        "exact_matched_path": str(target_dll),
+        "exact_match_pass": True,
+        "source": "run.verify_module_loaded",
+    })
+
+    with patch("verify_om_activation.identify_target_cnext", return_value=mock_id_return) as mock_id:
+        with patch("verify_om_activation.verify_module_loaded", return_value=mock_l3_return) as mock_l3:
+            res_live = driver.execute_live_activation(
+                workspace_path=str(live_ws),
+                runner_fn=mock_successful_runner,
+            )
+            ck("Single Source of Truth: identify_target_cnext was called", mock_id.called)
+            ck("Single Source of Truth: verify_module_loaded was called for target PID",
+               mock_l3.called and mock_l3.call_args[0][0] == simulated_cnext_pid)
 
     ck("Live Activation: Protocol identified as Live_Activation_Protocol_CNEXT_Macro",
        res_live["protocol"] == "Live_Activation_Protocol_CNEXT_Macro")
@@ -530,15 +520,14 @@ with tempfile.TemporaryDirectory() as td_neg:
         return {
             "status": "failed",
             "message": "Macro execution failed (exit 1)",
-            "cnext_pid": 1111,
-            "cnext_identity": ("PASS", 1111, {"method": "mock_session_tree"}),
-            "l3_result": ("PASS", {"matched_path": str(dll_neg), "exact_matched_path": str(dll_neg), "exact_match_pass": True}),
         }
 
-    res_fail = driver.execute_live_activation(
-        workspace_path=str(neg_ws),
-        runner_fn=mock_failing_runner,
-    )
+    with patch("verify_om_activation.identify_target_cnext", return_value=("PASS", 1111, {"method": "mock_tree"})):
+        with patch("verify_om_activation.verify_module_loaded", return_value=("PASS", {"matched_path": str(dll_neg), "exact_matched_path": str(dll_neg), "exact_match_pass": True})):
+            res_fail = driver.execute_live_activation(
+                workspace_path=str(neg_ws),
+                runner_fn=mock_failing_runner,
+            )
     ck("Negative Scenario A: Failing macro run fails overall status", res_fail["overall_status"] == "FAIL")
     ck("Negative Scenario A: QueryInterface remains UNKNOWN without authentic QI probe (no false FAIL)",
        res_fail["phase_d_evidence"]["L4"]["status"] == "UNKNOWN")
@@ -548,15 +537,14 @@ with tempfile.TemporaryDirectory() as td_neg:
     def mock_stray_runner(macro_path: str, workspace_path: str, timeout: int):
         return {
             "status": "success",
-            "cnext_pid": 2222,
-            "cnext_identity": ("PASS", 2222, {"method": "mock_session_tree"}),
-            "l3_result": ("FAIL", {"stray_mismatch_path": stray_path, "exact_match_pass": False, "reason": "stray_dll_loaded_from_wrong_path"}),
         }
 
-    res_stray = driver.execute_live_activation(
-        workspace_path=str(neg_ws),
-        runner_fn=mock_stray_runner,
-    )
+    with patch("verify_om_activation.identify_target_cnext", return_value=("PASS", 2222, {"method": "mock_tree"})):
+        with patch("verify_om_activation.verify_module_loaded", return_value=("FAIL", {"stray_mismatch_path": stray_path, "exact_match_pass": False, "reason": "stray_dll_loaded_from_wrong_path"})):
+            res_stray = driver.execute_live_activation(
+                workspace_path=str(neg_ws),
+                runner_fn=mock_stray_runner,
+            )
     ck("Negative Scenario B: Stray path violation results in L3 FAIL", res_stray["phase_d_evidence"]["L3"]["status"] == "FAIL")
     ck("Negative Scenario B: Overall status is FAIL on L3 violation", res_stray["overall_status"] == "FAIL")
 

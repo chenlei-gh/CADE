@@ -500,7 +500,21 @@ fatal error LNK1120: 129 个无法解析的外部命令
 
 4. **架构参数贯穿 OM Driver 与测试套件扩充**：
    - `OMActivationDriver` 支持 `architecture` 参数，内部路径全面动态解析，消除 `"win_b64"` 盘符和目录硬编码；
-   - 新增针对性测试 `test_runtime_view_architecture_and_rollback.py`（13/13 PASS），全仓 Master 测试套件正式更新为 53 套（Quick 52 套，全量 100% 通过）。
+   - 新增针对性测试 `test_runtime_view_architecture_and_rollback.py`（15/15 PASS），全仓 Master 测试套件正式更新为 53 套（Quick 52 套，全量 100% 通过）。
+
+### 5.10 运行时证据单一事实来源与单一判定权终局闭环 (2026-11-05)
+
+根据最新代码审查与去重闭环要求，彻底切断所有证据注入后门，实现架构收敛：
+1. **Runtime View 完整性契约与显式回滚告警 (P0-1)**：
+   - `create_runtime_view()` 严格执行最低有效目录结构契约 `rt_dir.is_dir() and (rt_dir / "code").is_dir()`，修复历史测试 mock 缺陷；
+   - 回滚恢复逻辑严格透明化，发生任何异常时在返回字典中明确报告 `rollback_failed=True` 及 `rollback_error`，杜绝静默吞噬。
+2. **切除 L2/L3 旁路注入入口，实现单一事实来源 (P0-2 & P0-3)**：
+   - 彻底删除 `execute_live_activation()` 中从 `macro_exec_result` 获取 `cnext_identity`、`cnext_pid`、`l3_result` 的后门字典解析；
+   - L2 判定唯一来源于 `run.identify_target_cnext()`；L3 判定唯一来源于 `run.verify_module_loaded()`；
+   - 移除 `evaluate_layered_evidence()` 手动注入 `"source": "run.verify_module_loaded"` 的伪造逻辑；单元测试全部通过 `unittest.mock.patch` 作用于权威函数边界。
+3. **彻底清理废弃接口与死变量 (P0-4)**：
+   - `evaluate_layered_evidence()` 彻底移除 `loaded_modules`、`query_interface_hr`、`qi_probe_certificate` 等过时参数，移除 `captured_modules` 死变量；
+   - L4 严格基于 4 要素原子探针判定构造函数激活，QI 未能证实前严格保持 `UNKNOWN`。
 
 ---
 
@@ -512,8 +526,8 @@ fatal error LNK1120: 129 个无法解析的外部命令
 |:---|:---|:---|
 | **P0-1 业务意图链路** | **冻结 (FROZEN)** | 意图识别、澄清机制、`LateTypeResolver` 组件解析、`LINK_WITH` 及 `IdentityCard.xml` prerequisite 自动注入链路已闭环，不再扩展。 |
 | **通用 CAA Runtime (`skills/run.py`)** | **保留基线 (BASELINE)** | 进程识别、PSAPI 动态扩容枚举、路径校验完整保留，为全仓唯一进程与模块判定基础设施。 |
-| **Runtime View 创建 (`skills/build.py`)** | **权威冻结 (FROZEN)** | `build.py:create_runtime_view()` 作为全仓唯一正式创建入口，支持安全暂存回滚与架构显式驱动，`runtime_view.py` 仅保留只读检查并直接委托。 |
-| **P0-2 OM Driver (`verify_om_activation.py`)** | **冻结 (FROZEN)** | 官方样例解析、字典全量扫描、静态契约校验、4 要素原子探针解析均已就绪。L2/L3 实际运行路径严格复用 Runtime 层，L4 拒绝无凭据 QI 假 PASS / 假 FAIL 严格保持 UNKNOWN。 |
+| **Runtime View 创建 (`skills/build.py`)** | **权威冻结 (FROZEN)** | `build.py:create_runtime_view()` 作为全仓唯一正式创建入口，支持安全暂存回滚、完整性校验（`<arch>/code` 目录）与架构显式驱动，`runtime_view.py` 仅保留只读检查并直接委托。 |
+| **P0-2 OM Driver (`verify_om_activation.py`)** | **权威冻结 (FROZEN)** | 官方样例解析、字典全量扫描、静态契约校验、4 要素原子探针解析均已就绪。L2/L3 生产与测试严格以 `run.py` 权威函数为单一事实来源，无任何旁路注入；废弃参数彻底清理。 |
 | **L4 真实 Extension 激活** | **保持 UNKNOWN** | 严禁伪造凭据。在获得进程内真实 QI 探针证书前，严格报告 `UNKNOWN`。 |
 | **L5 几何渲染与视觉呈现** | **延期 (NOT_RUN)** | 属于后续几何实现任务，本阶段不作为冻结门槛，严格维持 `NOT_RUN`。 |
 

@@ -923,7 +923,7 @@ try:
     def _fake_success(*_args, **_kwargs):
         # Stand in for mkCreateRuntimeView actually producing the view.
         # subprocess.run's argv is positional, hence *args.
-        (mk_ws / "win_b64").mkdir(exist_ok=True)
+        (mk_ws / "win_b64" / "code").mkdir(parents=True, exist_ok=True)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     ok_result = _run_runtime_view({"side_effect": _fake_success}, str(fake_catia))

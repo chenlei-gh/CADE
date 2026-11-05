@@ -316,9 +316,7 @@ class OMActivationDriver:
         runtime_ws: pathlib.Path,
         cnext_pid: Optional[int] = None,
         l3_result: Optional[Tuple[str, Dict[str, Any]]] = None,
-        loaded_modules: Optional[List[str]] = None,
         probe_log_file: Optional[pathlib.Path] = None,
-        query_interface_hr: Optional[int] = None,
         expected_nonce: Optional[str] = None,
         expected_cnext_pid: Optional[int] = None,
         session_start_time: Optional[float] = None,
@@ -326,7 +324,6 @@ class OMActivationDriver:
         launcher_pid: Optional[int] = None,
         t_start: Optional[float] = None,
         baseline_pids: Optional[set] = None,
-        qi_probe_certificate: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Evaluate L0 through L5 evidence status according to formal CADE contracts.
@@ -442,12 +439,9 @@ class OMActivationDriver:
         if l3_result is not None:
             l3_status, l3_ev = l3_result
             l3_evidence = dict(l3_ev)
-            if "source" not in l3_evidence:
-                l3_evidence["source"] = "run.verify_module_loaded"
         elif effective_pid is not None and effective_pid > 0:
             l3_status, l3_ev = verify_module_loaded(effective_pid, target_dll)
             l3_evidence = dict(l3_ev)
-            l3_evidence["source"] = "run.verify_module_loaded"
         else:
             l3_evidence = {"reason": "no_pid_or_l3_result_provided"}
 
@@ -755,7 +749,6 @@ CATRep * {extension_name}::BuildRep()
         captured_identity: Optional[Tuple[str, Optional[int], Dict[str, Any]]] = None
         captured_pid: Optional[int] = None
         captured_l3: Optional[Tuple[str, Dict[str, Any]]] = None
-        captured_modules: Optional[List[str]] = None
         stop_monitor = threading.Event()
 
         # Set environment variables for probe emission
@@ -774,7 +767,7 @@ CATRep * {extension_name}::BuildRep()
 
         # Background PSAPI Process & Module Monitor using unified run.py infrastructure
         def _monitor_cnext():
-            nonlocal captured_identity, captured_pid, captured_l3, captured_modules
+            nonlocal captured_identity, captured_pid, captured_l3
             while not stop_monitor.is_set():
                 try:
                     ident_status, ident_pid, ident_ev = identify_target_cnext(
@@ -828,15 +821,23 @@ CATRep * {extension_name}::BuildRep()
                 except OSError:
                     pass
 
-        # Runner result integration (controlled test mock only)
-        if captured_identity is None and runner_fn is not None and "cnext_identity" in macro_exec_result:
-            captured_identity = macro_exec_result["cnext_identity"]
-            captured_pid = captured_identity[1]
-        elif captured_identity is None and runner_fn is not None and "cnext_pid" in macro_exec_result:
-            captured_pid = macro_exec_result["cnext_pid"]
-
-        if captured_l3 is None and runner_fn is not None and "l3_result" in macro_exec_result:
-            captured_l3 = macro_exec_result["l3_result"]
+        # Single Source of Truth: if background monitor didn't capture before runner finished,
+        # perform a synchronous check via the same authoritative functions (no runner bypasses).
+        if captured_identity is None:
+            try:
+                ident_status, ident_pid, ident_ev = identify_target_cnext(
+                    launcher_pid=None,
+                    t_start=session_start_time,
+                    baseline_pids=initial_pids,
+                )
+                if ident_status in ("PASS", "FAIL", "UNKNOWN"):
+                    captured_identity = (ident_status, ident_pid, ident_ev)
+                    captured_pid = ident_pid
+                    if ident_pid:
+                        l3_stat, l3_ev = verify_module_loaded(ident_pid, target_dll)
+                        captured_l3 = (l3_stat, l3_ev)
+            except Exception:
+                pass
 
         # Phase D: Evaluate Layered Evidence Matrix (L0 ~ L5)
         evidence = self.evaluate_layered_evidence(
