@@ -476,24 +476,31 @@ fatal error LNK1120: 129 个无法解析的外部命令
 - GitHub CI 状态：无记录，本轮数字均为本地实测。
 - GitHub Actions workflow 查询只覆盖 PR 触发的 runs，返回空不能证明所有 Actions 都没跑。
 
-### 5.8 第九轮收口与阶段性冻结（关闭 L2/L3 重复与 L4 QI 假阳性漏洞）
+### 5.8 第九轮收口与阶段性冻结（彻底解决三项实质性审查问题与架构冻结）
 
-本轮彻底收敛 P0-2 OM Driver (`tools/verify_om_activation.py`)，不再扩充测试矩阵，完成以下收口：
+本轮彻底收敛并消除所有重复实现，解决三项实质性审查问题，正式冻结 CADE 架构：
 
-1. **统一 L2/L3 证据入口（消除两套标准）**：
-   - OM Driver 的 `evaluate_layered_evidence()` 全面复用 `skills/run.py` 的 `identify_target_cnext()` 与 `verify_module_loaded()`；
-   - 支持传入 `cnext_identity`、`launcher_pid`、`t_start`，L2 严格遵循进程树/双向时间窗口/多实例消歧逻辑；
-   - L3 严格校验模块枚举完整性与工作区绝对物理路径，区分文件名相同但路径偏离的 stray path 违规。
+1. **P0-1: Runtime View 创建契约完整迁移与安全保证 (`skills/build.py`)**：
+   - 以历史正式 `build.py:create_runtime_view()` 为唯一权威实现，彻底清理 `runtime_view.py` 的重复实现（委托给 `build.py`）；
+   - **架构显式控制**：通过 `os.environ["MKMK_ARCH"] = architecture` 显式驱动底层 `_exec_build_cmd` 命令，并动态传递给 `_copy_dictionaries_to_runtime(workspace_path, arch=arch)`，消除目标路径与字典复制路径不一致隐患；
+   - **安全覆盖 (Safe Staging/Rollback)**：覆盖已有 Runtime View 时，先将其安全重命名暂存为 `.{arch}_backup_{timestamp}`，构建成功且目标目录验证有效后才清理备份；若构建失败或未生成目标目录，自动原子回滚；
+   - **目标目录真实性验证**：严格核查创建后 `rt_dir.is_dir()` 的真实存在性，并正确透传命令执行的原始状态（`error` / `timeout` 等），杜绝命令失败却误报成功的漏洞。
 
-2. **校准 L4 判定语义（消除无凭据 QueryInterface 假阳性 PASS）**：
-   - 彻底关闭调用方直接传入普通整数 `query_interface_hr=0` 即可断言 L4 `PASS` 的证据漏洞；
-   - 明确证据链分工：4 要素单行原子匹配仅证明 `constructor_probe_verified = True`；
-   - 缺少在本次会话内真实捕获、与 PID/Nonce 绑定的 `QueryInterface` 凭据时，L4 状态**严格保持 `UNKNOWN`**（`status="CONSTRUCTOR_ACTIVATED_QI_UNPROVEN"`, `reason="query_interface_unverified_requires_in_session_qi_probe_certificate"`）；
-   - 整体状态 `overall_status` 在此情况下输出 `UNKNOWN`，坚决不向调用方呈现虚假 `PASS`。
+2. **P0-2: OM L2/L3 实际运行路径严格复用通用 Runtime (`tools/verify_om_activation.py`)**：
+   - **L2 进程身份严格验证**：`execute_live_activation()` 监控线程全面调用 `run.identify_target_cnext()`（统一遵循启动前 baseline PIDs 记录、父子进程树回溯、双向启动时间窗口与多实例消歧）；
+   - **杜绝裸 PID 假阳性**：`evaluate_layered_evidence()` 彻底禁止外部直接传入无凭据整型 `cnext_pid` 判定为 PASS，无 `cnext_identity` 证明的裸 PID 严格判定为 `UNKNOWN`（`direct_pid_input` 无法作为身份证明）；
+   - **L3 模块验证严格一致**：实际 Live 路径在识别目标 PID 后直接调用 `run.verify_module_loaded()`，严格遵循 PSAPI 模块枚举完整性判定，避免枚举不完整时的误判；离线模拟列表严格要求规范化物理路径完全匹配。
 
-3. **保留安全宏驱动与短路径保护**：
-   - 实现 `generate_trigger_macro()` 与 `execute_live_activation()`，集成 Windows 8.3 短路径转换（`GetShortPathNameW`）防御 `mkrun` 空格截断问题；
-   - 整体执行在 L4 未获会话内 QI 凭据时返回 `UNKNOWN`。
+3. **P0-3: 校准 L4 判定语义（关闭无凭据 QI 假 PASS 与假 FAIL 漏洞）**：
+   - 彻底关闭调用方直接传入普通整数 `query_interface_hr=0` 即可断言 L4 `PASS` 的假阳性漏洞；
+   - 同时关闭外部直接传入非零整数（如 `0x80004002`）或宏失败直接硬编码 `0x80004005` 导致错误 `FAIL` 的假阴性漏洞；
+   - **双向诚实边界**：未认证的外部整数无论成功还是失败，均不能单独改变 L4 状态；宏执行失败不等于 QueryInterface 失败。缺少本次会话真实 `qi_probe_certificate` 凭据时，L4 状态**严格保持 `UNKNOWN`**（若 4 要素探针命中则标记 `constructor_probe_verified = True`, 但 QI 仍为 `UNKNOWN`）；
+   - 仅当持有真实会话绑定（PID、Nonce、目标接口一致且 `in_session=True`）的认证证书时，才依据其真实 HRESULT 裁定 PASS 或 FAIL。
+
+4. **测试去重与零硬编码路径合规**：
+   - `test_master.py` 注入 `CADE_MASTER_RUNNER=1`，`test_full_regression.py` Section 20 自动降级为文件与语法完整性检查，彻底避免 17 个子进程重复派生；
+   - 修复 `test_om_activation_driver.py` 中的所有硬编码驱动器盘符路径（通过 `tempfile` 动态生成），全仓 184 个文件静态检测 0 硬编码路径；
+   - 全套 52 个套件（Quick 模式 51 个）全部通过，Cross-Reference 286/286 (100%)，Deep Audit 11/11 (100%)。
 
 ---
 
@@ -504,8 +511,9 @@ fatal error LNK1120: 129 个无法解析的外部命令
 | 子系统 / 模块 | 当前状态 | 冻结边界与说明 |
 |:---|:---|:---|
 | **P0-1 业务意图链路** | **冻结 (FROZEN)** | 意图识别、澄清机制、`LateTypeResolver` 组件解析、`LINK_WITH` 及 `IdentityCard.xml` prerequisite 自动注入链路已闭环，不再扩展。 |
-| **通用 CAA Runtime (`skills/run.py`)** | **保留基线 (BASELINE)** | 进程识别、PSAPI 动态扩容枚举、路径校验完整保留，禁止为了专项需求重写通用基础设施。 |
-| **P0-2 OM Driver (`verify_om_activation.py`)** | **有条件冻结 (FROZEN)** | 官方样例解析、字典全量扫描、静态契约校验、4 要素原子探针解析均已就绪。L2/L3 统一复用 Runtime 层。 |
+| **通用 CAA Runtime (`skills/run.py`)** | **保留基线 (BASELINE)** | 进程识别、PSAPI 动态扩容枚举、路径校验完整保留，为全仓唯一进程与模块判定基础设施。 |
+| **Runtime View 创建 (`skills/build.py`)** | **权威冻结 (FROZEN)** | `build.py:create_runtime_view()` 作为全仓唯一正式创建入口，支持安全暂存回滚与架构显式驱动，`runtime_view.py` 仅保留只读检查并直接委托。 |
+| **P0-2 OM Driver (`verify_om_activation.py`)** | **冻结 (FROZEN)** | 官方样例解析、字典全量扫描、静态契约校验、4 要素原子探针解析均已就绪。L2/L3 实际运行路径严格复用 Runtime 层，L4 拒绝无凭据 QI 假 PASS / 假 FAIL 严格保持 UNKNOWN。 |
 | **L4 真实 Extension 激活** | **保持 UNKNOWN** | 严禁伪造凭据。在获得进程内真实 QI 探针证书前，严格报告 `UNKNOWN`。 |
 | **L5 几何渲染与视觉呈现** | **延期 (NOT_RUN)** | 属于后续几何实现任务，本阶段不作为冻结门槛，严格维持 `NOT_RUN`。 |
 

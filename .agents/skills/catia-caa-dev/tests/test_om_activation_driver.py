@@ -179,24 +179,32 @@ with tempfile.TemporaryDirectory() as td_rt:
     ck("L5: evidence notes pending geometric implementation",
        ev_init["L5"]["evidence"]["status"] == "PENDING_GEOMETRIC_IMPL")
 
-    # 3.2 L2: Target Process Identity
-    ev_l2 = driver.evaluate_layered_evidence(rt_ws, cnext_pid=12345)
-    ck("L2: valid cnext_pid is PASS", ev_l2["L2"]["status"] == "PASS" and ev_l2["L2"]["evidence"]["cnext_pid"] == 12345)
+    # 3.2 L2: Target Process Identity (Strict Unified Reuse)
+    ev_l2_raw = driver.evaluate_layered_evidence(rt_ws, cnext_pid=12345)
+    ck("L2: raw cnext_pid without session identity proof is strictly UNKNOWN",
+       ev_l2_raw["L2"]["status"] == "UNKNOWN" and ev_l2_raw["L2"]["evidence"]["cnext_pid"] == 12345)
+
+    ev_l2_ident = driver.evaluate_layered_evidence(
+        rt_ws, cnext_identity=("PASS", 12345, {"method": "mock_process_tree"})
+    )
+    ck("L2: verified cnext_identity from run.identify_target_cnext is PASS",
+       ev_l2_ident["L2"]["status"] == "PASS" and ev_l2_ident["L2"]["evidence"]["cnext_pid"] == 12345)
 
     # 3.3 L3: Exact Module Path Matching (Strict Invariant)
     fake_dll_path = str(bin_dir / "AcceptanceMod.dll")
-    ev_l3_miss = driver.evaluate_layered_evidence(rt_ws, loaded_modules=["C:\\Windows\\System32\\kernel32.dll"])
+    other_sys_dll = str(Path(tempfile.gettempdir()) / "System32" / "other.dll")
+    ev_l3_miss = driver.evaluate_layered_evidence(rt_ws, loaded_modules=[other_sys_dll])
     ck("L3: missing target DLL in loaded modules is FAIL", ev_l3_miss["L3"]["status"] == "FAIL")
 
     # Critical Reviewer Point: Same DLL name from wrong path MUST FAIL
-    stray_wrong_path = "C:\\StrayWorkspace\\win_b64\\code\\bin\\AcceptanceMod.dll"
+    stray_wrong_path = str(Path(tempfile.gettempdir()) / "StrayWorkspace" / "win_b64" / "code" / "bin" / "AcceptanceMod.dll")
     ev_l3_stray = driver.evaluate_layered_evidence(rt_ws, loaded_modules=[stray_wrong_path])
     ck("L3: same filename from wrong path MUST FAIL (stray path violation)", ev_l3_stray["L3"]["status"] == "FAIL")
     ck("L3: stray path captured in evidence", ev_l3_stray["L3"]["evidence"]["stray_mismatch_path"] == stray_wrong_path)
     ck("L3: exact match is False on stray path", ev_l3_stray["L3"]["evidence"]["exact_match_pass"] is False)
 
     # Exact path match PASS
-    ev_l3_hit = driver.evaluate_layered_evidence(rt_ws, loaded_modules=[fake_dll_path, "C:\\Windows\\System32\\kernel32.dll"])
+    ev_l3_hit = driver.evaluate_layered_evidence(rt_ws, loaded_modules=[fake_dll_path, other_sys_dll])
     ck("L3: exact target DLL path in loaded modules is PASS", ev_l3_hit["L3"]["status"] == "PASS")
     ck("L3: exact path confirmed", ev_l3_hit["L3"]["evidence"]["exact_match_pass"] is True)
 
@@ -211,9 +219,29 @@ with tempfile.TemporaryDirectory() as td_rt:
     ck("L4: QueryInterface S_OK without probe log remains UNKNOWN",
        ev_l4_no_probe["L4"]["status"] == "UNKNOWN")
 
-    # Case B: QueryInterface failed (E_NOINTERFACE = 0x80004002) -> FAIL
-    ev_l4_fail = driver.evaluate_layered_evidence(rt_ws, query_interface_hr=0x80004002, probe_log_file=probe_log)
-    ck("L4: QueryInterface failure is FAIL", ev_l4_fail["L4"]["status"] == "FAIL")
+    # Case B: Unverified integer QueryInterface HRESULT without authentic certificate remains UNKNOWN
+    ev_l4_unverified = driver.evaluate_layered_evidence(rt_ws, query_interface_hr=0x80004002, probe_log_file=probe_log)
+    ck("L4: Unverified non-zero HRESULT without authentic certificate remains UNKNOWN",
+       ev_l4_unverified["L4"]["status"] == "UNKNOWN")
+
+    # Case B2: Authentic in-session QueryInterface failure certificate is FAIL
+    fake_fail_cert = {
+        "interface": "CATI3DGeoVisu",
+        "cnext_pid": test_pid,
+        "nonce": test_nonce,
+        "in_session": True,
+        "hresult": 0x80004002,
+    }
+    ev_l4_fail = driver.evaluate_layered_evidence(
+        rt_ws,
+        probe_log_file=probe_log,
+        expected_nonce=test_nonce,
+        expected_cnext_pid=test_pid,
+        session_start_time=now,
+        qi_probe_certificate=fake_fail_cert,
+    )
+    ck("L4: Authentic in-session QueryInterface failure certificate is FAIL",
+       ev_l4_fail["L4"]["status"] == "FAIL")
 
     # Case C: Probe log exists but is STALE (mtime < session_start_time) -> UNKNOWN
     probe_log.write_text(f"ACTION=CONSTRUCTOR_ACTIVATED;NONCE={test_nonce};PID={test_pid};COMPONENT=CAAMmrMeasureSet\n", encoding="utf-8")
@@ -438,7 +466,9 @@ with tempfile.TemporaryDirectory() as td_live:
             "status": "success",
             "message": "Macro execution completed (exit 0)",
             "cnext_pid": simulated_cnext_pid,
-            "loaded_modules": [str(target_dll), "C:\\Windows\\System32\\kernel32.dll"],
+            "session_tree_verified": True,
+            "cnext_identity": ("PASS", simulated_cnext_pid, {"method": "mock_session_tree"}),
+            "loaded_modules": [str(target_dll), other_sys_dll],
         }
 
     res_live = driver.execute_live_activation(
@@ -504,10 +534,11 @@ with tempfile.TemporaryDirectory() as td_neg:
         runner_fn=mock_failing_runner,
     )
     ck("Negative Scenario A: Failing macro run fails overall status", res_fail["overall_status"] == "FAIL")
-    ck("Negative Scenario A: QueryInterface HRESULT reflects failure", res_fail["phase_d_evidence"]["L4"]["status"] == "FAIL")
+    ck("Negative Scenario A: QueryInterface remains UNKNOWN without authentic QI probe (no false FAIL)",
+       res_fail["phase_d_evidence"]["L4"]["status"] == "UNKNOWN")
 
     # Scenario B: Target DLL loaded from wrong stray path (L3 stray violation)
-    stray_path = "C:\\StrayPath\\AcceptanceMod.dll"
+    stray_path = str(Path(tempfile.gettempdir()) / "StrayPath" / "AcceptanceMod.dll")
     def mock_stray_runner(macro_path: str, workspace_path: str, timeout: int):
         return {
             "status": "success",

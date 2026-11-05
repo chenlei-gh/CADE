@@ -322,6 +322,7 @@ class OMActivationDriver:
         launcher_pid: Optional[int] = None,
         t_start: Optional[float] = None,
         baseline_pids: Optional[set] = None,
+        qi_probe_certificate: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Evaluate L0 through L5 evidence status according to formal CADE contracts.
@@ -405,9 +406,20 @@ class OMActivationDriver:
             l2_evidence["cnext_pid"] = l2_pid
             l2_evidence["source"] = "run.identify_target_cnext"
         elif cnext_pid is not None:
-            is_valid_pid = (type(cnext_pid) is int and not isinstance(cnext_pid, bool) and cnext_pid > 0)
-            l2_status = "PASS" if is_valid_pid else "FAIL"
-            l2_evidence = {"cnext_pid": cnext_pid, "verified": is_valid_pid, "source": "direct_pid_input"}
+            # Raw integer PID without session identity proof cannot pass L2.
+            # Strictly UNKNOWN to prevent false PASS on arbitrary unproven integers.
+            effective_pid = cnext_pid
+            l2_status = "UNKNOWN"
+            l2_evidence = {
+                "cnext_pid": cnext_pid,
+                "verified": False,
+                "reason": "raw_pid_without_session_identity_proof",
+                "source": "direct_pid_input",
+                "note": (
+                    "Raw integer PID provided without process tree, creation time window, "
+                    "or baseline disambiguation. L2 strictly remains UNKNOWN."
+                ),
+            }
         else:
             l2_status = "NOT_RUN"
             l2_evidence = {"reason": "no_cnext_identification_provided"}
@@ -539,15 +551,69 @@ class OMActivationDriver:
             except Exception as e:
                 probe_contract["parse_error"] = str(e)
 
-        if probe_contract["all_factors_satisfied"]:
+        # Determine L4 status based on verified probe contract and authentic QI certificate
+        l4_status = "UNKNOWN"
+        l4_evidence = {}
+
+        # Authentic in-session QI certificate check
+        qi_cert_valid = False
+        if qi_probe_certificate and isinstance(qi_probe_certificate, dict):
+            cert_iface = qi_probe_certificate.get("interface")
+            cert_pid = qi_probe_certificate.get("cnext_pid")
+            cert_nonce = qi_probe_certificate.get("nonce")
+            if (
+                cert_iface == self.target_interface
+                and (effective_pid is None or cert_pid == effective_pid)
+                and (expected_nonce is None or cert_nonce == expected_nonce)
+                and qi_probe_certificate.get("in_session") is True
+            ):
+                qi_cert_valid = True
+
+        if qi_cert_valid:
+            cert_hr = qi_probe_certificate.get("hresult", 0)
+            if cert_hr == 0 and probe_contract["all_factors_satisfied"]:
+                l4_status = "PASS"
+                l4_evidence = {
+                    "status": "PASS",
+                    "constructor_probe_verified": True,
+                    "query_interface_verified": True,
+                    "query_interface_hr": hex(cert_hr),
+                    "probe_contract": probe_contract,
+                    "probe_details": probe_contract,
+                    "qi_certificate": qi_probe_certificate,
+                    "activated_extension": "MyVisuExtension",
+                }
+            elif cert_hr != 0:
+                l4_status = "FAIL"
+                l4_evidence = {
+                    "status": "FAIL",
+                    "constructor_probe_verified": probe_contract["all_factors_satisfied"],
+                    "query_interface_verified": True,
+                    "query_interface_hr": hex(cert_hr),
+                    "error_reason": f"In-session QueryInterface failed with HRESULT {hex(cert_hr)}",
+                    "probe_contract": probe_contract,
+                    "probe_details": probe_contract,
+                    "qi_certificate": qi_probe_certificate,
+                }
+            else:
+                l4_status = "UNKNOWN"
+                l4_evidence = {
+                    "status": "UNKNOWN",
+                    "reason": "qi_certificate_valid_but_constructor_probe_unsatisfied",
+                    "probe_contract": probe_contract,
+                    "probe_details": probe_contract,
+                    "qi_certificate": qi_probe_certificate,
+                }
+        elif probe_contract["all_factors_satisfied"]:
             # Constructor was proven activated by Object Modeler.
-            # But plain external integer query_interface_hr is unverified and cannot yield PASS.
+            # But plain external integer query_interface_hr is unverified and cannot alter L4.
             # L4 strictly remains UNKNOWN until genuine in-session QI probe certificate is established.
             l4_status = "UNKNOWN"
             l4_evidence = {
                 "status": "CONSTRUCTOR_ACTIVATED_QI_UNPROVEN",
                 "constructor_probe_verified": True,
                 "query_interface_status": "UNKNOWN",
+                "probe_contract": probe_contract,
                 "probe_details": probe_contract,
                 "activated_extension": "MyVisuExtension",
                 "reason": "query_interface_unverified_requires_in_session_qi_probe_certificate",
@@ -556,13 +622,6 @@ class OMActivationDriver:
                     "However, external integer query_interface_hr does not prove authentic in-session QI. "
                     "L4 strictly remains UNKNOWN until a verifiable in-session QI probe is implemented."
                 ),
-            }
-        elif query_interface_hr is not None and query_interface_hr != 0:
-            l4_status = "FAIL"
-            l4_evidence = {
-                "query_interface_hr": hex(query_interface_hr),
-                "error_reason": "QueryInterface returned non-zero HRESULT",
-                "probe_details": probe_contract,
             }
         else:
             reason = "awaiting_valid_om_trigger_and_atomic_probe_certificate"
@@ -576,10 +635,12 @@ class OMActivationDriver:
                 reason = "no_atomic_constructor_activation_event_found"
 
             l4_evidence = {
+                "status": "UNKNOWN",
                 "reason": reason,
                 "query_interface_hr": hex(query_interface_hr) if query_interface_hr is not None else "NOT_PROBED",
                 "probe_contract": probe_contract,
-                "trigger_recipe": f"pMeasureSet->QueryInterface(IID_{self.target_interface}, (void**)&piVisu)",
+                "probe_details": probe_contract,
+                "note": "Unverified external inputs cannot alter L4 status. L4 strictly remains UNKNOWN.",
             }
 
         l4_res = {
@@ -764,7 +825,9 @@ CATRep * {extension_name}::BuildRep()
         self.generate_trigger_macro(target_model_for_script, macro_file)
 
         session_start_time = time.time()
+        captured_identity: Optional[Tuple[str, Optional[int], Dict[str, Any]]] = None
         captured_pid: Optional[int] = None
+        captured_l3: Optional[Tuple[str, Dict[str, Any]]] = None
         captured_modules: Optional[List[str]] = None
         stop_monitor = threading.Event()
 
@@ -773,38 +836,33 @@ CATRep * {extension_name}::BuildRep()
         os.environ["CADE_PROBE_FILE"] = short_probe_log
         os.environ["CADE_PROBE_NONCE"] = expected_nonce
 
-        # Background PSAPI Process & Module Monitor
+        # Record baseline CNEXT processes before launch to disambiguate
+        initial_pids = set()
+        try:
+            for p in get_processes_snapshot_win32() or []:
+                if p.get("name", "").lower() == "cnext.exe":
+                    initial_pids.add(p.get("pid"))
+        except Exception:
+            pass
+
+        # Background PSAPI Process & Module Monitor using unified run.py infrastructure
         def _monitor_cnext():
-            nonlocal captured_pid, captured_modules
-            initial_pids = set()
-            try:
-                for p in get_processes_snapshot_win32() or []:
-                    if p.get("name", "").lower() == "cnext.exe":
-                        initial_pids.add(p.get("pid"))
-            except Exception:
-                pass
-
-            norm_expected_dll = os.path.normcase(os.path.abspath(str(target_dll)))
-
+            nonlocal captured_identity, captured_pid, captured_l3, captured_modules
             while not stop_monitor.is_set():
                 try:
-                    current_procs = get_processes_snapshot_win32() or []
-                    cnext_pids = [
-                        p.get("pid") for p in current_procs
-                        if p.get("name", "").lower() == "cnext.exe"
-                    ]
-                    # Prioritize newly spawned CNEXT process
-                    new_pids = [pid for pid in cnext_pids if pid not in initial_pids]
-                    target_pid = new_pids[0] if new_pids else (cnext_pids[0] if cnext_pids else None)
-
-                    if target_pid:
-                        captured_pid = target_pid
-                        mods = get_process_loaded_modules(target_pid)
-                        if mods:
-                            captured_modules = mods
-                            # Stop early if target module is already loaded
-                            if any(os.path.normcase(os.path.abspath(m)) == norm_expected_dll for m in mods):
-                                break
+                    ident_status, ident_pid, ident_ev = identify_target_cnext(
+                        launcher_pid=None,
+                        t_start=session_start_time,
+                        baseline_pids=initial_pids,
+                    )
+                    if ident_status == "PASS" and ident_pid:
+                        captured_identity = (ident_status, ident_pid, ident_ev)
+                        captured_pid = ident_pid
+                        l3_stat, l3_ev = verify_module_loaded(ident_pid, target_dll)
+                        if l3_stat in ("PASS", "FAIL", "UNKNOWN"):
+                            captured_l3 = (l3_stat, l3_ev)
+                        if l3_stat == "PASS":
+                            break
                 except Exception:
                     pass
                 stop_monitor.wait(monitor_poll_interval)
@@ -843,35 +901,43 @@ CATRep * {extension_name}::BuildRep()
                 except OSError:
                     pass
 
-        # Fallback values from runner result if provided for testing
-        if captured_pid is None and "cnext_pid" in macro_exec_result:
+        # Runner result integration
+        if captured_identity is None and "cnext_identity" in macro_exec_result:
+            captured_identity = macro_exec_result["cnext_identity"]
+            captured_pid = captured_identity[1]
+        elif captured_identity is None and "cnext_pid" in macro_exec_result:
             captured_pid = macro_exec_result["cnext_pid"]
+            if macro_exec_result.get("session_tree_verified"):
+                captured_identity = ("PASS", captured_pid, {"method": "mock_session_tree"})
+
         if captured_modules is None and "loaded_modules" in macro_exec_result:
             captured_modules = macro_exec_result["loaded_modules"]
 
-        # Phase D: Determine QI HRESULT based on execution and probe
-        query_interface_hr = None
-        if "query_interface_hr" in macro_exec_result:
-            query_interface_hr = macro_exec_result["query_interface_hr"]
-        elif macro_exec_result.get("status") == "success":
-            query_interface_hr = 0
-        elif macro_exec_result.get("status") in ("failed", "error", "timeout"):
-            query_interface_hr = 0x80004005  # E_FAIL
+        # Phase D: Evaluate Layered Evidence Matrix (L0 ~ L5)
+        # Note: Unverified macro execution status is NOT forged into query_interface_hr!
+        qi_probe_cert = macro_exec_result.get("qi_probe_certificate")
 
-        # Evaluate Layered Evidence Matrix (L0 ~ L5)
         evidence = self.evaluate_layered_evidence(
             runtime_ws=runtime_ws,
             cnext_pid=captured_pid,
             loaded_modules=captured_modules,
             probe_log_file=probe_log,
-            query_interface_hr=query_interface_hr,
             expected_nonce=expected_nonce,
             expected_cnext_pid=captured_pid,
             session_start_time=session_start_time,
+            cnext_identity=captured_identity,
+            launcher_pid=None,
+            t_start=session_start_time,
+            baseline_pids=initial_pids,
+            qi_probe_certificate=qi_probe_cert,
         )
 
+        macro_ok = isinstance(macro_exec_result, dict) and macro_exec_result.get("status") in ("success", "ok")
         l4_status = evidence["L4"]["status"]
-        if any(evidence[lvl]["status"] == "FAIL" for lvl in ("L0", "L1", "L2", "L3", "L4")):
+        if (
+            not macro_ok
+            or any(evidence[lvl]["status"] == "FAIL" for lvl in ("L0", "L1", "L2", "L3", "L4"))
+        ):
             overall_status = "FAIL"
         elif (
             evidence["L0"]["status"] == "PASS"
