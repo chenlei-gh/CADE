@@ -34,7 +34,11 @@ def make_workspace(base: Path) -> Path:
     fw = ws / "TestUI.edu"
     (fw / "IdentityCard").mkdir(parents=True)
     (fw / "IdentityCard" / "IdentityCard.h").write_text(
-        '#pragma once\n#include "CATBaseUnknown.h"\n', encoding="utf-8")
+        '#pragma once\n#include "CATBaseUnknown.h"\n'
+        'AddPrereqComponent("System", Protected);\n'
+        'AddPrereqComponent("ApplicationFrame", Protected);\n'
+        'AddPrereqComponent("DialogEngine", Protected);\n'
+        'AddPrereqComponent("Dialog", Protected);\n', encoding="utf-8")
     (fw / "Imakefile.mk").write_text(
         'SOURCES =\nLINK_WITH = System ObjectModelerBase\n', encoding="utf-8")
     (fw / "CNext" / "code" / "dictionary").mkdir(parents=True)
@@ -391,6 +395,26 @@ CATStatusChangeRC GoodVisuCmd::Activate(CATCommand *c, CATNotification *n) {
 ''')
 check("SetPropertiesAtt official path not flagged",
       not any(f.rule == "visu_sethidestatus" for f in f6_ok))
+
+# Rule 7: Direct delete on dialog or agent -> flagged
+f7 = linter.lint_source("BadDeleteCmd.cpp", '''
+BadDeleteCmd::~BadDeleteCmd() {
+    delete _pDialog;
+    delete _pSelAgent;
+}
+''')
+check("direct delete on dialog/agent flagged",
+      any(f.rule == "ui_direct_delete" for f in f7))
+
+# Rule 8: Unchecked GetFrame() chaining -> flagged
+f8 = linter.lint_source("BadGetFrameCmd.cpp", '''
+void BadGetFrameCmd::BuildGraph() {
+    CATDialog *pMain = CATApplicationFrame::GetFrame()->GetMainWindow();
+    _pDialog = new MyDlg(pMain);
+}
+''')
+check("unchecked GetFrame() chaining flagged",
+      any(f.rule == "ui_unsafe_get_frame" for f in f8))
 
 # Clean code → no findings
 clean = f1 + f2 + f3  # sanity: findings exist on bad code

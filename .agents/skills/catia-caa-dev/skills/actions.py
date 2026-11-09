@@ -623,18 +623,20 @@ def create_command(
     li = mod.path / "LocalInterfaces"
     # Directories are created inside ChangeSet.apply() — no premature writes (P0-004 fix)
 
+    target_dialog_name = dialog_name or (name.replace("Cmd", "Dlg") if "Cmd" in name else f"{name}Dlg")
+
     # --- 1. Command.h (LocalInterfaces) ---
     cs.add_create_file(
         li / f"{name}.h",
         ctx.tpl("command", "CommandClass.h"),
-        _r(name, fw_name, module, CommandClassName=name),
+        _r(name, fw_name, module, CommandClassName=name, DialogClassName=target_dialog_name),
     )
 
     # --- 2. Command.cpp (src) ---
     cs.add_create_file(
         src / f"{name}.cpp",
         ctx.tpl("command", "CommandClass.cpp"),
-        _r(name, fw_name, module, CommandClassName=name),
+        _r(name, fw_name, module, CommandClassName=name, DialogClassName=target_dialog_name),
     )
 
     # --- 3. Addin.h (LocalInterfaces) — skip if exists (shared across commands) ---
@@ -704,6 +706,7 @@ def create_command(
                             "JS0FM \\\n"
                             "CATApplicationFrame \\\n"
                             "CATDialogEngine \\\n"
+                            "CATCmdDialogAgents \\\n"
                             "DI0PANV2 \n"
                             "# END WIZARD EDITION ZONE\n",
                 ))
@@ -718,6 +721,7 @@ def create_command(
                             "JS0FM \\\n"
                             "CATApplicationFrame \\\n"
                             "CATDialogEngine \\\n"
+                            "CATCmdDialogAgents \\\n"
                             "DI0PANV2 \n"
                             "# END WIZARD EDITION ZONE\n",
                 ))
@@ -744,145 +748,56 @@ def create_command(
         else:
             cs.add_create(rv_dico, entry)
 
-    # --- 7. Dialog files (when dialog_name is provided) ---
-    if dialog_name:
-        tpl_dlg = ctx.tpl("dialog")
-        dlg_h = tpl_dlg / "DialogClass.h"
-        dlg_cpp = tpl_dlg / "DialogClass.cpp"
-        if dlg_h.exists() and dlg_cpp.exists():
+    # --- 6.5. IdentityCard prerequisites — ensure UI frameworks are declared ---
+    if fw:
+        ic_xml = fw.path / "IdentityCard" / "IdentityCard.xml"
+        ic_h = fw.path / "IdentityCard" / "IdentityCard.h"
+        ui_prereqs = ["System", "ApplicationFrame", "DialogEngine", "Dialog"]
+        if ic_xml.exists():
+            ic_text = ic_xml.read_text(encoding="utf-8", errors="replace")
+            missing = [p for p in ui_prereqs if not re.search(rf'<prerequisite\s+name="{p}"', ic_text)]
+            if missing:
+                nl = "\r\n" if "\r\n" in ic_text else "\n"
+                lines = ic_text.splitlines()
+                close_idx = -1
+                for idx, line in enumerate(lines):
+                    if re.search(r'</([a-zA-Z0-9_:-]+)>', line):
+                        close_idx = idx
+                injections = [f'  <prerequisite name="{p}" access="Protected" />' for p in missing]
+                if close_idx >= 0:
+                    for inj in reversed(injections):
+                        lines.insert(close_idx, inj)
+                    new_text = nl.join(lines) + (nl if ic_text.endswith(("\r\n", "\n")) else "")
+                else:
+                    new_text = ic_text.rstrip() + nl + nl.join(injections) + nl
+                cs.add_modify(ic_xml, new_text)
+        elif ic_h.exists():
+            ic_text = ic_h.read_text(encoding="utf-8", errors="replace")
+            missing = [p for p in ui_prereqs if not re.search(rf'AddPrereqComponent\("{p}"', ic_text)]
+            if missing:
+                nl = "\r\n" if "\r\n" in ic_text else "\n"
+                injections = [f'AddPrereqComponent("{p}", Protected);' for p in missing]
+                new_text = ic_text.rstrip() + nl + nl.join(injections) + nl
+                cs.add_modify(ic_h, new_text)
+
+    # --- 7. Dialog files (auto-provision paired dialog scaffold if not present) ---
+    paired_dlg = dialog_name or target_dialog_name
+    tpl_dlg = ctx.tpl("dialog")
+    dlg_h = tpl_dlg / "DialogClass.h"
+    dlg_cpp = tpl_dlg / "DialogClass.cpp"
+    if dlg_h.exists() and dlg_cpp.exists():
+        target_dlg_h = li / f"{paired_dlg}.h"
+        target_dlg_cpp = src / f"{paired_dlg}.cpp"
+        if not target_dlg_h.exists():
             cs.add_create_file(
-                li / f"{dialog_name}.h", dlg_h,
-                _r(dialog_name, fw_name, module, DialogClassName=dialog_name),
+                target_dlg_h, dlg_h,
+                _r(paired_dlg, fw_name, module, DialogClassName=paired_dlg),
             )
+        if not target_dlg_cpp.exists():
             cs.add_create_file(
-                src / f"{dialog_name}.cpp", dlg_cpp,
-                _r(dialog_name, fw_name, module, DialogClassName=dialog_name),
+                target_dlg_cpp, dlg_cpp,
+                _r(paired_dlg, fw_name, module, DialogClassName=paired_dlg),
             )
-            # Add dialog include to command header
-            cs.add_patch(Patch(
-                file=li / f"{name}.h",
-                operation="insert_after",
-                target='#include "CATStateCommand.h"',
-                content=f'#include "{dialog_name}.h"',
-            ))
-            # Dialog member in command class (created + shown in BuildGraph)
-            cs.add_patch(Patch(
-                file=li / f"{name}.h",
-                operation="insert_after",
-                target="CATDialogAgent      *_pDlgAgent;",
-                content=f"    {dialog_name}          *_pDialog;",
-            ))
-            # Framework includes needed to open/show the dialog.
-            # CATApplicationFrame.h is required so the dialog can be parented
-            # to the app main window (see BuildGraph fix below) — a
-            # NULL-parent top-level CATDlgDialog never gets mapped to the
-            # window manager in B28's Dialog framework and stays invisible
-            # (verified against official CAADoc sample
-            # CAADegAnalysisNumericCmd.cpp).
-            cs.add_patch(Patch(
-                file=src / f"{name}.cpp",
-                operation="insert_after",
-                target='#include "CATCommandGlobalUndo.h"',
-                content='#include "CATDialogAgent.h"\n#include "CATDialogState.h"\n#include "CATApplicationFrame.h"',
-            ))
-            # Member initializer in constructor
-            cs.add_patch(Patch(
-                file=src / f"{name}.cpp",
-                operation="insert_after",
-                target=", _pDlgAgent(NULL)",
-                content="    , _pDialog(NULL)",
-            ))
-            # BuildGraph: create + show dialog, end command when dialog closes
-            # (official CATStateCommand + CATDialogAgent pattern; clicking the
-            # toolbar button must open the dialog, not silently no-op).
-            #
-            # IMPORTANT: the dialog MUST be parented to the app main window.
-            # `new {dialog_name}(NULL)` builds a top-level CATDlgDialog with
-            # a NULL parent, which in B28's Dialog framework never gets
-            # mapped to the window manager — the dialog object is created
-            # but stays invisible/unmapped, so clicking the toolbar button
-            # silently does nothing. Fix verified against official CAADoc
-            # sample CAADegAnalysisNumericCmd.cpp, which parents its dialog
-            # to CATApplicationFrame::GetFrame()->GetMainWindow(). Also
-            # subscribe to both close notifications (Dia CLOSE + window
-            # close), matching official samples, so the command ends
-            # correctly whichever way the user closes the dialog (OK/Cancel
-            # button vs. the window's [x] close box).
-            cs.add_patch(Patch(
-                file=src / f"{name}.cpp",
-                operation="insert_after_brace",
-                target=f"void {name}::BuildGraph()",
-                content=(
-                    "    CATApplicationFrame *pFrame = CATApplicationFrame::GetFrame();\n"
-                    "    CATDialog *pDlgParent = (CATDialog *)(pFrame ? pFrame->GetMainWindow() : NULL);\n"
-                    f"    _pDialog = new {dialog_name}(pDlgParent);\n"
-                    "    _pDialog->Build();\n"
-                    "    _pDialog->SetVisibility(CATDlgShow);\n"
-                    "\n"
-                    '    _pDlgAgent = new CATDialogAgent("DlgAgentId");\n'
-                    "    _pDlgAgent->AcceptOnNotify(_pDialog, _pDialog->GetDiaCLOSENotification());\n"
-                    "    _pDlgAgent->AcceptOnNotify(_pDialog, _pDialog->GetWindCloseNotification());\n"
-                    "\n"
-                    '    CATDialogState *pDlgState = GetInitialState("DlgStateId");\n'
-                    "    pDlgState->AddDialogAgent(_pDlgAgent);\n"
-                    "\n"
-                    "    AddTransition(pDlgState, NULL, IsOutputSetCondition(_pDlgAgent));"
-                ),
-            ))
-            # Hide the dialog whenever the command ends.
-            #
-            # IMPORTANT (confirmed via debug tracing + official CAADoc
-            # sample CAADegAnalysisNumericCmd.cpp): when the end-user closes
-            # the dialog (Close button OR window [x]), the state machine's
-            # `AddTransition(pDlgState, NULL, ...)` reaches the NULL state,
-            # and the framework calls **Cancel()**, not Desactivate(), to
-            # tear down the command. The official sample therefore hides
-            # the dialog in BOTH Cancel() and Desactivate() (they can be
-            # reached via different paths — Cancel for user-driven end,
-            # Desactivate for programmatic/focus-loss end); relying on only
-            # one of them leaves the dialog window stuck on screen even
-            # though its Close button was clicked (its click is consumed
-            # by the state transition, not by any code that hides the
-            # window). The dialog is only actually destroyed in the
-            # command destructor via RequestDelayedDestruction() — never a
-            # raw `delete`, and never inside Cancel/Desactivate themselves
-            # (the command object, and therefore _pDialog, may still be
-            # queried afterwards).
-            cs.add_patch(Patch(
-                file=src / f"{name}.cpp",
-                operation="insert_after_brace",
-                target=f"CATStatusChangeRC {name}::Desactivate(",
-                content=(
-                    "    if (_pDialog)\n"
-                    "    {\n"
-                    "        _pDialog->SetVisibility(CATDlgHide);\n"
-                    "    }"
-                ),
-            ))
-            cs.add_patch(Patch(
-                file=src / f"{name}.cpp",
-                operation="insert_after_brace",
-                target=f"CATStatusChangeRC {name}::Cancel(",
-                content=(
-                    "    if (_pDialog)\n"
-                    "    {\n"
-                    "        _pDialog->SetVisibility(CATDlgHide);\n"
-                    "    }"
-                ),
-            ))
-            # Destructor: safely destroy the dialog (never a raw `delete`).
-            cs.add_patch(Patch(
-                file=src / f"{name}.cpp",
-                operation="insert_after_brace",
-                target=f"{name}::~{name}(",
-                content=(
-                    "    if (_pDialog)\n"
-                    "    {\n"
-                    "        _pDialog->RequestDelayedDestruction();\n"
-                    "        _pDialog = NULL;\n"
-                    "    }"
-                ),
-            ))
 
     # --- 8. NLS + CATRsc Resources — use templates for UI display ---
     if fw:
@@ -903,11 +818,11 @@ def create_command(
                 "FrameworkName": fw_base,
             })
             # Dialog NLS: window title + control labels (used by DeclareResource)
-            if dialog_name:
+            if paired_dlg:
                 nls_content += (
                     f'\n// Dialog window titles\n'
-                    f'{dialog_name}.Title = "{dialog_name}";\n'
-                    f'{dialog_name}Id.Title = "{dialog_name}";\n'
+                    f'{paired_dlg}.Title = "{paired_dlg}";\n'
+                    f'{paired_dlg}Id.Title = "{paired_dlg}";\n'
                 )
             _queue_nls(cs, nls_file, nls_content, f"command:{name}")
 
@@ -930,11 +845,11 @@ def create_command(
                     "FrameworkName": fw_base,
                 },
             )
-            if dialog_name:
+            if paired_dlg:
                 nls_content_zh += (
                     f'\n// 对话框窗口标题\n'
-                    f'{dialog_name}.Title = "{dialog_name}";\n'
-                    f'{dialog_name}Id.Title = "{dialog_name}";\n'
+                    f'{paired_dlg}.Title = "{paired_dlg}";\n'
+                    f'{paired_dlg}Id.Title = "{paired_dlg}";\n'
                 )
             _queue_nls(cs, nls_file_zh, nls_content_zh, f"command:{name}")
 

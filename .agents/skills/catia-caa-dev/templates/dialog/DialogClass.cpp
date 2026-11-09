@@ -38,7 +38,7 @@ static CATUnicodeString NLS(const CATString &iKey, const char *iFallback)
     //       窗口风格 CATDlgWndAutoResize|CATDlgWndBtnOKCancel|CATDlgWndNoResize
     //       SetHorizontalAttachment(0, CATDlgTopOrLeft, pCtrl, NULL) 逐行堆叠
     //       动态面板用 ResetAttachment(pCtrl) 摘除（不占空间，窗口自动收缩）
-    : CATDlgDialog(iParent, "<DialogClassName>Id", CATDlgWndBtnClose | CATDlgGridLayout)
+    : CATDlgDialog(iParent, "<DialogClassName>Id", CATDlgWndBtnOKCancel | CATDlgGridLayout)
     , _pFrame(NULL)
     , _pLabel(NULL)
     , _pEditor(NULL)
@@ -47,6 +47,10 @@ static CATUnicodeString NLS(const CATString &iKey, const char *iFallback)
 
 <DialogClassName>::~<DialogClassName>()
 {
+    // 子控件指针置空（其内存随 CATDlgDialog 父子树在 RequestDelayedDestruction 时统一销毁）
+    _pEditor = NULL;
+    _pLabel = NULL;
+    _pFrame = NULL;
 }
 
 void <DialogClassName>::Build()
@@ -63,4 +67,21 @@ void <DialogClassName>::Build()
     _pEditor = new CATDlgEditor(_pFrame, "EditorId");
     _pEditor->SetVisibleTextWidth(20);   // 可见字符数定宽，不用像素
     _pEditor->SetGridConstraints(0, 1, 1, 1, CATGRID_LEFT | CATGRID_RIGHT);
+}
+
+CATUnicodeString <DialogClassName>::GetInputValue() const
+{
+    if (_pEditor)
+    {
+        return _pEditor->GetText();
+    }
+    return CATUnicodeString();
+}
+
+void <DialogClassName>::SetInputValue(const CATUnicodeString &iValue)
+{
+    if (_pEditor)
+    {
+        _pEditor->SetText(iValue);
+    }
 }

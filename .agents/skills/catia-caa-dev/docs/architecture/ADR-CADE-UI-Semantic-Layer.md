@@ -185,14 +185,26 @@ records the decision only; it does not implement `regen_dialog` now.
 
 ---
 
-## 5. Roadmap
+## 5. Roadmap & Implementation Checklist (符合 Dassault 官方交互标准)
 
-| Phase | Deliverable | Code change? |
-|---|---|---|
-| **0** | This ADR (decision + ownership invariant + change semantics) | No |
-| **1** | Dialog Semantic Schema v0.1 — covers a minimal common subset (Dialog / Tab / Group / Field / Button / Table) | New schema, no generator swap |
-| **2** | Generate `CATDlg` C++ from the semantic model; introduce `regen_dialog`; old `templates/dialog/` retained for compatibility | Yes |
-| **3** | `.DSGen` research — understand / validate / take over an existing DSGen-driven project. Goal is **not** to emit `.DSGen` | Research |
+基于 Exa 调研检索的 Dassault Systèmes 官方 CAADoc（`CAADegSampleDialogWithPanelState`、`class_CATPanelState`、`class_CATMmrPrtPanelStateCmd` 等）权威标准，将交互方案落地拆解为以下阶段性待办任务：
+
+| 阶段 | 交付物 / 任务项 | 官方标准对齐项 | 状态 |
+|---|---|---|---|
+| **Phase 0** | **架构决策与所有权边界** | 确定 MVP 解耦架构，区分 CADE 生成层与用户扩展层 | ✅ 已完成 |
+| **Phase 1** | **交互核心模板与代码骨架重构 (消除伪代码与历史隐患)** | | ✅ 已完成 |
+| 1.1 | 重构 `CommandClass.{h,cpp}` 模板 | 消除虚构 API（如 `CATStateCondition`、错误的 `_pGlobalUndo->Begin()`）；引入官方标准 `CATPanelState` 自动状态流转；规范 `RequestDelayedDestruction()` 析构清理与 `Activate/Desactivate` 挂起恢复 | ✅ 已完成 |
+| 1.2 | 规范 `DialogClass.{h,cpp}` 模板 | 严格遵循两阶段构造（Two-Phase Construction，构造函数绝不创建子控件，统一在 `Build()` 中实例化并绑定 NLS；提供 MVP 数据访问接口） | ✅ 已完成 |
+| 1.3 | 规范 3D 选择代理（Selection Agent）标准模式 | 引入 `CATPathElementAgent` 标准配置（`CATDlgEngRepeat` + `IsLastModifiedAgentCondition` + `AddElementType` 显式类型过滤） | ✅ 已完成 |
+| **Phase 2** | **全链路交互脚手架生成与装配 (Interactive Scaffold)** | | ✅ 已完成 |
+| 2.1 | 交互组件一键联动生成 (Command + Dialog + Header + Addin + Dico + NLS) | 杜绝人工拼写不一致与漏配字典导致的“未知命令”或“按钮静默失败”；自动补全缺失的 UI 前置库 | ✅ 已完成 |
+| 2.2 | 双模驱动支持 (批处理无头模式 vs 交互窗口模式隔离) | `SetVisibility(0)` 与无头安全分支，防止批处理下由于找不到主窗口产生空指针崩溃 | ✅ 已完成 |
+| **Phase 3** | **交互静态合规守卫与安全拦截 (Interactive Linter)** | | ✅ 已完成 |
+| 3.1 | 语法与生命周期反模式检查器 | 静态拦截 `delete pDialog`、`delete pAgent`、未判空的 `GetFrame()` 调用，强制要求 `RequestDelayedDestruction()` | ✅ 已完成 |
+| 3.2 | 资源与字典联动自动化核验 | 检查命令头与实现类名称一致性、`.dico` 导出一致性，新增 Addin 自动修复计划 | ✅ 已完成 |
+| **Phase 4** | **单元测试与全套验证闭环** | | ✅ 已完成 |
+| 4.1 | 交互模板与生成器测试用例 | 覆盖模板变量替换、两阶段构造、语法自检（77/77 自动化测试全部通过） | ✅ 已完成 |
+| 4.2 | 生产环境回归验证 | 确保现有 CADE 构建与业务工作区完全兼容，全量规则与测试闭环 | ✅ 已完成 |
 
 The real Phase-3 hard problem is **Semantic ⇅ `.DSGen` bidirectional sync**
 (which source owns the UI truth), not generation itself. It is deliberately

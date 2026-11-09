@@ -112,6 +112,17 @@ _INCLUDE_RE = re.compile(r'#include\s+[<"](?P<name>CATI\w+)\.h[>"]')
 # fp_sethidestatus_crash.md
 _SETHIDESTATUS_RE = re.compile(r"->\s*SetHideStatus\s*\(")
 
+# Rule 7: Direct delete on CATDlgDialog or CATDialogAgent subclasses.
+# In CAA, dialogs and agents are part of the command/window tree; calling bare
+# delete causes memory corruption / dangling pointers during the active event loop.
+# Official contract: call pObj->RequestDelayedDestruction(); pObj = NULL;
+_DELETE_DLG_OR_AGENT_RE = re.compile(r"\bdelete\s+(?P<target>_p\w*(?:Dlg|Dialog|Agent)|\w*(?:Dlg|Dialog|Agent))\s*;")
+
+# Rule 8: Unchecked CATApplicationFrame::GetFrame()-> call.
+# In batch mode (CATBatch, CNEXT -batch) or headless macro executions,
+# GetFrame() returns NULL. Chaining ->GetMainWindow() directly causes 0xC0000005 crash.
+_UNSAFE_GET_FRAME_RE = re.compile(r"CATApplicationFrame::GetFrame\s*\(\s*\)\s*->")
+
 
 class UILinter:
     """Static linter for the documented CAA UI failure patterns."""
@@ -149,6 +160,8 @@ class UILinter:
         findings.extend(self._check_paste_explicit_targets(file_label, content))
         findings.extend(self._check_var_forward_decl(file_label, content))
         findings.extend(self._check_sethidestatus(file_label, content))
+        findings.extend(self._check_delete_dialog_or_agent(file_label, content))
+        findings.extend(self._check_unsafe_get_frame(file_label, content))
         return findings
 
     # ─── Rule 1: NULL-parent dialog ──────────────────────────────
@@ -342,5 +355,53 @@ class UILinter:
                     "CAAMmrSetShowModeCmd)."
                 ),
                 knowledge_ref="knowledge/failure_patterns/fp_sethidestatus_crash.md",
+            ))
+        return out
+
+    # ─── Rule 7: Direct delete on dialog or agent ────────────────
+    def _check_delete_dialog_or_agent(self, file_label: str, content: str) -> List[UIFinding]:
+        out = []
+        for m in _DELETE_DLG_OR_AGENT_RE.finditer(content):
+            target = m.group("target")
+            line = content[:m.start()].count("\n") + 1
+            out.append(UIFinding(
+                rule="ui_direct_delete",
+                severity="error",
+                file=file_label,
+                line=line,
+                problem=f"Direct delete on dialog or agent pointer '{target}': {m.group(0)}",
+                reason=(
+                    "CATDlgDialog and CATDialogAgent instances are managed within CATIA's "
+                    "command and window hierarchy. Calling C++ delete directly causes "
+                    "dangling pointers, crashes during event dispatching, or access violations."
+                ),
+                fix_hint=(
+                    f"Replace with: if ({target}) {{ {target}->RequestDelayedDestruction(); {target} = NULL; }}"
+                ),
+                knowledge_ref="knowledge/ui/event_patterns.md",
+            ))
+        return out
+
+    # ─── Rule 8: Unchecked GetFrame() chaining ───────────────────
+    def _check_unsafe_get_frame(self, file_label: str, content: str) -> List[UIFinding]:
+        out = []
+        for m in _UNSAFE_GET_FRAME_RE.finditer(content):
+            line = content[:m.start()].count("\n") + 1
+            out.append(UIFinding(
+                rule="ui_unsafe_get_frame",
+                severity="warning",
+                file=file_label,
+                line=line,
+                problem="Direct chaining on CATApplicationFrame::GetFrame()-> without null check",
+                reason=(
+                    "In headless batch mode, CATBatch, or macro automation, "
+                    "CATApplicationFrame::GetFrame() returns NULL. Chaining -> directly "
+                    "causes an immediate 0xC0000005 access violation."
+                ),
+                fix_hint=(
+                    "Assign to a pointer first: CATApplicationFrame *pFrame = CATApplicationFrame::GetFrame(); "
+                    "and check if (pFrame) before accessing GetMainWindow() or viewer."
+                ),
+                knowledge_ref="knowledge/infrastructure/batch_infrastructure.md",
             ))
         return out

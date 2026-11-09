@@ -178,9 +178,41 @@ class DiagnosticsEngine:
 
             dico_content = dico.read_text(encoding="utf-8", errors="replace")
 
-            # Command headers are registered by the module addin. Individual
-            # commands must not be emitted as CATIAfrGeneralWksAddin entries;
-            # doing so creates invalid duplicate registrations.
+            # Check that any Addin classes implemented in modules are registered in .dico
+            for mod in fw.modules:
+                mod_path = Path(mod.path)
+                if not mod_path.is_dir():
+                    continue
+                seen_addins = set()
+                for addin_file in mod_path.rglob("*Addin.cpp"):
+                    seen_addins.add(addin_file.stem)
+                for addin_file in mod_path.rglob("*Addin.h"):
+                    seen_addins.add(addin_file.stem)
+
+                for addin_name in sorted(seen_addins):
+                    pattern = rf"^\s*{re.escape(addin_name)}\b"
+                    if not re.search(pattern, dico_content, re.MULTILINE):
+                        mod_base = mod.name.replace(".m", "")
+                        entry = f"{addin_name} CATIAfrGeneralWksAddin lib{mod_base}\n"
+                        self.diagnostics.append(
+                            Diagnostic(
+                                severity=Severity.ERROR,
+                                problem=f"Addin unregistered in dictionary: {addin_name}",
+                                reason=(
+                                    f"Addin class '{addin_name}' in module '{mod.name}' is not "
+                                    f"registered in {dico.name} — toolbar and commands will not load in CATIA"
+                                ),
+                                category="dictionary",
+                                entity=addin_name,
+                                fix_plan=FixPlan(
+                                    action=FixAction.APPEND_LINE,
+                                    file=str(dico),
+                                    line=entry,
+                                    description=f"Register {addin_name} in {dico.name}",
+                                ),
+                                auto_fixable=True,
+                            )
+                        )
 
     def _check_catalog_nls(self):
         """Check NLS catalog for missing entries"""
