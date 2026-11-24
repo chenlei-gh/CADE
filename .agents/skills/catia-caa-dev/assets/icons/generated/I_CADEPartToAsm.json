@@ -45,17 +45,17 @@
     "checks": {
       "size_exact": true,
       "is_palettized": true,
-      "palette_0_is_catia_bg": true,
       "bg_color_legal": true,
+      "palette_0_is_catia_bg": true,
       "four_corners_pure_index_0": true,
-      "fg_color_count": 6,
+      "fg_color_count": 8,
       "fg_color_budget_ok": true,
       "fg_excludes_bg_mask": true,
-      "sharp_ratio": 0.926,
+      "sharp_ratio": 0.985,
       "sharp_ratio_ok": true,
       "isolated_ratio": 0.0,
       "no_dither_speckle": true,
-      "fg_ratio": 0.405,
+      "fg_ratio": 0.38,
       "fg_ratio_in_bounds": true,
       "runtime_display_verified": "not_checked"
     }
@@ -77,17 +77,17 @@
     "checks": {
       "size_exact": true,
       "is_palettized": true,
-      "palette_0_is_catia_bg": true,
       "bg_color_legal": true,
+      "palette_0_is_catia_bg": true,
       "four_corners_pure_index_0": true,
-      "fg_color_count": 6,
+      "fg_color_count": 8,
       "fg_color_budget_ok": true,
       "fg_excludes_bg_mask": true,
-      "sharp_ratio": 0.914,
+      "sharp_ratio": 0.997,
       "sharp_ratio_ok": true,
       "isolated_ratio": 0.0,
       "no_dither_speckle": true,
-      "fg_ratio": 0.4,
+      "fg_ratio": 0.34,
       "fg_ratio_in_bounds": true,
       "runtime_display_verified": "not_checked"
     }

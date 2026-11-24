@@ -14,11 +14,11 @@ Key Capabilities:
   2. Micro-Icon Contract (22 / 32 px):
      - Rendered independently on an integer pixel grid, never resampled from the master:
        a 4px feature on a 512px master lands at 0.17px at 22px and cannot survive
-     - Built the way official CATIA command icons are: a 2px navy silhouette
-       encloses a flat fill, and neighbouring faces are separated by that ink
-       mass. A 1px contour passes the palette gate and still reads as a smear.
-     - Large mode is not the 22px artwork magnified -- it keeps the 2px band and
-       spends the extra pixels on detail (more ticks, stepped hands)
+     - Built the way official CATIA command icons are: a 1px navy silhouette
+       encloses flat fills, with 1px internal creases and deliberate face accents.
+       Pixel measurements of B28 I_Pad/I_Hole/I_Pocket confirm this construction.
+     - Large mode is not the 22px artwork magnified -- each renderer has a native
+       32px layout and spends the extra pixels on legible structural detail
      - Foreground colour budget: 16 colours at 22px, 24 at 32px (hard FAIL above)
      - Hard-edge ratio >= 0.85 and zero dither speckle
   3. CATIA CNEXT Dual-Transparency Contract:
@@ -44,8 +44,9 @@ Key Capabilities:
 import json
 import math
 import shutil
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFilter
 
@@ -96,39 +97,29 @@ MIN_SHARP_RATIO = 0.85             # official icons 0.94+; degraded ones 0.21-0.
 MAX_ISOLATED_RATIO = 0.02          # anti dither / speckle gate
 LEGAL_BG_COLORS = (CATIA_BG, CATIA_INK, (180, 180, 180))
 
-PIXEL_DESIGN_GRID = 22             # pixel renderers are authored on a 22-unit grid
-
-# Every design unit is drawn as PIXEL_SUPERSAMPLE x PIXEL_SUPERSAMPLE physical
-# samples and then point-sampled down. Rasterizing straight onto a 22px grid
-# rounds sub-pixel geometry away: a 4px design feature collapses into one or
-# two physical pixels, shallow curves turn into stair-steps, and the ink band
-# swells (measured 1..10px on the previous renderers). Supersampling keeps each
-# edge where the geometry put it, so the band stays a constant 2px.
+# Geometry is authored in final-output pixels. A 32px icon therefore has its
+# own 32-unit layout rather than reusing a 22-unit layout with larger pixels.
+# Supersampling is only a rasterization aid: every physical output pixel is
+# point-sampled once, so no resampling filter can introduce transitional colours.
 PIXEL_SUPERSAMPLE = 4
 
-# Contour width in *physical* pixels. Measured across the official 22px assets:
-# 2px, and large mode does not thicken it to 3px -- it spends the extra pixels
-# on detail instead.
-PIXEL_INK_WIDTH = 2.0
-
-# Internal crease between two faces of the same solid. One physical pixel keeps
-# the faces wide; the outer silhouette still carries the full 2px band.
+# B28 I_Pad/I_Hole/I_Pocket use a one-physical-pixel navy contour. The previous
+# 2px band consumed the small faces and made every metaphor look heavy.
+PIXEL_INK_WIDTH = 1.0
 POINT_SPLIT_WIDTH = 1.0
 
 
 class _PixelGrid:
-    """Supersampled drawing surface on the 22-unit design grid.
+    """Supersampled drawing surface addressed in final-output pixels.
 
-    Coordinates are expressed in design units (0..22), which is what makes one
-    renderer serve both 22px and 32px: unit -> physical pixels is `size/22`, so
-    the same geometry stays proportionally correct at either size while the
-    contour stays a literal 2px.
+    Integer coordinates refer to output-pixel boundaries, not a shared logical
+    22px grid. Renderers explicitly choose separate 22px and 32px geometry.
     """
 
     def __init__(self, size: int, bg_color: Tuple[int, int, int]):
         self.size = size
-        self.unit = size / float(PIXEL_DESIGN_GRID)
-        self.scale = self.unit * PIXEL_SUPERSAMPLE
+        self.design_size = size
+        self.scale = float(PIXEL_SUPERSAMPLE)
         self.bg = tuple(bg_color)
         side = size * PIXEL_SUPERSAMPLE
         self.img = Image.new("RGB", (side, side), self.bg)
@@ -141,7 +132,7 @@ class _PixelGrid:
     def box(self, x0: float, y0: float, x1: float, y1: float) -> List[float]:
         return [self.s(x0), self.s(y0), self.s(x1), self.s(y1)]
 
-    def poly(self, points: List[Tuple[float, float]]) -> List[float]:
+    def poly(self, points: Sequence[Tuple[float, float]]) -> List[float]:
         flat: List[float] = []
         for x, y in points:
             flat.extend((self.s(x), self.s(y)))
@@ -152,7 +143,7 @@ class _PixelGrid:
         return max(1, int(round(ink_px * PIXEL_SUPERSAMPLE)))
 
     # -- primitives --------------------------------------------------------
-    def face(self, points: List[Tuple[float, float]],
+    def face(self, points: Sequence[Tuple[float, float]],
              fill: Tuple[int, int, int], ink_px: float = PIXEL_INK_WIDTH) -> None:
         """Flat face wrapped in a constant-width ink contour.
 
@@ -175,7 +166,13 @@ class _PixelGrid:
             fill: Tuple[int, int, int]) -> None:
         self.d.rectangle(self.box(x0, y0, x1, y1), fill=fill)
 
-    def solid(self, points: List[Tuple[float, float]],
+    def rect(self, x0: float, y0: float, x1: float, y1: float,
+             fill: Tuple[int, int, int], ink_px: float = PIXEL_INK_WIDTH,
+             outline: Tuple[int, int, int] = CATIA_INK) -> None:
+        self.d.rectangle(self.box(x0, y0, x1, y1), fill=fill,
+                         outline=outline, width=self.band(ink_px))
+
+    def solid(self, points: Sequence[Tuple[float, float]],
               fill: Tuple[int, int, int]) -> None:
         """Uncontoured fill -- only for faces that sit inside an existing ink body."""
         self.d.polygon(self.poly(points), fill=fill)
@@ -185,21 +182,24 @@ class _PixelGrid:
         bb = self.box(cx - r, cy - r, cx + r, cy + r)
         self.d.ellipse(bb, outline=color, width=self.band(thick_px))
 
-    def outline(self, points: List[Tuple[float, float]],
+
+    def outline(self, points: Sequence[Tuple[float, float]],
                 ink_px: float = PIXEL_INK_WIDTH) -> None:
         """Stroke a silhouette without repainting it -- outer contour only."""
         self.d.polygon(self.poly(points), outline=CATIA_INK, width=self.band(ink_px))
 
-    def edge(self, x0: float, y0: float, x1: float, y1: float,
-             ink_px: float = 1.0) -> None:
-        """Internal separation line, thinner than the silhouette.
+    def line(self, points: Sequence[Tuple[float, float]],
+             color: Tuple[int, int, int] = CATIA_INK,
+             width_px: float = POINT_SPLIT_WIDTH) -> None:
+        flat: List[float] = []
+        for x, y in points:
+            flat.extend((self.s(x), self.s(y)))
+        self.d.line(flat, fill=color, width=self.band(width_px))
 
-        Official multi-face icons carry a 2px outer contour but separate inner
-        faces with a hairline. Wrapping every sub-face in the full 2px band is
-        what turned the isometric solid into a dark blob.
-        """
-        self.d.line([(self.s(x0), self.s(y0)), (self.s(x1), self.s(y1))],
-                    fill=CATIA_INK, width=self.band(ink_px))
+    def edge(self, x0: float, y0: float, x1: float, y1: float,
+             ink_px: float = POINT_SPLIT_WIDTH) -> None:
+        """One-pixel internal crease, matching the outer contour weight."""
+        self.line([(x0, y0), (x1, y1)], width_px=ink_px)
 
     def result(self) -> Image.Image:
         """Point-sample the centre of every physical pixel (no blur)."""
@@ -575,22 +575,18 @@ def _render_master_from_image(input_image_path: Path, canvas_size: int = MASTER_
 # ── Pixel-Grid Renderers for CATIA BMPs (22 / 32) ─────────────────────
 # Anything smaller than 64px is a *different* artwork, not a downscaled master.
 #
-# Measured against the 11150 assets in `B28/.../icons/normal`, official CATIA
-# command icons are built from *faces*, not strokes: a 2-3px navy silhouette
-# encloses a flat fill, and adjacent faces are separated by that mass rather
-# than by a hairline. The previous generation drew 1px outlines over flat
-# colour, which passes the palette gate and still reads as a smear at 22px.
-#
-# Every feature below is therefore authored as "ink silhouette + inset fill",
-# with the ink band >= 2px on every edge.
+# B28 references use one-pixel navy structure, flat engineering colours and
+# sparse face accents. Fine detail comes from native-size geometry, never from
+# blur, dithering or an unrestricted transitional-colour ramp.
 
-PIXEL_STEEL = (106, 106, 106)      # official I_Part / I_Shaft mid grey
-PIXEL_STEEL_DEEP = (70, 78, 90)    # slab side wall
-PIXEL_STEEL_SHADE = (44, 52, 64)   # occluded slab face, still lighter than ink
+PIXEL_STEEL = (160, 165, 170)      # lit plate face
+PIXEL_STEEL_DEEP = (106, 116, 128) # plate side wall
+PIXEL_STEEL_SHADE = (75, 75, 75)   # official I_Hole/I_Pocket shadow grey
 PIXEL_GREEN = (40, 185, 80)
 PIXEL_BLUE = (45, 110, 235)
-PIXEL_CUBE_LEFT = (195, 185, 85)
-PIXEL_CUBE_RIGHT = (120, 110, 45)
+PIXEL_GOLD_LEFT = (220, 210, 105)
+PIXEL_GOLD_RIGHT = (165, 145, 65)
+PIXEL_GOLD_SHADE = (190, 165, 65)
 
 
 def _new_pixel_canvas(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
@@ -599,155 +595,198 @@ def _new_pixel_canvas(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
 
 
 def _render_pixel_stamp_clock(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
-    """Mold-date stamp dial: gold bezel, white face, cardinal ticks, bold hands.
-
-    Geometry is authored once on the 22-unit grid. Both output sizes sample the
-    same shapes, so the dial stays circular instead of stair-stepping, and the
-    ink bezel stays a literal 2px at 22px *and* 32px.
-    """
+    """Mold-date dial with a readable gold bezel and size-specific tick layout."""
     g = _PixelGrid(size, bg_color)
-    cx = cy = 11.0
+    large = size >= 32
+    cx = cy = 15.5 if large else 10.5
+    outer_r = 13.5 if large else 9.0
+    face_r = 10.0 if large else 6.5
 
-    # Gold bezel wrapped in the 2px ink silhouette, then the white dial with a
-    # 1px ink separation. The dial's stroke must stay thin: a 2px stroke here
-    # left only 0.4 units of gold, which shattered the bezel into specks.
-    g.disc(cx, cy, 9.8, FACE_GOLD, ink_px=PIXEL_INK_WIDTH)
-    g.disc(cx, cy, 7.4, WHITE, ink_px=POINT_SPLIT_WIDTH)
+    g.disc(cx, cy, outer_r, FACE_GOLD)
+    g.d.ellipse(g.box(cx - face_r, cy - face_r, cx + face_r, cy + face_r), fill=WHITE)
 
-    # Cardinal ticks span the gold band so the bezel reads as four arcs around
-    # a dial. Floating ticks on a thin ring just looked like damage.
-    for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
-        rx, ry = cx + dx * 8.2, cy + dy * 8.2
-        if dx:
-            g.bar(rx - 1.4, ry - 1.6, rx + 1.4, ry + 1.6, CATIA_INK)
+    # Normal mode retains four cardinal marks; Large adds four square diagonal
+    # marks. Diagonal hairlines missed pixel centres and disappeared at 32px.
+    for angle in range(0, 360, 45 if large else 90):
+        rad = math.radians(angle)
+        dx, dy = math.cos(rad), math.sin(rad)
+        if large and angle % 90:
+            tx = cx + dx * (face_r - 0.8)
+            ty = cy + dy * (face_r - 0.8)
+            g.bar(tx - 1, ty - 1, tx + 1, ty + 1, CATIA_INK)
         else:
-            g.bar(rx - 1.6, ry - 1.4, rx + 1.6, ry + 1.4, CATIA_INK)
+            g.line([(cx + dx * (face_r + 0.4), cy + dy * (face_r + 0.4)),
+                    (cx + dx * (outer_r - 1.3), cy + dy * (outer_r - 1.3))])
 
-    # Hands: vertical hour + horizontal minute, hub pinned by an ink block.
-    g.bar(cx - 0.9, cy - 4.4, cx + 0.9, cy + 0.6, RED_MARK)
-    g.bar(cx - 0.6, cy - 0.9, cx + 4.0, cy + 0.9, RED_MARK)
-    g.bar(cx - 1.2, cy - 1.2, cx + 1.2, cy + 1.2, CATIA_INK)
+    hand_length = 7.0 if large else 4.5
+    g.line([(cx, cy + 0.5), (cx, cy - hand_length)], RED_MARK, width_px=2.0)
+    g.line([(cx - 0.5, cy), (cx + hand_length, cy)], RED_MARK, width_px=2.0)
+    g.bar(cx - 1, cy - 1, cx + 1, cy + 1, CATIA_INK)
+    if large:
+        g.bar(cx, cy, cx + 1, cy + 1, FACE_GOLD)
     return g.result()
 
 
 def _render_pixel_part_to_asm(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
-    """Component seated on an isometric plate -- the assembly reading.
-
-    The three plate faces use well-separated greys and share one ink contour;
-    near-identical greys plus per-face outlines are what made the previous
-    version read as a smudge at 22px.
-    """
+    """A gold component seated on an isometric assembly plate."""
     g = _PixelGrid(size, bg_color)
+    large = size >= 32
+    if large:
+        plate_top = [(16, 18), (29, 23), (16, 28), (3, 23)]
+        plate_bottom, plate_left_bottom, plate_right_bottom = (16, 30), (3, 25), (29, 25)
+        cube_top = [(16, 4), (23, 8), (16, 12), (9, 8)]
+        cube_bottom, cube_left_bottom, cube_right_bottom = (16, 20), (9, 16), (23, 16)
+    else:
+        plate_top = [(11, 11), (20, 15), (11, 19), (2, 15)]
+        plate_bottom, plate_left_bottom, plate_right_bottom = (11, 21), (2, 17), (20, 17)
+        cube_top = [(11, 3), (16, 5.5), (11, 8), (6, 5.5)]
+        cube_bottom, cube_left_bottom, cube_right_bottom = (11, 14), (6, 11.5), (16, 11.5)
 
-    top = [(11, 10), (21, 14), (11, 18), (1, 14)]
-    left = [(1, 14), (11, 18), (11, 21), (1, 17)]
-    right = [(11, 18), (21, 14), (21, 17), (11, 21)]
+    plate_left = [plate_top[3], plate_top[2], plate_bottom, plate_left_bottom]
+    plate_right = [plate_top[2], plate_top[1], plate_right_bottom, plate_bottom]
+    g.solid(plate_left, PIXEL_STEEL_DEEP)
+    g.solid(plate_right, PIXEL_STEEL_SHADE)
+    g.solid(plate_top, PIXEL_STEEL)
+    g.outline([plate_top[3], plate_top[2], plate_bottom, plate_right_bottom,
+               plate_top[1], plate_top[0]])
+    g.line([plate_top[2], plate_bottom])
 
-    g.solid(left, PIXEL_STEEL_DEEP)
-    g.solid(right, PIXEL_STEEL_SHADE)
-    g.solid(top, PIXEL_STEEL)
-    g.outline([(1, 14), (11, 18), (11, 21), (21, 17), (21, 14), (11, 10)],
-              PIXEL_INK_WIDTH)
-    g.edge(11, 10, 11, 21, POINT_SPLIT_WIDTH)
+    if large:
+        # Two mounting holes fit only in Large mode; at 22px they become noise.
+        g.solid([(8, 23), (10, 22), (12, 23), (10, 24)], CATIA_INK)
+        g.solid([(20, 23), (22, 22), (24, 23), (22, 24)], CATIA_INK)
 
-    # Standing component sits *on* the plate centre, so the two shapes read as
-    # one object. A gap between them made the part look like it was floating.
-    body = [(8.5, 6.5), (13.5, 6.5), (13.5, 14.0), (8.5, 14.0)]
-    g.solid(body, FACE_GOLD)
-    g.outline(body, PIXEL_INK_WIDTH)
-    g.disc(11.0, 4.2, 3.0, WHITE, ink_px=PIXEL_INK_WIDTH)
+    cube_left = [cube_top[3], cube_top[2], cube_bottom, cube_left_bottom]
+    cube_right = [cube_top[2], cube_top[1], cube_right_bottom, cube_bottom]
+    g.solid(cube_left, PIXEL_GOLD_LEFT)
+    g.solid(cube_right, PIXEL_GOLD_RIGHT)
+    g.solid(cube_top, FACE_GOLD)
+    g.outline([cube_top[0], cube_top[1], cube_right_bottom, cube_bottom,
+               cube_left_bottom, cube_top[3]])
+    g.line([cube_top[3], cube_top[2], cube_top[1]])
+    g.line([cube_top[2], cube_bottom])
+    g.line([(cube_top[3][0] + 1, cube_top[3][1] + 1),
+            (cube_left_bottom[0] + 1, cube_left_bottom[1] - 1)], WHITE)
     return g.result()
 
 
 def _render_pixel_bom_table(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
-    """BOM sheet: ink frame, blue header band, ruled rows, green export arrow.
-
-    The arrow used to sit on top of the sheet frame, so the two shapes competed
-    for the same pixels. It now breaks out of the right edge cleanly, which is
-    also a better reading of "export".
-    """
+    """Ruled BOM sheet with column structure and a separate export arrow."""
     g = _PixelGrid(size, bg_color)
+    large = size >= 32
+    if large:
+        g.bar(5, 5, 25, 30, PIXEL_STEEL_SHADE)
+        g.rect(3, 3, 23, 28, WHITE)
+        g.bar(4, 4, 22, 9, PIXEL_BLUE)
+        for x in (6, 11, 16):
+            g.bar(x, 6, x + 3, 7, WHITE)
+        g.edge(4, 9, 22, 9)
+        for row_y in (13, 17, 21, 25):
+            g.line([(4, row_y), (22, row_y)], PIXEL_STEEL_SHADE)
+        for col_x in (10, 16):
+            g.line([(col_x, 10), (col_x, 27)], PIXEL_STEEL_SHADE)
+        arrow = [(16, 15), (21, 15), (21, 12), (30, 20),
+                 (21, 28), (21, 25), (16, 25)]
+    else:
+        g.bar(4, 4, 17, 20, PIXEL_STEEL_SHADE)
+        g.rect(2, 2, 16, 19, WHITE)
+        g.bar(3, 3, 15, 7, PIXEL_BLUE)
+        g.edge(3, 7, 15, 7)
+        for row_y in (10, 13, 16):
+            g.line([(3, row_y), (15, row_y)], PIXEL_STEEL_SHADE)
+        g.line([(7, 8), (7, 18)], PIXEL_STEEL_SHADE)
+        arrow = [(10, 11), (14, 11), (14, 9), (20, 14),
+                 (14, 19), (14, 17), (10, 17)]
 
-    g.d.rectangle(g.box(2.0, 3.0, 16.0, 20.0),
-                  fill=WHITE, outline=CATIA_INK, width=g.band(PIXEL_INK_WIDTH))
-    g.d.rectangle(g.box(2.0, 3.0, 16.0, 7.0),
-                  fill=PIXEL_BLUE, outline=CATIA_INK, width=g.band(1.0))
-    # Three ruled rows filling the body: an empty lower half read as an
-    # unfinished icon rather than as a table.
-    for row_y in (10.5, 14.0, 17.5):
-        g.bar(2.0, row_y, 16.0, row_y + 1.0, CATIA_INK)
-
-    arrow = [(10, 12), (13, 12), (13, 9.5), (20, 14.5),
-             (13, 19.5), (13, 17), (10, 17)]
-    g.face(arrow, PIXEL_GREEN, ink_px=1.5)
+    g.face(arrow, PIXEL_GREEN)
+    if large:
+        g.line([(18, 17), (21, 17), (21, 15), (26, 19)], WHITE)
     return g.result()
 
 
 def _render_pixel_color_swatch(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
-    """Swatch card with four large chips -- identification beats decoration.
-
-    Chips grew and the gutters widened: at 22px a chip has to be a solid block
-    of colour, because an outline thick enough to read would eat the very colour
-    the icon exists to show.
-    """
+    """Four colour chips on a layered card; Large adds flat enamel highlights."""
     g = _PixelGrid(size, bg_color)
+    large = size >= 32
+    if large:
+        g.bar(4, 4, 29, 29, PIXEL_STEEL_SHADE)
+        g.rect(3, 3, 28, 28, WHITE)
+        chips = [(6, 6, RED_MARK, (255, 120, 110)),
+                 (18, 6, PIXEL_GREEN, (145, 240, 150)),
+                 (6, 17, PIXEL_BLUE, (135, 190, 255)),
+                 (18, 17, FACE_GOLD, WHITE)]
+        chip_size = 9
+    else:
+        g.bar(3, 4, 20, 20, PIXEL_STEEL_SHADE)
+        g.rect(2, 2, 19, 19, WHITE)
+        chips = [(4, 5, RED_MARK, None), (12, 5, PIXEL_GREEN, None),
+                 (4, 12, PIXEL_BLUE, None), (12, 12, FACE_GOLD, None)]
+        chip_size = 6
 
-    g.d.rectangle(g.box(1.5, 2.5, 20.5, 19.5),
-                  fill=WHITE, outline=CATIA_INK, width=g.band(PIXEL_INK_WIDTH))
-    for (x0, y0, col) in (
-        (4.0, 5.0, RED_MARK),
-        (12.0, 5.0, PIXEL_GREEN),
-        (4.0, 12.0, PIXEL_BLUE),
-        (12.0, 12.0, FACE_GOLD),
-    ):
-        g.bar(x0, y0, x0 + 6.0, y0 + 6.0, col)
+    for x0, y0, colour, highlight in chips:
+        g.rect(x0, y0, x0 + chip_size, y0 + chip_size, colour)
+        if highlight is not None:
+            g.line([(x0 + 1, y0 + chip_size - 2), (x0 + 1, y0 + 1),
+                    (x0 + chip_size - 2, y0 + 1)], highlight)
     return g.result()
 
 
 def _render_pixel_name_card(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
-    """Name card with header band and a heavy letter A.
-
-    The A is built from two solid legs plus a crossbar. Diagonal strokes drawn
-    as thin polygons collapsed into a stub at 22px; solid shapes keep the glyph
-    legible at the smallest size.
-    """
+    """Layered name card with a solid, legible A and a blue title band."""
     g = _PixelGrid(size, bg_color)
-
-    g.d.rectangle(g.box(1.5, 2.5, 20.5, 20.0),
-                  fill=WHITE, outline=CATIA_INK, width=g.band(PIXEL_INK_WIDTH))
-    g.d.rectangle(g.box(1.5, 2.5, 20.5, 6.5),
-                  fill=PIXEL_BLUE, outline=CATIA_INK, width=g.band(1.0))
-
-    # A: left leg, right leg, crossbar. Each is a solid ink block.
-    g.solid([(5.5, 19.0), (8.5, 8.5), (10.5, 8.5), (8.0, 19.0)], CATIA_INK)
-    g.solid([(11.5, 8.5), (13.5, 8.5), (18.0, 19.0), (15.0, 19.0)], CATIA_INK)
-    g.bar(8.6, 14.0, 15.4, 16.2, CATIA_INK)
+    large = size >= 32
+    if large:
+        g.bar(4, 4, 29, 29, PIXEL_STEEL_SHADE)
+        g.rect(3, 3, 28, 28, WHITE)
+        g.bar(4, 4, 27, 9, PIXEL_BLUE)
+        g.edge(4, 9, 27, 9)
+        g.bar(5, 5, 12, 6, WHITE)
+        g.bar(14, 5, 20, 6, CYAN)
+        g.solid([(7, 26), (13, 11), (16, 11), (11, 26)], CATIA_INK)
+        g.solid([(16, 11), (19, 11), (25, 26), (21, 26)], CATIA_INK)
+        g.bar(11, 20, 22, 22, CATIA_INK)
+        g.bar(6, 25, 12, 27, CATIA_INK)
+        g.bar(20, 25, 26, 27, CATIA_INK)
+    else:
+        g.bar(3, 4, 20, 20, PIXEL_STEEL_SHADE)
+        g.rect(2, 2, 19, 19, WHITE)
+        g.bar(3, 3, 18, 7, PIXEL_BLUE)
+        g.edge(3, 7, 18, 7)
+        g.solid([(5, 18), (9, 9), (11, 9), (8, 18)], CATIA_INK)
+        g.solid([(11, 9), (13, 9), (17, 18), (14, 18)], CATIA_INK)
+        g.bar(8, 14, 14, 16, CATIA_INK)
     return g.result()
 
 
 def _render_pixel_cube_solid(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
-    """Isometric solid: three flat faces split by ink mass, no shading ramp.
-
-    One 2px outer contour plus hairline creases, matching the official I_Part /
-    I_Pad construction. The faces stay wide because the seam is thin.
-    """
+    """Isometric engineering solid with three faces and sparse bevel accents."""
     g = _PixelGrid(size, bg_color)
+    large = size >= 32
+    if large:
+        top = [(16, 3), (29, 9.5), (16, 16), (3, 9.5)]
+        bottom, left_bottom, right_bottom = (16, 29), (3, 22.5), (29, 22.5)
+    else:
+        top = [(11, 2), (20, 6.5), (11, 11), (2, 6.5)]
+        bottom, left_bottom, right_bottom = (11, 20), (2, 15.5), (20, 15.5)
 
-    top = [(11, 1.5), (21, 6.5), (11, 11.5), (1, 6.5)]
-    left = [(1, 6.5), (11, 11.5), (11, 21), (1, 16)]
-    right = [(11, 11.5), (21, 6.5), (21, 16), (11, 21)]
-
-    # Faces are filled edge to edge, then one 2px contour wraps the outside and
-    # hairlines mark the creases. Outlining each face separately (the previous
-    # approach) doubled the band at every seam and ate the side faces.
-    g.solid(left, PIXEL_CUBE_LEFT)
-    g.solid(right, PIXEL_CUBE_RIGHT)
+    left = [top[3], top[2], bottom, left_bottom]
+    right = [top[2], top[1], right_bottom, bottom]
+    g.solid(left, PIXEL_GOLD_LEFT)
+    g.solid(right, PIXEL_GOLD_RIGHT)
     g.solid(top, FACE_GOLD)
-    g.edge(11, 1.5, 11, 21, POINT_SPLIT_WIDTH)   # vertical crease
-    g.edge(1, 6.5, 11, 11.5, POINT_SPLIT_WIDTH)  # left/top crease
-    g.edge(21, 6.5, 11, 11.5, POINT_SPLIT_WIDTH)  # right/top crease
-    g.outline([(11, 1.5), (21, 6.5), (21, 16), (11, 21), (1, 16), (1, 6.5)],
-              PIXEL_INK_WIDTH)
+    g.outline([top[0], top[1], right_bottom, bottom, left_bottom, top[3]])
+    g.line([top[3], top[2], top[1]])
+    g.line([top[2], bottom])
+
+    # A vertical enamel highlight survives point sampling; diagonal hairlines
+    # on the top face broke into bright specks and were intentionally removed.
+    g.line([(top[3][0] + 1, top[3][1] + 2),
+            (left_bottom[0] + 1, left_bottom[1] - 1)], FACE_GOLD)
+    if large:
+        g.line([(top[1][0] - 1, top[1][1] + 2),
+                (right_bottom[0] - 1, right_bottom[1] - 1)], PIXEL_GOLD_SHADE)
+        g.line([(left_bottom[0] + 2, left_bottom[1]),
+                (bottom[0], bottom[1] - 2)], PIXEL_GOLD_SHADE)
     return g.result()
 
 
@@ -796,22 +835,17 @@ def _render_pixel_from_image(input_image_path: Path, size: int,
 
 
 def _overlay_pixel_badge(img: Image.Image, badge_name: str) -> Image.Image:
-    """Small verb badge for 32px assets only; 22px is too small to host one.
-
-    Coordinates come from the same 22-unit design grid the renderers use, and
-    stroke widths are derived from it too -- a hardcoded 1px line would vanish
-    once the canvas is a 32px one.
-    """
+    """Small verb badge for 32px assets only, authored on the native grid."""
     size = img.size[0]
     if size < 32:
         return img
     d = ImageDraw.Draw(img)
-    unit = size / float(PIXEL_DESIGN_GRID)
+    unit = size / 32.0
     u = lambda v: v * unit
     w = max(1, int(round(unit)))
 
-    cx, cy = u(16.5), u(16.5)
-    r = u(4.5)
+    cx, cy = u(24.5), u(24.5)
+    r = u(6.5)
     d.ellipse([cx - r, cy - r, cx + r, cy + r],
               fill=WHITE, outline=CATIA_INK, width=max(1, int(round(unit))))
 

@@ -833,8 +833,14 @@ try:
     # 4. Micro-icon design contract (22/32 rendered on their own pixel grid)
     from icon_studio import (
         MAX_FG_COLORS, MIN_SHARP_RATIO, MAX_ISOLATED_RATIO,
-        _quantize_to_catia_bmp, CATIA_INK,
+        PIXEL_INK_WIDTH, _PixelGrid, _quantize_to_catia_bmp, CATIA_INK,
     )
+
+    check("micro-icon silhouette is the B28-measured 1 physical pixel",
+          PIXEL_INK_WIDTH == 1.0)
+    for _sz in (22, 32):
+        check(f"{_sz}px geometry uses the native {_sz}-unit grid",
+              _PixelGrid(_sz, CATIA_BG).design_size == _sz)
 
     for _metaphor in ("stamp_clock", "part_to_asm", "bom_table",
                       "color_swatch", "name_card", "cube_solid"):
