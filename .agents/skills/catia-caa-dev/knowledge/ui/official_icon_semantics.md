@@ -86,7 +86,7 @@ tags: [ui, icon, semantics, official-base, generated-base]
 | 复合族 | 35~50% | I_Mirror 60% / I_Shell 56% / I_MeasureItem 47% | 双元素/工具隐喻 |
 | 线框族 | 5~25% | I_Point 5% / I_Line 11% / I_Circle 19% / I_CircularPattern 21% | 几何元素天然留白 |
 
-**对 CADE 的校验**：PartToAsm 铺满 fg=47.9% 落在复合族区间 ✓；管线门禁 fg∈[15%,70%] 覆盖全部三个族 ✓。
+**对 CADE 的校验**：PartToAsm 铺满 fg=47.9% 落在复合族区间 ✓；管线门禁 fg∈[15%,75%] 覆盖全部三个族 ✓。
 
 ---
 
@@ -136,7 +136,7 @@ tags: [ui, icon, semantics, official-base, generated-base]
 - [ ] 轮廓用墨蓝 `(24,16,82)`，语义色按 §2 选：实体黄=材料、青=几何辅助、红=作用位置、蓝=参考副本、绿=系统操作
 - [ ] 加/减材料语义用凸出/凹入对偶表达（`boss()`/`notch()`），不另造隐喻
 - [ ] 偏移/参考/复制语义用蓝色虚线（`dashed_copy()`），不用实心副本
-- [ ] 实体类图标 fg 目标 40~50%（铺满）；线框类可低至 15%；禁超 70%
+- [ ] 实体类图标 fg 目标 40~50%（铺满）；线框类可低至 15%；禁超 75%
 - [ ] 语义单元必须单一：允许对称/对比双主体（Mirror 式），禁止无关联场景堆叠
 - [ ] 储备语素（§7.2）首次用于生产命令时，必须过完整 A–E 门禁并在 provenance JSON 记录
 

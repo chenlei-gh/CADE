@@ -30,8 +30,10 @@ python -c "from icon_studio import UniversalIconStudio; UniversalIconStudio.depl
 - **四角纯净度**：4 个角点像素索引必须恒为 0，杜绝显示时出现暗框与毛刺。
 - **前景色数预算（G2）**：排除背景掩码后的有效前景色 —— 22×22 ≤ **16** 色、32×32 ≤ **24** 色（512 Master 不限）。超预算 **FAIL**。
 - **轮廓锐边（G3）**：`sharp_ratio ≥ 0.85`（仅统计相邻异色像素对，通道差 ≥56 为硬边），孤立噪点 `isolated_ratio ≤ 0.02`。
-- **前景填充率**：`fg_ratio` 严格控制在 [15%, 70%] 之间。
-- **双规声明**：对应 `.CATRsc` 必须成对提供 `Icon.Normal` 与 `Icon.Large`。
+- **前景填充率**：`fg_ratio` 严格控制在 [15%, 75%] 之间（上限 75% 而非 70%，
+  否则会拒绝官方实体族基准 `I_Pad 73%` / `I_Pocket 74%` / `I_Hole 74%`）。
+- **PNG Alpha 纯净度（G6）**：512/256/64 导出件中 `A=0` 的像素 RGB 必须为 0；22/32 是平面 RGB 画布不含 Alpha，不适用。由 `lint_png_asset()` 校验。
+- **双规声明**：对应 `.CATRsc` 必须成对提供 `Icon.Normal` 与 `Icon.Large`。部署只改属于本工具的行（按 header 前缀匹配），不会波及其他命令。
 - **无逃生阀**：任何硬门禁失败即禁止部署、禁止注入 `.CATRsc`；只有 PASS / FAIL，没有 WARN 降级。
 
 > 16 色是**上限不是质量保证**——8 色但轮廓断裂的图标照样 FAIL。G2 与 G3 必须同时通过。

@@ -805,6 +805,31 @@ try:
     check(".CATRsc updated with Icon.Normal", 'DeployTestHdr.DeployTest.Icon.Normal = "I_CADEDeployTest";' in _new_rsc_text)
     check(".CATRsc updated with Icon.Large", 'DeployTestHdr.DeployTest.Icon.Large = "I_CADEDeployTest_32";' in _new_rsc_text)
 
+    # 3b. Regression: deploying one tool must not repoint other commands.
+    # The old implementation rewrote every `.Icon.*` line in every file under
+    # msgcatalog, so generating one icon silently retargeted the whole module.
+    _sib_rsc = _rsc_dir / "SiblingHdr.CATRsc"
+    _sib_before = 'SiblingHdr.Sibling.Icon.Normal = "I_CADESibling";\n'
+    _sib_rsc.write_text(_sib_before, encoding="utf-8")
+    _mixed_rsc = _rsc_dir / "MixedHdr.CATRsc"
+    _mixed_before = (
+        'DeployTestHdr.Other.Icon.Normal = "I_other";\n'
+        'MixedHdr.Keep.Icon.Normal = "I_CADEKeep";\n'
+    )
+    _mixed_rsc.write_text(_mixed_before, encoding="utf-8")
+
+    UniversalIconStudio.deploy_tool_icon("DeployTest", _fw_test, stem="I_CADEDeployTest",
+                                         asset_dir=_tmp_studio_dir)
+    check("deploy leaves a sibling command's .CATRsc untouched",
+          _sib_rsc.read_text(encoding="utf-8") == _sib_before)
+    _mixed_after = _mixed_rsc.read_text(encoding="utf-8")
+    check("deploy rewrites only the matching prefix inside a shared file",
+          'MixedHdr.Keep.Icon.Normal = "I_CADEKeep";' in _mixed_after,
+          _mixed_after)
+    check("deploy does rename the target command's own declaration",
+          'DeployTestHdr.Other.Icon.Normal = "I_CADEDeployTest";' in _mixed_after,
+          _mixed_after)
+
     # 4. Micro-icon design contract (22/32 rendered on their own pixel grid)
     from icon_studio import (
         MAX_FG_COLORS, MIN_SHARP_RATIO, MAX_ISOLATED_RATIO,

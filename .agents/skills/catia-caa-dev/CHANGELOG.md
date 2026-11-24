@@ -10,6 +10,28 @@
 
 ## [未发布]
 
+### 🛡️ 图标部署链路正确性修复（含 1 个破坏性缺陷）
+
+对 `icon_studio.py` / `cade.py` 做缺陷复核时发现并修复 6 项问题，其中 1 项会**破坏
+已有生产资源**。
+
+| # | 缺陷 | 证据 | 修复 |
+|---|---|---|---|
+| **D1** | `deploy_tool_icon()` 改写 msgcatalog 下**所有** `.CATRsc` 的**所有** `.Icon.Normal/Large` 行，不管属于哪个命令 | 复现：部署 1 个新图标后，同文件的 `BarCmd` 与另一文件的 `BazCmd` 全部被指向 `I_CADENewTool` — 部署一个图标即销毁整个模块其余命令的图标 | 改为按 header 前缀（`<ToolName>...`）或该行原有引用是否指向本工具判定归属，只改自己的行 |
+| **D2** | `.CATRsc` 写入包在 `except Exception: pass` | L1184 | 收窄为 `OSError`，失败计入新增的 `rsc_skipped` 字段，不再静默 |
+| **D3** | `cade icon` 把已不存在的 `WARN` 当成功 | `cade.py:939` | 改为只有 `PASS` 返回 0 |
+| **D4** | `EXPORT_SPECS` 含 22/32 两行，循环里直接 `continue` | L66-67 + L1051 | 从清单移除，注释说明运行时尺寸必须由像素网格独立渲染 |
+| **D5** | 文档写 `fg_ratio ∈ [15%, 70%]`，代码是 `[15%, 0.75]` | `I_CADEAutoRename_32` 实测 0.704，按 0.70 会被打死 | 文档对齐代码 75%（3 处） |
+| **D6** | 文档称 PNG Alpha 纯净度是 **Hard Gate**，`icon_studio.py` 中**零实现**，且 4 个已交付资产实际违规 | `AutoColor_256` dirty=5、`AutoRename_256` dirty=4、`AutoColor_64` dirty=2、`PartToAsm_64` dirty=6 | 新增 `lint_png_asset()` + `_clear_transparent_rgb()`，接入 `generate_icon_bundle` 并阻断部署 |
+| **D7** | `analyze` / `export` / `import` 三个 badge 在 `_overlay_badge` 中无字形分支 → 画出**空白白盘** | 三个动词都落空，只有白圆底。已在 `resolve_metaphor_from_name` 的候选表里，会真实命中 | `analyze` 并入放大镜；`export`/`import` 画方向箭头；补 `else` 回退到加号 |
+
+**未采纳的尝试（记录以免重犯）**：曾想新增「画布硬截断」门禁，实测官方 8293 个
+22×22 图标中 93.2% 的边框整条连续贴边——画框类图标天然如此，该指标无法区分
+「设计满画幅」与「被裁切」，会大面积误杀，故撤销，未进入代码。
+
+**回归测试**：`test_icons.py` 新增 3 条断言锁定 D1（兄弟命令 `.CATRsc` 不变、
+共享文件内只改匹配前缀、目标命令确实被改名），247 → **250/250**。
+
 ### 🧹 图标子系统死代码清理（删除 740 行零引用模块 + 8 个重复资产）
 
 全仓 AST + 符号可达性审计后发现一批零引用遗留物。删除前逐项用 grep 确认引用数为 0：

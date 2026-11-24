@@ -59,12 +59,13 @@ DEPTH_GRAY = (75, 75, 75)       # Cut / pocket cavity depth
 RED_MARK   = (195, 20, 20)      # Cut / operation target edge
 
 MASTER_SIZE = 512
+# Documentation / high-DPI exports only. The 22 and 32 CATIA runtime sizes are
+# deliberately absent: they are rendered on their own pixel grid further down
+# and must never be produced by resampling this master.
 EXPORT_SPECS = [
     (512, "_512.png", "Master Ultra-HD (512x512) RGBA"),
     (256, "_256.png", "Documentation HD (256x256) RGBA"),
     (64,  "_64.png",  "High-DPI UI (64x64) RGBA"),
-    (32,  "_32.png",  "Large Mode (32x32) RGBA"),
-    (22,  ".png",     "Normal Mode (22x22) RGBA"),
 ]
 
 
@@ -739,12 +740,28 @@ def _overlay_badge(master: Image.Image, badge_name: str) -> Image.Image:
     elif badge_name in ("check", "verify", "validate"):
         bd.line([(cx - 16, cy), (cx - 4, cy + 14)], fill=(35, 175, 75, 255), width=8)
         bd.line([(cx - 4, cy + 14), (cx + 20, cy - 14)], fill=(35, 175, 75, 255), width=8)
-    elif badge_name in ("search", "find"):
+    elif badge_name in ("search", "find", "analyze"):
         r_lens = int(g_rad * 0.7)
         bd.ellipse([(cx - r_lens - 4, cy - r_lens - 4), (cx + r_lens - 4, cy + r_lens - 4)],
                    outline=(0, 140, 230, 255), width=7)
         bd.line([(cx + r_lens - 4, cy + r_lens - 4), (cx + r_lens + 12, cy + r_lens + 12)],
                    fill=CATIA_INK + (255,), width=8)
+    elif badge_name in ("export", "import"):
+        # Direction matters: export leaves, import arrives.
+        going_out = badge_name == "export"
+        tip_x = cx + (int(g_rad) if going_out else -int(g_rad))
+        tail_x = cx - (int(g_rad) if going_out else -int(g_rad))
+        bd.line([(tail_x, cy), (tip_x, cy)], fill=(0, 140, 230, 255), width=8)
+        bd.polygon([(tip_x + (14 if going_out else -14), cy),
+                    (tip_x, cy - 16), (tip_x, cy + 16)],
+                   fill=(0, 140, 230, 255), outline=CATIA_INK + (255,))
+    else:
+        # Unknown verb: draw the neutral plus rather than a blank white disc,
+        # which previously shipped as an empty badge and looked like a defect.
+        arm = int(g_rad * 0.8)
+        th = max(6, int(b_size * 0.16))
+        bd.line([(cx - arm, cy), (cx + arm, cy)], fill=(35, 175, 75, 255), width=th)
+        bd.line([(cx, cy - arm), (cx, cy + arm)], fill=(35, 175, 75, 255), width=th)
     return master
 
 
@@ -970,6 +987,83 @@ def lint_icon_asset(bmp_img: Image.Image, expected_size: int,
     }
 
 
+def _clear_transparent_rgb(img: Image.Image) -> Image.Image:
+    """Zero the RGB of every fully transparent pixel.
+
+    Resampling (LANCZOS/BOX) blends colour into A=0 neighbours, so an exported
+    PNG ends up with transparent pixels carrying a faint tint. Viewers that
+    ignore the alpha band -- or composite onto a dark toolbar -- render that as
+    a halo around the artwork.
+    """
+    if "A" not in img.mode:
+        return img
+    rgba = img.convert("RGBA")
+    px = rgba.load()
+    w, h = rgba.size
+    for y in range(h):
+        for x in range(w):
+            if px[x, y][3] == 0:
+                px[x, y] = (0, 0, 0, 0)
+    return rgba
+
+
+def lint_png_asset(png_img: Image.Image) -> Dict[str, Any]:
+    """Audit the documentation PNGs against the alpha purity contract.
+
+    The BMP gate cannot see this: an indexed BMP has no alpha, so the
+    transparent-pixel hygiene of the 512/256/64 exports needs its own check.
+    Contract: every pixel with A=0 must carry RGB=0 too, otherwise a viewer
+    that ignores alpha (or composites onto a dark toolbar) shows a halo.
+    """
+    checks: Dict[str, Any] = {"has_alpha": ("A" in png_img.mode)}
+    if not checks["has_alpha"]:
+        return {"status": "PASS", "failures": [], "checks": checks,
+                "dirty_transparent": 0, "transparent_px": 0}
+
+    px = png_img.convert("RGBA").load()
+    w, h = png_img.size
+    transparent = dirty = 0
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            if a == 0:
+                transparent += 1
+                if r or g or b:
+                    dirty += 1
+
+    checks["transparent_px"] = transparent
+    checks["dirty_transparent_px"] = dirty
+    checks["alpha_pure"] = (dirty == 0)
+    failures = [] if checks["alpha_pure"] else ["alpha_pure"]
+    return {"status": "PASS" if not failures else "FAIL",
+            "failures": failures, "checks": checks,
+            "dirty_transparent": dirty, "transparent_px": transparent}
+
+
+def _repo_root() -> Optional[Path]:
+    """Nearest ancestor containing `.git`, or None outside a repo."""
+    for cand in Path(__file__).resolve().parents:
+        if (cand / ".git").exists():
+            return cand
+    return None
+
+
+def _portable_path(p: Path) -> str:
+    """Repo-relative, forward-slash path so committed manifests stay portable.
+
+    Writing `str(path)` produced absolute `D:\\Vault\\...` entries that are
+    meaningless on any other checkout and leak the author's directory layout.
+    """
+    resolved = Path(p).resolve()
+    root = _repo_root()
+    if root is not None:
+        try:
+            return resolved.relative_to(root).as_posix()
+        except ValueError:
+            pass
+    return resolved.as_posix()
+
+
 # ── Universal Icon Studio Engine ───────────────────────────────────────
 class UniversalIconStudio:
     """Master Icon Factory: Transforms any tool name, semantic or image into production assets."""
@@ -1047,16 +1141,21 @@ class UniversalIconStudio:
 
         # 2. Export large PNGs (documentation / high-DPI UI only)
         emitted_files: Dict[str, Any] = {}
+        png_lint: Dict[str, Any] = {}
         for sz, suffix, _desc in EXPORT_SPECS:
-            if sz < 64:
-                continue  # CATIA runtime sizes are re-rendered on the pixel grid below
             png_name = f"{stem}{suffix}"
             png_path = dest_dir / png_name
             if sz == MASTER_SIZE:
                 master_rgba.save(png_path, format="PNG")
             else:
-                master_rgba.resize((sz, sz), Image.Resampling.LANCZOS).save(png_path, format="PNG")
+                down = master_rgba.resize((sz, sz), Image.Resampling.LANCZOS)
+                # LANCZOS bleeds colour into fully transparent pixels; zero the
+                # RGB of A=0 samples so the exported PNG stays halo-free.
+                down = _clear_transparent_rgb(down)
+                down.save(png_path, format="PNG")
             emitted_files[f"png_{sz}"] = png_path
+            with Image.open(png_path) as _ph:
+                png_lint[f"png_{sz}"] = lint_png_asset(_ph.convert("RGBA"))
 
         # 3. Render CATIA runtime sizes independently, then quantize.
         # 22 and 32 keep their historical filenames (`<stem>.png` / `<stem>_32.png`)
@@ -1079,7 +1178,8 @@ class UniversalIconStudio:
         # 4. Quality gate: any FAIL blocks deployment and .CATRsc injection.
         lint_22 = lint_icon_asset(bmps[22], 22, bg_color=bg_color)
         lint_32 = lint_icon_asset(bmps[32], 32, bg_color=bg_color)
-        gated = (lint_22["status"] == "PASS" and lint_32["status"] == "PASS")
+        png_ok = all(v["status"] == "PASS" for v in png_lint.values())
+        gated = (lint_22["status"] == "PASS" and lint_32["status"] == "PASS" and png_ok)
 
         manifest = {
             "stem": stem,
@@ -1092,9 +1192,10 @@ class UniversalIconStudio:
                 "fg_ratio_bounds": [FG_MIN, FG_MAX],
                 "max_isolated_ratio": MAX_ISOLATED_RATIO,
             },
-            "files": {k: str(v) for k, v in emitted_files.items()},
+            "files": {k: _portable_path(v) for k, v in emitted_files.items()},
             "lint_22": lint_22,
             "lint_32": lint_32,
+            "lint_png": png_lint,
             "ready_for_cnext": gated,
         }
 
@@ -1139,50 +1240,91 @@ class UniversalIconStudio:
         shutil.copyfile(normal_src, normal_dst)
         shutil.copyfile(large_src, large_dst)
 
-        # 2. Update .CATRsc Files in msgcatalog
+        # 2. Update the .CATRsc declarations that belong to *this* tool.
+        #
+        # A CAA msgcatalog directory holds one .CATRsc per command header and
+        # each file may declare several commands. Rewriting every
+        # `.Icon.Normal` line in every file (the previous behaviour) repointed
+        # the icons of unrelated commands at the newly generated stem, so
+        # deploying one icon silently destroyed the rest of the module.
+        # We therefore only touch lines whose stored icon reference resolves
+        # back to this tool: same stem, or the auto-derived `I_<toolname>`.
         rsc_dir = fw_path / "CNext" / "resources" / "msgcatalog"
-        rsc_updated = []
+        rsc_updated, rsc_skipped = [], []
+        tool_key = tool_name.replace(" ", "").lower()
+        own_refs = {
+            actual_stem.lower(),
+            f"i_{tool_key}",
+        }
+
+        def _decl_prefix(line: str) -> Optional[str]:
+            """Return `<Header>.<Id>` for an `....Icon.Normal = "x";` line."""
+            if ".Icon." not in line:
+                return None
+            return line.split(".Icon.")[0]
+
+        def _ref_of(line: str) -> Optional[str]:
+            """Return the icon stem a declaration line points at."""
+            _, sep, tail = line.partition("=")
+            if not sep:
+                return None
+            return tail.strip().rstrip(";").strip().strip('"')
+
+        def _owns(line: str) -> bool:
+            """True when the declaration belongs to this tool.
+
+            Ownership is decided by the header prefix (production files look
+            like `CAADateStampCmdHdr.CAADateStampCmd.Icon.Normal`), falling back
+            to the icon reference itself for files whose prefix carries no name.
+            """
+            prefix = _decl_prefix(line)
+            if prefix is None:
+                return False
+            if tool_key and tool_key in prefix.replace(" ", "").lower():
+                return True
+            ref = _ref_of(line)
+            return ref is not None and ref.lower() in own_refs
+
         if rsc_dir.exists():
-            for rsc_file in rsc_dir.glob("*.CATRsc"):
+            for rsc_file in sorted(rsc_dir.glob("*.CATRsc")):
                 try:
                     content = rsc_file.read_text(encoding="utf-8", errors="replace")
-                    # If this command or module is referenced
-                    norm_decl = f'.Icon.Normal = "{actual_stem}";'
-                    large_decl = f'.Icon.Large = "{actual_stem}_32";'
+                except OSError as exc:
+                    rsc_skipped.append(f"{rsc_file.name}: unreadable ({exc})")
+                    continue
 
-                    lines = content.splitlines()
-                    new_lines = []
-                    found_normal = False
-                    found_large = False
+                norm_decl = f'.Icon.Normal = "{actual_stem}";'
+                large_decl = f'.Icon.Large = "{actual_stem}_32";'
 
-                    for line in lines:
+                new_lines: List[str] = []
+                found_normal = found_large = touched = False
+                for line in content.splitlines():
+                    if _owns(line):
+                        touched = True
                         if ".Icon.Normal" in line:
-                            # Replace old icon reference
-                            prefix = line.split(".Icon.Normal")[0]
-                            new_lines.append(f'{prefix}{norm_decl}')
+                            new_lines.append(line.split(".Icon.Normal")[0] + norm_decl)
                             found_normal = True
-                        elif ".Icon.Large" in line:
-                            prefix = line.split(".Icon.Large")[0]
-                            new_lines.append(f'{prefix}{large_decl}')
-                            found_large = True
                         else:
-                            new_lines.append(line)
+                            new_lines.append(line.split(".Icon.Large")[0] + large_decl)
+                            found_large = True
+                    else:
+                        new_lines.append(line)
 
-                    # If normal was found but large was missing, append large
-                    if found_normal and not found_large:
-                        # locate normal index
-                        for idx, l in enumerate(new_lines):
-                            if norm_decl in l:
-                                prefix = l.split(".Icon.Normal")[0]
-                                new_lines.insert(idx + 1, f'{prefix}{large_decl}')
-                                break
+                # A Large declaration is mandatory for high-DPI toolbars: add
+                # one right after Normal when the file only had Normal.
+                if touched and found_normal and not found_large:
+                    for idx, line in enumerate(new_lines):
+                        if line.endswith(norm_decl):
+                            new_lines.insert(idx + 1, line.split(".Icon.Normal")[0] + large_decl)
+                            break
 
-                    updated_content = "\n".join(new_lines) + "\n"
-                    if updated_content != content:
+                updated_content = "\n".join(new_lines) + "\n"
+                if touched and updated_content != content:
+                    try:
                         rsc_file.write_text(updated_content, encoding="utf-8")
                         rsc_updated.append(rsc_file.name)
-                except Exception as e:
-                    pass
+                    except OSError as exc:
+                        rsc_skipped.append(f"{rsc_file.name}: unwritable ({exc})")
 
         return {
             "status": "SUCCESS",
@@ -1190,6 +1332,7 @@ class UniversalIconStudio:
             "deployed_normal": str(normal_dst),
             "deployed_large": str(large_dst),
             "rsc_updated": rsc_updated,
+            "rsc_skipped": rsc_skipped,
         }
 
 

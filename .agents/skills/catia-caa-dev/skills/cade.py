@@ -936,7 +936,8 @@ def cmd_icon(args):
         manifest = res.get("manifest", {})
         lint = manifest.get("lint_22", {})
         print(json.dumps(lint, indent=2, ensure_ascii=False))
-        return 0 if res.get("status") in ("PASS", "WARN") else 1
+        # The gate has no WARN state: anything but PASS is a blocked asset.
+        return 0 if res.get("status") == "PASS" else 1
 
 
 # ─── Refactor ─────────────────────────────────────────────────────

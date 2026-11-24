@@ -20,13 +20,13 @@
     "max_isolated_ratio": 0.02
   },
   "files": {
-    "png_512": ".agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEAutoRename_512.png",
-    "png_256": ".agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEAutoRename_256.png",
-    "png_64": ".agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEAutoRename_64.png",
-    "png_22": ".agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEAutoRename.png",
-    "bmp_normal_22": ".agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEAutoRename.bmp",
-    "png_32": ".agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEAutoRename_32.png",
-    "bmp_large_32": ".agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEAutoRename_32.bmp"
+    "png_512": ".agents/skills/catia-caa-dev/assets/icons/generated/I_CADEAutoRename_512.png",
+    "png_256": ".agents/skills/catia-caa-dev/assets/icons/generated/I_CADEAutoRename_256.png",
+    "png_64": ".agents/skills/catia-caa-dev/assets/icons/generated/I_CADEAutoRename_64.png",
+    "png_22": ".agents/skills/catia-caa-dev/assets/icons/generated/I_CADEAutoRename.png",
+    "bmp_normal_22": ".agents/skills/catia-caa-dev/assets/icons/generated/I_CADEAutoRename.bmp",
+    "png_32": ".agents/skills/catia-caa-dev/assets/icons/generated/I_CADEAutoRename_32.png",
+    "bmp_large_32": ".agents/skills/catia-caa-dev/assets/icons/generated/I_CADEAutoRename_32.bmp"
   },
   "lint_22": {
     "status": "PASS",
@@ -50,6 +50,7 @@
       "four_corners_pure_index_0": true,
       "fg_color_count": 3,
       "fg_color_budget_ok": true,
+      "fg_excludes_bg_mask": true,
       "sharp_ratio": 1.0,
       "sharp_ratio_ok": true,
       "isolated_ratio": 0.0,
@@ -81,6 +82,7 @@
       "four_corners_pure_index_0": true,
       "fg_color_count": 3,
       "fg_color_budget_ok": true,
+      "fg_excludes_bg_mask": true,
       "sharp_ratio": 1.0,
       "sharp_ratio_ok": true,
       "isolated_ratio": 0.0,
@@ -88,6 +90,44 @@
       "fg_ratio": 0.704,
       "fg_ratio_in_bounds": true,
       "runtime_display_verified": "not_checked"
+    }
+  },
+  "lint_png": {
+    "png_512": {
+      "status": "PASS",
+      "failures": [],
+      "checks": {
+        "has_alpha": true,
+        "transparent_px": 62962,
+        "dirty_transparent_px": 0,
+        "alpha_pure": true
+      },
+      "dirty_transparent": 0,
+      "transparent_px": 62962
+    },
+    "png_256": {
+      "status": "PASS",
+      "failures": [],
+      "checks": {
+        "has_alpha": true,
+        "transparent_px": 15479,
+        "dirty_transparent_px": 0,
+        "alpha_pure": true
+      },
+      "dirty_transparent": 0,
+      "transparent_px": 15479
+    },
+    "png_64": {
+      "status": "PASS",
+      "failures": [],
+      "checks": {
+        "has_alpha": true,
+        "transparent_px": 915,
+        "dirty_transparent_px": 0,
+        "alpha_pure": true
+      },
+      "dirty_transparent": 0,
+      "transparent_px": 915
     }
   },
   "ready_for_cnext": true
