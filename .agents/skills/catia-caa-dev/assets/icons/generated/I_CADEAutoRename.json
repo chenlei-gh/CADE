@@ -55,7 +55,7 @@
       "sharp_ratio_ok": true,
       "isolated_ratio": 0.0,
       "no_dither_speckle": true,
-      "fg_ratio": 0.632,
+      "fg_ratio": 0.744,
       "fg_ratio_in_bounds": true,
       "runtime_display_verified": "not_checked"
     }
@@ -87,7 +87,7 @@
       "sharp_ratio_ok": true,
       "isolated_ratio": 0.0,
       "no_dither_speckle": true,
-      "fg_ratio": 0.704,
+      "fg_ratio": 0.727,
       "fg_ratio_in_bounds": true,
       "runtime_display_verified": "not_checked"
     }
