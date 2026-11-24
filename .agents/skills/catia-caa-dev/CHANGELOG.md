@@ -10,6 +10,56 @@
 
 ## [未发布]
 
+### 🎨 图标生成内核重写：双尺度像素渲染 + 五层硬门禁（反转 2026-09-29 的 16 色决定）
+
+**问题**：生成的 22×22 图标发虚、有脏斑。实测 `I_CADEDateStamp` 在 484 个像素里
+分布了 **245 种过渡色**（几乎每个像素都是混合色），而官方 `I_Pad` 只有 3~8 色。
+
+**根因**（三层，已逐项实测确认）：
+
+| 层 | 根因 | 证据 |
+|---|---|---|
+| 渲染 | 512 写实母版 → LANCZOS 下采样，`GaussianBlur(24)` 投影 + 12 刻度线（4px）在 22px 只剩 **0.17px** | 4×22/512 = 0.172 |
+| 量化 | `Floyd-Steinberg` 抖动在微型画布上制造孤立噪点 | 孤立噪点比率超标 |
+| 门禁 | `lint_icon_asset` 只查尺寸/四角/前景占比，**不查色数与轮廓**，245 色被误判 PASS | 门禁无 G2/G3 层 |
+
+**改动**（`skills/icon_studio.py` + `tests/test_icons.py`）：
+
+| 项 | 变更 |
+|---|---|
+| 渲染器 | 新增 `_render_pixel_*` 系列：在 22/32 **整数像素网格直接绘制**，不经母版缩放 |
+| 量化 | `dither=Image.Dither.NONE`；调色板裁剪到预算；索引 0 钉声明背景色 |
+| 门禁 | G1 格式 / **G2 前景色数（22≤16、32≤24）** / **G3 轮廓（sharp_ratio≥0.85、孤立噪点≤0.02）** / G4 几何 / G5 实机标记 |
+| 状态 | 只有 **PASS / FAIL**，删除 WARN 降级（WARN 曾导致坏图进入 `.CATRsc`） |
+| 部署 | `ready_for_cnext` 要求双尺寸同时 PASS；FAIL 不写 BMP、不改 `.CATRsc` |
+
+**实测收益**：
+
+| 资产 | 改造前 | 改造后 |
+|---|---|---|
+| I_CADEDateStamp | 244 色 / sharp 0.214 | **3 色 / sharp 1.0 PASS** |
+| I_CADEBOMTool | 196 / 0.409 | **6 / 1.0 PASS** |
+| I_CADEAutoRename | 175 / 0.430 | **3 / 1.0 PASS** |
+| I_CADEPartToAsm | 142 / 0.247 | **4 / 1.0 PASS** |
+| I_CADEAutoColor | — | **7 / 1.0 PASS** |
+| I_CADECAADateStamp | — | **3 / 1.0 PASS** |
+
+**为什么反转 2026-09-29 的「解除 16 色」**：那次决策的实测数据**仍然成立**
+（官方 8293 个 22×22 图标中 11.4% 超 16 色、max 254，本次已独立复测确认），
+但当时的归因错了——色数不是病根，**从母版缩放**才是。放宽到 256 色后
+`PartToAsm` 色数升到 157，视觉反而更糊（512 上的细节被抹成过渡色）。
+现行架构按最终尺寸直接绘制，天然 3~7 色，16/24 不再意味着降质，
+而是拦住「重启渐变渲染器」的回归网。**16 色是上限不是质量保证**：
+8 色但轮廓断裂（sharp_ratio < 0.85）照样 FAIL。
+
+**验证**：`test_icons.py` **245/245 PASSED**（含隐喻全覆盖、富调色板 FAIL、
+抖动 FAIL、错误背景 FAIL、墨蓝背景 PASS、FAIL 不部署且 `.CATRsc` 不变）。
+
+**未触碰**：`capabilities.yaml`、`cade.py`、`actions.py`、`.CATRsc` 注入与
+`deploy_tool_icon` / `deploy_icon` / `generate_icon` 调度链全部保留。
+
+**遗留**：B28 实机工具栏对照（官方 `I_Pad` / `I_Pocket`）需人工确认，无法自动化。
+
 ### 🔧 修复：清空 Full Regression 的 4 项 quarantine——修复测试而非豁免
 
 `tests/test_full_regression.py` 的 `QUARANTINE` 里挂了 4 个标签。逐项核对后确认

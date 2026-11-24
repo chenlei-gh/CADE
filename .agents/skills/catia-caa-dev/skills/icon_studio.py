@@ -4,24 +4,35 @@ CADE Universal Icon Studio (icon_studio.py)
 Universal High-Definition Icon Generation Engine & Workflow Deployer for CATIA CAA.
 
 Key Capabilities:
-  1. Multi-Resolution Ultra-HD Pipeline:
-     - 512x512 Master RGBA (Ultra-smooth antialiasing, metallic highlights, ambient soft shadows)
+  1. Dual-Track Asset Pipeline:
+     - 512x512 Master RGBA (metallic highlights, ambient soft shadows) -- design
+       artefact and documentation source only, never downscaled into a toolbar icon
      - 256x256 HD / Documentation asset
      - 64x64 High-DPI UI asset
      - 32x32 CATIA Large Mode asset (RGBA PNG + 8-bit indexed BMP)
      - 22x22 CATIA Normal Mode asset (RGBA PNG + 8-bit indexed BMP)
-  2. CATIA CNEXT Dual-Transparency Contract:
+  2. Micro-Icon Contract (22 / 32 px):
+     - Rendered independently on an integer pixel grid, never resampled from the master:
+       a 4px feature on a 512px master lands at 0.17px at 22px and cannot survive
+     - 1px ink contour + flat fills, no blur, no gradient, no antialiasing
+     - Foreground colour budget: 16 colours at 22px, 24 at 32px (hard FAIL above)
+     - Hard-edge ratio >= 0.85 and zero dither speckle
+  3. CATIA CNEXT Dual-Transparency Contract:
      - 8-bit palettized BMP (<=256 colors)
-     - Palette index 0 strictly locked to CATIA_BG (192, 192, 192)
+     - Palette index 0 locked to the declared background mask colour
+       (CATIA_BG gray, CATIA_INK navy and 180-gray are the recognised legal masks)
      - Four-corner background snap guaranteeing zero dirty halos
-  3. Parametric Morpheme & Semantic Resolver:
+  4. Parametric Morpheme & Semantic Resolver:
      - Automatically infers domain metaphors from any tool name (date/stamp, part/asm, bom/table,
        color/swatch, rename/tag, pad/solid, pocket/cavity, gear, curve/surface, etc.)
      - Supports custom metaphor overrides and external image/logo high-resolution remastering
-  4. Full Workflow Integration:
+  5. Full Workflow Integration:
      - deploy_tool_icon(): Generates assets, writes normal/large BMPs into CNext/resources/graphic/icons/normal/,
        and updates .CATRsc with both Icon.Normal and Icon.Large declarations
      - Seamlessly hooked into actions.create_command and build.sync_runtime_view
+  6. Blocking Quality Gate:
+     - G1 format / G2 colour budget / G3 contour / G4 geometry are hard checks
+     - Any failure blocks deployment and `.CATRsc` injection; there is no WARN passthrough
 """
 
 import json
@@ -67,6 +78,36 @@ EXPORT_SPECS = [
 BG_TOLERANCE = 36
 FG_MIN, FG_MAX = 0.15, 0.75
 MAX_COLORS = 256
+
+# Micro-icon design contract (22/32 px). Owned by CADE, not by individual icons:
+# every renderer that feeds a CATIA BMP must obey it, so new tool icons inherit
+# the same bar automatically.
+#
+# Colour budget basis, measured across the 8293 official B28 22x22 icons:
+# median 5 foreground colours, p90 = 20, p99 = 174, max 253. So 16 is stricter
+# than the official median-plus-tail but still admits the bulk of real icons;
+# it is a budget for *deliberate* palettes, not a claim that CATIA forbids more.
+PIXEL_SIZES = (22, 32)
+MAX_FG_COLORS = {22: 16, 32: 24}   # hard FAIL above this (background excluded)
+SHARP_EDGE_DELTA = 56              # per-channel delta that counts as a "hard" edge
+MIN_SHARP_RATIO = 0.85             # official icons 0.94+; degraded ones 0.21-0.43
+MAX_ISOLATED_RATIO = 0.02          # anti dither / speckle gate
+LEGAL_BG_COLORS = (CATIA_BG, CATIA_INK, (180, 180, 180))
+
+PIXEL_DESIGN_GRID = 22             # pixel renderers are authored on a 22px grid
+
+
+def _px_p(value: float, size: int) -> int:
+    """Map a coordinate authored on the 22px design grid onto the target size."""
+    if size == PIXEL_DESIGN_GRID:
+        return int(round(value))
+    scaled = int(round(value * size / float(PIXEL_DESIGN_GRID)))
+    return max(0, min(size - 1, scaled))
+
+
+def _px_metrics(size: int) -> Tuple[float, int]:
+    """Return (grid scale, contour width) for a pixel renderer at `size`."""
+    return size / float(PIXEL_DESIGN_GRID), (1 if size <= 22 else 2)
 
 
 # ── Drawing Primitives for 512 Master ──────────────────────────────────
@@ -427,6 +468,250 @@ def _render_master_from_image(input_image_path: Path, canvas_size: int = MASTER_
     return img
 
 
+# ── Pixel-Grid Renderers for CATIA BMPs (22 / 32) ─────────────────────
+# Anything smaller than 64px is a *different* artwork, not a downscaled master.
+# Official CATIA icons are pixel art: 1px ink contour + flat fills, no gradient,
+# no blur, no antialiasing. These renderers draw on integer coordinates at the
+# final size so every stroked feature is >= 1 physical pixel.
+
+PIXEL_STEEL = (130, 140, 155)
+PIXEL_GREEN = (40, 185, 80)
+PIXEL_BLUE = (45, 110, 235)
+PIXEL_CUBE_LEFT = (195, 185, 85)
+PIXEL_CUBE_RIGHT = (120, 110, 45)
+
+
+def _new_pixel_canvas(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
+    """Flat RGB canvas: no alpha means no compositing blend artifacts."""
+    return Image.new("RGB", (size, size), tuple(bg_color))
+
+
+def _render_pixel_stamp_clock(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
+    """Mold-date stamp dial: 1px ink ring, 4 cardinal ticks, bold hands, solid hub."""
+    img = _new_pixel_canvas(size, bg_color)
+    d = ImageDraw.Draw(img)
+    cw = _px_metrics(size)[1]
+    p = lambda v: _px_p(v, size)
+
+    # Dial face inside a 1px ink ring (radius 10 on the 22px grid)
+    d.ellipse([p(1), p(1), p(20), p(20)], fill=FACE_GOLD)
+    d.ellipse([p(1), p(1), p(20), p(20)], outline=CATIA_INK, width=cw)
+
+    # Four cardinal ticks only — twelve cannot survive at this size
+    d.rectangle([p(10), p(2), p(11), p(4)], fill=CATIA_INK)
+    d.rectangle([p(10), p(17), p(11), p(19)], fill=CATIA_INK)
+    d.rectangle([p(2), p(10), p(4), p(11)], fill=CATIA_INK)
+    d.rectangle([p(17), p(10), p(19), p(11)], fill=CATIA_INK)
+
+    # Hands: vertical hour + horizontal minute, solid red
+    d.rectangle([p(10), p(6), p(11), p(11)], fill=RED_MARK)
+    d.rectangle([p(11), p(10), p(16), p(11)], fill=RED_MARK)
+    # Solid centre hub
+    d.rectangle([p(10), p(10), p(11), p(11)], fill=CATIA_INK)
+    return img
+
+
+def _render_pixel_part_to_asm(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
+    """Flanged bushing seated in an isometric base plate."""
+    img = _new_pixel_canvas(size, bg_color)
+    d = ImageDraw.Draw(img)
+    cw = _px_metrics(size)[1]
+    p = lambda v: _px_p(v, size)
+
+    d.polygon([(p(1), p(14)), (p(10), p(19)), (p(20), p(14)), (p(10), p(9))],
+              fill=PIXEL_STEEL, outline=CATIA_INK)
+    d.rectangle([p(8), p(6), p(13), p(12)], fill=FACE_GOLD, outline=CATIA_INK, width=cw)
+    d.ellipse([p(7), p(3), p(14), p(8)], fill=WHITE, outline=CATIA_INK, width=cw)
+    d.rectangle([p(10), p(5), p(11), p(6)], fill=CATIA_INK)
+    return img
+
+
+def _render_pixel_bom_table(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
+    """BOM sheet: ink header band, tabulated rows, green export arrow."""
+    img = _new_pixel_canvas(size, bg_color)
+    d = ImageDraw.Draw(img)
+    cw = _px_metrics(size)[1]
+    p = lambda v: _px_p(v, size)
+
+    d.rectangle([p(2), p(3), p(19), p(18)], fill=WHITE, outline=CATIA_INK, width=cw)
+    d.rectangle([p(3), p(4), p(18), p(6)], fill=CATIA_INK)
+    d.rectangle([p(4), p(5), p(6), p(6)], fill=FACE_GOLD)
+    d.rectangle([p(7), p(5), p(12), p(6)], fill=CYAN)
+    for row_y in (10, 13, 16):
+        d.rectangle([p(3), p(row_y), p(13), p(row_y)], fill=PIXEL_STEEL)
+        d.rectangle([p(3), p(row_y - 2), p(5), p(row_y - 1)], fill=PIXEL_STEEL)
+    d.polygon([(p(11), p(13)), (p(15), p(13)), (p(15), p(11)), (p(20), p(16)),
+               (p(15), p(21)), (p(15), p(19)), (p(11), p(19))],
+              fill=PIXEL_GREEN, outline=CATIA_INK)
+    return img
+
+
+def _render_pixel_color_swatch(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
+    """Swatch card (2x2 primaries) plus automation gear."""
+    img = _new_pixel_canvas(size, bg_color)
+    d = ImageDraw.Draw(img)
+    p = lambda v: _px_p(v, size)
+    thin = 1  # a 2px ring would swallow a face this small
+
+    # Card occupies the left ~60% so the gear owns its own column
+    d.rectangle([p(1), p(3), p(11), p(19)], fill=WHITE, outline=CATIA_INK, width=thin)
+    for (x0, y0, col) in (
+        (2, 5, RED_MARK),
+        (6, 5, PIXEL_GREEN),
+        (2, 12, PIXEL_BLUE),
+        (6, 12, FACE_GOLD),
+    ):
+        d.rectangle([p(x0), p(y0), p(x0 + 3), p(y0 + 4)], fill=col, outline=CATIA_INK)
+
+    # Gear: a plain disc. Teeth sit on the diagonals at 32px so none of them
+    # runs into the card frame or off the canvas edge.
+    r = p(3)
+    gcx, gcy = p(16), p(13)
+    if size >= 32:
+        lug = max(1, r // 3)
+        diag = max(r - 1, 1)
+        for sx, sy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
+            lx = gcx + sx * diag - lug // 2
+            ly = gcy + sy * diag - lug // 2
+            d.rectangle([lx, ly, lx + lug, ly + lug], fill=CATIA_INK)
+    d.ellipse([gcx - r, gcy - r, gcx + r, gcy + r], fill=FACE_GOLD,
+              outline=CATIA_INK, width=thin)
+    d.rectangle([gcx - 1, gcy - 1, gcx + 1, gcy + 1], fill=DEPTH_GRAY)
+    return img
+
+
+def _render_pixel_name_card(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
+    """Name card with header band and bold letter A."""
+    img = _new_pixel_canvas(size, bg_color)
+    d = ImageDraw.Draw(img)
+    cw = _px_metrics(size)[1]
+    p = lambda v: _px_p(v, size)
+
+    d.rectangle([p(1), p(3), p(18), p(19)], fill=WHITE, outline=CATIA_INK, width=cw)
+    d.rectangle([p(2), p(4), p(17), p(8)], fill=PIXEL_BLUE)
+    d.polygon([(p(7), p(18)), (p(10), p(10)), (p(12), p(10)), (p(9), p(18))], fill=CATIA_INK)
+    d.polygon([(p(12), p(10)), (p(14), p(10)), (p(17), p(18)), (p(15), p(18))], fill=CATIA_INK)
+    d.rectangle([p(9), p(13), p(15), p(14)], fill=CATIA_INK)
+    return img
+
+
+def _render_pixel_cube_solid(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
+    """Isometric solid: three flat faces, ink contour, no shading ramp."""
+    img = _new_pixel_canvas(size, bg_color)
+    d = ImageDraw.Draw(img)
+    cw = _px_metrics(size)[1]
+    p = lambda v: _px_p(v, size)
+
+    top = [(p(10), p(2)), (p(19), p(7)), (p(10), p(12)), (p(1), p(7))]
+    left = [(p(1), p(7)), (p(10), p(12)), (p(10), p(19)), (p(1), p(14))]
+    right = [(p(10), p(12)), (p(19), p(7)), (p(19), p(14)), (p(10), p(19))]
+    d.polygon(left, fill=PIXEL_CUBE_LEFT, outline=CATIA_INK)
+    d.polygon(right, fill=PIXEL_CUBE_RIGHT, outline=CATIA_INK)
+    d.polygon(top, fill=FACE_GOLD, outline=CATIA_INK)
+    return img
+
+
+def _render_pixel_from_image(input_image_path: Path, size: int,
+                            bg_color: Tuple[int, int, int]) -> Image.Image:
+    """Remaster an external logo at final size onto the pixel grid.
+
+    BOX averaging is used instead of LANCZOS: it never overshoots into ringing
+    halos. The result is then posterized to flat regions, because a photographic
+    gradient has no chance of holding a hard contour at 22px -- the gate would
+    reject it, and rightly so.
+    """
+    src = Image.open(input_image_path).convert("RGBA")
+    w, h = src.size
+    safe = max(1, int(size * 0.92))
+    ratio = min(safe / float(w), safe / float(h))
+    new_w = max(1, int(round(w * ratio)))
+    new_h = max(1, int(round(h * ratio)))
+    resized = src.resize((new_w, new_h), Image.Resampling.BOX)
+    alpha = resized.split()[-1].point(lambda a: 255 if a >= 128 else 0)
+
+    img = _new_pixel_canvas(size, bg_color)
+    ox, oy = (size - new_w) // 2, (size - new_h) // 2
+    img.paste(resized, (ox, oy), resized)
+
+    # Flatten the tonal ramp into a few hard bands so contours stay crisp.
+    # Above ~4 levels the adjacent bands land within SHARP_EDGE_DELTA of each
+    # other, which reads as a soft ramp again and fails the contour gate.
+    levels = 3 if size <= 22 else 4
+    img = Image.eval(img, lambda v: round(v * (levels - 1) / 255.0) * 255 // (levels - 1))
+
+    # Re-apply the *original* transparency: only pixels the source declared
+    # transparent go back to the mask colour. Matching by colour would eat the
+    # subject whenever it happens to share a hue with the background.
+    px = img.load()
+    ap = alpha.load()
+    for y in range(size):
+        for x in range(size):
+            ax, ay = x - ox, y - oy
+            if 0 <= ax < new_w and 0 <= ay < new_h:
+                if ap[ax, ay] == 0:
+                    px[x, y] = tuple(bg_color)
+            else:
+                px[x, y] = tuple(bg_color)
+    return img
+
+
+def _overlay_pixel_badge(img: Image.Image, badge_name: str) -> Image.Image:
+    """Small verb badge for 32px assets only; 22px is too small to host one."""
+    size = img.size[0]
+    if size < 32:
+        return img
+    d = ImageDraw.Draw(img)
+    p = lambda v: _px_p(v, size)
+
+    x0, y0, x1, y1 = p(12), p(12), p(21), p(21)
+    d.ellipse([x0, y0, x1, y1], fill=WHITE, outline=CATIA_INK)
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+
+    if badge_name in ("plus", "create", "new", "add"):
+        d.line([(cx - 2, cy), (cx + 2, cy)], fill=PIXEL_GREEN, width=1)
+        d.line([(cx, cy - 2), (cx, cy + 2)], fill=PIXEL_GREEN, width=1)
+    elif badge_name in ("pencil", "edit", "modify", "rename"):
+        d.line([(cx - 2, cy + 2), (cx + 2, cy - 2)], fill=CATIA_INK, width=1)
+        d.line([(cx - 2, cy + 2), (cx - 1, cy + 2)], fill=PIXEL_BLUE, width=1)
+    elif badge_name in ("refresh", "update"):
+        d.arc([cx - 2, cy - 2, cx + 2, cy + 2], 40, 320, fill=PIXEL_BLUE, width=1)
+    elif badge_name in ("check", "verify", "validate"):
+        d.line([(cx - 2, cy), (cx - 1, cy + 2)], fill=PIXEL_GREEN, width=1)
+        d.line([(cx - 1, cy + 2), (cx + 2, cy - 2)], fill=PIXEL_GREEN, width=1)
+    elif badge_name in ("search", "find"):
+        d.ellipse([cx - 2, cy - 2, cx + 1, cy + 1], outline=PIXEL_BLUE)
+        d.line([(cx + 1, cy + 1), (cx + 2, cy + 2)], fill=CATIA_INK, width=1)
+    else:
+        d.line([(cx - 2, cy), (cx + 2, cy)], fill=PIXEL_GREEN, width=1)
+        d.line([(cx, cy - 2), (cx, cy + 2)], fill=PIXEL_GREEN, width=1)
+    return img
+
+
+PIXEL_RENDERERS = {
+    "stamp_clock": _render_pixel_stamp_clock,
+    "part_to_asm": _render_pixel_part_to_asm,
+    "bom_table": _render_pixel_bom_table,
+    "color_swatch": _render_pixel_color_swatch,
+    "name_card": _render_pixel_name_card,
+    "notch_pocket": _render_pixel_cube_solid,
+    "cube_solid": _render_pixel_cube_solid,
+}
+
+
+def _render_pixel(metaphor: str, size: int, bg_color: Tuple[int, int, int] = CATIA_BG,
+                  badge: Optional[str] = None,
+                  input_image: Optional[Path] = None) -> Image.Image:
+    """Render one CATIA-size asset directly at `size` pixels."""
+    if input_image and Path(input_image).is_file():
+        img = _render_pixel_from_image(Path(input_image), size, bg_color)
+    else:
+        renderer = PIXEL_RENDERERS.get(metaphor, _render_pixel_cube_solid)
+        img = renderer(size, bg_color)
+    if badge:
+        img = _overlay_pixel_badge(img, badge)
+    return img
+
+
 # ── Badge Rendering for Master 512 ─────────────────────────────────────
 def _overlay_badge(master: Image.Image, badge_name: str) -> Image.Image:
     """Overlay standard CATIA-styled verb badge at bottom-right corner."""
@@ -467,62 +752,88 @@ def _overlay_badge(master: Image.Image, badge_name: str) -> Image.Image:
     return master
 
 
-# ── Quantizer & BMP Writer (CNEXT Safe) ────────────────────────────────
-def _quantize_to_catia_bmp(rgba: Image.Image, out_size: int = 22) -> Image.Image:
-    """Downsample master RGBA to exact target size and format as 8-bit palettized BMP.
-    Guarantee palette index 0 = CATIA_BG (192, 192, 192) and 4-corner purity."""
-    resized = rgba.resize((out_size, out_size), Image.Resampling.LANCZOS)
-    flat = Image.new("RGB", (out_size, out_size), CATIA_BG)
-    flat.paste(resized, (0, 0), resized)
+# ── Quantizer & BMP Writer (CNEXT Safe) ──────────────────────────────
+def _quantize_to_catia_bmp(rgba: Image.Image, out_size: int = 22,
+                           bg_color: Tuple[int, int, int] = CATIA_BG,
+                           max_colors: Optional[int] = None) -> Image.Image:
+    """Format an image into a CNEXT-safe 8-bit palettized BMP.
 
-    # Snap 4 corners to guaranteed CATIA_BG
-    px = flat.load()
-    w, h = flat.size
-    for x, y in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
-        px[x, y] = CATIA_BG
+    Contract:
+      * palette index 0 == ``bg_color`` (the declared transparency mask)
+      * background is an exact mask colour, never a near-miss blend
+      * at most ``max_colors`` distinct *foreground* colours survive
+      * dithering is OFF -- Floyd-Steinberg on a 22px canvas is pure speckle
+    """
+    if max_colors is None:
+        max_colors = MAX_FG_COLORS.get(out_size, 64)
 
-    # Edge clean up
+    # 1. Flatten alpha over the declared background.
+    flat_src = Image.new("RGB", rgba.size, tuple(bg_color))
+    if rgba.mode in ("RGBA", "LA", "PA") or "A" in rgba.mode:
+        flat_src.paste(rgba, (0, 0), rgba.convert("RGBA"))
+    else:
+        flat_src.paste(rgba.convert("RGB"), (0, 0))
+
+    # 2. Reach the target size. BOX averages without ringing halos; the pixel
+    #    renderers already emit exact size, so this only guards legacy masters.
+    if flat_src.size != (out_size, out_size):
+        flat_src = flat_src.resize((out_size, out_size), Image.Resampling.BOX)
+
+    px = flat_src.load()
+    w, h = flat_src.size
+
+    def _snap(x: int, y: int) -> None:
+        p = px[x, y]
+        if all(abs(p[i] - bg_color[i]) <= BG_TOLERANCE for i in range(3)):
+            px[x, y] = tuple(bg_color)
+
+    # 3. Mask the outer ring only. Interior colours that merely resemble the
+    #    background must survive -- blanket tolerance wiping is what bleached
+    #    the previous generation of icons.
     for x in range(w):
-        for y in range(h):
-            p = px[x, y]
-            if all(abs(p[i] - CATIA_BG[i]) <= BG_TOLERANCE for i in range(3)):
-                px[x, y] = CATIA_BG
+        _snap(x, 0)
+        _snap(x, h - 1)
+    for y in range(h):
+        _snap(0, y)
+        _snap(w - 1, y)
+    for x, y in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
+        px[x, y] = tuple(bg_color)
 
-    # Quantize to at most 255 colors for foreground
-    fg_p = flat.quantize(colors=255, method=Image.Quantize.MEDIANCUT)
-    raw_palette = fg_p.getpalette() or []
+    # 4. Reduce to (foreground budget + one background slot), dither disabled.
+    quant = flat_src.quantize(colors=max(2, min(256, max_colors + 1)),
+                              method=Image.Quantize.MEDIANCUT,
+                              dither=Image.Dither.NONE)
+    raw_palette = quant.getpalette() or []
 
-    # Rebuild palette: ensure index 0 is CATIA_BG
-    new_palette = [CATIA_BG[0], CATIA_BG[1], CATIA_BG[2]]
-    idx_map = {}
+    # 5. Rebuild palette with index 0 pinned to the declared background colour;
+    #    any palette entry that is effectively the background folds into 0.
+    new_palette = [bg_color[0], bg_color[1], bg_color[2]]
+    idx_map: Dict[int, int] = {}
     cur_idx = 1
     for i in range(0, len(raw_palette), 3):
-        color = (raw_palette[i], raw_palette[i+1], raw_palette[i+2])
-        if all(abs(color[j] - CATIA_BG[j]) <= 2 for j in range(3)):
+        color = (raw_palette[i], raw_palette[i + 1], raw_palette[i + 2])
+        if all(abs(color[j] - bg_color[j]) <= 2 for j in range(3)):
             idx_map[i // 3] = 0
+        elif cur_idx <= max_colors:
+            new_palette.extend(color)
+            idx_map[i // 3] = cur_idx
+            cur_idx += 1
         else:
-            if cur_idx < 256:
-                new_palette.extend(color)
-                idx_map[i // 3] = cur_idx
-                cur_idx += 1
-            else:
-                idx_map[i // 3] = 0
+            idx_map[i // 3] = 0
 
-    # Fill remaining palette slots up to 256 entries (768 bytes)
     while len(new_palette) < 768:
-        new_palette.extend(CATIA_BG)
+        new_palette.extend(bg_color)
 
-    # Remap image pixels
-    remapped = Image.new("P", (out_size, out_size), 0)
-    if hasattr(fg_p, "get_flattened_data"):
-        src_data = fg_p.get_flattened_data()
+    if hasattr(quant, "get_flattened_data"):
+        src_data = quant.get_flattened_data()
     else:
-        src_data = list(fg_p.getdata())
-    remapped_data = [idx_map.get(val, 0) for val in src_data]
-    remapped.putdata(remapped_data)
+        src_data = list(quant.getdata())
+
+    remapped = Image.new("P", (out_size, out_size), 0)
+    remapped.putdata([idx_map.get(val, 0) for val in src_data])
     remapped.putpalette(new_palette)
 
-    # Enforce exact 4 corners index 0
+    # 6. Re-assert the mask corners after remapping.
     rem_px = remapped.load()
     for x, y in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
         rem_px[x, y] = 0
@@ -530,37 +841,137 @@ def _quantize_to_catia_bmp(rgba: Image.Image, out_size: int = 22) -> Image.Image
     return remapped
 
 
-# ── Quality Gate (Lint) ────────────────────────────────────────────────
-def lint_icon_asset(bmp_img: Image.Image, expected_size: int) -> Dict[str, Any]:
-    """Audit BMP asset compliance against CATIA V5 runtime spec."""
-    report = {
-        "status": "PASS",
-        "size": bmp_img.size,
-        "mode": bmp_img.mode,
-        "checks": {}
-    }
-    w, h = bmp_img.size
-    report["checks"]["size_exact"] = (w == expected_size and h == expected_size)
-    report["checks"]["is_palettized"] = (bmp_img.mode == "P")
+# ── Quality Gate (Lint) ───────────────────────────────────────────────
+def _palette_color(img: Image.Image, index: int) -> Optional[Tuple[int, int, int]]:
+    pal = img.getpalette() or []
+    base = index * 3
+    if len(pal) < base + 3:
+        return None
+    return (pal[base], pal[base + 1], pal[base + 2])
 
+
+def _icon_metrics(bmp_img: Image.Image) -> Dict[str, Any]:
+    """Measure the pixel-level properties the gate reasons about."""
+    w, h = bmp_img.size
+    if bmp_img.mode != "P":
+        bmp_img = bmp_img.convert("P", palette=Image.Palette.ADAPTIVE, colors=256)
+    px = bmp_img.load()
+    rgb = bmp_img.convert("RGB")
+    rpx = rgb.load()
+
+    fg_pixels = [(x, y) for y in range(h) for x in range(w) if px[x, y] != 0]
+    fg_count = len(fg_pixels)
+
+    # Foreground palette entries actually referenced (background excluded).
+    used_idx = {px[x, y] for x, y in fg_pixels}
+    fg_colors = {_palette_color(bmp_img, i) for i in used_idx}
+
+    # Hard-edge ratio: among 4-neighbour pairs that actually differ, the share
+    # whose max channel delta is >= SHARP_EDGE_DELTA. Same-colour runs inside a
+    # flat fill are not edges, so they must not dilute the measurement.
+    differing_edges = sharp_edges = 0
+    for y in range(h):
+        for x in range(w):
+            a = rpx[x, y]
+            for dx, dy in ((1, 0), (0, 1)):
+                nx, ny = x + dx, y + dy
+                if nx >= w or ny >= h:
+                    continue
+                b = rpx[nx, ny]
+                delta = max(abs(a[i] - b[i]) for i in range(3))
+                if delta == 0:
+                    continue
+                differing_edges += 1
+                if delta >= SHARP_EDGE_DELTA:
+                    sharp_edges += 1
+
+    # Isolated foreground islands (8-neighbourhood) -- these are dither speckle.
+    fg_set = set(fg_pixels)
+    isolated = 0
+    for (x, y) in fg_pixels:
+        if not any((x + dx, y + dy) in fg_set
+                   for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+                   if (dx, dy) != (0, 0)):
+            isolated += 1
+
+    return {
+        "fg_count": fg_count,
+        "fg_ratio": (fg_count / float(w * h)) if w and h else 0.0,
+        "fg_color_count": len(fg_colors),
+        "fg_colors": fg_colors,
+        "sharp_ratio": (sharp_edges / float(differing_edges)) if differing_edges else 0.0,
+        "isolated_ratio": (isolated / float(fg_count)) if fg_count else 0.0,
+    }
+
+
+def lint_icon_asset(bmp_img: Image.Image, expected_size: int,
+                    bg_color: Tuple[int, int, int] = CATIA_BG) -> Dict[str, Any]:
+    """Audit a BMP asset against the CADE micro-icon contract.
+
+    Four blocking layers (G1 format, G2 colour budget, G3 contour quality,
+    G4 geometry) plus G5 real-display, which only the B28 runtime can judge.
+    Any blocked layer fails the asset outright: there is no WARN downgrade,
+    because a WARN still reached `.CATRsc` in the previous implementation.
+    """
+    w, h = bmp_img.size
+    orig_mode = bmp_img.mode
+    if bmp_img.mode != "P":
+        # Measure on a palettized copy so index-based logic is coherent; the
+        # format gate below still judges the original, unconverted asset.
+        bmp_img = bmp_img.convert("P", palette=Image.Palette.ADAPTIVE, colors=256)
     px = bmp_img.load()
     palette = bmp_img.getpalette() or []
     c0 = (palette[0], palette[1], palette[2]) if len(palette) >= 3 else None
-    report["checks"]["palette_0_is_catia_bg"] = (c0 == CATIA_BG)
 
+    m = _icon_metrics(bmp_img)
+    color_budget = MAX_FG_COLORS.get(expected_size, max(MAX_FG_COLORS.values()))
+
+    checks: Dict[str, Any] = {}
+
+    # G1 -- format & transparency mask
+    checks["size_exact"] = (w == expected_size and h == expected_size)
+    checks["is_palettized"] = (orig_mode == "P")
+    checks["palette_0_is_catia_bg"] = (c0 == tuple(bg_color))
+    checks["bg_color_legal"] = (tuple(bg_color) in LEGAL_BG_COLORS)
     corners = [px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1]]
-    report["checks"]["four_corners_pure_index_0"] = all(c == 0 for c in corners)
+    checks["four_corners_pure_index_0"] = all(c == 0 for c in corners)
 
-    # Foreground ratio
-    fg_count = sum(1 for y in range(h) for x in range(w) if px[x, y] != 0)
-    fg_ratio = fg_count / (w * h)
-    report["checks"]["fg_ratio"] = round(fg_ratio, 3)
-    report["checks"]["fg_ratio_in_bounds"] = (FG_MIN <= fg_ratio <= FG_MAX)
+    # G2 -- colour budget
+    checks["fg_color_count"] = m["fg_color_count"]
+    checks["fg_color_budget_ok"] = (m["fg_color_count"] <= color_budget)
+    # The mask colour is reserved for transparency: a foreground pixel that
+    # reuses it punches a hole in the subject, so the icon cannot be trusted.
+    checks["fg_excludes_bg_mask"] = (tuple(bg_color) not in m["fg_colors"])
 
-    if not all(report["checks"].values()):
-        report["status"] = "WARN" if report["checks"]["palette_0_is_catia_bg"] else "FAIL"
+    # G3 -- contour quality
+    checks["sharp_ratio"] = round(m["sharp_ratio"], 3)
+    checks["sharp_ratio_ok"] = (m["sharp_ratio"] >= MIN_SHARP_RATIO)
+    checks["isolated_ratio"] = round(m["isolated_ratio"], 3)
+    checks["no_dither_speckle"] = (m["isolated_ratio"] <= MAX_ISOLATED_RATIO)
 
-    return report
+    # G4 -- geometry
+    checks["fg_ratio"] = round(m["fg_ratio"], 3)
+    checks["fg_ratio_in_bounds"] = (FG_MIN <= m["fg_ratio"] <= FG_MAX)
+
+    # G5 -- real display, only verifiable inside CATIA on B28
+    checks["runtime_display_verified"] = "not_checked"
+
+    blocking = [
+        "size_exact", "is_palettized", "palette_0_is_catia_bg", "bg_color_legal",
+        "four_corners_pure_index_0", "fg_color_budget_ok", "fg_excludes_bg_mask",
+        "sharp_ratio_ok", "no_dither_speckle", "fg_ratio_in_bounds",
+    ]
+    failures = [k for k in blocking if not checks[k]]
+
+    return {
+        "status": "PASS" if not failures else "FAIL",
+        "failures": failures,
+        "size": bmp_img.size,
+        "mode": bmp_img.mode,
+        "bg_color": tuple(bg_color),
+        "color_budget": color_budget,
+        "checks": checks,
+    }
 
 
 # ── Universal Icon Studio Engine ───────────────────────────────────────
@@ -599,71 +1010,96 @@ class UniversalIconStudio:
                              metaphor: Optional[str] = None,
                              badge: Optional[str] = None,
                              input_image: Optional[Path] = None,
-                             out_dir: Optional[Path] = None) -> Dict[str, Any]:
-        """Generate full suite of assets: 512, 256, 64, 32, 22 PNGs + 22/32 BMPs."""
+                             out_dir: Optional[Path] = None,
+                             bg_color: Tuple[int, int, int] = CATIA_BG) -> Dict[str, Any]:
+        """Generate the full asset suite: 512/256/64 PNG + 22/32 PNG & BMP.
+
+        The 512 master is a design artefact only. The two CATIA runtime sizes are
+        rendered independently on a pixel grid, because a 512px illustration
+        downscaled to 22px cannot keep a 1px contour intact.
+        """
         dest_dir = Path(out_dir) if out_dir else ASSETS_DIR
         dest_dir.mkdir(parents=True, exist_ok=True)
 
-        # 1. Deduce Metaphor
+        if bg_color not in LEGAL_BG_COLORS:
+            return {"status": "FAIL",
+                    "reason": f"bg_color {tuple(bg_color)} is not a legal CATIA mask colour",
+                    "manifest": {}, "files": {}}
+
+        # 1. Resolve metaphor/badge, then render the 512 design master
         if input_image and Path(input_image).is_file():
             master_rgba = _render_master_from_image(Path(input_image), MASTER_SIZE)
+            target_metaphor = metaphor or "cube_solid"
+            target_badge = badge
         else:
             inferred_metaphor, inferred_badge = cls.resolve_metaphor_from_name(stem)
             target_metaphor = metaphor or inferred_metaphor
             target_badge = badge or inferred_badge
 
-            if target_metaphor == "stamp_clock":
-                master_rgba = _render_master_stamp_clock(MASTER_SIZE)
-            elif target_metaphor == "part_to_asm":
-                master_rgba = _render_master_part_to_asm(MASTER_SIZE)
-            elif target_metaphor == "bom_table":
-                master_rgba = _render_master_bom_table(MASTER_SIZE)
-            elif target_metaphor == "color_swatch":
-                master_rgba = _render_master_color_swatch(MASTER_SIZE)
-            elif target_metaphor == "name_card":
-                master_rgba = _render_master_name_card(MASTER_SIZE)
-            else:
-                master_rgba = _render_master_cube_solid(MASTER_SIZE)
-
+            master_renderers = {
+                "stamp_clock": _render_master_stamp_clock,
+                "part_to_asm": _render_master_part_to_asm,
+                "bom_table": _render_master_bom_table,
+                "color_swatch": _render_master_color_swatch,
+                "name_card": _render_master_name_card,
+                "notch_pocket": _render_master_cube_solid,
+                "cube_solid": _render_master_cube_solid,
+            }
+            master_rgba = master_renderers.get(target_metaphor, _render_master_cube_solid)(MASTER_SIZE)
             if target_badge:
                 master_rgba = _overlay_badge(master_rgba, target_badge)
 
-        # 2. Export Multi-Scale PNGs
-        emitted_files = {}
-        for sz, suffix, desc in EXPORT_SPECS:
+        # 2. Export large PNGs (documentation / high-DPI UI only)
+        emitted_files: Dict[str, Any] = {}
+        for sz, suffix, _desc in EXPORT_SPECS:
+            if sz < 64:
+                continue  # CATIA runtime sizes are re-rendered on the pixel grid below
             png_name = f"{stem}{suffix}"
             png_path = dest_dir / png_name
             if sz == MASTER_SIZE:
                 master_rgba.save(png_path, format="PNG")
             else:
-                sub_img = master_rgba.resize((sz, sz), Image.Resampling.LANCZOS)
-                sub_img.save(png_path, format="PNG")
+                master_rgba.resize((sz, sz), Image.Resampling.LANCZOS).save(png_path, format="PNG")
             emitted_files[f"png_{sz}"] = png_path
 
-        # 3. Export CATIA 22x22 Normal BMP
-        bmp_22 = _quantize_to_catia_bmp(master_rgba, 22)
-        bmp_22_path = dest_dir / f"{stem}.bmp"
-        bmp_22.save(bmp_22_path, format="BMP")
-        emitted_files["bmp_normal_22"] = bmp_22_path
+        # 3. Render CATIA runtime sizes independently, then quantize.
+        # 22 and 32 keep their historical filenames (`<stem>.png` / `<stem>_32.png`)
+        # so existing asset trees and manifest consumers stay valid.
+        bmps: Dict[int, Image.Image] = {}
+        for sz in PIXEL_SIZES:
+            pixel_img = _render_pixel(target_metaphor, sz, bg_color=bg_color,
+                                      badge=target_badge, input_image=input_image)
+            png_path = dest_dir / (f"{stem}.png" if sz == 22 else f"{stem}_{sz}.png")
+            pixel_img.save(png_path, format="PNG")
+            emitted_files[f"png_{sz}"] = png_path
 
-        # 4. Export CATIA 32x32 Large BMP
-        bmp_32 = _quantize_to_catia_bmp(master_rgba, 32)
-        bmp_32_path = dest_dir / f"{stem}_32.bmp"
-        bmp_32.save(bmp_32_path, format="BMP")
-        emitted_files["bmp_large_32"] = bmp_32_path
+            bmp = _quantize_to_catia_bmp(pixel_img, sz, bg_color=bg_color,
+                                         max_colors=MAX_FG_COLORS[sz])
+            bmp_path = dest_dir / (f"{stem}.bmp" if sz == 22 else f"{stem}_{sz}.bmp")
+            bmp.save(bmp_path, format="BMP")
+            bmps[sz] = bmp
+            emitted_files["bmp_normal_22" if sz == 22 else "bmp_large_32"] = bmp_path
 
-        # 5. Quality Gate Linting
-        lint_22 = lint_icon_asset(bmp_22, 22)
-        lint_32 = lint_icon_asset(bmp_32, 32)
+        # 4. Quality gate: any FAIL blocks deployment and .CATRsc injection.
+        lint_22 = lint_icon_asset(bmps[22], 22, bg_color=bg_color)
+        lint_32 = lint_icon_asset(bmps[32], 32, bg_color=bg_color)
+        gated = (lint_22["status"] == "PASS" and lint_32["status"] == "PASS")
 
         manifest = {
             "stem": stem,
-            "metaphor": metaphor or "auto",
-            "badge": badge or "none",
+            "metaphor": target_metaphor,
+            "badge": target_badge or "none",
+            "bg_color": tuple(bg_color),
+            "design_contract": {
+                "max_fg_colors": dict(MAX_FG_COLORS),
+                "min_sharp_ratio": MIN_SHARP_RATIO,
+                "fg_ratio_bounds": [FG_MIN, FG_MAX],
+                "max_isolated_ratio": MAX_ISOLATED_RATIO,
+            },
             "files": {k: str(v) for k, v in emitted_files.items()},
             "lint_22": lint_22,
             "lint_32": lint_32,
-            "ready_for_cnext": (lint_22["status"] in ("PASS", "WARN") and lint_32["status"] in ("PASS", "WARN"))
+            "ready_for_cnext": gated,
         }
 
         manifest_path = dest_dir / f"{stem}.json"
@@ -671,9 +1107,9 @@ class UniversalIconStudio:
         emitted_files["manifest"] = manifest_path
 
         return {
-            "status": "PASS" if manifest["ready_for_cnext"] else "FAIL",
+            "status": "PASS" if gated else "FAIL",
             "manifest": manifest,
-            "files": emitted_files
+            "files": emitted_files,
         }
 
     @classmethod

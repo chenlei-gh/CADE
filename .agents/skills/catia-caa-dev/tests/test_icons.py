@@ -747,7 +747,7 @@ print("  M. Universal Icon Studio Engine & Deployment")
 print("=" * 60)
 
 from icon_studio import UniversalIconStudio, lint_icon_asset, CATIA_BG
-from PIL import Image
+from PIL import Image, ImageDraw
 
 # 1. Metaphor Inference
 for _tool_name, _expected_metaphor in (
@@ -804,6 +804,127 @@ try:
     _new_rsc_text = _test_rsc.read_text(encoding="utf-8")
     check(".CATRsc updated with Icon.Normal", 'DeployTestHdr.DeployTest.Icon.Normal = "I_CADEDeployTest";' in _new_rsc_text)
     check(".CATRsc updated with Icon.Large", 'DeployTestHdr.DeployTest.Icon.Large = "I_CADEDeployTest_32";' in _new_rsc_text)
+
+    # 4. Micro-icon design contract (22/32 rendered on their own pixel grid)
+    from icon_studio import (
+        MAX_FG_COLORS, MIN_SHARP_RATIO, MAX_ISOLATED_RATIO,
+        _quantize_to_catia_bmp, CATIA_INK,
+    )
+
+    for _metaphor in ("stamp_clock", "part_to_asm", "bom_table",
+                      "color_swatch", "name_card", "cube_solid"):
+        _r = UniversalIconStudio.generate_icon_bundle(
+            stem=f"I_CADE{_metaphor}", metaphor=_metaphor, out_dir=_tmp_studio_dir)
+        check(f"metaphor {_metaphor} bundle PASS", _r["status"] == "PASS",
+              str(_r["manifest"]["lint_22"].get("failures")))
+        for _sz in (22, 32):
+            _l = _r["manifest"][f"lint_{_sz}"]
+            _c = _l["checks"]
+            check(f"{_metaphor} {_sz}px colour budget <= {MAX_FG_COLORS[_sz]}",
+                  _c["fg_color_budget_ok"], f"{_c['fg_color_count']} colours")
+            check(f"{_metaphor} {_sz}px sharp ratio >= {MIN_SHARP_RATIO}",
+                  _c["sharp_ratio_ok"], f"{_c['sharp_ratio']}")
+            check(f"{_metaphor} {_sz}px free of dither speckle",
+                  _c["no_dither_speckle"], f"{_c['isolated_ratio']}")
+
+    # 5. Gate must actually block a degraded asset
+    _sc_img = Image.new("RGB", (22, 22), CATIA_BG)
+    _sc_d = ImageDraw.Draw(_sc_img)
+    for _r_i in range(1, 20):
+        _v = int(60 + 195 * (_r_i / 20.0))
+        _sc_d.ellipse([11 - _r_i, 11 - _r_i, 11 + _r_i, 11 + _r_i], fill=(_v, _v // 2, 255 - _v))
+    _rich = _quantize_to_catia_bmp(_sc_img, 22, max_colors=255)
+    check("rich-palette asset FAILs the gate", lint_icon_asset(_rich, 22)["status"] == "FAIL")
+
+    _speck = Image.new("P", (22, 22), 0)
+    _speck.putpalette([v for _t in [CATIA_BG, (255, 255, 255)] + [CATIA_BG] * 254 for v in _t])
+    for _y_i in range(1, 22, 2):
+        for _x_i in range(1, 22, 2):
+            if (_x_i + _y_i) % 4 == 0:
+                _speck.putpixel((_x_i, _y_i), 1)
+    check("dither-speckled asset FAILs the gate",
+          "no_dither_speckle" in lint_icon_asset(_speck, 22)["failures"])
+
+    _wrong_bg = Image.new("P", (22, 22), 0)
+    _wrong_bg.putpalette([v for _t in [CATIA_INK] * 256 for v in _t])
+    check("unexpected background mask FAILs the gate",
+          "palette_0_is_catia_bg" in lint_icon_asset(_wrong_bg, 22)["failures"])
+
+    # 5b. A foreground palette entry that duplicates the declared mask colour
+    #     would read as a hole in the subject, so G1 must reject it even when
+    #     every other layer passes. (Index 0 is excluded from fg by definition;
+    #     the risk is the mask colour reappearing at a non-zero index.)
+    _hole = Image.new("P", (22, 22), 0)
+    _hole.putpalette([v for _t in [CATIA_BG] + [(200, 30, 30)] + [CATIA_BG] * 253
+                      + [(200, 30, 30)] for v in _t])
+    for _y_i in range(2, 20):
+        for _x_i in range(2, 20):
+            _hole.putpixel((_x_i, _y_i), 1)
+    for _x_i in range(9, 13):
+        for _y_i in range(9, 13):
+            _hole.putpixel((_x_i, _y_i), 2)     # mask colour at a non-zero index
+    _hole_lint = lint_icon_asset(_hole, 22)
+    check("foreground reusing the mask colour FAILs the gate",
+          "fg_excludes_bg_mask" in _hole_lint["failures"],
+          str(_hole_lint["failures"]))
+
+    # 6. A legal non-gray background (official I_Pad style) is accepted
+    _ink_img = Image.new("RGB", (22, 22), CATIA_INK)
+    _ink_d = ImageDraw.Draw(_ink_img)
+    _ink_d.ellipse([2, 2, 19, 19], fill=(255, 255, 150), outline=(255, 255, 255), width=1)
+    _ink_d.rectangle([10, 6, 11, 11], fill=(195, 20, 20))
+    _ink_d.rectangle([12, 10, 16, 11], fill=(195, 20, 20))
+    _ink_bmp = _quantize_to_catia_bmp(_ink_img, 22, bg_color=CATIA_INK, max_colors=16)
+    _ink_lint = lint_icon_asset(_ink_bmp, 22, bg_color=CATIA_INK)
+    check("ink background accepted when declared", _ink_lint["status"] == "PASS",
+          str(_ink_lint["failures"]))
+
+    # 7. External logo remaster must reach the same bar as built-in metaphors
+    _logo_src = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    _logo_d = ImageDraw.Draw(_logo_src)
+    _logo_d.rectangle([8, 8, 55, 55], fill=(30, 90, 200, 255),
+                      outline=CATIA_INK + (255,), width=3)
+    _logo_d.rectangle([20, 20, 43, 43], fill=(255, 255, 150, 255),
+                      outline=CATIA_INK + (255,), width=3)
+    _logo_path = _tmp_studio_dir / "logo_fixture.png"
+    _logo_src.save(_logo_path)
+    _logo_res = UniversalIconStudio.generate_icon_bundle(
+        stem="I_CADELogoFixture", input_image=_logo_path, out_dir=_tmp_studio_dir)
+    check("external logo bundle PASS", _logo_res["status"] == "PASS",
+          str(_logo_res["manifest"]["lint_22"].get("failures")))
+
+    # 8. Illegitimate background colour is rejected before any rendering
+    _bad_bg = UniversalIconStudio.generate_icon_bundle(
+        stem="I_CADEBadBg", metaphor="cube_solid", out_dir=_tmp_studio_dir,
+        bg_color=(10, 200, 30))
+    check("illegal background colour refused", _bad_bg["status"] == "FAIL")
+
+    # 9. Anything below PASS must never deploy -- no .CATRsc side effects
+    _blk_fw = _tmp_studio_dir / "BlockedFw.edu"
+    _blk_rsc_dir = _blk_fw / "CNext" / "resources" / "msgcatalog"
+    _blk_rsc_dir.mkdir(parents=True)
+    _blk_rsc = _blk_rsc_dir / "BlockedHdr.CATRsc"
+    _blk_before = 'BlockedHdr.Blocked.Icon.Normal = "I_keepme";\n'
+    _blk_rsc.write_text(_blk_before, encoding="utf-8")
+    _orig_gen = UniversalIconStudio.generate_icon_bundle.__func__
+
+    def _force_fail(cls, *a, **kw):
+        _res = _orig_gen(cls, *a, **kw)
+        _res["status"] = "FAIL"
+        return _res
+
+    try:
+        UniversalIconStudio.generate_icon_bundle = classmethod(_force_fail)
+        _blk = UniversalIconStudio.deploy_tool_icon("Blocked", _blk_fw,
+                                                    stem="I_CADEBlocked",
+                                                    asset_dir=_tmp_studio_dir)
+    finally:
+        UniversalIconStudio.generate_icon_bundle = classmethod(_orig_gen)
+    check("deploy_tool_icon refuses a FAIL bundle", _blk["status"] == "FAIL", _blk["status"])
+    check("refused deploy leaves .CATRsc untouched",
+          _blk_rsc.read_text(encoding="utf-8") == _blk_before)
+    check("refused deploy writes no runtime BMP",
+          not list(_blk_fw.glob("CNext/resources/graphic/icons/normal/*.bmp")))
 finally:
     shutil.rmtree(_tmp_studio_dir, ignore_errors=True)
 

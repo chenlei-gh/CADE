@@ -1,46 +1,93 @@
 {
   "stem": "I_CADEDateStamp",
-  "metaphor": "auto",
+  "metaphor": "stamp_clock",
   "badge": "none",
+  "bg_color": [
+    192,
+    192,
+    192
+  ],
+  "design_contract": {
+    "max_fg_colors": {
+      "22": 16,
+      "32": 24
+    },
+    "min_sharp_ratio": 0.85,
+    "fg_ratio_bounds": [
+      0.15,
+      0.75
+    ],
+    "max_isolated_ratio": 0.02
+  },
   "files": {
-    "png_512": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEDateStamp_512.png",
-    "png_256": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEDateStamp_256.png",
-    "png_64": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEDateStamp_64.png",
-    "png_32": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEDateStamp_32.png",
-    "png_22": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEDateStamp.png",
-    "bmp_normal_22": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEDateStamp.bmp",
-    "bmp_large_32": "D:\\Vault\\DevTools\\CADE\\.agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEDateStamp_32.bmp"
+    "png_512": ".agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEDateStamp_512.png",
+    "png_256": ".agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEDateStamp_256.png",
+    "png_64": ".agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEDateStamp_64.png",
+    "png_22": ".agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEDateStamp.png",
+    "bmp_normal_22": ".agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEDateStamp.bmp",
+    "png_32": ".agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEDateStamp_32.png",
+    "bmp_large_32": ".agents\\skills\\catia-caa-dev\\assets\\icons\\generated\\I_CADEDateStamp_32.bmp"
   },
   "lint_22": {
     "status": "PASS",
+    "failures": [],
     "size": [
       22,
       22
     ],
     "mode": "P",
+    "bg_color": [
+      192,
+      192,
+      192
+    ],
+    "color_budget": 16,
     "checks": {
       "size_exact": true,
       "is_palettized": true,
       "palette_0_is_catia_bg": true,
+      "bg_color_legal": true,
       "four_corners_pure_index_0": true,
-      "fg_ratio": 0.574,
-      "fg_ratio_in_bounds": true
+      "fg_color_count": 3,
+      "fg_color_budget_ok": true,
+      "sharp_ratio": 1.0,
+      "sharp_ratio_ok": true,
+      "isolated_ratio": 0.0,
+      "no_dither_speckle": true,
+      "fg_ratio": 0.636,
+      "fg_ratio_in_bounds": true,
+      "runtime_display_verified": "not_checked"
     }
   },
   "lint_32": {
     "status": "PASS",
+    "failures": [],
     "size": [
       32,
       32
     ],
     "mode": "P",
+    "bg_color": [
+      192,
+      192,
+      192
+    ],
+    "color_budget": 24,
     "checks": {
       "size_exact": true,
       "is_palettized": true,
       "palette_0_is_catia_bg": true,
+      "bg_color_legal": true,
       "four_corners_pure_index_0": true,
-      "fg_ratio": 0.573,
-      "fg_ratio_in_bounds": true
+      "fg_color_count": 3,
+      "fg_color_budget_ok": true,
+      "sharp_ratio": 1.0,
+      "sharp_ratio_ok": true,
+      "isolated_ratio": 0.0,
+      "no_dither_speckle": true,
+      "fg_ratio": 0.642,
+      "fg_ratio_in_bounds": true,
+      "runtime_display_verified": "not_checked"
     }
   },
   "ready_for_cnext": true

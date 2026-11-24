@@ -115,14 +115,17 @@ S1–S4 的审计链证明了三个关键事实：
    `check`（AutoColor）/ `pencil`（AutoRename）/ `export`（BOM，扣官方
    标题 "Export MBOM to XML"）/ `move`（PartToAsm）。
 
-7. **Generated Base**（2026-08-18 PartToAsm 试点闭环）：官方确无等价的
-   CADE 自有语义，可按 `ICON_GENERATION_SPEC` 生成图标——LLM 像素设计
+7. **Generated Base**（2026-08-18 PartToAsm 试点闭环；2026-11-24 升级为双尺度渲染）：
+   官方确无等价的 CADE 自有语义，可按 `ICON_GENERATION_SPEC` 生成图标——LLM 像素设计
    （主路径，`icon_design_lib` 官方语素）或外部文生图（可选），一律过
-   后处理管线门禁（22×22 / ≤256 色 / 四角纯 / fg∈[15,70]）+ 人工验收 +
-   CATIA 实机。资产入库 `assets/icons/generated/`：`I_CADE*` 前缀 BMP +
+   后处理管线门禁（22×22 / **前景 ≤16 色** / 四角纯 / fg∈[15,70] /
+   **sharp_ratio ≥0.85** / **孤立噪点 ≤0.02**）+ 人工验收 + CATIA 实机。
+   **22/32 必须在各自整数网格上独立绘制，禁止由 512 母版缩放产生**（母版仅作设计稿）。
+   任何硬门禁失败一律 FAIL，无 WARN 降级、无命令行逃生阀。资产入库
+   `assets/icons/generated/`：`I_CADE*` 前缀 BMP +
    provenance JSON + 设计源 .py（资产可从代码确定性重建）。这是
-   “无自有图标库”原则的唯一例外；官方 BMP 原件仍永不入库。规则 6 的
-   Badge 强制**不适用**于主体已含语义的 Generated Base（spec §6 豁免，
+   “无自有图标库”原则的唯一例外；官方 BMP 原件仍永不入库。规则 6
+   的 Badge 强制**不适用**于主体已含语义的 Generated Base（spec §6 豁免，
    如 PartToAsm 的齿轮对本身即装配语义）。
 
 检索路径来自 `config/caa_env_config.txt` 的 `CATIA_INSTALL` +

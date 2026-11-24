@@ -29,10 +29,14 @@ from icon_provider import (  # noqa: E402
 # ── Spec constants (§2, §5) ──────────────────────────────────────────
 CANVAS = 22                     # final canvas edge
 # 8-bit indexed BMPs hold at most 256 palette entries and entry 0 is reserved
-# for CATIA_BG, so 256 means "do not reduce" — the renderer's own color count
-# becomes the ceiling. The former 16-color cap (introduced with the spec in
-# 433d361, 2026-08-18) was CADE's own invention, not a CATIA limit: 10.9% of
-# official B28 22x22 icons use more than 16 colors (max observed 404).
+# for CATIA_BG. This is the PATH B (external text-to-image -> LANCZOS 22px)
+# physical ceiling only. Path A (icon_studio pixel renderers) bypasses the
+# downscale entirely and is gated at 16 fg colours @22 / 24 @32 with a hard
+# FAIL (see ICON_GENERATION_SPEC §5-D).
+# Measured on the local B28 install (2026-11-24 re-verified): of 8293 official
+# 22x22 palettized icons, 11.4% (942) exceed 16 colours, max 254. The official
+# set is the reference vocabulary, not the generation budget: official BMPs
+# are never re-imported, so their colour richness cannot regress CADE output.
 CATIA_MAX_COLORS = 256          # hard ceiling of an 8-bit indexed BMP
 MAX_COLORS = CATIA_MAX_COLORS   # MedianCut ceiling (no forced reduction)
 BG_TOLERANCE = 36               # corner-snap tolerance (per channel)
