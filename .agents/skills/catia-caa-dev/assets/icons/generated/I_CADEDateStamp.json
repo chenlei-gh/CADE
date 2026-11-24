@@ -13,11 +13,22 @@
       "32": 24
     },
     "min_sharp_ratio": 0.85,
-    "fg_ratio_bounds": [
-      0.15,
-      0.75
-    ],
-    "max_isolated_ratio": 0.02
+    "fg_ratio_bounds": {
+      "22": [
+        0.15,
+        0.826
+      ],
+      "32": [
+        0.15,
+        0.879
+      ]
+    },
+    "max_isolated_ratio": 0.02,
+    "content_margin": 1,
+    "content_min_edge": {
+      "22": 20,
+      "32": 30
+    }
   },
   "files": {
     "png_512": ".agents/skills/catia-caa-dev/assets/icons/generated/I_CADEDateStamp_512.png",
@@ -55,8 +66,15 @@
       "sharp_ratio_ok": true,
       "isolated_ratio": 0.0,
       "no_dither_speckle": true,
-      "fg_ratio": 0.539,
+      "fg_ratio": 0.653,
+      "fg_ratio_ceiling": 0.826,
       "fg_ratio_in_bounds": true,
+      "content_bbox": [
+        20,
+        20
+      ],
+      "content_reaches_official_framing": true,
+      "content_keeps_mask_margin": true,
       "runtime_display_verified": "not_checked"
     }
   },
@@ -87,8 +105,15 @@
       "sharp_ratio_ok": true,
       "isolated_ratio": 0.0,
       "no_dither_speckle": true,
-      "fg_ratio": 0.571,
+      "fg_ratio": 0.699,
+      "fg_ratio_ceiling": 0.879,
       "fg_ratio_in_bounds": true,
+      "content_bbox": [
+        30,
+        30
+      ],
+      "content_reaches_official_framing": true,
+      "content_keeps_mask_margin": true,
       "runtime_display_verified": "not_checked"
     }
   },

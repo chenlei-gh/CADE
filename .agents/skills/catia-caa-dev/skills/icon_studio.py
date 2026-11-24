@@ -80,7 +80,41 @@ EXPORT_SPECS = [
 # contract below owns the rest (previously MAX_COLORS=256 sat alongside the
 # 16/24 budget and read as a live ceiling when nothing consumed it).
 BG_TOLERANCE = 36
-FG_MIN, FG_MAX = 0.15, 0.75
+FG_MIN = 0.15
+
+# Canvas-utilisation contract, measured on the installed B28 icon sets.
+#
+# 22x22 (`icons/normal`, 8286 files): content bounding box median 20x20, the
+# dominant mask margins are 1px (47%) and 0px (42%). 32x32 (`icons/large`,
+# 210 files at that size): bbox median 30x30.
+#
+# CADE used to draw into 18x18 and 27x27 -- one 2px margin where the official
+# set keeps 1px -- so every generated icon carried ~20% less subject than the
+# icons sitting beside it in the same toolbar, at a canvas size that cannot be
+# raised. These two constants make that gap a gate failure instead of a taste
+# judgement, so newly added metaphors inherit the official framing.
+CONTENT_MARGIN = 1                       # every side keeps >= this much mask
+CONTENT_MIN_EDGE = {22: 20, 32: 30}      # content bbox must reach this square
+
+
+def fg_ratio_ceiling(size: int) -> float:
+    """Largest legal foreground ratio at `size`, given the mask margin.
+
+    A single global ceiling cannot express this contract: a fully painted
+    subject that still keeps CONTENT_MARGIN occupies (size-2)^2 pixels, i.e.
+    0.826 at 22px but 0.879 at 32px. A flat 0.85 ceiling therefore passed a
+    22px solid face while rejecting the identical 32px drawing. Deriving the
+    bound from the framing contract keeps the two from drifting apart.
+
+    Calibration: the official 22x22 set is median 43.2% foreground, p90 87.6%,
+    and 12.9% of its icons exceed 75%. The old 0.75 ceiling rejected that
+    legitimate official-style iconography while still admitting a 100% painted
+    canvas, which is the real degeneration -- the margin contract is what now
+    guarantees an icon is never an unbounded colour block.
+    """
+    inner = max(1, size - 2 * CONTENT_MARGIN)
+    return (inner * inner) / float(size * size)
+
 
 # Micro-icon design contract (22/32 px). Owned by CADE, not by individual icons:
 # every renderer that feeds a CATIA BMP must obey it, so new tool icons inherit
@@ -595,12 +629,16 @@ def _new_pixel_canvas(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
 
 
 def _render_pixel_stamp_clock(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
-    """Mold-date dial with a readable gold bezel and size-specific tick layout."""
+    """Mold-date dial with a readable gold bezel and size-specific tick layout.
+
+    The dial spans the full official framing (pixels 1..20 at 22px, 1..30 at
+    32px) so it reads at the same weight as the B28 icons beside it.
+    """
     g = _PixelGrid(size, bg_color)
     large = size >= 32
-    cx = cy = 15.5 if large else 10.5
-    outer_r = 13.5 if large else 9.0
-    face_r = 10.0 if large else 6.5
+    cx = cy = 16.0 if large else 11.0
+    outer_r = 15.0 if large else 10.0
+    face_r = 11.5 if large else 7.5
 
     g.disc(cx, cy, outer_r, FACE_GOLD)
     g.d.ellipse(g.box(cx - face_r, cy - face_r, cx + face_r, cy + face_r), fill=WHITE)
@@ -611,14 +649,14 @@ def _render_pixel_stamp_clock(size: int, bg_color: Tuple[int, int, int]) -> Imag
         rad = math.radians(angle)
         dx, dy = math.cos(rad), math.sin(rad)
         if large and angle % 90:
-            tx = cx + dx * (face_r - 0.8)
-            ty = cy + dy * (face_r - 0.8)
+            tx = cx + dx * (face_r - 1.0)
+            ty = cy + dy * (face_r - 1.0)
             g.bar(tx - 1, ty - 1, tx + 1, ty + 1, CATIA_INK)
         else:
             g.line([(cx + dx * (face_r + 0.4), cy + dy * (face_r + 0.4)),
-                    (cx + dx * (outer_r - 1.3), cy + dy * (outer_r - 1.3))])
+                    (cx + dx * (outer_r - 1.4), cy + dy * (outer_r - 1.4))])
 
-    hand_length = 7.0 if large else 4.5
+    hand_length = 11.0 if large else 5.5
     g.line([(cx, cy + 0.5), (cx, cy - hand_length)], RED_MARK, width_px=2.0)
     g.line([(cx - 0.5, cy), (cx + hand_length, cy)], RED_MARK, width_px=2.0)
     g.bar(cx - 1, cy - 1, cx + 1, cy + 1, CATIA_INK)
@@ -632,15 +670,15 @@ def _render_pixel_part_to_asm(size: int, bg_color: Tuple[int, int, int]) -> Imag
     g = _PixelGrid(size, bg_color)
     large = size >= 32
     if large:
-        plate_top = [(16, 18), (29, 23), (16, 28), (3, 23)]
-        plate_bottom, plate_left_bottom, plate_right_bottom = (16, 30), (3, 25), (29, 25)
-        cube_top = [(16, 4), (23, 8), (16, 12), (9, 8)]
-        cube_bottom, cube_left_bottom, cube_right_bottom = (16, 20), (9, 16), (23, 16)
+        plate_top = [(16, 17), (31, 22), (16, 27), (1, 22)]
+        plate_bottom, plate_left_bottom, plate_right_bottom = (16, 31), (1, 26), (31, 26)
+        cube_top = [(16, 1), (23, 5), (16, 9), (9, 5)]
+        cube_bottom, cube_left_bottom, cube_right_bottom = (16, 21), (9, 17), (23, 17)
     else:
-        plate_top = [(11, 11), (20, 15), (11, 19), (2, 15)]
-        plate_bottom, plate_left_bottom, plate_right_bottom = (11, 21), (2, 17), (20, 17)
-        cube_top = [(11, 3), (16, 5.5), (11, 8), (6, 5.5)]
-        cube_bottom, cube_left_bottom, cube_right_bottom = (11, 14), (6, 11.5), (16, 11.5)
+        plate_top = [(10.5, 10), (21, 14), (10.5, 18), (1, 14)]
+        plate_bottom, plate_left_bottom, plate_right_bottom = (10.5, 21), (1, 17), (21, 17)
+        cube_top = [(10.5, 1), (16, 4.5), (10.5, 8), (5, 4.5)]
+        cube_bottom, cube_left_bottom, cube_right_bottom = (10.5, 15), (5, 12), (16, 12)
 
     plate_left = [plate_top[3], plate_top[2], plate_bottom, plate_left_bottom]
     plate_right = [plate_top[2], plate_top[1], plate_right_bottom, plate_bottom]
@@ -675,32 +713,32 @@ def _render_pixel_bom_table(size: int, bg_color: Tuple[int, int, int]) -> Image.
     g = _PixelGrid(size, bg_color)
     large = size >= 32
     if large:
-        g.bar(5, 5, 25, 30, PIXEL_STEEL_SHADE)
-        g.rect(3, 3, 23, 28, WHITE)
-        g.bar(4, 4, 22, 9, PIXEL_BLUE)
-        for x in (6, 11, 16):
-            g.bar(x, 6, x + 3, 7, WHITE)
-        g.edge(4, 9, 22, 9)
+        g.bar(3, 3, 26, 31, PIXEL_STEEL_SHADE)
+        g.rect(1, 1, 24, 30, WHITE)
+        g.bar(2, 2, 23, 9, PIXEL_BLUE)
+        for x in (4, 10, 16):
+            g.bar(x, 5, x + 4, 7, WHITE)
+        g.edge(2, 9, 23, 9)
         for row_y in (13, 17, 21, 25):
-            g.line([(4, row_y), (22, row_y)], PIXEL_STEEL_SHADE)
-        for col_x in (10, 16):
-            g.line([(col_x, 10), (col_x, 27)], PIXEL_STEEL_SHADE)
-        arrow = [(16, 15), (21, 15), (21, 12), (30, 20),
-                 (21, 28), (21, 25), (16, 25)]
+            g.line([(2, row_y), (23, row_y)], PIXEL_STEEL_SHADE)
+        for col_x in (9, 16):
+            g.line([(col_x, 10), (col_x, 29)], PIXEL_STEEL_SHADE)
+        arrow = [(17, 16), (23, 16), (23, 13), (31, 21),
+                 (23, 29), (23, 26), (17, 26)]
     else:
-        g.bar(4, 4, 17, 20, PIXEL_STEEL_SHADE)
-        g.rect(2, 2, 16, 19, WHITE)
-        g.bar(3, 3, 15, 7, PIXEL_BLUE)
-        g.edge(3, 7, 15, 7)
-        for row_y in (10, 13, 16):
-            g.line([(3, row_y), (15, row_y)], PIXEL_STEEL_SHADE)
-        g.line([(7, 8), (7, 18)], PIXEL_STEEL_SHADE)
-        arrow = [(10, 11), (14, 11), (14, 9), (20, 14),
-                 (14, 19), (14, 17), (10, 17)]
+        g.bar(2, 2, 18, 21, PIXEL_STEEL_SHADE)
+        g.rect(1, 1, 16, 21, WHITE)
+        g.bar(2, 2, 15, 6, PIXEL_BLUE)
+        g.edge(2, 6, 15, 6)
+        for row_y in (9, 12, 15, 18):
+            g.line([(2, row_y), (15, row_y)], PIXEL_STEEL_SHADE)
+        g.line([(6, 7), (6, 20)], PIXEL_STEEL_SHADE)
+        arrow = [(11, 10), (15, 10), (15, 8), (21, 14),
+                 (15, 20), (15, 18), (11, 18)]
 
     g.face(arrow, PIXEL_GREEN)
     if large:
-        g.line([(18, 17), (21, 17), (21, 15), (26, 19)], WHITE)
+        g.line([(19, 18), (23, 18), (23, 16), (28, 20)], WHITE)
     return g.result()
 
 
@@ -709,19 +747,19 @@ def _render_pixel_color_swatch(size: int, bg_color: Tuple[int, int, int]) -> Ima
     g = _PixelGrid(size, bg_color)
     large = size >= 32
     if large:
-        g.bar(4, 4, 29, 29, PIXEL_STEEL_SHADE)
-        g.rect(3, 3, 28, 28, WHITE)
-        chips = [(6, 6, RED_MARK, (255, 120, 110)),
-                 (18, 6, PIXEL_GREEN, (145, 240, 150)),
-                 (6, 17, PIXEL_BLUE, (135, 190, 255)),
-                 (18, 17, FACE_GOLD, WHITE)]
-        chip_size = 9
+        g.bar(2, 2, 31, 31, PIXEL_STEEL_SHADE)
+        g.rect(1, 1, 31, 31, WHITE)
+        chips = [(3, 3, RED_MARK, (255, 120, 110)),
+                 (17, 3, PIXEL_GREEN, (145, 240, 150)),
+                 (3, 17, PIXEL_BLUE, (135, 190, 255)),
+                 (17, 17, FACE_GOLD, WHITE)]
+        chip_size = 12
     else:
-        g.bar(3, 4, 20, 20, PIXEL_STEEL_SHADE)
-        g.rect(2, 2, 19, 19, WHITE)
-        chips = [(4, 5, RED_MARK, None), (12, 5, PIXEL_GREEN, None),
-                 (4, 12, PIXEL_BLUE, None), (12, 12, FACE_GOLD, None)]
-        chip_size = 6
+        g.bar(2, 2, 21, 21, PIXEL_STEEL_SHADE)
+        g.rect(1, 1, 21, 21, WHITE)
+        chips = [(3, 3, RED_MARK, None), (12, 3, PIXEL_GREEN, None),
+                 (3, 12, PIXEL_BLUE, None), (12, 12, FACE_GOLD, None)]
+        chip_size = 8
 
     for x0, y0, colour, highlight in chips:
         g.rect(x0, y0, x0 + chip_size, y0 + chip_size, colour)
@@ -736,25 +774,25 @@ def _render_pixel_name_card(size: int, bg_color: Tuple[int, int, int]) -> Image.
     g = _PixelGrid(size, bg_color)
     large = size >= 32
     if large:
-        g.bar(4, 4, 29, 29, PIXEL_STEEL_SHADE)
-        g.rect(3, 3, 28, 28, WHITE)
-        g.bar(4, 4, 27, 9, PIXEL_BLUE)
-        g.edge(4, 9, 27, 9)
-        g.bar(5, 5, 12, 6, WHITE)
-        g.bar(14, 5, 20, 6, CYAN)
-        g.solid([(7, 26), (13, 11), (16, 11), (11, 26)], CATIA_INK)
-        g.solid([(16, 11), (19, 11), (25, 26), (21, 26)], CATIA_INK)
-        g.bar(11, 20, 22, 22, CATIA_INK)
-        g.bar(6, 25, 12, 27, CATIA_INK)
-        g.bar(20, 25, 26, 27, CATIA_INK)
+        g.bar(2, 2, 31, 31, PIXEL_STEEL_SHADE)
+        g.rect(1, 1, 31, 31, WHITE)
+        g.bar(2, 2, 30, 11, PIXEL_BLUE)
+        g.edge(2, 11, 30, 11)
+        g.bar(3, 3, 13, 5, WHITE)
+        g.bar(17, 3, 25, 5, CYAN)
+        g.solid([(4, 30), (13, 12), (17, 12), (12, 30)], CATIA_INK)
+        g.solid([(17, 12), (21, 12), (29, 30), (24, 30)], CATIA_INK)
+        g.bar(12, 22, 23, 25, CATIA_INK)
+        g.bar(3, 28, 12, 30, CATIA_INK)
+        g.bar(22, 28, 30, 30, CATIA_INK)
     else:
-        g.bar(3, 4, 20, 20, PIXEL_STEEL_SHADE)
-        g.rect(2, 2, 19, 19, WHITE)
-        g.bar(3, 3, 18, 7, PIXEL_BLUE)
-        g.edge(3, 7, 18, 7)
-        g.solid([(5, 18), (9, 9), (11, 9), (8, 18)], CATIA_INK)
-        g.solid([(11, 9), (13, 9), (17, 18), (14, 18)], CATIA_INK)
-        g.bar(8, 14, 14, 16, CATIA_INK)
+        g.bar(2, 2, 21, 21, PIXEL_STEEL_SHADE)
+        g.rect(1, 1, 21, 21, WHITE)
+        g.bar(2, 2, 20, 8, PIXEL_BLUE)
+        g.edge(2, 8, 20, 8)
+        g.solid([(3, 20), (7, 9), (9, 9), (6, 20)], CATIA_INK)
+        g.solid([(9, 9), (12, 9), (16, 20), (13, 20)], CATIA_INK)
+        g.bar(6, 15, 13, 17, CATIA_INK)
     return g.result()
 
 
@@ -763,11 +801,11 @@ def _render_pixel_cube_solid(size: int, bg_color: Tuple[int, int, int]) -> Image
     g = _PixelGrid(size, bg_color)
     large = size >= 32
     if large:
-        top = [(16, 3), (29, 9.5), (16, 16), (3, 9.5)]
-        bottom, left_bottom, right_bottom = (16, 29), (3, 22.5), (29, 22.5)
+        top = [(15.5, 1), (31, 9), (15.5, 17), (1, 9)]
+        bottom, left_bottom, right_bottom = (15.5, 31), (1, 23), (31, 23)
     else:
-        top = [(11, 2), (20, 6.5), (11, 11), (2, 6.5)]
-        bottom, left_bottom, right_bottom = (11, 20), (2, 15.5), (20, 15.5)
+        top = [(10.5, 1), (21, 6), (10.5, 11), (1, 6)]
+        bottom, left_bottom, right_bottom = (10.5, 21), (1, 16), (20, 16)
 
     left = [top[3], top[2], bottom, left_bottom]
     right = [top[2], top[1], right_bottom, bottom]
@@ -800,8 +838,22 @@ def _render_pixel_from_image(input_image_path: Path, size: int,
     reject it, and rightly so.
     """
     src = Image.open(input_image_path).convert("RGBA")
+    # Trim the source's own transparent padding first. Most exported logos are
+    # drawn inside a square canvas with margin baked in; scaling that canvas to
+    # the content box preserved the padding and left the subject at 15x15 on a
+    # 22px icon, which reads smaller than every generated metaphor and fails
+    # the framing contract. Trimming makes the subject, not the canvas, fill
+    # the frame. Threshold matches the alpha cut below, so faint resample dust
+    # around the artwork does not enlarge the crop.
+    _bbox = src.split()[-1].point(lambda a: 255 if a >= 128 else 0).getbbox()
+    if _bbox:
+        src = src.crop(_bbox)
     w, h = src.size
-    safe = max(1, int(size * 0.92))
+    # Frame the asset to the same content box the built-in metaphors use:
+    # a 1px mask margin with the subject spanning the rest of the canvas. Using
+    # a fixed 0.92 factor left a 2px margin at 22px and a 3px margin at 32px,
+    # i.e. an imported logo was framed smaller than every generated icon.
+    safe = max(1, size - 2 * CONTENT_MARGIN)
     ratio = min(safe / float(w), safe / float(h))
     new_w = max(1, int(round(w * ratio)))
     new_h = max(1, int(round(h * ratio)))
@@ -835,7 +887,13 @@ def _render_pixel_from_image(input_image_path: Path, size: int,
 
 
 def _overlay_pixel_badge(img: Image.Image, badge_name: str) -> Image.Image:
-    """Small verb badge for 32px assets only, authored on the native grid."""
+    """Small verb badge for 32px assets only, authored on the native grid.
+
+    The badge is inset by CONTENT_MARGIN on its outer side: the previous
+    centre/r of 24.5/6.5 put the disc's edge exactly on pixel 31, which broke
+    the mask margin the rest of the contract guarantees and made every
+    badged 32px icon a 31x31 (margin 0) outlier.
+    """
     size = img.size[0]
     if size < 32:
         return img
@@ -844,8 +902,12 @@ def _overlay_pixel_badge(img: Image.Image, badge_name: str) -> Image.Image:
     u = lambda v: v * unit
     w = max(1, int(round(unit)))
 
-    cx, cy = u(24.5), u(24.5)
-    r = u(6.5)
+    r = u(6.0)
+    # Pixel-boundary coordinates: the disc must end at or before size-CONTENT_MARGIN
+    # so the outermost column/row stays mask. With r in design units, that puts
+    # the centre at (size - CONTENT_MARGIN - r) - 0.5 of a design unit short;
+    # using the boundary value directly ate the margin (measured 31x31, margin 0).
+    cx = cy = size - CONTENT_MARGIN - r - 0.5
     d.ellipse([cx - r, cy - r, cx + r, cy + r],
               fill=WHITE, outline=CATIA_INK, width=max(1, int(round(unit))))
 
@@ -1112,6 +1174,20 @@ def _icon_metrics(bmp_img: Image.Image,
                    if (dx, dy) != (0, 0)):
             isolated += 1
 
+    # Foreground bounding box and the mask margin around it. This is what the
+    # official framing contract is expressed in: B28 22x22 icons keep a median
+    # 20x20 subject with a 1px margin, so matching that framing is a property
+    # of the drawing, not of the palette.
+    if fg_pixels:
+        xs = [x for x, _ in fg_pixels]
+        ys = [y for _, y in fg_pixels]
+        x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+        content_bbox = (x1 - x0 + 1, y1 - y0 + 1)
+        content_margin = min(x0, y0, w - 1 - x1, h - 1 - y1)
+    else:
+        content_bbox = (0, 0)
+        content_margin = 0
+
     return {
         "fg_count": fg_count,
         "fg_ratio": (fg_count / float(w * h)) if w and h else 0.0,
@@ -1119,6 +1195,8 @@ def _icon_metrics(bmp_img: Image.Image,
         "fg_colors": fg_colors,
         "sharp_ratio": (sharp_edges / float(differing_edges)) if differing_edges else 0.0,
         "isolated_ratio": (isolated / float(fg_count)) if fg_count else 0.0,
+        "content_bbox": content_bbox,
+        "content_margin": content_margin,
     }
 
 
@@ -1190,7 +1268,20 @@ def lint_icon_asset(bmp_img: Image.Image, expected_size: int,
 
     # G4 -- geometry
     checks["fg_ratio"] = round(m["fg_ratio"], 3)
-    checks["fg_ratio_in_bounds"] = (FG_MIN <= m["fg_ratio"] <= FG_MAX)
+    ratio_ceiling = fg_ratio_ceiling(expected_size)
+    checks["fg_ratio_ceiling"] = round(ratio_ceiling, 3)
+    checks["fg_ratio_in_bounds"] = (FG_MIN <= m["fg_ratio"] <= ratio_ceiling)
+
+    # G4b -- canvas utilisation. Official B28 icons fill the frame (22px content
+    # bbox median 20x20 with a 1px mask margin; 32px median 30x30), so an icon
+    # that draws into a smaller box reads as visibly smaller and lighter than
+    # its neighbours in the same toolbar. Measured on the foreground bbox, not
+    # on colour count, so it cannot be satisfied by repainting the canvas.
+    checks["content_bbox"] = tuple(m["content_bbox"])
+    target_edge = CONTENT_MIN_EDGE.get(expected_size, expected_size - 2)
+    checks["content_reaches_official_framing"] = (
+        m["content_bbox"][0] >= target_edge and m["content_bbox"][1] >= target_edge)
+    checks["content_keeps_mask_margin"] = (m["content_margin"] >= CONTENT_MARGIN)
 
     # G5 -- real display, only verifiable inside CATIA on B28
     checks["runtime_display_verified"] = "not_checked"
@@ -1202,6 +1293,12 @@ def lint_icon_asset(bmp_img: Image.Image, expected_size: int,
     ]
     if profile == "cade":
         blocking += ["palette_0_is_catia_bg", "four_corners_pure_index_0"]
+        # The framing contract is a *generation* rule: CADE must fill the canvas
+        # the way the official set does. Under profile="official" the same
+        # numbers are still reported, but they are an audit of artwork CADE did
+        # not author, so they must not veto a real B28 icon that legitimately
+        # draws smaller than the 20x20 / 30x30 frame.
+        blocking += ["content_reaches_official_framing", "content_keeps_mask_margin"]
     else:
         blocking += ["four_corners_are_bg"]
     failures = [k for k in blocking if not checks[k]]
@@ -1419,8 +1516,16 @@ class UniversalIconStudio:
             "design_contract": {
                 "max_fg_colors": dict(MAX_FG_COLORS),
                 "min_sharp_ratio": MIN_SHARP_RATIO,
-                "fg_ratio_bounds": [FG_MIN, FG_MAX],
+                # Per size, because a flat bound cannot describe the framing
+                # contract: a fully painted subject that still keeps the mask
+                # margin fills 0.826 of a 22px canvas but 0.879 of a 32px one.
+                "fg_ratio_bounds": {
+                    str(sz): [FG_MIN, round(fg_ratio_ceiling(sz), 3)]
+                    for sz in PIXEL_SIZES
+                },
                 "max_isolated_ratio": MAX_ISOLATED_RATIO,
+                "content_margin": CONTENT_MARGIN,
+                "content_min_edge": dict(CONTENT_MIN_EDGE),
             },
             "files": {k: _portable_path(v) for k, v in emitted_files.items()},
             "lint_22": lint_22,

@@ -787,7 +787,9 @@ try:
     check("32x32 BMP is palettized (8-bit)", _lint_32["checks"]["is_palettized"])
     check("32x32 BMP Palette[0] is CATIA_BG (192, 192, 192)", _lint_32["checks"]["palette_0_is_catia_bg"])
     check("32x32 BMP four corners index 0 pure", _lint_32["checks"]["four_corners_pure_index_0"])
-    check("32x32 BMP fg ratio in [15%, 75%]", _lint_32["checks"]["fg_ratio_in_bounds"], f"{_lint_32['checks']['fg_ratio']:.1%}")
+    check("32x32 BMP fg ratio within the derived ceiling",
+          _lint_32["checks"]["fg_ratio_in_bounds"],
+          f"{_lint_32['checks']['fg_ratio']:.1%} <= {_lint_32['checks']['fg_ratio_ceiling']:.1%}")
 
     # 3. deploy_tool_icon contract
     _fw_test = _tmp_studio_dir / "DeployFw.edu"
@@ -838,6 +840,16 @@ try:
 
     check("micro-icon silhouette is the B28-measured 1 physical pixel",
           PIXEL_INK_WIDTH == 1.0)
+    from icon_studio import CONTENT_MARGIN, CONTENT_MIN_EDGE, fg_ratio_ceiling
+    check("framing contract keeps a 1px mask margin", CONTENT_MARGIN == 1)
+    check("framing contract targets the B28 content bbox",
+          CONTENT_MIN_EDGE == {22: 20, 32: 30}, str(CONTENT_MIN_EDGE))
+    # The ceiling is derived, not a taste constant: a fully painted subject that
+    # still keeps the mask margin occupies (size-2)^2 pixels.
+    check("fg ceiling follows the mask margin at 22px",
+          abs(fg_ratio_ceiling(22) - 400 / 484) < 1e-9, f"{fg_ratio_ceiling(22):.4f}")
+    check("fg ceiling follows the mask margin at 32px",
+          abs(fg_ratio_ceiling(32) - 900 / 1024) < 1e-9, f"{fg_ratio_ceiling(32):.4f}")
     for _sz in (22, 32):
         check(f"{_sz}px geometry uses the native {_sz}-unit grid",
               _PixelGrid(_sz, CATIA_BG).design_size == _sz)
@@ -857,6 +869,13 @@ try:
                   _c["sharp_ratio_ok"], f"{_c['sharp_ratio']}")
             check(f"{_metaphor} {_sz}px free of dither speckle",
                   _c["no_dither_speckle"], f"{_c['isolated_ratio']}")
+            # Framing is part of the generated contract now: every metaphor must
+            # fill the canvas like the official set instead of floating small.
+            check(f"{_metaphor} {_sz}px fills the official content box",
+                  _c["content_reaches_official_framing"],
+                  f"bbox={_c['content_bbox']}")
+            check(f"{_metaphor} {_sz}px keeps the mask margin",
+                  _c["content_keeps_mask_margin"], "")
 
     # 5. Gate must actually block a degraded asset
     _sc_img = Image.new("RGB", (22, 22), CATIA_BG)
@@ -899,10 +918,12 @@ try:
           "fg_excludes_bg_mask" in _hole_lint["failures"],
           str(_hole_lint["failures"]))
 
-    # 6. A legal non-gray background (official I_Pad style) is accepted
+    # 6. A legal non-gray background (official I_Pad style) is accepted. The
+    #    subject spans the same 20x20 content box the framing contract requires;
+    #    it used to stop at 18x18, which the new gate correctly rejects.
     _ink_img = Image.new("RGB", (22, 22), CATIA_INK)
     _ink_d = ImageDraw.Draw(_ink_img)
-    _ink_d.ellipse([2, 2, 19, 19], fill=(255, 255, 150), outline=(255, 255, 255), width=1)
+    _ink_d.ellipse([1, 1, 20, 20], fill=(255, 255, 150), outline=(255, 255, 255), width=1)
     _ink_d.rectangle([10, 6, 11, 11], fill=(195, 20, 20))
     _ink_d.rectangle([12, 10, 16, 11], fill=(195, 20, 20))
     _ink_bmp = _quantize_to_catia_bmp(_ink_img, 22, bg_color=CATIA_INK, max_colors=16)
