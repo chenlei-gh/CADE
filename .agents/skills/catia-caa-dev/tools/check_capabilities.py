@@ -623,12 +623,33 @@ def collect_import_graph():
     return imported_names
 
 
+def _same_file_callers(tree):
+    """Yield functions whose bodies can call another function in this file.
+
+    Top-level functions are not the only callers. A public helper such as
+    icon_studio.lint_png_asset is invoked from a class method
+    (UniversalIconStudio.generate_icon_bundle). Skipping ClassDef bodies
+    made that real runtime path invisible and flagged the helper PHANTOM.
+    """
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.FunctionDef):
+            yield node
+        elif isinstance(node, ast.ClassDef):
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef):
+                    yield item
+
+
 def collect_intra_module_calls():
-    """Map each skills file to the set of top-level function names that are
-    CALLED by other functions defined in the SAME file.  Catches the false
-    positive where a helper like run.py's check_process_running is invoked by
-    start_catia_runtime/stop_catia in the same module — a module never imports
-    itself, so the import graph can't see this runtime path."""
+    """Map each skills file to the set of names referenced by other functions
+    in the SAME file, including methods of classes defined there.
+
+    Catches the false positive where a helper like run.py's
+    check_process_running is invoked by start_catia_runtime/stop_catia in the
+    same module — a module never imports itself, so the import graph can't see
+    this runtime path. Class methods count: generate_icon_bundle calls
+    lint_png_asset, and that call is a runtime path.
+    """
     # file_path -> set of names called within that file
     intra = {}
     for py in sorted(SKILLS_DIR.rglob("*.py")):
@@ -640,9 +661,7 @@ def collect_intra_module_calls():
             continue
         rel = str(py.relative_to(SKILL_ROOT))
         called = set()
-        for node in ast.iter_child_nodes(tree):
-            if not isinstance(node, ast.FunctionDef):
-                continue
+        for node in _same_file_callers(tree):
             # Names referenced anywhere inside this function's body
             for sub in ast.walk(node):
                 if isinstance(sub, ast.Name):

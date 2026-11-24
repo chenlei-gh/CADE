@@ -76,6 +76,9 @@ class TestBrownfieldAnalysis(unittest.TestCase):
         """ANALYZE mode correctly resolves TestMod.m and aggregates files & build config"""
         res = self.kernel.execute(KernelMode.ANALYZE, "analyze TestMod.m")
         self.assertEqual(res.get("status"), "ok")
+        # The maintenance-context state used to be stored as data["status"] and
+        # then flattened over this field, so a successful analysis came back "active".
+        self.assertEqual(res.get("maintenance_status"), "active")
         self.assertEqual(res.get("target_module"), "TestMod.m")
         self.assertEqual(res.get("framework"), "TestFw.edu")
 

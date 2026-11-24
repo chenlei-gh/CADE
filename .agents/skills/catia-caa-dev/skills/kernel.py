@@ -2509,14 +2509,17 @@ class Kernel:
                 "maintenance_context_reason": context_reason,
                 "context_path": context_path_str,
                 "task_id": maint_ctx.task_id if maint_ctx else "",
-                "status": maint_ctx.status if maint_ctx else "",
+                # Named maintenance_status, not status: KernelResult.to_dict()
+                # flattens data over the top-level fields, so a "status" key here
+                # would replace the result status ("ok") with the context status
+                # ("active") and every caller would see a failed analysis.
+                "maintenance_status": maint_ctx.status if maint_ctx else "",
                 "files": files_info,
                 "build_config": build_config,
                 "entities": entities_info,
                 "relevant_locations": relevant_locations,
                 "active_build_errors": active_build_errors,
                 "runtime_feedback": maint_ctx.runtime_feedback if maint_ctx else [],
-                "task_id": maint_ctx.task_id if maint_ctx else "",
                 "verification": verification_data,
                 "diagnostics": {
                     "module_specific": module_diags,

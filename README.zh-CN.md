@@ -152,7 +152,7 @@ python .agents/skills/catia-caa-dev/skills/env.py
 ### 第 6 步：验证安装
 
 ```bash
-# 快速测试套件（48 个套件，约 100 秒，不需要 CATIA）
+# 快速测试套件（68 个套件，约 100 秒，不需要 CATIA）
 python .agents/skills/catia-caa-dev/tests/test_master.py --quick
 
 # 静态审计（交叉引用 + 深度审计，不需要 CATIA）
@@ -242,7 +242,7 @@ CADE 通过自动化测试套件维护质量门禁：
 - **生命周期验证**：端到端 CAA 构建（`mkmk`）和 CATIA 运行时启动（`CNEXT`）。
 
 ```bash
-# 快速套件（48 个套件，跳过 CATIA 启动）
+# 快速套件（68 个套件，跳过 CATIA 启动）
 python .agents/skills/catia-caa-dev/tests/test_master.py --quick
 
 # 完整回归（含 CATIA 生命周期）
@@ -252,7 +252,7 @@ python .agents/skills/catia-caa-dev/tests/test_master.py
 python scripts/static_audit.py
 ```
 
-**测试基线**：49 个套件（48 快速 + 1 CATIA 生命周期）。快速回归：48/48 通过。
+**测试基线**：69 个套件（68 快速 + 1 CATIA 生命周期）。快速回归：68/68 通过。
 
 ---
 

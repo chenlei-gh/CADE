@@ -10,6 +10,15 @@
 
 ## [未发布]
 
+### 🔧 图标审计分档、分析结果状态与主链套件
+
+- `lint_icon_asset` 增加 `profile`。`cade` 仍要求调色板索引 0 是声明的背景色；`official` 按颜色认背景，只用于审计 B28 官方图标。生成和部署不放宽。
+- 维护上下文的 `status` 改名为 `maintenance_status`。`KernelResult.to_dict()` 会展平 `data`，原来的键会把顶层 `"ok"` 覆盖成 `"active"`。
+- 16 个此前未注册的测试挂入 `test_master.py`。全量 69，quick 68。
+- `check_capabilities.py` 把类方法里的同文件调用计入 runtime。`lint_png_asset` 不再被误判为 PHANTOM。
+
+**验证**：`test_master.py --quick` **68/68**。
+
 ### 🛡️ 图标部署链路正确性修复（含 1 个破坏性缺陷）
 
 对 `icon_studio.py` / `cade.py` 做缺陷复核时发现并修复 6 项问题，其中 1 项会**破坏

@@ -904,6 +904,27 @@ try:
     check("ink background accepted when declared", _ink_lint["status"] == "PASS",
           str(_ink_lint["failures"]))
 
+    # 6b. The official audit profile must not demand palette index 0. Real B28
+    #     icons keep the background at an arbitrary index (I_Pad uses 13).
+    _off = Image.new("P", (22, 22), 1)
+    _off.putpalette([v for _t in [(24, 16, 82), CATIA_BG, (255, 255, 150)]
+                     + [CATIA_BG] * 253 for v in _t])
+    for _y_i in range(6, 16):
+        for _x_i in range(6, 16):
+            _off.putpixel((_x_i, _y_i), 2)
+    _off_lint = lint_icon_asset(_off, 22, profile="official")
+    check("official profile accepts a background not at index 0",
+          _off_lint["status"] == "PASS", str(_off_lint["failures"]))
+    check("official profile does not invent a palette-0 verdict",
+          "palette_0_is_catia_bg" not in _off_lint["checks"])
+    check("cade profile still rejects that same icon",
+          lint_icon_asset(_off, 22)["status"] == "FAIL")
+    _bad_corner = _off.copy()
+    _bad_corner.putpixel((0, 0), 0)  # ink, not the declared background
+    check("official profile still rejects a corner that is not the background",
+          "four_corners_are_bg" in lint_icon_asset(
+              _bad_corner, 22, profile="official")["failures"])
+
     # 7. External logo remaster must reach the same bar as built-in metaphors
     _logo_src = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     _logo_d = ImageDraw.Draw(_logo_src)

@@ -96,6 +96,24 @@ SUITES = {
     "P0 Runtime Evidence": "test_runtime_layered_verification.py",
     "P0-2 OM Activation": "test_om_activation_driver.py",
     "Runtime View Architecture & Rollback": "test_runtime_view_architecture_and_rollback.py",
+    # ── Previously off the master chain. Each exits non-zero on failure,
+    #    so an empty verify string plus that exit code is the gate.
+    "Brownfield Analysis": "test_brownfield_analysis.py",
+    "Build Error Association": "test_build_error_association.py",
+    "Build Provenance Integration": "test_build_provenance_integration.py",
+    "Changeset Postconditions": "test_changeset_postconditions.py",
+    "Changeset Preconditions": "test_changeset_preconditions.py",
+    "Header Window": "test_header_window.py",
+    "Invocation Telemetry": "test_invocation_telemetry.py",
+    "Maintenance Context": "test_maintenance_context.py",
+    "MCP Apply Changeset": "test_mcp_apply_changeset.py",
+    "MCP Execute Plan": "test_mcp_execute_plan.py",
+    "P3a Extras Changeset": "test_p3a_extras_changeset.py",
+    "P54 Boundary Exposure": "test_p54_boundary_exposure.py",
+    "Provenance Guard": "test_provenance_guard.py",
+    "Runtime Feedback": "test_runtime_feedback.py",
+    "Runtime Verification": "test_runtime_verification.py",
+    "Usecase Snippet": "test_usecase_snippet.py",
     }
 
 SKIP_SLOW = {"Int-1 Build & Run"}  # Skips CATIA start/stop in quick mode

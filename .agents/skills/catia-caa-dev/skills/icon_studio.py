@@ -23,8 +23,10 @@ Key Capabilities:
      - Hard-edge ratio >= 0.85 and zero dither speckle
   3. CATIA CNEXT Dual-Transparency Contract:
      - 8-bit palettized BMP (<=256 colors)
-     - Palette index 0 locked to the declared background mask colour
-       (CATIA_BG gray, CATIA_INK navy and 180-gray are the recognised legal masks)
+     - CADE's own writer pins palette index 0 to the declared background mask
+       (CATIA_BG gray, CATIA_INK navy and 180-gray are the recognised legal masks).
+       Official B28 icons do not: their background sits at an arbitrary index, so
+       lint_icon_asset(..., profile="official") judges it by colour instead.
      - Four-corner background snap guaranteeing zero dirty halos
   4. Parametric Morpheme & Semantic Resolver:
      - Automatically infers domain metaphors from any tool name (date/stamp, part/asm, bom/table,
@@ -1017,21 +1019,36 @@ def _palette_color(img: Image.Image, index: int) -> Optional[Tuple[int, int, int
     return (pal[base], pal[base + 1], pal[base + 2])
 
 
-def _icon_metrics(bmp_img: Image.Image) -> Dict[str, Any]:
-    """Measure the pixel-level properties the gate reasons about."""
+def _icon_metrics(bmp_img: Image.Image,
+                  bg_color: Tuple[int, int, int] = CATIA_BG,
+                  profile: str = "cade") -> Dict[str, Any]:
+    """Measure the pixel-level properties the gate reasons about.
+
+    ``profile`` selects how the *background* is identified:
+
+    * ``cade``     -- CADE's own writer pins the mask to palette index 0, so an
+      index test is exact.
+    * ``official`` -- B28 icons place the background at an arbitrary palette
+      index (I_Pad uses 13, I_Pocket 2, I_MeasureBetween 4). Index 0 is an
+      ordinary colour there, so foreground must be identified by colour.
+    """
     w, h = bmp_img.size
     if bmp_img.mode != "P":
         bmp_img = bmp_img.convert("P", palette=Image.Palette.ADAPTIVE, colors=256)
     px = bmp_img.load()
     rgb = bmp_img.convert("RGB")
     rpx = rgb.load()
+    bg = tuple(bg_color)
 
-    fg_pixels = [(x, y) for y in range(h) for x in range(w) if px[x, y] != 0]
+    if profile == "official":
+        fg_pixels = [(x, y) for y in range(h) for x in range(w) if rpx[x, y] != bg]
+        fg_colors = {rpx[x, y] for x, y in fg_pixels}
+    else:
+        fg_pixels = [(x, y) for y in range(h) for x in range(w) if px[x, y] != 0]
+        # Foreground palette entries actually referenced (background excluded).
+        used_idx = {px[x, y] for x, y in fg_pixels}
+        fg_colors = {_palette_color(bmp_img, i) for i in used_idx}
     fg_count = len(fg_pixels)
-
-    # Foreground palette entries actually referenced (background excluded).
-    used_idx = {px[x, y] for x, y in fg_pixels}
-    fg_colors = {_palette_color(bmp_img, i) for i in used_idx}
 
     # Hard-edge ratio: among 4-neighbour pairs that actually differ, the share
     # whose max channel delta is >= SHARP_EDGE_DELTA. Same-colour runs inside a
@@ -1072,14 +1089,25 @@ def _icon_metrics(bmp_img: Image.Image) -> Dict[str, Any]:
 
 
 def lint_icon_asset(bmp_img: Image.Image, expected_size: int,
-                    bg_color: Tuple[int, int, int] = CATIA_BG) -> Dict[str, Any]:
+                    bg_color: Tuple[int, int, int] = CATIA_BG,
+                    profile: str = "cade") -> Dict[str, Any]:
     """Audit a BMP asset against the CADE micro-icon contract.
 
     Four blocking layers (G1 format, G2 colour budget, G3 contour quality,
     G4 geometry) plus G5 real-display, which only the B28 runtime can judge.
     Any blocked layer fails the asset outright: there is no WARN downgrade,
     because a WARN still reached `.CATRsc` in the previous implementation.
+
+    ``profile="cade"`` is the generation contract: palette index 0 *is* the
+    mask, and the four corners must be index 0. ``profile="official"`` is an
+    audit of existing B28 icons, which do not pin the background to index 0
+    (measured: 141 of 153 sampled 22x22 icons keep it elsewhere). That profile
+    judges the corners and the foreground by colour instead of index, and is
+    never used on the path that deploys a CADE icon.
     """
+    if profile not in ("cade", "official"):
+        raise ValueError(f"unknown icon lint profile: {profile}")
+
     w, h = bmp_img.size
     orig_mode = bmp_img.mode
     if bmp_img.mode != "P":
@@ -1089,8 +1117,9 @@ def lint_icon_asset(bmp_img: Image.Image, expected_size: int,
     px = bmp_img.load()
     palette = bmp_img.getpalette() or []
     c0 = (palette[0], palette[1], palette[2]) if len(palette) >= 3 else None
+    bg = tuple(bg_color)
 
-    m = _icon_metrics(bmp_img)
+    m = _icon_metrics(bmp_img, bg_color=bg, profile=profile)
     color_budget = MAX_FG_COLORS.get(expected_size, max(MAX_FG_COLORS.values()))
 
     checks: Dict[str, Any] = {}
@@ -1098,17 +1127,26 @@ def lint_icon_asset(bmp_img: Image.Image, expected_size: int,
     # G1 -- format & transparency mask
     checks["size_exact"] = (w == expected_size and h == expected_size)
     checks["is_palettized"] = (orig_mode == "P")
-    checks["palette_0_is_catia_bg"] = (c0 == tuple(bg_color))
-    checks["bg_color_legal"] = (tuple(bg_color) in LEGAL_BG_COLORS)
-    corners = [px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1]]
-    checks["four_corners_pure_index_0"] = all(c == 0 for c in corners)
+    checks["bg_color_legal"] = (bg in LEGAL_BG_COLORS)
+    corner_idx = (px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1])
+    if profile == "cade":
+        checks["palette_0_is_catia_bg"] = (c0 == bg)
+        checks["four_corners_pure_index_0"] = all(c == 0 for c in corner_idx)
+    else:
+        # Official icons do not reserve index 0 for the mask. The corners must
+        # still be the declared background colour, wherever it sits in the palette.
+        checks["four_corners_are_bg"] = all(
+            _palette_color(bmp_img, c) == bg for c in corner_idx
+        )
 
     # G2 -- colour budget
     checks["fg_color_count"] = m["fg_color_count"]
     checks["fg_color_budget_ok"] = (m["fg_color_count"] <= color_budget)
     # The mask colour is reserved for transparency: a foreground pixel that
     # reuses it punches a hole in the subject, so the icon cannot be trusted.
-    checks["fg_excludes_bg_mask"] = (tuple(bg_color) not in m["fg_colors"])
+    # Under the official profile the foreground is defined as "not the mask
+    # colour", so this check is satisfied by construction.
+    checks["fg_excludes_bg_mask"] = (bg not in m["fg_colors"])
 
     # G3 -- contour quality
     checks["sharp_ratio"] = round(m["sharp_ratio"], 3)
@@ -1124,10 +1162,14 @@ def lint_icon_asset(bmp_img: Image.Image, expected_size: int,
     checks["runtime_display_verified"] = "not_checked"
 
     blocking = [
-        "size_exact", "is_palettized", "palette_0_is_catia_bg", "bg_color_legal",
-        "four_corners_pure_index_0", "fg_color_budget_ok", "fg_excludes_bg_mask",
+        "size_exact", "is_palettized", "bg_color_legal",
+        "fg_color_budget_ok", "fg_excludes_bg_mask",
         "sharp_ratio_ok", "no_dither_speckle", "fg_ratio_in_bounds",
     ]
+    if profile == "cade":
+        blocking += ["palette_0_is_catia_bg", "four_corners_pure_index_0"]
+    else:
+        blocking += ["four_corners_are_bg"]
     failures = [k for k in blocking if not checks[k]]
 
     return {
