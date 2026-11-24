@@ -113,7 +113,7 @@ tags: [ui, icon, semantics, official-base, generated-base]
 | `frame()` | 嵌套轮廓框 = 装配容器/边界 | 通用 |
 | `swatches()` | 饱和色板网格 = 颜色属性 | I_AutomaticColorProperty |
 | `letter_a()` | 白卡+字母 = 命名 | I_RenameFamily |
-| 调色板常量 | `BG/INK/FACE/GEAR_FACE/GEAR_HUB/CYAN/CYAN_EDGE/WHITE` | 全部实测 |
+| 调色板常量 | `CATIA_BG/CATIA_INK/FACE_GOLD/GEAR_FACE/CYAN/WHITE` | 全部实测 |
 
 ### 7.2 储备语素（已定义，**未经 gate E**，真实需求出现时再接线）
 
@@ -122,10 +122,10 @@ tags: [ui, icon, semantics, official-base, generated-base]
 | `red_marker()` | 红色虚线框 = 特征作用的边/面 | I_Chamfer / I_Fillet |
 | `dashed_copy()` | 蓝色虚线方块 = 偏移/参考/阵列副本 | I_Offset / I_CircularPattern |
 | `boss()` | 黄块凸出 = 加材料 | I_Pad |
-| `notch()` | 凹槽凹入（深灰 `(75,75,75)` 内腔）= 减材料 | I_Pocket / I_Hole |
+| `notch()` | 凹槽凹入（深灰内腔）= 减材料 | I_Pocket / I_Hole |
 | `ctrl_point()` | 青色控制点 = 几何辅助 | I_Point / I_Line / I_Circle |
 | `cycle_arrows()` | 双循环弧箭头 = 更新/刷新 | I_Update |
-| `RED_MARK` / `REF_BLUE` / `DEPTH_GRAY` | 语义色常量 | §2 |
+| `RED_MARK` | 语义色常量（切除/作用边，代码在用） | §2 |
 
 ---
 

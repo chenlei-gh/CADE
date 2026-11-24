@@ -59,7 +59,6 @@ FACE_GOLD  = (255, 255, 150)    # PartDesign solid face lemon/engineering gold
 GEAR_FACE  = (255, 238, 135)    # Assembly gear face
 CYAN       = (75, 230, 255)     # Wireframe / geometry auxiliary lines
 WHITE      = (255, 255, 255)    # Highlight
-DEPTH_GRAY = (75, 75, 75)       # Cut / pocket cavity depth
 RED_MARK   = (195, 20, 20)      # Cut / operation target edge
 
 MASTER_SIZE = 512
@@ -748,23 +747,6 @@ def _render_pixel_cube_solid(size: int, bg_color: Tuple[int, int, int]) -> Image
     g.outline([(11, 1.5), (21, 6.5), (21, 16), (11, 21), (1, 16), (1, 6.5)],
               PIXEL_INK_WIDTH)
     return g.result()
-
-
-def _face_inset(points: List[Tuple[float, float]], ink_px: float) -> List[Tuple[float, float]]:
-    """Pull a face polygon inwards so it sits inside the shared ink silhouette.
-
-    Inset is applied per axis toward the face centroid. Unlike the previous
-    centroid *scale*, an additive pull keeps the border a constant width on
-    both shallow and steep faces.
-    """
-    cx = sum(p[0] for p in points) / len(points)
-    cy = sum(p[1] for p in points) / len(points)
-    out = []
-    for x, y in points:
-        dx = 0.0 if abs(x - cx) < 1e-6 else (ink_px if x > cx else -ink_px)
-        dy = 0.0 if abs(y - cy) < 1e-6 else (ink_px if y > cy else -ink_px)
-        out.append((x - dx, y - dy))
-    return out
 
 
 def _render_pixel_from_image(input_image_path: Path, size: int,
