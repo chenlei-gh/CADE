@@ -57,14 +57,19 @@
 3. 采样官方原色（见上表）
 4. 用同一编码组合新语义（左 1 齿轮 + 右齿轮对，间隙 = 转移，无需箭头）
 
-验证过的语素已沉淀为 **`tools/icon_design_lib.py`**：`gear()` / `cube3d()` /
-`frame()` / `swatches()` / `letter_a()` + 官方调色板常量。新图标直接调用，不重画。
+验证过的语素现已内置于 **`skills/icon_studio.py`** 的像素渲染器
+（`_render_pixel_*` 系列）+ 官方调色板常量。新图标直接调用，不重画。
+
+> 原先承载这些语素的 `tools/icon_design_lib.py` 已于 2026-11-24 删除：
+> 全仓零引用，`icon_studio` 的双尺度渲染器已自带全部语素。
 
 B28 深度语义分析（3077 个 CATRsc 引用频次 + 40 个高频图标逐像素）见
-**`knowledge/ui/official_icon_semantics.md`**。从中提取的储备语素
+**`knowledge/ui/official_icon_semantics.md`**。其中部分储备语素
 （`red_marker` / `dashed_copy` / `boss` / `notch` / `ctrl_point` /
-`cycle_arrows` + `RED_MARK` / `REF_BLUE` / `DEPTH_GRAY`）已在 lib 定义但
-**未经 gate E 验证**——仅在真实命令需要时接线，首次用于生产必须过完整 A–E 门禁。
+`cycle_arrows`）的描述仍在该文件中作为**设计参考**保留，但代码实现已随
+`icon_design_lib.py` 一并移除。将来若真实命令需要这些语素，应在
+`icon_studio.py` 的像素渲染器中**按 22/32 网格重新实现**，而不是恢复旧模块
+（旧模块是 512/22 双轨时代产物，且从未被任何代码引用）。首次用于生产必须过完整 A–E 门禁。
 
 ## 3. Prompt 模板（仅路径 B 外部文生图使用）
 
@@ -135,7 +140,13 @@ Negative: text, letters, watermark, gradient, blur, photorealistic,
 这张表回答的是比单张 BMP 更有价值的问题：**对于 CADE 自有语义，文生图
 模型到底能不能产生符合 CATIA 视觉语言的单主体隐喻。**
 
-## 4. 后处理管线（`tools/icon_gen_pipeline.py`，确定性代码）
+## 4. 后处理管线（已弃用，保留为历史参考）
+
+> **该管线已于 2026-11-24 删除**（`tools/icon_gen_pipeline.py`）。原因：
+> 全仓零 `import`、未登记 `capabilities.yaml`、无 CLI 绑定、无测试执行；
+> 且它依赖的「LANCZOS 下采样到 22px」正是造成图标发虚的根因。
+> 现行唯一生产路径是 `icon_studio.py` 的双尺度像素渲染器（见 §1 v4 修订）。
+> 下列步骤仅存档，**不得再作为新图标的生产方式**。
 
 模型输出 PNG 丢入 `tmp/gen_inbox/`，管线执行：
 
@@ -204,7 +215,11 @@ Negative: text, letters, watermark, gradient, blur, photorealistic,
 > **16 色是上限，不是质量保证**：一个只有 8 色但轮廓断裂的图标，`sharp_ratio` 会
 > 掉到 0.2~0.4，照样 FAIL。G2 与 G3 必须同时通过，缺一不可。
 
-> **统一 Lint 实施规范**：上述工程防错门禁已在 `tools/icon_gen_pipeline.py` 中抽象为模块级复用函数 `lint_bmp_asset()`、`lint_alpha_png()` 与 `clean_zero_alpha_rgb()`。路径 A（Ultra-3D 参数化脚本）与路径 B（AI 图片后处理）必须统一在导出阶段调用该 Lint，以真实测量数据写入 `provenance.json`，严禁两套标准或未经检测硬编码通过。
+> **统一 Lint 实施规范**：上述工程防错门禁不再依赖已删除的
+> `tools/icon_gen_pipeline.py`（其三份 lint 函数从未被 `icon_studio` 调用过）。
+> 现行唯一实现是 `skills/icon_studio.py` 的 `lint_icon_asset()`，路径 A 与
+> 路径 B 都必须走它，以真实测量数据写入 `provenance.json`，
+> 严禁两套标准或未经检测硬编码通过。
 > **Alpha 纯净度界定**：`alpha_clean: true` 严格指代“四角全透明（A=0）且全透明像素零非零 RGB 脏溢出”；半透明像素（0 < A < 255）为真实曲面光影下采样抗锯齿产物，属于视觉过渡度量，最终融合效果由 CATIA 实机验收裁决。
 
 ### E. CATIA 实机验收（最终裁决）
@@ -234,8 +249,8 @@ Negative: text, letters, watermark, gradient, blur, photorealistic,
   "prompt": "<完整 prompt>",
   "seed": null,
   "generated_at": "<日期>",
-  "pipeline": "icon_gen_pipeline.py v1",
-  "gate": {"colors": 12, "fg": 0.42},
+  "pipeline": "icon_studio.py (dual-scale pixel renderers)",
+  "gate": {"status": "PASS", "fg_color_count": 4, "sharp_ratio": 1.0},
   "approved_by": "user",
   "approved_at": "<日期>"
 }
@@ -243,8 +258,8 @@ Negative: text, letters, watermark, gradient, blur, photorealistic,
 
 ## 8. 一致性措施
 
-同一模型、同一风格块、同一管线、同批出对比 sheet（`--batch` 自动生成
-候选 × 官方锚点并排图）。四个图标必须是"一家人"，风格漂移的单独
+同一渲染器家族、同一调色板、同一门禁（`lint_icon_asset`），同批出对比 sheet
+（候选 × 官方锚点并排图）。四个图标必须是"一家人"，风格漂移的单独
 重生成，不接受"各自漂亮"。
 
 ## 9. 试点闭环（PartToAsm）— **已完成**
@@ -253,11 +268,11 @@ Negative: text, letters, watermark, gradient, blur, photorealistic,
 CADE Semantic (parttoasm)
   → Official Pool 证明无合适官方图（S5 已完成）
   → LLM 像素设计 ×6 隐喻候选（插入/环抱/包容/落位/附着/箭头）
-  → 管线门禁（22×22 / ≤256 色 / 背景吸附 / 调色板 BMP）
+  → 管线门禁（22×22 / 前景≤16 色 / 背景吸附 / 调色板 BMP）
   → 对比 sheet 人工 Visual QA → 用户指出官方齿轮词汇（关键转折）
   → 官方词汇提取（I_Part/I_Product）+ 采样原色 + 铺满修正
   → CATIA 22×22 Toolbar 实机 → **PASS（2026-08-18 用户验收）**
-  → 入库 I_CADEPartToAsm.bmp + .json provenance + .py 设计源
+  → 入库 I_CADEPartToAsm.bmp + .json provenance
 ```
 
 **试点结论**：
@@ -265,7 +280,9 @@ CADE Semantic (parttoasm)
 1. Official Asset + Generated Asset 能覆盖官方不存在的 CADE 语义 ✓
 2. LLM 像素设计是 Generated Base 的合格主路径 ✓
 3. 官方词汇提取是最有效的隐喻来源（用户直觉 > 模型自由发明）✓
-4. 设计源 .py 入库使资产可从代码确定性重建（已验证 0/484 像素差）✓
+4. 早期“设计源 .py 使资产可确定性重建”的做法**已废止**（`7ea5d19` 删除设计源）：
+   现在资产的可重建性由 `icon_studio.py` 的确定性渲染器提供——同一个 metaphor +
+   同一个尺寸永远得到同一张 BMP，比维护 6 份独立设计源更可靠。
 
 **Primitive 删除的依赖条件已满足**：试点 E 通过，71 Primitive 的删除
 获得工程依据（它们本就已于 v13 删除，此处确认无回退必要）。

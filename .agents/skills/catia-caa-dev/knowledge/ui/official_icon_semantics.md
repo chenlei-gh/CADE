@@ -17,7 +17,10 @@ tags: [ui, icon, semantics, official-base, generated-base]
 对 B28 `resources/graphic/icons/normal/` 的实测语义分析。**不是**从文件名推断，而是逐像素测量 + CATRsc 引用频次统计。
 
 > 数据来源：3077 个 `msgcatalog/*.CATRsc` 扫描（6789 个唯一图标 stem），40 个高频工具图标逐像素分析（2026-08-18）。
-> 对应工具：`tools/icon_design_lib.py`（已代码化语素）/ `tools/icon_gen_pipeline.py`（门禁）。
+> 对应工具：`skills/icon_studio.py`（语素已内置在 `_render_pixel_*` 渲染器 + `lint_icon_asset` 门禁）。
+> **历史说明**（2026-11-24）：旧文档提到的 `tools/icon_design_lib.py` 与
+> `tools/icon_gen_pipeline.py` 已删除（全仓零引用）。本文件中的语素表仍可作为
+> **设计参考词汇表**使用，但已无对应代码模块。
 
 ---
 
@@ -71,7 +74,7 @@ tags: [ui, icon, semantics, official-base, generated-base]
 | **系统命令族** | `(191,191,191)` | 黑 | Windows 95 通用 | 7~15 | Undo / Save / Copy / Paste |
 | **文档族** | `(180,180,180)` | 墨蓝+灰 | 齿轮/立方体 + 白文档页 | 8~9 | I_Part / I_Product |
 
-**背景色本身携带"这是命令还是文档"的类型语义**。CADE 工具是命令，一律用 `(192,192,192)`；`icon_design_lib.BG` 已固化。
+**背景色本身携带"这是命令还是文档"的类型语义**。CADE 工具是命令，一律用 `(192,192,192)`；`icon_studio.CATIA_BG` 已固化（合法背景掩码另含 `CATIA_INK` 与 `(180,180,180)`）。
 
 ---
 
@@ -95,7 +98,11 @@ tags: [ui, icon, semantics, official-base, generated-base]
 
 ---
 
-## 7. 已代码化语素（`tools/icon_design_lib.py`）
+## 7. 语素词汇表（设计参考）
+
+> **注意**：本节原为 `tools/icon_design_lib.py` 的模块文档，该模块已于 2026-11-24
+> 删除（全仓零引用）。下表作为**设计词汇表**保留——新增图标时参照这些官方编码，
+> 但要在 `icon_studio.py` 的 `_render_pixel_*` 中按 22/32 网格实现。
 
 ### 7.1 经过 gate E 实机验证（生产可用）
 

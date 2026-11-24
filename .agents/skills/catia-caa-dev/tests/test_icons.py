@@ -982,8 +982,22 @@ try:
     check("Kernel preview action == generate_icon", _plan.get("action") == "generate_icon")
 
     # 6. Kernel execution live
-    _k_live = _kernel.execute(KernelMode.DEVELOP, "为 CAADateStamp 制作图标")
+    #    The kernel calls generate_icon() with no out_dir when the workspace has
+    #    no `.edu` framework, so it writes to icon_studio.ASSETS_DIR -- the real
+    #    in-repo asset tree. Redirect that global for the duration of the test,
+    #    otherwise every run silently regenerates I_CADECAADateStamp.* into the
+    #    repository (the duplicate that had to be deleted twice).
+    import icon_studio as _studio_mod
+    _saved_assets_dir = _studio_mod.ASSETS_DIR
+    _studio_mod.ASSETS_DIR = _tmp_n_dir
+    try:
+        _k_live = _kernel.execute(KernelMode.DEVELOP, "为 CAADateStamp 制作图标")
+    finally:
+        _studio_mod.ASSETS_DIR = _saved_assets_dir
     check("Kernel live execution status is successful", str(_k_live.get("status", "")).lower() in ("ok", "pass", "success"), str(_k_live.get("status")))
+    check("Kernel live run wrote into the temp dir, not the repo asset tree",
+          not (_saved_assets_dir / "I_CADECAADateStamp.bmp").exists()
+          or (_tmp_n_dir / "I_CADECAADateStamp.bmp").exists())
 
 finally:
     shutil.rmtree(_tmp_n_dir, ignore_errors=True)

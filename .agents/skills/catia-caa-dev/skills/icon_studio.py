@@ -37,11 +37,7 @@ Key Capabilities:
 
 import json
 import math
-import os
-import re
 import shutil
-import sys
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
@@ -57,9 +53,7 @@ CATIA_BG   = (192, 192, 192)    # #C0C0C0 standard toolbar background gray
 CATIA_INK  = (24, 16, 82)       # #181052 structure outline & 3D shadow
 FACE_GOLD  = (255, 255, 150)    # PartDesign solid face lemon/engineering gold
 GEAR_FACE  = (255, 238, 135)    # Assembly gear face
-GEAR_HUB   = (255, 255, 0)      # Assembly hub
 CYAN       = (75, 230, 255)     # Wireframe / geometry auxiliary lines
-CYAN_EDGE  = (0, 157, 167)      # Wireframe edge
 WHITE      = (255, 255, 255)    # Highlight
 DEPTH_GRAY = (75, 75, 75)       # Cut / pocket cavity depth
 RED_MARK   = (195, 20, 20)      # Cut / operation target edge
@@ -74,10 +68,12 @@ EXPORT_SPECS = [
 ]
 
 
-# ── Quality Gate Spec ──────────────────────────────────────────────────
+# ── Quality Gate Spec ──────────────────────────────────────────────
+# Only the constants the gate actually reads live here; the micro-icon
+# contract below owns the rest (previously MAX_COLORS=256 sat alongside the
+# 16/24 budget and read as a live ceiling when nothing consumed it).
 BG_TOLERANCE = 36
 FG_MIN, FG_MAX = 0.15, 0.75
-MAX_COLORS = 256
 
 # Micro-icon design contract (22/32 px). Owned by CADE, not by individual icons:
 # every renderer that feeds a CATIA BMP must obey it, so new tool icons inherit

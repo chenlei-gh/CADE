@@ -10,6 +10,52 @@
 
 ## [未发布]
 
+### 🧹 图标子系统死代码清理（删除 740 行零引用模块 + 8 个重复资产）
+
+全仓 AST + 符号可达性审计后发现一批零引用遗留物。删除前逐项用 grep 确认引用数为 0：
+
+| 对象 | 行数/大小 | 证据 |
+|---|---|---|
+| `tools/icon_design_lib.py` | 264 行 | 全仓无任何 `import`；5 个函数为孤儿（`transfer_arrow`/`micro_part`/`assembly_bracket`/`draw_gradient_poly`/`draw_cylinder_shading`）；自 `1ae05f9`(09-17) 后无改动 |
+| `tools/icon_gen_pipeline.py` | 476 行 | 全仓无 `import`；未登记 `capabilities.yaml`；无 CLI 绑定；无测试执行 |
+| `assets/icons/generated/I_CADECAADateStamp.*` | 8 个文件 | 与 `I_CADEDateStamp.*` **BMP 字节完全相同**（MD5 一致），且无任何代码/`.CATRsc` 引用 |
+
+**关键发现**：文档 §5 曾声称路径 A/B “统一调用 `lint_bmp_asset()`”，但实测
+`icon_studio.py` 中该函数出现次数为 **0**——那套门禁从未接入生产链。
+这正是旧图标能以 245 色通过门禁的结构性原因（两套 lint 并行，生产用的是弱的那套）。
+
+**删除的重复资产会自己长回来（已根治）**：第一次删除 `I_CADECAADateStamp.*` 后，
+再跑一遍 `test_icons.py` 它们又出现了。根因是测试 PART N 用 `"为 CAADateStamp 制作图标"`
+驱动 Kernel **实跑**，而 `kernel.py` 在临时工作区无 `.edu` 框架时走
+`generate_icon(out_dir=None)` → 落入仓库 `ASSETS_DIR`。
+修复：测试期间临时把 `icon_studio.ASSETS_DIR` 重定向到临时目录，并新增
+断言“实跑产物必须落在临时目录”。**未改 `kernel.py`**——生产行为本身是对的
+（无框架时生成到资产库），只是测试不应触发它写真实仓库。
+
+**`skills/icon_studio.py` 内部清理**：
+
+| 项 | 内容 |
+|---|---|
+| 死导入 | `os` / `sys` / `dataclass` / `field`（实际使用 0 次）/ `re` |
+| 死常量 | `MAX_COLORS = 256`（已被 `MAX_FG_COLORS` 取代）、`GEAR_HUB`、`CYAN_EDGE` |
+
+`MAX_COLORS` 特别值得记录：它是 2026-09-29 那次“解除 16 色”的遗留值，
+与新的 16/24 预算相邻定义却无人消费，读代码时极易误以为 256 仍是有效上限。
+已在原位置加注释说明为何删除。
+
+**文档同步**（保留历史，不假装从未存在）：
+
+- `ICON_GENERATION_SPEC.md` §2.1/§4/§5/§7/§9：标注模块已删除、lint 归属改为 `icon_studio.lint_icon_asset`、`pipeline` 字段改为现行渲染器
+- `ADR-Icon-Provider-Freeze.md` 规则 7：语素来源改为 `icon_studio.py`
+- `knowledge/ui/official_icon_semantics.md` §7：语素表降级为**设计参考词汇表**（无对应代码）
+- `CHANGELOG.md` 历史条目**不改**（它们记录当时事实）
+
+**验证**：`test_icons.py` **247/247**（新增污染检测）、`test_cross_reference.py` **290/290**、
+`test_deep_audit.py` **11/11**、`check_capabilities.py` **CAPABILITY CONTRACT OK**。
+
+**未删除**（确认必需）：`icon_provider.py`（`actions.py` 5 处生产调用）、
+`icon_studio.py` 双链（`cade.py`/`kernel.py`/`capabilities.yaml` 均引用）。
+
 ### 🎨 图标生成内核重写：双尺度像素渲染 + 五层硬门禁（反转 2026-09-29 的 16 色决定）
 
 **问题**：生成的 22×22 图标发虚、有脏斑。实测 `I_CADEDateStamp` 在 484 个像素里
