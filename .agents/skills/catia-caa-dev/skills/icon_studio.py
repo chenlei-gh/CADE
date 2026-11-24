@@ -629,57 +629,82 @@ def _new_pixel_canvas(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
 
 
 def _render_pixel_stamp_clock(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
-    """Mold-date dial with a readable gold bezel and size-specific tick layout.
+    """Industrial Mold-Date Stamp with authentic coin/insert bevel depth.
 
-    The dial spans the full official framing (pixels 1..20 at 22px, 1..30 at
-    32px) so it reads at the same weight as the B28 icons beside it.
+    Renders an exact 20x20 (Normal) / 30x30 (Large) solid circular insert:
+    1. Lower bevel arc (PIXEL_STEEL_DEEP) gives coin-edge metal thickness.
+    2. Main circular dial body (FACE_GOLD).
+    3. Top-left light reflection arc (WHITE).
+    4. Four cardinal alignment punch marks (CATIA_INK).
+    5. Clean, high-visibility red indicator hands.
     """
     g = _PixelGrid(size, bg_color)
     large = size >= 32
-    cx = cy = 16.0 if large else 11.0
-    outer_r = 15.0 if large else 10.0
-    face_r = 11.5 if large else 7.5
-
-    g.disc(cx, cy, outer_r, FACE_GOLD)
-    g.d.ellipse(g.box(cx - face_r, cy - face_r, cx + face_r, cy + face_r), fill=WHITE)
-
-    # Normal mode retains four cardinal marks; Large adds four square diagonal
-    # marks. Diagonal hairlines missed pixel centres and disappeared at 32px.
-    for angle in range(0, 360, 45 if large else 90):
-        rad = math.radians(angle)
-        dx, dy = math.cos(rad), math.sin(rad)
-        if large and angle % 90:
-            tx = cx + dx * (face_r - 1.0)
-            ty = cy + dy * (face_r - 1.0)
-            g.bar(tx - 1, ty - 1, tx + 1, ty + 1, CATIA_INK)
-        else:
-            g.line([(cx + dx * (face_r + 0.4), cy + dy * (face_r + 0.4)),
-                    (cx + dx * (outer_r - 1.4), cy + dy * (outer_r - 1.4))])
-
-    hand_length = 11.0 if large else 5.5
-    g.line([(cx, cy + 0.5), (cx, cy - hand_length)], RED_MARK, width_px=2.0)
-    g.line([(cx - 0.5, cy), (cx + hand_length, cy)], RED_MARK, width_px=2.0)
-    g.bar(cx - 1, cy - 1, cx + 1, cy + 1, CATIA_INK)
     if large:
-        g.bar(cx, cy, cx + 1, cy + 1, FACE_GOLD)
+        cx, cy = 16.0, 16.0
+        r = 15.0
+        # 1. Main solid gold disc
+        g.disc(cx, cy, r, FACE_GOLD)
+        # 2. Bottom shadow bevel arc (thickness of the insert edge)
+        g.d.arc(g.box(cx - r, cy - r, cx + r, cy + r),
+                start=15, end=165, fill=PIXEL_STEEL_DEEP, width=g.band(1.5))
+        # 3. Top-left highlight reflection arc
+        g.d.arc(g.box(cx - r + 1, cy - r + 1, cx + r - 1, cy + r - 1),
+                start=195, end=345, fill=WHITE, width=g.band(1.0))
+        # 4. Four cardinal notches
+        for dx, dy in ((0, -r + 3.5), (r - 3.5, 0), (0, r - 3.5), (-r + 3.5, 0)):
+            g.bar(cx + dx - 1, cy + dy - 1, cx + dx + 1, cy + dy + 1, CATIA_INK)
+        # 5. Bold red pointer hands
+        g.line([(cx, cy + 1), (cx, cy - 10)], RED_MARK, width_px=3.0)
+        g.line([(cx - 1, cy), (cx + 9, cy)], RED_MARK, width_px=3.0)
+        # 6. Center pivot pin
+        g.disc(cx, cy, 2.5, CATIA_INK)
+        g.disc(cx, cy, 1.0, WHITE)
+    else:
+        # 22x22 Normal mode (pixel bounds: 1..20, cx=11.0, cy=11.0, r=10.0)
+        cx, cy = 11.0, 11.0
+        r = 10.0
+        # 1. Main solid gold disc
+        g.disc(cx, cy, r, FACE_GOLD)
+        # 2. Bottom shadow bevel arc (1px thickness)
+        g.d.arc(g.box(cx - r, cy - r, cx + r, cy + r),
+                start=20, end=160, fill=PIXEL_STEEL_DEEP, width=g.band(1.0))
+        # 3. Top-left highlight arc
+        g.d.arc(g.box(cx - r + 1, cy - r + 1, cx + r - 1, cy + r - 1),
+                start=200, end=340, fill=WHITE, width=g.band(1.0))
+        # 4. Four cardinal punch indices
+        g.bar(cx - 1, cy - r + 2, cx + 1, cy - r + 4, CATIA_INK)  # 12
+        g.bar(cx + r - 4, cy - 1, cx + r - 2, cy + 1, CATIA_INK)  # 3
+        g.bar(cx - 1, cy + r - 4, cx + 1, cy + r - 2, CATIA_INK)  # 6
+        g.bar(cx - r + 2, cy - 1, cx - r + 4, cy + 1, CATIA_INK)  # 9
+        # 5. Bold red hands
+        g.line([(cx, cy + 1), (cx, cy - 6)], RED_MARK, width_px=2.0)
+        g.line([(cx - 1, cy), (cx + 6, cy)], RED_MARK, width_px=2.0)
+        # 6. Center pivot
+        g.disc(cx, cy, 1.5, CATIA_INK)
+        g.disc(cx, cy, 0.5, WHITE)
+
+    return g.result()
+
     return g.result()
 
 
 def _render_pixel_part_to_asm(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
-    """A gold component seated on an isometric assembly plate."""
+    """A high-contrast gold mechanical bushing seated into an assembly base plate."""
     g = _PixelGrid(size, bg_color)
     large = size >= 32
     if large:
         plate_top = [(16, 17), (31, 22), (16, 27), (1, 22)]
         plate_bottom, plate_left_bottom, plate_right_bottom = (16, 31), (1, 26), (31, 26)
-        cube_top = [(16, 1), (23, 5), (16, 9), (9, 5)]
-        cube_bottom, cube_left_bottom, cube_right_bottom = (16, 21), (9, 17), (23, 17)
+        cube_top = [(16, 1), (24, 6), (16, 11), (8, 6)]
+        cube_bottom, cube_left_bottom, cube_right_bottom = (16, 22), (8, 17), (24, 17)
     else:
         plate_top = [(10.5, 10), (21, 14), (10.5, 18), (1, 14)]
         plate_bottom, plate_left_bottom, plate_right_bottom = (10.5, 21), (1, 17), (21, 17)
-        cube_top = [(10.5, 1), (16, 4.5), (10.5, 8), (5, 4.5)]
-        cube_bottom, cube_left_bottom, cube_right_bottom = (10.5, 15), (5, 12), (16, 12)
+        cube_top = [(10.5, 1), (17, 5), (10.5, 9), (4, 5)]
+        cube_bottom, cube_left_bottom, cube_right_bottom = (10.5, 16), (4, 12), (17, 12)
 
+    # 1. Base assembly plate with solid 3D depth
     plate_left = [plate_top[3], plate_top[2], plate_bottom, plate_left_bottom]
     plate_right = [plate_top[2], plate_top[1], plate_right_bottom, plate_bottom]
     g.solid(plate_left, PIXEL_STEEL_DEEP)
@@ -688,12 +713,16 @@ def _render_pixel_part_to_asm(size: int, bg_color: Tuple[int, int, int]) -> Imag
     g.outline([plate_top[3], plate_top[2], plate_bottom, plate_right_bottom,
                plate_top[1], plate_top[0]])
     g.line([plate_top[2], plate_bottom])
+    # White highlight bevel on plate top-left
+    g.line([plate_top[3], plate_top[0]], WHITE)
 
+    # Assembly guide / shadow beneath the descending component
     if large:
-        # Two mounting holes fit only in Large mode; at 22px they become noise.
-        g.solid([(8, 23), (10, 22), (12, 23), (10, 24)], CATIA_INK)
-        g.solid([(20, 23), (22, 22), (24, 23), (22, 24)], CATIA_INK)
+        g.solid([(12, 19), (16, 21), (20, 19), (16, 17)], CATIA_INK)
+    else:
+        g.solid([(8, 13), (10.5, 14.5), (13, 13), (10.5, 11.5)], CATIA_INK)
 
+    # 2. Descending solid component (solid engineering gold with crisp 3-tone lighting)
     cube_left = [cube_top[3], cube_top[2], cube_bottom, cube_left_bottom]
     cube_right = [cube_top[2], cube_top[1], cube_right_bottom, cube_bottom]
     g.solid(cube_left, PIXEL_GOLD_LEFT)
@@ -703,96 +732,142 @@ def _render_pixel_part_to_asm(size: int, bg_color: Tuple[int, int, int]) -> Imag
                cube_left_bottom, cube_top[3]])
     g.line([cube_top[3], cube_top[2], cube_top[1]])
     g.line([cube_top[2], cube_bottom])
-    g.line([(cube_top[3][0] + 1, cube_top[3][1] + 1),
-            (cube_left_bottom[0] + 1, cube_left_bottom[1] - 1)], WHITE)
+    
+    # Sharp top light highlight on component edge
+    g.line([(cube_top[3][0] + 0.5, cube_top[3][1] + 0.5),
+            (cube_top[0][0], cube_top[0][1] + 0.5)], WHITE)
     return g.result()
 
 
 def _render_pixel_bom_table(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
-    """Ruled BOM sheet with column structure and a separate export arrow."""
+    """Ruled industrial BOM spreadsheet with crisp headers and prominent 3D export arrow."""
     g = _PixelGrid(size, bg_color)
     large = size >= 32
     if large:
-        g.bar(3, 3, 26, 31, PIXEL_STEEL_SHADE)
-        g.rect(1, 1, 24, 30, WHITE)
+        # Cast drop shadow for sheet
+        g.bar(4, 4, 27, 31, PIXEL_STEEL_DEEP)
+        # Sheet body (pure contrast)
+        g.rect(1, 1, 24, 29, WHITE)
+        # Deep blue header band
         g.bar(2, 2, 23, 9, PIXEL_BLUE)
         for x in (4, 10, 16):
-            g.bar(x, 5, x + 4, 7, WHITE)
+            g.bar(x, 4, x + 4, 7, WHITE)
         g.edge(2, 9, 23, 9)
-        for row_y in (13, 17, 21, 25):
+        # Alternate zebra striping rows for high-density document look
+        g.bar(2, 10, 23, 14, (235, 240, 248))
+        g.bar(2, 18, 23, 22, (235, 240, 248))
+        for row_y in (10, 14, 18, 22, 26):
             g.line([(2, row_y), (23, row_y)], PIXEL_STEEL_SHADE)
-        for col_x in (9, 16):
-            g.line([(col_x, 10), (col_x, 29)], PIXEL_STEEL_SHADE)
-        arrow = [(17, 16), (23, 16), (23, 13), (31, 21),
+        for col_x in (8, 16):
+            g.line([(col_x, 10), (col_x, 28)], PIXEL_STEEL_SHADE)
+
+        # Bold 3D export arrow (green with highlight and shadow)
+        arrow_shadow = [(18, 17), (24, 17), (24, 14), (31, 22),
+                        (24, 30), (24, 27), (18, 27)]
+        g.solid(arrow_shadow, CATIA_INK)
+        arrow = [(17, 16), (23, 16), (23, 13), (30, 21),
                  (23, 29), (23, 26), (17, 26)]
+        g.face(arrow, PIXEL_GREEN)
+        g.line([(17, 16), (23, 16), (23, 13), (29, 20)], WHITE)
     else:
-        g.bar(2, 2, 18, 21, PIXEL_STEEL_SHADE)
-        g.rect(1, 1, 16, 21, WHITE)
+        # 22x22 Normal Grid
+        g.bar(3, 3, 18, 21, PIXEL_STEEL_DEEP)
+        g.rect(1, 1, 16, 20, WHITE)
+        # Deep Blue Header
         g.bar(2, 2, 15, 6, PIXEL_BLUE)
         g.edge(2, 6, 15, 6)
-        for row_y in (9, 12, 15, 18):
+        # Rows
+        g.bar(2, 7, 15, 10, (235, 240, 248))
+        g.bar(2, 14, 15, 17, (235, 240, 248))
+        for row_y in (7, 10, 14, 17):
             g.line([(2, row_y), (15, row_y)], PIXEL_STEEL_SHADE)
-        g.line([(6, 7), (6, 20)], PIXEL_STEEL_SHADE)
-        arrow = [(11, 10), (15, 10), (15, 8), (21, 14),
-                 (15, 20), (15, 18), (11, 18)]
+        g.line([(6, 7), (6, 19)], PIXEL_STEEL_SHADE)
 
-    g.face(arrow, PIXEL_GREEN)
-    if large:
-        g.line([(19, 18), (23, 18), (23, 16), (28, 20)], WHITE)
+        # High-contrast Green Action Arrow
+        arrow_shadow = [(12, 11), (16, 11), (16, 9), (21, 15),
+                        (16, 21), (16, 19), (12, 19)]
+        g.solid(arrow_shadow, CATIA_INK)
+        arrow = [(11, 10), (15, 10), (15, 8), (20, 14),
+                 (15, 20), (15, 18), (11, 18)]
+        g.face(arrow, PIXEL_GREEN)
+        g.line([(11, 10), (15, 10), (15, 8), (19, 13)], WHITE)
+
     return g.result()
 
 
 def _render_pixel_color_swatch(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
-    """Four colour chips on a layered card; Large adds flat enamel highlights."""
+    """Four thick bevelled engineering color tiles on a high-contrast backing plate."""
     g = _PixelGrid(size, bg_color)
     large = size >= 32
     if large:
-        g.bar(2, 2, 31, 31, PIXEL_STEEL_SHADE)
-        g.rect(1, 1, 31, 31, WHITE)
-        chips = [(3, 3, RED_MARK, (255, 120, 110)),
-                 (17, 3, PIXEL_GREEN, (145, 240, 150)),
-                 (3, 17, PIXEL_BLUE, (135, 190, 255)),
-                 (17, 17, FACE_GOLD, WHITE)]
-        chip_size = 12
+        # Heavy steel backing fixture
+        g.bar(2, 2, 31, 31, PIXEL_STEEL_DEEP)
+        g.rect(1, 1, 30, 30, PIXEL_STEEL)
+        g.line([(1, 1), (30, 1)], WHITE)
+        g.line([(1, 1), (1, 30)], WHITE)
+        chips = [(3, 3, RED_MARK, (255, 130, 120), (150, 10, 10)),
+                 (17, 3, PIXEL_GREEN, (150, 245, 160), (35, 110, 50)),
+                 (3, 17, PIXEL_BLUE, (140, 195, 255), (20, 60, 160)),
+                 (17, 17, FACE_GOLD, WHITE, PIXEL_GOLD_SHADE)]
+        chip_size = 11
     else:
-        g.bar(2, 2, 21, 21, PIXEL_STEEL_SHADE)
-        g.rect(1, 1, 21, 21, WHITE)
-        chips = [(3, 3, RED_MARK, None), (12, 3, PIXEL_GREEN, None),
-                 (3, 12, PIXEL_BLUE, None), (12, 12, FACE_GOLD, None)]
+        g.bar(2, 2, 21, 21, PIXEL_STEEL_DEEP)
+        g.rect(1, 1, 20, 20, PIXEL_STEEL)
+        g.line([(1, 1), (20, 1)], WHITE)
+        g.line([(1, 1), (1, 20)], WHITE)
+        chips = [(2, 2, RED_MARK, (255, 130, 120), (150, 10, 10)),
+                 (12, 2, PIXEL_GREEN, (150, 245, 160), (35, 110, 50)),
+                 (2, 12, PIXEL_BLUE, (140, 195, 255), (20, 60, 160)),
+                 (12, 12, FACE_GOLD, WHITE, PIXEL_GOLD_SHADE)]
         chip_size = 8
 
-    for x0, y0, colour, highlight in chips:
+    # Render each color tile with chamfer highlights and drop shadow for real 3D pop
+    for x0, y0, colour, light_c, dark_c in chips:
         g.rect(x0, y0, x0 + chip_size, y0 + chip_size, colour)
-        if highlight is not None:
-            g.line([(x0 + 1, y0 + chip_size - 2), (x0 + 1, y0 + 1),
-                    (x0 + chip_size - 2, y0 + 1)], highlight)
+        # Highlight top & left
+        g.line([(x0, y0), (x0 + chip_size, y0)], light_c)
+        g.line([(x0, y0), (x0, y0 + chip_size)], light_c)
+        # Shadow bottom & right
+        g.line([(x0 + 1, y0 + chip_size), (x0 + chip_size, y0 + chip_size)], dark_c)
+        g.line([(x0 + chip_size, y0 + 1), (x0 + chip_size, y0 + chip_size)], dark_c)
+
     return g.result()
 
 
 def _render_pixel_name_card(size: int, bg_color: Tuple[int, int, int]) -> Image.Image:
-    """Layered name card with a solid, legible A and a blue title band."""
+    """Document name badge with 3D bevel and sharp high-contrast typographical A."""
     g = _PixelGrid(size, bg_color)
     large = size >= 32
     if large:
-        g.bar(2, 2, 31, 31, PIXEL_STEEL_SHADE)
-        g.rect(1, 1, 31, 31, WHITE)
-        g.bar(2, 2, 30, 11, PIXEL_BLUE)
-        g.edge(2, 11, 30, 11)
-        g.bar(3, 3, 13, 5, WHITE)
-        g.bar(17, 3, 25, 5, CYAN)
-        g.solid([(4, 30), (13, 12), (17, 12), (12, 30)], CATIA_INK)
-        g.solid([(17, 12), (21, 12), (29, 30), (24, 30)], CATIA_INK)
-        g.bar(12, 22, 23, 25, CATIA_INK)
-        g.bar(3, 28, 12, 30, CATIA_INK)
-        g.bar(22, 28, 30, 30, CATIA_INK)
+        # Base shadow
+        g.bar(3, 3, 31, 31, PIXEL_STEEL_DEEP)
+        g.rect(1, 1, 29, 29, WHITE)
+        # Deep blue title header
+        g.bar(2, 2, 28, 10, PIXEL_BLUE)
+        g.edge(2, 10, 28, 10)
+        # Top-left white highlight
+        g.line([(1, 1), (28, 1)], WHITE)
+        g.line([(1, 1), (1, 28)], WHITE)
+        g.bar(4, 4, 14, 6, WHITE)
+        g.bar(18, 4, 26, 6, CYAN)
+        # Bold Architectural Letter "A"
+        g.solid([(4, 28), (12, 12), (16, 12), (11, 28)], CATIA_INK)
+        g.solid([(16, 12), (20, 12), (28, 28), (23, 28)], CATIA_INK)
+        g.bar(11, 21, 22, 24, CATIA_INK)
     else:
-        g.bar(2, 2, 21, 21, PIXEL_STEEL_SHADE)
-        g.rect(1, 1, 21, 21, WHITE)
-        g.bar(2, 2, 20, 8, PIXEL_BLUE)
-        g.edge(2, 8, 20, 8)
-        g.solid([(3, 20), (7, 9), (9, 9), (6, 20)], CATIA_INK)
-        g.solid([(9, 9), (12, 9), (16, 20), (13, 20)], CATIA_INK)
-        g.bar(6, 15, 13, 17, CATIA_INK)
+        # 22x22 Normal mode
+        g.bar(2, 2, 21, 21, PIXEL_STEEL_DEEP)
+        g.rect(1, 1, 19, 19, WHITE)
+        # Deep Blue Header
+        g.bar(2, 2, 18, 7, PIXEL_BLUE)
+        g.edge(2, 7, 18, 7)
+        # Top highlight
+        g.line([(1, 1), (18, 1)], WHITE)
+        # Bold Letter "A"
+        g.solid([(3, 18), (7, 8), (10, 8), (6, 18)], CATIA_INK)
+        g.solid([(10, 8), (13, 8), (17, 18), (14, 18)], CATIA_INK)
+        g.bar(6, 14, 14, 16, CATIA_INK)
+
     return g.result()
 
 
